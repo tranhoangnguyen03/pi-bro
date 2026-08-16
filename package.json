@@ -1,0 +1,57 @@
+{
+  "name": "pi-bro",
+  "version": "0.1.0",
+  "description": "An Earendil Pi extension that simplifies the latest assistant response in a context-isolated modal.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Tran Hoang Nguyen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nguyen-tran-100x/pi-bro.git"
+  },
+  "homepage": "https://github.com/nguyen-tran-100x/pi-bro#readme",
+  "bugs": {
+    "url": "https://github.com/nguyen-tran-100x/pi-bro/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "simplify",
+    "agy",
+    "gemini",
+    "tui"
+  ],
+  "files": [
+    "bro.ts",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && sh ./smoke-test.sh",
+    "prepublishOnly": "npm test"
+  },
+  "pi": {
+    "extensions": [
+      "./bro.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.78.1 <1",
+    "@earendil-works/pi-tui": ">=0.78.1 <1"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2",
+    "@types/node": "^24.0.0",
+    "typescript": "6.0.2"
+  }
+}
