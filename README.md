@@ -28,7 +28,7 @@ pi install npm:pi-bro
 From GitHub:
 
 ```sh
-pi install git:github.com/nguyen-tran-100x/pi-bro
+pi install git:github.com/tranhoangnguyen03/pi-bro
 ```
 
 Restart Pi or run `/reload`. Once an assistant response finishes, run `/bro`.

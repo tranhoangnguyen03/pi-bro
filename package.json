@@ -7,11 +7,11 @@
   "author": "Tran Hoang Nguyen",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nguyen-tran-100x/pi-bro.git"
+    "url": "git+https://github.com/tranhoangnguyen03/pi-bro.git"
   },
-  "homepage": "https://github.com/nguyen-tran-100x/pi-bro#readme",
+  "homepage": "https://github.com/tranhoangnguyen03/pi-bro#readme",
   "bugs": {
-    "url": "https://github.com/nguyen-tran-100x/pi-bro/issues"
+    "url": "https://github.com/tranhoangnguyen03/pi-bro/issues"
   },
   "keywords": [
     "pi-package",
