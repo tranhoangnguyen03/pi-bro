@@ -299,6 +299,8 @@ pi -e npm:pi-bro
 | `/bro` | Create a new plain-language explanation of the latest completed assistant response. |
 | `/bro simplify` | Same as `/bro`. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
+| `/bro usage` | Show current Agy resource limits. |
+| `/bro usage --provider agy` | Same as `/bro usage`, with the provider stated explicitly. |
 | `/bro help` | Open the built-in guide. |
 
 ### Modal controls
@@ -341,6 +343,8 @@ PI_BRO_MODEL=gemini-3.7-flash-low pi
 
 - **External requests**: Bro sends the latest completed assistant response to
   Agy and its configured model provider.
+- **Usage checks**: `/bro usage` checks your authenticated Agy limits without
+  sending an assistant response or running a model turn.
 - **Context isolation**: Bro does not add explanations to Pi's conversation
   history, session files, or main-agent context.
 - **Memory cache**: The latest explanation is stored only in process memory for
@@ -356,7 +360,7 @@ PI_BRO_MODEL=gemini-3.7-flash-low pi
 
 ## Current limits
 
-- Supports only Agy/Gemini in v0.1.
+- Uses Agy as its only provider.
 - Keeps only the latest explanation in memory.
 - Does not store history or export directly to files.
 - Mouse-wheel and trackpad scrolling work in Pi's fullscreen mode
