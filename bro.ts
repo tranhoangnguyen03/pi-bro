@@ -25,6 +25,7 @@ type TuiLike = { requestRender(): void };
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
 type AssistantSource = { id: string; text: string };
 type BroResult = { source: AssistantSource; text: string };
+type ModalResult = { source?: AssistantSource; text: string };
 type AgyEvent = {
 	event?: string;
 	step_update?: { step_type?: string; text_delta?: unknown };
@@ -42,8 +43,56 @@ export function wheelDelta(data: string): number {
 const COMMANDS = [
 	{ value: "simplify", label: "simplify", description: "Simplify the latest assistant response" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
+	{ value: "usage", label: "usage", description: "Show current Agy usage" },
 	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+export function formatAgyUsage(value: unknown): string {
+	if (!isRecord(value) || value.status !== "SUCCESS" || typeof value.response !== "string") {
+		throw new Error("Agy returned invalid usage data.");
+	}
+
+	const groups = new Map<string, string[]>();
+	for (const line of value.response.trim().split("\n")) {
+		const [group, limit, remaining, resetTime] = line.split("\t");
+		if (!group || !limit || !remaining) throw new Error("Agy returned invalid usage data.");
+		const reset = resetTime ? new Date(resetTime) : undefined;
+		const resetText = reset && !Number.isNaN(reset.getTime()) ? ` — resets ${reset.toLocaleString()}` : "";
+		const items = groups.get(group) ?? [];
+		items.push(`- **${limit}:** ${remaining}${resetText}`);
+		groups.set(group, items);
+	}
+	if (!groups.size) throw new Error("Agy returned no usage information.");
+
+	const sections = [...groups].map(([group, items]) => `## ${group}\n\n${items.join("\n")}`);
+	return `# Agy usage\n\n${sections.join("\n\n")}`;
+}
+
+async function checkAgyUsage(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+	try {
+		const result = await pi.exec(
+			"agy",
+			["-p", "/usage", "--output-format", "json", "--print-timeout", "30s", "--sandbox"],
+			{ cwd: runDirectory, signal, timeout: 35_000 },
+		);
+		if (signal.aborted) throw new Error("Canceled.");
+		if (result.killed) throw new Error("Agy usage check timed out.");
+		if (result.code !== 0) throw new Error(result.stderr.trim() || `Agy exited with code ${result.code}.`);
+		try {
+			return formatAgyUsage(JSON.parse(result.stdout));
+		} catch (error) {
+			if (error instanceof SyntaxError) throw new Error("Agy returned invalid usage data.");
+			throw error;
+		}
+	} finally {
+		await rm(runDirectory, { recursive: true, force: true });
+	}
+}
 
 function latestAssistant(ctx: ExtensionCommandContext): AssistantSource | undefined {
 	const branch = ctx.sessionManager.getBranch();
@@ -208,6 +257,7 @@ Bro turns the latest completed assistant response into a clear, plain-language e
 
 - \`/bro\` or \`/bro simplify\` — create a new explanation
 - \`/bro open\` — reopen the last explanation
+- \`/bro usage\` or \`/bro usage --provider agy\` — show current Agy usage
 - \`/bro help\` — show this guide
 
 ## Controls
@@ -227,6 +277,8 @@ Bro does not modify your project files. It runs the simplifier in sandbox mode i
 Bro does not add explanations to Pi's conversation history, session files, or main-agent context. The latest explanation is kept in process memory only so \`/bro open\` can reopen it. It is cleared when you change sessions, reload extensions, or exit Pi.
 
 Bro sends the assistant response to an external simplifier (currently Agy with a Gemini model). Agy and the model provider may retain request data or logs under their own policies.
+
+\`/bro usage\` checks your authenticated Agy limits without sending an assistant response or running a model turn.
 
 Pressing **C** copies the explanation to your system clipboard, where your operating system or clipboard manager may retain it.
 
@@ -263,8 +315,8 @@ class BroModal implements Focusable {
 		private readonly onDispose: () => void,
 	) {}
 
-	setLoading(): void {
-		this.setContent("loading", `**${LOADING_TEXT}**`, "", false, false);
+	setLoading(text = LOADING_TEXT): void {
+		this.setContent("loading", `**${text}**`, "", false, false);
 	}
 
 	setStreaming(text: string): void {
@@ -280,7 +332,7 @@ class BroModal implements Focusable {
 	}
 
 	setError(message: string): void {
-		this.setContent("error", `# Bro could not simplify this\n\n${message}`, "", false, true);
+		this.setContent("error", `# Bro ran into a problem\n\n${message}`, "", false, true);
 	}
 
 	private setContent(
@@ -320,7 +372,9 @@ class BroModal implements Focusable {
 	private controls(): string {
 		if (this.kind === "loading") return "Esc cancel";
 		if (this.kind === "streaming") return "Simplifying… · ↑/↓ scroll · Esc cancel";
-		if (this.kind === "result") return "↑/↓ scroll · C copy · R simplify again · Esc close";
+		if (this.kind === "result") {
+			return `↑/↓ scroll · C copy${this.retryable ? " · R simplify again" : ""} · Esc close`;
+		}
 		if (this.kind === "help") return "↑/↓ scroll · C copy · Esc close";
 		if (this.kind === "error") return "R try again · Esc close";
 		return "Esc close";
@@ -411,13 +465,15 @@ interface BroModalOptions {
 	text?: string;
 	kind?: "help" | "empty";
 	copyable?: boolean;
-	result?: BroResult;
+	result?: ModalResult;
 	run?: (
 		signal: AbortSignal,
 		source?: AssistantSource,
 		onProgress?: (text: string) => void,
-	) => Promise<BroResult>;
-	onResult?: (result: BroResult) => void;
+	) => Promise<ModalResult>;
+	onResult?: (result: ModalResult) => void;
+	loadingText?: string;
+	retryable?: boolean;
 }
 
 async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptions): Promise<void> {
@@ -459,7 +515,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 				const previous = current;
 				const nextController = new AbortController();
 				controller = nextController;
-				modal.setLoading();
+				modal.setLoading(options.loadingText);
 
 				void options
 					.run(nextController.signal, source, (text) => {
@@ -470,14 +526,14 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 						if (closed || nextController.signal.aborted) return;
 						current = result;
 						options.onResult?.(result);
-						modal.setResult(result.text, true);
+						modal.setResult(result.text, options.retryable ?? true);
 					})
 					.catch((error) => {
 						if (closed || nextController.signal.aborted) return;
 						const message = error instanceof Error ? error.message : String(error);
 						if (previous) {
 							current = previous;
-							modal.setResult(previous.text, true, `Retry failed: ${message}`);
+							modal.setResult(previous.text, options.retryable ?? true, `Retry failed: ${message}`);
 						} else {
 							modal.setError(message);
 						}
@@ -490,7 +546,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 			if (options.text !== undefined) {
 				modal.setStatic(options.kind ?? "help", options.text, options.copyable ?? false);
 			} else if (current) {
-				modal.setResult(current.text, Boolean(options.run));
+				modal.setResult(current.text, options.retryable ?? Boolean(options.run));
 			} else {
 				execute();
 			}
@@ -512,21 +568,45 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 
 export default function bro(pi: ExtensionAPI) {
 	let lastResult: BroResult | undefined;
+	const remember = (result: ModalResult) => {
+		if (result.source) lastResult = { source: result.source, text: result.text };
+	};
 
 	pi.on("session_start", async () => {
 		lastResult = undefined;
 	});
 
 	pi.registerCommand("bro", {
-		description: "Simplify, reopen, or learn about Bro explanations",
+		description: "Simplify responses, reopen explanations, or show Agy usage",
 		getArgumentCompletions: (prefix) => {
 			const normalized = prefix.trim().toLowerCase();
 			const matches = COMMANDS.filter((command) => command.value.startsWith(normalized));
 			return matches.length ? matches : null;
 		},
 		handler: async (args, ctx) => {
-			const action = args.trim().toLowerCase();
-			if (action === "help") {
+			const normalized = args.trim().toLowerCase();
+			const parts = normalized ? normalized.split(/\s+/) : [];
+			const action = parts[0] ?? "";
+
+			if (action === "usage") {
+				const valid = parts.length === 1 || (parts.length === 3 && parts[1] === "--provider" && parts[2] === "agy");
+				if (!valid) {
+					ctx.ui.notify("Use /bro usage or /bro usage --provider agy.", "warning");
+					return;
+				}
+				try {
+					await showBroModal(ctx, {
+						loadingText: "Checking Agy usage…",
+						retryable: false,
+						run: async (signal) => ({ text: await checkAgyUsage(pi, signal) }),
+					});
+				} catch (error) {
+					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+				}
+				return;
+			}
+
+			if (normalized === "help") {
 				await showBroModal(ctx, { text: helpText(), kind: "help", copyable: true });
 				return;
 			}
@@ -545,7 +625,7 @@ export default function bro(pi: ExtensionAPI) {
 				return { source: target, text: await simplify(target.text, signal, onProgress) };
 			};
 
-			if (action === "open") {
+			if (normalized === "open") {
 				if (!lastResult) {
 					await showBroModal(ctx, {
 						text: "# Nothing to open yet\n\nRun `/bro` after an assistant response.",
@@ -557,24 +637,20 @@ export default function bro(pi: ExtensionAPI) {
 				await showBroModal(ctx, {
 					result: lastResult,
 					run,
-					onResult: (result) => {
-						lastResult = result;
-					},
+					onResult: remember,
 				});
 				return;
 			}
 
-			if (action && action !== "simplify") {
-				ctx.ui.notify(`Unknown action "${action}". Use simplify, open, or help.`, "warning");
+			if (normalized && normalized !== "simplify") {
+				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, open, usage, or help.`, "warning");
 				return;
 			}
 
 			try {
 				await showBroModal(ctx, {
 					run,
-					onResult: (result) => {
-						lastResult = result;
-					},
+					onResult: remember,
 				});
 			} catch (error) {
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
