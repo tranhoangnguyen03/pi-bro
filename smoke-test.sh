@@ -28,10 +28,17 @@ printf '%s\n' \
 printf '%s\n' \
 	'#!/bin/sh' \
 	'case "$*" in *"CUSTOM_TEMPLATE_MARKER"*"Original complicated reply."*) ;; *) exit 12;; esac' \
+	'case " $* " in *" --output-format stream-json "*) ;; *) exit 14;; esac' \
 	'case "${PWD##*/}" in pi-bro-*) ;; *) exit 13;; esac' \
 	'call=$(( $(wc -l < "$BRO_CALLS") + 1 ))' \
 	'printf "%s\n" "$call" >> "$BRO_CALLS"' \
-	'printf "%s%s\n" "$BRO_CANARY_PREFIX" "$call"' \
+	'printf "%s\n" "{\"event\":\"init\"}"' \
+	'printf "%s\n" "{\"event\":\"step_update\",\"step_update\":{\"step_type\":\"checkpoint\"}}"' \
+	'printf "%s" "{\"event\":\"step_"' \
+	'sleep 0.1' \
+	'printf "update\",\"step_update\":{\"step_type\":\"agent_response\",\"text_delta\":\"PREVIEW_%s\"}}\n" "$call"' \
+	'printf "%s\n" "{\"event\":\"step_update\",\"step_update\":{\"step_type\":\"agent_response\",\"text_delta\":\" continued\"}}"' \
+	'printf "{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"%s%s\"}}\n" "$BRO_CANARY_PREFIX" "$call"' \
 	> "$test_dir/agy"
 chmod +x "$test_dir/agy"
 
@@ -56,6 +63,11 @@ output=$(
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
 if [ "$success_count" -ne 6 ]; then
 	printf 'Expected 6 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+	exit 1
+fi
+
+if printf '%s\n' "$output" | grep -q '"method":"notify".*"notifyType":"error"'; then
+	printf 'Bro reported an error while parsing the fake Agy stream:\n%s\n' "$output" >&2
 	exit 1
 fi
 

@@ -6,7 +6,7 @@ adding extra messages to your conversation context.
 `pi-bro` is a small extension for
 [Earendil Pi](https://github.com/earendil-works/pi). It uses the
 [Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`)
-and a Gemini model to create plain-language explanations.
+and a Gemini model to stream plain-language explanations.
 
 ## Bro in action
 
@@ -265,7 +265,7 @@ cached files, not your source code or dependencies.
 
 - Earendil Pi `>=0.78.1 <1` (tested on `0.84.2`)
 - Node.js `>=22.19.0`
-- `agy` installed, authenticated, and on your `PATH` (tested on `1.1.13`)
+- `agy >=1.1.8` installed, authenticated, and on your `PATH` (tested on `1.1.13`)
 - Pi's interactive terminal UI
 
 Run `agy` once in your terminal to complete sign-in before using Bro.
@@ -346,9 +346,9 @@ PI_BRO_MODEL=gemini-3.7-flash-low pi
 - **Memory cache**: The latest explanation is stored only in process memory for
   `/bro open`. It clears when you switch Pi sessions, reload extensions, or quit
   Pi.
-- **File safety**: Bro does not modify project files. It runs Agy in plan and
-  sandbox modes inside a temporary empty folder. This reduces project access,
-  but it is not a security boundary.
+- **File safety**: Bro does not modify project files. It runs Agy in sandbox
+  mode inside a temporary empty folder. This reduces project access, but it is
+  not a security boundary.
 - **Provider data**: Agy and your model provider may retain logs and request data
   according to their own settings and privacy policies.
 - **Clipboard**: Pressing **C** copies the text to your system clipboard, where
