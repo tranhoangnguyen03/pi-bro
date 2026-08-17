@@ -6,7 +6,7 @@ adding extra messages to your conversation context.
 `pi-bro` is a small extension for
 [Earendil Pi](https://github.com/earendil-works/pi). It uses the
 [Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`)
-and a Gemini model to stream plain-language explanations.
+and your selected Agy model to stream plain-language explanations.
 
 ## Bro in action
 
@@ -265,7 +265,7 @@ cached files, not your source code or dependencies.
 
 - Earendil Pi `>=0.78.1 <1` (tested on `0.84.2`)
 - Node.js `>=22.19.0`
-- `agy >=1.1.8` installed, authenticated, and on your `PATH` (tested on `1.1.13`)
+- `agy >=1.1.11` installed, authenticated, and on your `PATH` (tested on `1.1.13`)
 - Pi's interactive terminal UI
 
 Run `agy` once in your terminal to complete sign-in before using Bro.
@@ -301,14 +301,51 @@ pi -e npm:pi-bro
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
 | `/bro usage` | Show current Agy resource limits. |
 | `/bro usage --provider agy` | Same as `/bro usage`, with the provider stated explicitly. |
+| `/bro model` | Choose from the models currently available through Agy. |
+| `/bro model <id>` | Set an available Agy model directly. |
+| `/bro effort` | Choose an effort supported by the current model. |
+| `/bro effort <low\|medium\|high>` | Set a supported reasoning effort directly. |
 | `/bro help` | Open the built-in guide. |
 
 ### Modal controls
 
+- **Mouse wheel / trackpad**: Scroll in Pi's fullscreen mode
 - **↑ / ↓**: Scroll up or down
 - **C**: Copy the full explanation to your clipboard
 - **R**: Run the simplifier again on the same response
 - **Esc**: Close the window, or cancel while Bro is running
+
+In Pi's regular terminal mode, the Bro title warns that mouse-wheel scrolling
+needs fullscreen mode. Arrow-key scrolling still works.
+
+## Settings
+
+Bro creates this user-editable settings file when the extension loads:
+
+```text
+~/.pi/agent/bro-settings.json
+```
+
+```json
+{
+  "model": "gemini-3.7-flash",
+  "effort": "low"
+}
+```
+
+Use `/bro model` and `/bro effort` to update it from Pi, or edit it directly.
+Bro reads the file again before each explanation, so manual changes apply to
+the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
+one of the levels shown by `/bro effort`. Models without adjustable effort use
+`default`. The choices remain active across Pi restarts until you change them.
+`/bro help` shows the active settings and the exact file path.
+
+If `PI_CODING_AGENT_DIR` is set, the file lives there instead. `PI_BRO_MODEL`
+chooses the initial model only when Bro creates a missing settings file:
+
+```sh
+PI_BRO_MODEL=gemini-3.7-flash-low pi
+```
 
 ## Custom prompt
 
@@ -331,14 +368,6 @@ Assistant response:
 Bro re-reads this file every time you simplify, so your edits take effect
 immediately without reloading Pi. Bro never creates or modifies this file.
 
-### Custom model
-
-Set `PI_BRO_MODEL` before starting Pi to use a different Agy model:
-
-```sh
-PI_BRO_MODEL=gemini-3.7-flash-low pi
-```
-
 ## Privacy and files
 
 - **External requests**: Bro sends the latest completed assistant response to
@@ -352,7 +381,8 @@ PI_BRO_MODEL=gemini-3.7-flash-low pi
   Pi.
 - **File safety**: Bro does not modify project files. It runs Agy in sandbox
   mode inside a temporary empty folder. This reduces project access, but it is
-  not a security boundary.
+  not a security boundary. Bro only writes its own user settings file described
+  above.
 - **Provider data**: Agy and your model provider may retain logs and request data
   according to their own settings and privacy policies.
 - **Clipboard**: Pressing **C** copies the text to your system clipboard, where
@@ -364,8 +394,9 @@ PI_BRO_MODEL=gemini-3.7-flash-low pi
 - Keeps only the latest explanation in memory.
 - Does not store history or export directly to files.
 - Mouse-wheel and trackpad scrolling work in Pi's fullscreen mode
-  (`pi --tui-mode fullscreen`). In regular mode, use the arrow keys so Bro does
-  not interfere with your terminal's native text selection.
+  (`pi --tui-mode fullscreen`). In regular mode, Bro shows a warning in its
+  title; use the arrow keys so Bro does not interfere with your terminal's
+  native text selection.
 - In fullscreen mode, mouse text selection may visually extend outside the Bro
   window. Press **C** to copy the full explanation instead.
 
@@ -374,11 +405,12 @@ PI_BRO_MODEL=gemini-3.7-flash-low pi
 ```sh
 npm install
 npm test
-pi -e ./bro.ts
+pi --tui-mode fullscreen -e ./bro.ts
 ```
 
 The smoke test uses a fake `agy`, so it does not call an external model. It
-verifies command routing, custom prompt handling, and context isolation.
+verifies command routing, settings, custom prompt handling, and context
+isolation.
 
 ## License
 

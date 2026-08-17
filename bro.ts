@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -7,8 +7,11 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown, matchesKey, truncateToWidth, visibleWidth, type Focusable } from "@earendil-works/pi-tui";
 
-const MODEL = process.env.PI_BRO_MODEL ?? "gemini-3.7-flash-low";
-const PROMPT_FILE = join(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"), "bro-prompt.md");
+const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+const ENV_MODEL = process.env.PI_BRO_MODEL?.trim();
+const DEFAULT_MODEL = ENV_MODEL || "gemini-3.7-flash";
+const PROMPT_FILE = join(AGENT_DIR, "bro-prompt.md");
+const SETTINGS_FILE = join(AGENT_DIR, "bro-settings.json");
 const LOADING_TEXT = "Simplifying for my bro…";
 const DEFAULT_TEMPLATE = `Rewrite the quoted response for a non-expert.
 Use plain English and short sentences. Explain jargon briefly.
@@ -21,11 +24,21 @@ Quoted response as a JSON string:
 {{response}}`;
 
 type Theme = ExtensionCommandContext["ui"]["theme"];
-type TuiLike = { requestRender(): void };
+type TuiLike = { readonly mode: "regular" | "fullscreen"; requestRender(): void };
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
 type AssistantSource = { id: string; text: string };
 type BroResult = { source: AssistantSource; text: string };
 type ModalResult = { source?: AssistantSource; text: string };
+const EFFORTS = ["default", "low", "medium", "high"] as const;
+type BroEffort = (typeof EFFORTS)[number];
+type AgyEffort = Exclude<BroEffort, "default">;
+type BroSettings = { model: string; effort: BroEffort };
+type AgyModelFamily = {
+	id: string;
+	label: string;
+	efforts: AgyEffort[];
+	variants: Array<{ id: string; effort?: AgyEffort }>;
+};
 type AgyEvent = {
 	event?: string;
 	step_update?: { step_type?: string; text_delta?: unknown };
@@ -44,11 +57,54 @@ const COMMANDS = [
 	{ value: "simplify", label: "simplify", description: "Simplify the latest assistant response" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
 	{ value: "usage", label: "usage", description: "Show current Agy usage" },
+	{ value: "model", label: "model", description: "Choose the Agy model" },
+	{ value: "effort", label: "effort", description: "Choose the Agy reasoning effort" },
 	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
+}
+
+export function parseBroSettings(value: unknown): BroSettings {
+	if (
+		!isRecord(value) ||
+		typeof value.model !== "string" ||
+		!value.model.trim() ||
+		!EFFORTS.some((effort) => effort === value.effort)
+	) {
+		throw new Error('Settings must contain a model and effort set to "default", "low", "medium", or "high".');
+	}
+	return { model: value.model.trim(), effort: value.effort as BroSettings["effort"] };
+}
+
+async function ensureSettingsFile(): Promise<void> {
+	await mkdir(AGENT_DIR, { recursive: true });
+	try {
+		await writeFile(
+			SETTINGS_FILE,
+			`${JSON.stringify({ model: DEFAULT_MODEL, effort: ENV_MODEL ? "default" : "low" }, null, 2)}\n`,
+			{ encoding: "utf8", flag: "wx", mode: 0o600 },
+		);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+	}
+}
+
+async function readSettings(): Promise<BroSettings> {
+	await ensureSettingsFile();
+	try {
+		return parseBroSettings(JSON.parse(await readFile(SETTINGS_FILE, "utf8")));
+	} catch (error) {
+		if (error instanceof SyntaxError) throw new Error(`${SETTINGS_FILE} is not valid JSON.`);
+		if (error instanceof Error) throw new Error(`${SETTINGS_FILE}: ${error.message}`);
+		throw error;
+	}
+}
+
+async function writeSettings(settings: BroSettings): Promise<void> {
+	// ponytail: last writer wins across concurrent Pi processes; add locking only if that becomes a common workflow.
+	await writeFile(SETTINGS_FILE, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
 
 export function formatAgyUsage(value: unknown): string {
@@ -70,6 +126,78 @@ export function formatAgyUsage(value: unknown): string {
 
 	const sections = [...groups].map(([group, items]) => `## ${group}\n\n${items.join("\n")}`);
 	return `# Agy usage\n\n${sections.join("\n\n")}`;
+}
+
+export function parseAgyModels(output: string): AgyModelFamily[] {
+	// ponytail: Agy 1.1.13 exposes a tab-separated variant list; use structured catalog data when available here.
+	const families = new Map<string, AgyModelFamily>();
+	for (const line of output.split(/\r?\n/)) {
+		const [rawId, ...rawLabel] = line.split("\t");
+		if (!rawId?.trim() || !rawLabel.length) continue;
+		const id = rawId.trim();
+		const label = rawLabel.join(" ").trim();
+		const effort = (["low", "medium", "high"] as const).find(
+			(value) => id.endsWith(`-${value}`) && label.endsWith(`(${value[0].toUpperCase()}${value.slice(1)})`),
+		);
+		const familyId = effort ? id.slice(0, -effort.length - 1) : id;
+		const family = families.get(familyId) ?? {
+			id: familyId,
+			label: effort ? label.replace(/\s+\((Low|Medium|High)\)$/, "") : label,
+			efforts: [],
+			variants: [],
+		};
+		if (effort && !family.efforts.includes(effort)) family.efforts.push(effort);
+		family.variants.push({ id, effort });
+		families.set(familyId, family);
+	}
+	if (!families.size) throw new Error("Agy returned no available models.");
+	for (const family of families.values()) {
+		family.efforts.sort((a, b) => EFFORTS.indexOf(a) - EFFORTS.indexOf(b));
+	}
+	return [...families.values()];
+}
+
+async function listAgyModels(pi: ExtensionAPI): Promise<AgyModelFamily[]> {
+	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+	try {
+		const result = await pi.exec("agy", ["models"], { cwd: runDirectory, timeout: 30_000 });
+		if (result.killed) throw new Error("Agy model check timed out.");
+		if (result.code !== 0) throw new Error(result.stderr.trim() || `Agy exited with code ${result.code}.`);
+		return parseAgyModels(result.stdout);
+	} finally {
+		await rm(runDirectory, { recursive: true, force: true });
+	}
+}
+
+function resolveCatalogSettings(
+	settings: BroSettings,
+	families: AgyModelFamily[],
+): { settings: BroSettings; family?: AgyModelFamily } {
+	const family = families.find(
+		(item) => item.id === settings.model || item.variants.some((variant) => variant.id === settings.model),
+	);
+	if (!family) return { settings };
+	const variant = family.variants.find((item) => item.id === settings.model);
+	return {
+		family,
+		settings: {
+			model: family.id,
+			effort: settings.effort === "default" && variant?.effort ? variant.effort : settings.effort,
+		},
+	};
+}
+
+function preferredEffort(family: AgyModelFamily): BroEffort {
+	return family.efforts.includes("low") ? "low" : (family.efforts[0] ?? "default");
+}
+
+export function agySelection(settings: BroSettings): { model: string; effort?: AgyEffort } {
+	if (settings.effort === "default") return { model: settings.model };
+	const suffix = (["low", "medium", "high"] as const).find((effort) => settings.model.endsWith(`-${effort}`));
+	return {
+		model: suffix ? settings.model.slice(0, -suffix.length - 1) : settings.model,
+		effort: settings.effort,
+	};
 }
 
 async function checkAgyUsage(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
@@ -155,9 +283,11 @@ function parseAgyLine(line: string): { delta?: string; result?: string } {
 async function simplify(
 	response: string,
 	signal: AbortSignal,
+	settings: BroSettings,
 	onProgress?: (text: string) => void,
 ): Promise<string> {
 	const prompt = await promptFor(response);
+	const selection = agySelection(settings);
 	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 	let updateTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -170,7 +300,8 @@ async function simplify(
 				"--output-format",
 				"stream-json",
 				"--model",
-				MODEL,
+				selection.model,
+				...(selection.effort ? ["--effort", selection.effort] : []),
 				"--print-timeout",
 				"2m",
 				"--print",
@@ -248,7 +379,7 @@ async function simplify(
 	}
 }
 
-function helpText(): string {
+function helpText(settings: BroSettings): string {
 	return `# Bro
 
 Bro turns the latest completed assistant response into a clear, plain-language explanation.
@@ -258,7 +389,20 @@ Bro turns the latest completed assistant response into a clear, plain-language e
 - \`/bro\` or \`/bro simplify\` — create a new explanation
 - \`/bro open\` — reopen the last explanation
 - \`/bro usage\` or \`/bro usage --provider agy\` — show current Agy usage
+- \`/bro model\` — choose the Agy model
+- \`/bro effort\` — choose the Agy reasoning effort
 - \`/bro help\` — show this guide
+
+## Current simplifier settings
+
+- **Model:** \`${settings.model}\`
+- **Reasoning effort:** ${settings.effort === "default" ? "built into the selected model" : settings.effort}
+
+These choices are saved in:
+
+\`${SETTINGS_FILE}\`
+
+Use the slash commands or edit that file directly. Changes apply to future explanations and remain active across Pi restarts until you change them. Use a model ID shown by \`/bro model\`. Use an effort shown by \`/bro effort\`; fixed-effort models use \`default\`.
 
 ## Controls
 
@@ -268,15 +412,17 @@ Bro turns the latest completed assistant response into a clear, plain-language e
 - **R** — simplify the same response again
 - **Esc** — close the window, or cancel while Bro is working
 
+In Pi's regular terminal mode, the Bro title warns that mouse-wheel scrolling needs fullscreen mode. Arrow-key scrolling still works.
+
 Mouse text selection may extend outside the Bro window. Press **C** to copy the complete explanation instead.
 
 ## Privacy and file safety
 
-Bro does not modify your project files. It runs the simplifier in sandbox mode inside a temporary empty folder. This reduces project access, but it is not a security boundary.
+Bro does not modify your project files. It creates and updates only its user settings file shown above. It runs the simplifier in sandbox mode inside a temporary empty folder. This reduces project access, but it is not a security boundary.
 
 Bro does not add explanations to Pi's conversation history, session files, or main-agent context. The latest explanation is kept in process memory only so \`/bro open\` can reopen it. It is cleared when you change sessions, reload extensions, or exit Pi.
 
-Bro sends the assistant response to an external simplifier (currently Agy with a Gemini model). Agy and the model provider may retain request data or logs under their own policies.
+Bro sends the assistant response to an external simplifier (currently Agy with your selected model). Agy and the model provider may retain request data or logs under their own policies.
 
 \`/bro usage\` checks your authenticated Agy limits without sending an assistant response or running a model turn.
 
@@ -290,7 +436,7 @@ You can create or edit:
 
 Bro reads this file when running but never creates or edits it. Include \`{{response}}\` exactly once in your template. Changes take effect on the next simplification.
 
-Set \`PI_BRO_MODEL\` before starting Pi to use a different Agy model.`;
+When the settings file does not exist yet, \`PI_BRO_MODEL\` can choose its initial model.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.
@@ -392,12 +538,13 @@ class BroModal implements Focusable {
 		this.offset = Math.max(0, Math.min(this.offset, this.maxOffset));
 		const visible = rendered.slice(this.offset, this.offset + this.bodyHeight);
 		const hiddenBelow = Math.max(0, this.maxOffset - this.offset);
+		const modeHint = this.tui.mode === "regular" ? " · mouse wheel needs fullscreen" : "";
 		const scroll = this.maxOffset > 0 ? ` · ↑${this.offset} ↓${hiddenBelow}` : "";
 		const controls = this.notice ? `${this.notice} · ${this.controls()}` : this.controls();
 
 		const lines = [
 			this.borderLine(innerWidth, "top"),
-			this.frameLine(this.theme.fg("accent", this.theme.bold(`Bro${scroll}`)), innerWidth),
+			this.frameLine(this.theme.fg("accent", this.theme.bold(`Bro${modeHint}${scroll}`)), innerWidth),
 			this.ruleLine(innerWidth),
 		];
 
@@ -566,7 +713,8 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 	);
 }
 
-export default function bro(pi: ExtensionAPI) {
+export default async function bro(pi: ExtensionAPI) {
+	await ensureSettingsFile();
 	let lastResult: BroResult | undefined;
 	const remember = (result: ModalResult) => {
 		if (result.source) lastResult = { source: result.source, text: result.text };
@@ -577,7 +725,7 @@ export default function bro(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("bro", {
-		description: "Simplify responses, reopen explanations, or show Agy usage",
+		description: "Simplify responses and manage Bro",
 		getArgumentCompletions: (prefix) => {
 			const normalized = prefix.trim().toLowerCase();
 			const matches = COMMANDS.filter((command) => command.value.startsWith(normalized));
@@ -606,8 +754,123 @@ export default function bro(pi: ExtensionAPI) {
 				return;
 			}
 
+			if (action === "model") {
+				if (parts.length > 2) {
+					ctx.ui.notify("Use /bro model or /bro model <id>.", "warning");
+					return;
+				}
+				try {
+					const settings = await readSettings();
+					const models = await listAgyModels(pi);
+					const current = resolveCatalogSettings(settings, models);
+					const requested = parts[1];
+					let selected: AgyModelFamily | undefined;
+					let selectedEffort: BroEffort | undefined;
+					if (requested) {
+						selected = models.find((item) => item.id.toLowerCase() === requested);
+						if (!selected) {
+							for (const family of models) {
+								const variant = family.variants.find((item) => item.id.toLowerCase() === requested);
+								if (variant) {
+									selected = family;
+									selectedEffort = variant.effort ?? "default";
+									break;
+								}
+							}
+						}
+						if (!selected) {
+							ctx.ui.notify(`Unknown Agy model "${requested}". Run /bro model to see available choices.`, "warning");
+							return;
+						}
+					} else {
+						if (ctx.mode !== "tui") {
+							ctx.ui.notify("Use /bro model <id> outside Pi's interactive UI.", "warning");
+							return;
+						}
+						const ordered = [...models].sort((a, b) => Number(b.id === current.family?.id) - Number(a.id === current.family?.id));
+						const choices = ordered.map(
+							(item) =>
+								`${item.id} — ${item.label} · ${item.efforts.length ? item.efforts.join("/") : "fixed effort"}${item.id === current.family?.id ? " (current)" : ""}`,
+						);
+						const choice = await ctx.ui.select(`Agy model (current: ${current.settings.model})`, choices);
+						if (!choice) return;
+						selected = ordered[choices.indexOf(choice)];
+					}
+					if (!selectedEffort) {
+						const currentEffort = current.settings.effort;
+						const canKeepCurrent =
+							current.family?.id === selected.id &&
+							(currentEffort === "default" ? !selected.efforts.length : selected.efforts.includes(currentEffort));
+						selectedEffort = canKeepCurrent ? currentEffort : preferredEffort(selected);
+					}
+					await writeSettings({ model: selected.id, effort: selectedEffort });
+					ctx.ui.notify(
+						`Bro model: ${selected.id}${selectedEffort === "default" ? "" : ` (${selectedEffort})`}`,
+						"info",
+					);
+				} catch (error) {
+					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+				}
+				return;
+			}
+
+			if (action === "effort") {
+				const requested = parts[1];
+				if (parts.length > 2 || (requested && !EFFORTS.some((effort) => effort === requested))) {
+					ctx.ui.notify("Use /bro effort, or choose low, medium, or high.", "warning");
+					return;
+				}
+				try {
+					const settings = await readSettings();
+					const current = resolveCatalogSettings(settings, await listAgyModels(pi));
+					if (!current.family) {
+						ctx.ui.notify(`Model "${settings.model}" is not in Agy's current model list. Run /bro model first.`, "warning");
+						return;
+					}
+					if (!current.family.efforts.length) {
+						if (requested && requested !== "default") {
+							ctx.ui.notify(`${current.family.label} uses a fixed effort level.`, "warning");
+							return;
+						}
+						await writeSettings({ model: current.family.id, effort: "default" });
+						ctx.ui.notify(`${current.family.label} uses its built-in effort level.`, "info");
+						return;
+					}
+					if (requested === "default" || (requested && !current.family.efforts.includes(requested as AgyEffort))) {
+						ctx.ui.notify(
+							`${current.family.label} supports ${current.family.efforts.join(" or ")} effort.`,
+							"warning",
+						);
+						return;
+					}
+					let selected = requested as AgyEffort | undefined;
+					if (!selected) {
+						if (ctx.mode !== "tui") {
+							ctx.ui.notify("Use /bro effort <low|medium|high> outside Pi's interactive UI.", "warning");
+							return;
+						}
+						const efforts = [...current.family.efforts].sort(
+							(a, b) => Number(b === current.settings.effort) - Number(a === current.settings.effort),
+						);
+						const choices = efforts.map((effort) => `${effort}${effort === current.settings.effort ? " (current)" : ""}`);
+						const choice = await ctx.ui.select(`Agy reasoning effort (current: ${current.settings.effort})`, choices);
+						if (!choice) return;
+						selected = efforts[choices.indexOf(choice)];
+					}
+					await writeSettings({ model: current.family.id, effort: selected });
+					ctx.ui.notify(`Bro reasoning effort: ${selected}`, "info");
+				} catch (error) {
+					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+				}
+				return;
+			}
+
 			if (normalized === "help") {
-				await showBroModal(ctx, { text: helpText(), kind: "help", copyable: true });
+				try {
+					await showBroModal(ctx, { text: helpText(await readSettings()), kind: "help", copyable: true });
+				} catch (error) {
+					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+				}
 				return;
 			}
 
@@ -622,7 +885,11 @@ export default function bro(pi: ExtensionAPI) {
 					target = latestAssistant(ctx);
 				}
 				if (!target) throw new Error("No completed assistant response found.");
-				return { source: target, text: await simplify(target.text, signal, onProgress) };
+				const settings = await readSettings();
+				return {
+					source: target,
+					text: await simplify(target.text, signal, settings, onProgress),
+				};
 			};
 
 			if (normalized === "open") {
@@ -643,7 +910,7 @@ export default function bro(pi: ExtensionAPI) {
 			}
 
 			if (normalized && normalized !== "simplify") {
-				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, open, usage, or help.`, "warning");
+				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, open, usage, model, effort, or help.`, "warning");
 				return;
 			}
 
