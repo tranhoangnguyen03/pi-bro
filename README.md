@@ -1,21 +1,21 @@
 # pi-bro
 
-Simplify Pi's latest assistant response in a separate modal—without adding the
-explanation to the main conversation.
+Simplify Pi's latest assistant response in a separate pop-up window without
+adding extra messages to your conversation context.
 
-`pi-bro` is a small prototype for
-[Earendil Pi](https://github.com/earendil-works/pi). It currently uses
+`pi-bro` is a small extension for
+[Earendil Pi](https://github.com/earendil-works/pi). It uses the
 [Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`)
-and a Gemini model as the external simplifier.
+and a Gemini model to create plain-language explanations.
 
 ## Requirements
 
-- Earendil Pi `>=0.78.1 <1` (tested with `0.84.2`)
+- Earendil Pi `>=0.78.1 <1` (tested on `0.84.2`)
 - Node.js `>=22.19.0`
-- `agy` installed, authenticated, and available on `PATH` (tested with `1.1.13`)
+- `agy` installed, authenticated, and on your `PATH` (tested on `1.1.13`)
 - Pi's interactive terminal UI
 
-Install and launch `agy` once to complete authentication before using Bro.
+Run `agy` once in your terminal to complete sign-in before using Bro.
 
 ## Install
 
@@ -31,9 +31,9 @@ From GitHub:
 pi install git:github.com/nguyen-tran-100x/pi-bro
 ```
 
-Restart Pi or run `/reload`, then use `/bro` after an assistant response.
+Restart Pi or run `/reload`. Once an assistant response finishes, run `/bro`.
 
-To try the npm package without installing it permanently:
+To test Bro without installing it:
 
 ```sh
 pi -e npm:pi-bro
@@ -41,29 +41,29 @@ pi -e npm:pi-bro
 
 ## Commands
 
-| Command | What it does |
+| Command | Description |
 | --- | --- |
-| `/bro` | Make a new plain-language explanation of the latest completed assistant response. |
+| `/bro` | Create a new plain-language explanation of the latest completed assistant response. |
 | `/bro simplify` | Same as `/bro`. |
-| `/bro open` | Reopen the last successful explanation without calling the simplifier again. |
+| `/bro open` | Reopen the latest explanation without calling the simplifier again. |
 | `/bro help` | Open the built-in guide. |
 
-Inside the modal:
+### Modal controls
 
-- **↑ / ↓** scroll
-- **C** copy the full explanation
-- **R** simplify the same response again
-- **Esc** close, or cancel while Bro is working
+- **↑ / ↓**: Scroll up or down
+- **C**: Copy the full explanation to your clipboard
+- **R**: Run the simplifier again on the same response
+- **Esc**: Close the window, or cancel while Bro is running
 
-## Customize the prompt
+## Custom prompt
 
-Bro uses a built-in prompt unless this file exists:
+Bro uses a built-in prompt by default. To use your own, create:
 
 ```text
 ~/.pi/agent/bro-prompt.md
 ```
 
-The file must contain `{{response}}` exactly once. For example:
+Your prompt must include `{{response}}` exactly once. For example:
 
 ```md
 Explain this in plain English in no more than 200 words.
@@ -73,38 +73,40 @@ Assistant response:
 {{response}}
 ```
 
-Bro reads the file again for every simplification, so changes apply without a
-reload. It never creates or edits the file.
+Bro re-reads this file every time you simplify, so your edits take effect
+immediately without reloading Pi. Bro never creates or modifies this file.
 
-Set `PI_BRO_MODEL` before starting Pi to override the default Agy model:
+### Custom model
+
+Set `PI_BRO_MODEL` before starting Pi to use a different Agy model:
 
 ```sh
 PI_BRO_MODEL=gemini-3.7-flash-low pi
 ```
 
-## Files and privacy
+## Privacy and files
 
-- Bro sends the latest completed assistant response to Agy and its configured
-  model provider.
-- Bro does not append its explanation to Pi's conversation, session file, or
-  main-agent context.
-- The last successful explanation is kept only in process memory. It is cleared
-  when you change Pi sessions, reload extensions, or exit Pi.
-- Bro runs Agy in plan and sandbox modes from a temporary empty directory. This
-  reduces project access, but it is not a security boundary.
-- Bro itself does not edit project files. Agy may maintain its own configuration
-  or logs, and Agy or its model provider may retain request data under their own
-  settings and policies.
-- Pressing **C** writes the explanation to your system clipboard, where your
-  operating system or clipboard manager may retain it.
+- **External requests**: Bro sends the latest completed assistant response to
+  Agy and its configured model provider.
+- **Context isolation**: Bro does not add explanations to Pi's conversation
+  history, session files, or main-agent context.
+- **Memory cache**: The latest explanation is stored only in process memory for
+  `/bro open`. It clears when you switch Pi sessions, reload extensions, or quit
+  Pi.
+- **File safety**: Bro does not modify project files. It runs Agy in plan and
+  sandbox modes inside a temporary empty folder. This reduces project access,
+  but it is not a security boundary.
+- **Provider data**: Agy and your model provider may retain logs and request data
+  according to their own settings and privacy policies.
+- **Clipboard**: Pressing **C** copies the text to your system clipboard, where
+  your operating system or clipboard manager may retain it.
 
 ## Current limits
 
-- Agy/Gemini is the only backend in v0.1.
-- Only the latest successful explanation is cached.
-- There is no explanation history or file export.
-- Mouse capture is intentionally disabled; use arrow keys to scroll and **C** to
-  copy the full result.
+- Supports only Agy/Gemini in v0.1.
+- Keeps only the latest explanation in memory.
+- Does not store history or export directly to files.
+- Mouse scrolling is disabled; use the arrow keys to scroll and **C** to copy.
 
 ## Development
 
@@ -114,9 +116,8 @@ npm test
 pi -e ./bro.ts
 ```
 
-The smoke test is dependency-free and uses a fake `agy`; it does not call an
-external model. It checks command routing, prompt customization, and that Bro's
-result stays out of the Pi session and model context.
+The smoke test uses a fake `agy`, so it does not call an external model. It
+verifies command routing, custom prompt handling, and context isolation.
 
 ## License
 

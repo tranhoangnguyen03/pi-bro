@@ -1,7 +1,7 @@
 {
   "name": "pi-bro",
   "version": "0.1.0",
-  "description": "An Earendil Pi extension that simplifies the latest assistant response in a context-isolated modal.",
+  "description": "An Earendil Pi extension that simplifies the latest assistant response in a separate, context-isolated window.",
   "type": "module",
   "license": "MIT",
   "author": "Tran Hoang Nguyen",

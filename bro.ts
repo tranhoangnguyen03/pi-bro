@@ -27,7 +27,7 @@ type BroResult = { source: AssistantSource; text: string };
 const COMMANDS = [
 	{ value: "simplify", label: "simplify", description: "Simplify the latest assistant response" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
-	{ value: "help", label: "help", description: "Learn what Bro does and can access" },
+	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
 
 function latestAssistant(ctx: ExtensionCommandContext): AssistantSource | undefined {
@@ -86,10 +86,10 @@ async function simplify(pi: ExtensionAPI, response: string, signal: AbortSignal)
 			{ cwd: runDirectory, signal, timeout: 125_000 },
 		);
 
-		if (result.killed) throw new Error(signal.aborted ? "Cancelled." : "The simplifier timed out.");
+		if (result.killed) throw new Error(signal.aborted ? "Canceled." : "Simplification timed out.");
 		const text = result.stdout.trim();
 		if (result.code !== 0 || !text) {
-			throw new Error(result.stderr.trim() || "The simplifier returned no explanation.");
+			throw new Error(result.stderr.trim() || "No explanation was generated.");
 		}
 
 		return text;
@@ -101,40 +101,40 @@ async function simplify(pi: ExtensionAPI, response: string, signal: AbortSignal)
 function helpText(): string {
 	return `# Bro
 
-Bro turns the latest completed assistant response into a shorter explanation in plain language.
+Bro turns the latest completed assistant response into a clear, plain-language explanation.
 
 ## Commands
 
-- \`/bro\` or \`/bro simplify\` — make a new explanation
+- \`/bro\` or \`/bro simplify\` — create a new explanation
 - \`/bro open\` — reopen the last explanation
 - \`/bro help\` — show this guide
 
-## In the Bro window
+## Controls
 
-- **↑ / ↓** scroll
-- **C** copies the full explanation
-- **R** simplifies the same response again
-- **Esc** closes the window, or cancels while Bro is working
+- **↑ / ↓** — scroll
+- **C** — copy the full explanation
+- **R** — simplify the same response again
+- **Esc** — close the window, or cancel while Bro is working
 
-## Your files and privacy
+## Privacy and file safety
 
-Bro does not change project files. It runs the simplifier in plan and sandbox mode from a temporary empty folder. This reduces project access, but it is not a security boundary.
+Bro does not modify your project files. It runs the simplifier in plan and sandbox modes inside a temporary empty folder. This reduces project access, but it is not a security boundary.
 
-Bro does not add its explanation to Pi's conversation, session file, or main-agent context. The last successful explanation stays in memory only so \`/bro open\` can reopen it. It is cleared when you change Pi sessions, reload extensions, or exit Pi.
+Bro does not add explanations to Pi's conversation history, session files, or main-agent context. The latest explanation is kept in process memory only so \`/bro open\` can reopen it. It is cleared when you change sessions, reload extensions, or exit Pi.
 
-Bro sends the assistant response to an external simplifier. This prototype currently launches Agy with a Gemini model. Agy or the model provider may keep request data or logs under their own settings and policies.
+Bro sends the assistant response to an external simplifier (currently Agy with a Gemini model). Agy and the model provider may retain request data or logs under their own policies.
 
-If you press **C**, the explanation goes to your system clipboard, where your operating system or clipboard manager may retain it.
+Pressing **C** copies the explanation to your system clipboard, where your operating system or clipboard manager may retain it.
 
-## Customize the explanation
+## Custom prompt
 
-You may create or edit:
+You can create or edit:
 
 \`${PROMPT_FILE}\`
 
-Bro only reads this file; it never edits it. Put \`{{response}}\` in the file exactly once. Changes apply the next time you simplify.
+Bro reads this file when running but never creates or edits it. Include \`{{response}}\` exactly once in your template. Changes take effect on the next simplification.
 
-Set \`PI_BRO_MODEL\` before starting Pi if you want to choose a different Agy model.`;
+Set \`PI_BRO_MODEL\` before starting Pi to use a different Agy model.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.
@@ -402,7 +402,7 @@ export default function bro(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("bro", {
-		description: "Simplify, reopen, or learn about the latest Bro explanation",
+		description: "Simplify, reopen, or learn about Bro explanations",
 		getArgumentCompletions: (prefix) => {
 			const normalized = prefix.trim().toLowerCase();
 			const matches = COMMANDS.filter((command) => command.value.startsWith(normalized));
@@ -445,7 +445,7 @@ export default function bro(pi: ExtensionAPI) {
 			}
 
 			if (action && action !== "simplify") {
-				ctx.ui.notify(`Unknown /bro action: ${action}. Use simplify, open, or help.`, "warning");
+				ctx.ui.notify(`Unknown action "${action}". Use simplify, open, or help.`, "warning");
 				return;
 			}
 

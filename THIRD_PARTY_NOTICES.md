@@ -1,8 +1,8 @@
 # Third-party notices
 
-The modal presentation in pi-bro is adapted from
-[pi-btw](https://github.com/dbachelder/pi-btw), which is available under the
-following license:
+The modal UI in pi-bro is adapted from
+[pi-btw](https://github.com/dbachelder/pi-btw), created by Dan Bachelder and
+licensed under the MIT License:
 
 MIT License
 
