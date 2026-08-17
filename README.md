@@ -359,7 +359,11 @@ PI_BRO_MODEL=gemini-3.7-flash-low pi
 - Supports only Agy/Gemini in v0.1.
 - Keeps only the latest explanation in memory.
 - Does not store history or export directly to files.
-- Mouse scrolling is disabled; use the arrow keys to scroll and **C** to copy.
+- Mouse-wheel and trackpad scrolling work in Pi's fullscreen mode
+  (`pi --tui-mode fullscreen`). In regular mode, use the arrow keys so Bro does
+  not interfere with your terminal's native text selection.
+- In fullscreen mode, mouse text selection may visually extend outside the Bro
+  window. Press **C** to copy the full explanation instead.
 
 ## Development
 

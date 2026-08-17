@@ -31,6 +31,14 @@ type AgyEvent = {
 	result?: { status?: string; response?: unknown };
 };
 
+export function wheelDelta(data: string): number {
+	const match = /^\x1b\[<(\d+);\d+;\d+[Mm]$/.exec(data);
+	if (!match) return 0;
+	const button = Number.parseInt(match[1], 10);
+	if ((button & 64) === 0) return 0;
+	return (button & 3) === 0 ? -3 : (button & 3) === 1 ? 3 : 0;
+}
+
 const COMMANDS = [
 	{ value: "simplify", label: "simplify", description: "Simplify the latest assistant response" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
@@ -204,10 +212,13 @@ Bro turns the latest completed assistant response into a clear, plain-language e
 
 ## Controls
 
-- **↑ / ↓** — scroll
+- **Mouse wheel / trackpad** — scroll in Pi's fullscreen mode
+- **↑ / ↓** — scroll in any mode
 - **C** — copy the full explanation
 - **R** — simplify the same response again
 - **Esc** — close the window, or cancel while Bro is working
+
+Mouse text selection may extend outside the Bro window. Press **C** to copy the complete explanation instead.
 
 ## Privacy and file safety
 
@@ -355,8 +366,8 @@ class BroModal implements Focusable {
 			return;
 		}
 
-		if (matchesKey(data, "up") || matchesKey(data, "down")) {
-			const delta = matchesKey(data, "up") ? -1 : 1;
+		const delta = wheelDelta(data) || (matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0);
+		if (delta) {
 			this.offset = Math.max(0, Math.min(this.offset + delta, this.maxOffset));
 			this.notice = "";
 			this.tui.requestRender();

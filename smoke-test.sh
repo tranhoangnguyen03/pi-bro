@@ -16,6 +16,23 @@ if [ ! -x "$pi_bin" ]; then
 	exit 1
 fi
 
+wheel_build="$test_dir/wheel-build"
+"$repo_dir/node_modules/.bin/tsc" --ignoreConfig "$repo_dir/bro.ts" \
+	--target ES2022 --module NodeNext --moduleResolution NodeNext --strict \
+	--skipLibCheck --types node --outDir "$wheel_build"
+ln -s "$repo_dir/node_modules" "$wheel_build/node_modules"
+node --input-type=module - "$wheel_build/bro.js" <<'JS'
+import assert from "node:assert/strict";
+import { pathToFileURL } from "node:url";
+
+const { wheelDelta } = await import(pathToFileURL(process.argv[2]));
+assert.equal(wheelDelta("\u001b[<64;10;20M"), -3);
+assert.equal(wheelDelta("\u001b[<65;10;20M"), 3);
+assert.equal(wheelDelta("\u001b[<68;10;20M"), -3);
+assert.equal(wheelDelta("\u001b[<0;10;20M"), 0);
+assert.equal(wheelDelta("\u001b[A"), 0);
+JS
+
 mkdir "$config_dir"
 printf 'CUSTOM_TEMPLATE_MARKER\n\n{{response}}\n' > "$prompt_file"
 
