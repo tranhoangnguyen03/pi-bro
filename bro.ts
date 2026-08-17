@@ -56,6 +56,7 @@ export function wheelDelta(data: string): number {
 const COMMANDS = [
 	{ value: "simplify", label: "simplify", description: "Simplify the latest assistant response" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
+	{ value: "doctor", label: "doctor", description: "Check whether Bro is ready" },
 	{ value: "usage", label: "usage", description: "Show current Agy usage" },
 	{ value: "model", label: "model", description: "Choose the Agy model" },
 	{ value: "effort", label: "effort", description: "Choose the Agy reasoning effort" },
@@ -64,6 +65,25 @@ const COMMANDS = [
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function withDoctor(error: unknown): string {
+	const message = errorMessage(error);
+	return message.includes("/bro doctor") ? message : `${message}\n\nRun \`/bro doctor\` for setup help.`;
+}
+
+export function agyFailureMessage(
+	action: string,
+	result: { code: number; killed: boolean; stderr: string },
+): string {
+	if (result.killed) return `Agy timed out while trying to ${action}. Run \`/bro doctor\` for setup help.`;
+	const detail = result.stderr.trim();
+	if (detail) return `Agy could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`;
+	return `Agy could not ${action}. Make sure Agy is installed and signed in, then run \`/bro doctor\`.`;
 }
 
 export function parseBroSettings(value: unknown): BroSettings {
@@ -157,13 +177,31 @@ export function parseAgyModels(output: string): AgyModelFamily[] {
 	return [...families.values()];
 }
 
-async function listAgyModels(pi: ExtensionAPI): Promise<AgyModelFamily[]> {
+async function listAgyModels(pi: ExtensionAPI, signal?: AbortSignal): Promise<AgyModelFamily[]> {
 	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 	try {
-		const result = await pi.exec("agy", ["models"], { cwd: runDirectory, timeout: 30_000 });
-		if (result.killed) throw new Error("Agy model check timed out.");
-		if (result.code !== 0) throw new Error(result.stderr.trim() || `Agy exited with code ${result.code}.`);
-		return parseAgyModels(result.stdout);
+		const result = await pi.exec("agy", ["models"], { cwd: runDirectory, signal, timeout: 30_000 });
+		if (signal?.aborted) throw new Error("Canceled.");
+		if (result.killed || result.code !== 0) throw new Error(agyFailureMessage("list models", result));
+		try {
+			return parseAgyModels(result.stdout);
+		} catch (error) {
+			throw new Error(withDoctor(error));
+		}
+	} finally {
+		await rm(runDirectory, { recursive: true, force: true });
+	}
+}
+
+async function checkAgyVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+	try {
+		const result = await pi.exec("agy", ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
+		if (signal.aborted) throw new Error("Canceled.");
+		if (result.killed || result.code !== 0) throw new Error(agyFailureMessage("start", result));
+		const version = result.stdout.trim() || result.stderr.trim();
+		if (!version) throw new Error("Agy returned no version information. Update Agy, then run `/bro doctor` again.");
+		return version;
 	} finally {
 		await rm(runDirectory, { recursive: true, force: true });
 	}
@@ -209,17 +247,89 @@ async function checkAgyUsage(pi: ExtensionAPI, signal: AbortSignal): Promise<str
 			{ cwd: runDirectory, signal, timeout: 35_000 },
 		);
 		if (signal.aborted) throw new Error("Canceled.");
-		if (result.killed) throw new Error("Agy usage check timed out.");
-		if (result.code !== 0) throw new Error(result.stderr.trim() || `Agy exited with code ${result.code}.`);
+		if (result.killed || result.code !== 0) throw new Error(agyFailureMessage("check account usage", result));
 		try {
 			return formatAgyUsage(JSON.parse(result.stdout));
 		} catch (error) {
-			if (error instanceof SyntaxError) throw new Error("Agy returned invalid usage data.");
-			throw error;
+			throw new Error(withDoctor(error instanceof SyntaxError ? "Agy returned invalid usage data." : error));
 		}
 	} finally {
 		await rm(runDirectory, { recursive: true, force: true });
 	}
+}
+
+async function doctorReport(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+	const lines: string[] = [];
+	let failed = false;
+	let settings: BroSettings | undefined;
+	let models: AgyModelFamily[] | undefined;
+	const pass = (name: string, detail: string) => lines.push(`- ✓ **${name}:** ${detail}`);
+	const fail = (name: string, error: unknown) => {
+		failed = true;
+		lines.push(`- ✗ **${name}:** ${errorMessage(error)}`);
+	};
+
+	try {
+		settings = await readSettings();
+		pass("Settings", "valid");
+	} catch (error) {
+		fail("Settings", error);
+	}
+
+	try {
+		await promptFor("");
+		pass("Prompt", "valid");
+	} catch (error) {
+		fail("Prompt", error);
+	}
+
+	let agyStarted = false;
+	try {
+		pass("Agy", await checkAgyVersion(pi, signal));
+		agyStarted = true;
+	} catch (error) {
+		if (signal.aborted) throw error;
+		fail("Agy", error);
+	}
+
+	if (agyStarted) {
+		try {
+			models = await listAgyModels(pi, signal);
+			pass("Model catalog", `${models.length} model${models.length === 1 ? "" : "s"} available`);
+		} catch (error) {
+			if (signal.aborted) throw error;
+			fail("Model catalog", error);
+		}
+
+		try {
+			await checkAgyUsage(pi, signal);
+			pass("Account", "connected");
+		} catch (error) {
+			if (signal.aborted) throw error;
+			fail("Account", error);
+		}
+	}
+
+	if (settings && models) {
+		const current = resolveCatalogSettings(settings, models);
+		if (!current.family) {
+			fail("Selected model", `\`${settings.model}\` is unavailable. Run \`/bro model\` to choose another.`);
+		} else {
+			pass("Selected model", `\`${current.family.id}\``);
+			const effort = current.settings.effort;
+			if (!current.family.efforts.length && effort === "default") {
+				pass("Reasoning effort", "built into the selected model");
+			} else if (effort !== "default" && current.family.efforts.includes(effort)) {
+				pass("Reasoning effort", effort);
+			} else {
+				fail("Reasoning effort", `\`${effort}\` is unsupported. Run \`/bro effort\` to choose another.`);
+			}
+		}
+	}
+
+	return `# Bro doctor\n\n${lines.join("\n")}\n\n**${failed ? "Bro needs attention." : "Bro is ready."}**\n\n${
+		failed ? "Fix the failed items, then press **R** to check again." : "No assistant response was sent and no model turn was run."
+	}`;
 }
 
 function latestAssistant(ctx: ExtensionCommandContext): AssistantSource | undefined {
@@ -362,14 +472,25 @@ async function simplify(
 
 		const { code, exitSignal } = await closed;
 		if (signal.aborted) throw new Error("Canceled.");
-		if (parseError) throw parseError;
-		if (processError) throw processError;
-		if (exitSignal || code === null) throw new Error("Simplification timed out.");
-		if (code !== 0) throw new Error(stderr.trim() || `Agy exited with code ${code}.`);
+		if (parseError) throw new Error(withDoctor(parseError));
+		if (processError) {
+			const missing = (processError as NodeJS.ErrnoException).code === "ENOENT";
+			throw new Error(
+				missing
+					? "Agy could not start. Make sure Agy is installed and on PATH, then run `/bro doctor`."
+					: `Agy could not start: ${processError.message}\n\nRun \`/bro doctor\` for setup help.`,
+			);
+		}
+		if (exitSignal || code === null) {
+			throw new Error("Agy timed out while simplifying the response. Run `/bro doctor` for setup help.");
+		}
+		if (code !== 0) {
+			throw new Error(agyFailureMessage("simplify the response", { code, killed: false, stderr }));
+		}
 
 		const text = final.trim();
 		if (!text) {
-			throw new Error(stderr.trim() || "Agy returned no final explanation.");
+			throw new Error(withDoctor(stderr.trim() || "Agy returned no final explanation."));
 		}
 
 		return text;
@@ -379,7 +500,10 @@ async function simplify(
 	}
 }
 
-function helpText(settings: BroSettings): string {
+function helpText(settings?: BroSettings, settingsError?: string): string {
+	const settingsSummary = settings
+		? `- **Model:** \`${settings.model}\`\n- **Reasoning effort:** ${settings.effort === "default" ? "built into the selected model" : settings.effort}`
+		: `Bro could not read its settings: ${settingsError}\n\nRun \`/bro doctor\` for setup help.`;
 	return `# Bro
 
 Bro turns the latest completed assistant response into a clear, plain-language explanation.
@@ -388,6 +512,7 @@ Bro turns the latest completed assistant response into a clear, plain-language e
 
 - \`/bro\` or \`/bro simplify\` — create a new explanation
 - \`/bro open\` — reopen the last explanation
+- \`/bro doctor\` — check whether Bro is ready
 - \`/bro usage\` or \`/bro usage --provider agy\` — show current Agy usage
 - \`/bro model\` — choose the Agy model
 - \`/bro effort\` — choose the Agy reasoning effort
@@ -395,8 +520,7 @@ Bro turns the latest completed assistant response into a clear, plain-language e
 
 ## Current simplifier settings
 
-- **Model:** \`${settings.model}\`
-- **Reasoning effort:** ${settings.effort === "default" ? "built into the selected model" : settings.effort}
+${settingsSummary}
 
 These choices are saved in:
 
@@ -409,7 +533,7 @@ Use the slash commands or edit that file directly. Changes apply to future expla
 - **Mouse wheel / trackpad** — scroll in Pi's fullscreen mode
 - **↑ / ↓** — scroll in any mode
 - **C** — copy the full explanation
-- **R** — simplify the same response again
+- **R** — repeat the current simplification or Doctor check
 - **Esc** — close the window, or cancel while Bro is working
 
 In Pi's regular terminal mode, the Bro title warns that mouse-wheel scrolling needs fullscreen mode. Arrow-key scrolling still works.
@@ -425,6 +549,8 @@ Bro does not add explanations to Pi's conversation history, session files, or ma
 Bro sends the assistant response to an external simplifier (currently Agy with your selected model). Agy and the model provider may retain request data or logs under their own policies.
 
 \`/bro usage\` checks your authenticated Agy limits without sending an assistant response or running a model turn.
+
+\`/bro doctor\` checks your settings, prompt, Agy installation, account, model, and reasoning effort. It contacts Agy but does not send an assistant response or run a model turn.
 
 Pressing **C** copies the explanation to your system clipboard, where your operating system or clipboard manager may retain it.
 
@@ -459,6 +585,7 @@ class BroModal implements Focusable {
 		private readonly onClose: () => void,
 		private readonly onRetry: () => void,
 		private readonly onDispose: () => void,
+		private readonly retryLabel: string,
 	) {}
 
 	setLoading(text = LOADING_TEXT): void {
@@ -519,7 +646,7 @@ class BroModal implements Focusable {
 		if (this.kind === "loading") return "Esc cancel";
 		if (this.kind === "streaming") return "Simplifying… · ↑/↓ scroll · Esc cancel";
 		if (this.kind === "result") {
-			return `↑/↓ scroll · C copy${this.retryable ? " · R simplify again" : ""} · Esc close`;
+			return `↑/↓ scroll · C copy${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
 		}
 		if (this.kind === "help") return "↑/↓ scroll · C copy · Esc close";
 		if (this.kind === "error") return "R try again · Esc close";
@@ -621,6 +748,7 @@ interface BroModalOptions {
 	onResult?: (result: ModalResult) => void;
 	loadingText?: string;
 	retryable?: boolean;
+	retryLabel?: string;
 }
 
 async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptions): Promise<void> {
@@ -655,6 +783,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 					closed = true;
 					controller?.abort();
 				},
+				options.retryLabel ?? "simplify again",
 			);
 
 			execute = (source?: AssistantSource) => {
@@ -714,7 +843,6 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 }
 
 export default async function bro(pi: ExtensionAPI) {
-	await ensureSettingsFile();
 	let lastResult: BroResult | undefined;
 	const remember = (result: ModalResult) => {
 		if (result.source) lastResult = { source: result.source, text: result.text };
@@ -736,6 +864,24 @@ export default async function bro(pi: ExtensionAPI) {
 			const parts = normalized ? normalized.split(/\s+/) : [];
 			const action = parts[0] ?? "";
 
+			if (action === "doctor") {
+				if (parts.length !== 1) {
+					ctx.ui.notify("Use /bro doctor.", "warning");
+					return;
+				}
+				try {
+					await showBroModal(ctx, {
+						loadingText: "Checking Bro setup…",
+						retryable: true,
+						retryLabel: "check again",
+						run: async (signal) => ({ text: await doctorReport(pi, signal) }),
+					});
+				} catch (error) {
+					ctx.ui.notify(errorMessage(error), "error");
+				}
+				return;
+			}
+
 			if (action === "usage") {
 				const valid = parts.length === 1 || (parts.length === 3 && parts[1] === "--provider" && parts[2] === "agy");
 				if (!valid) {
@@ -749,7 +895,7 @@ export default async function bro(pi: ExtensionAPI) {
 						run: async (signal) => ({ text: await checkAgyUsage(pi, signal) }),
 					});
 				} catch (error) {
-					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+					ctx.ui.notify(withDoctor(error), "error");
 				}
 				return;
 			}
@@ -809,7 +955,7 @@ export default async function bro(pi: ExtensionAPI) {
 						"info",
 					);
 				} catch (error) {
-					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+					ctx.ui.notify(withDoctor(error), "error");
 				}
 				return;
 			}
@@ -860,17 +1006,20 @@ export default async function bro(pi: ExtensionAPI) {
 					await writeSettings({ model: current.family.id, effort: selected });
 					ctx.ui.notify(`Bro reasoning effort: ${selected}`, "info");
 				} catch (error) {
-					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+					ctx.ui.notify(withDoctor(error), "error");
 				}
 				return;
 			}
 
 			if (normalized === "help") {
+				let settings: BroSettings | undefined;
+				let settingsError: string | undefined;
 				try {
-					await showBroModal(ctx, { text: helpText(await readSettings()), kind: "help", copyable: true });
+					settings = await readSettings();
 				} catch (error) {
-					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+					settingsError = errorMessage(error);
 				}
+				await showBroModal(ctx, { text: helpText(settings, settingsError), kind: "help", copyable: true });
 				return;
 			}
 
@@ -885,11 +1034,15 @@ export default async function bro(pi: ExtensionAPI) {
 					target = latestAssistant(ctx);
 				}
 				if (!target) throw new Error("No completed assistant response found.");
-				const settings = await readSettings();
-				return {
-					source: target,
-					text: await simplify(target.text, signal, settings, onProgress),
-				};
+				try {
+					const settings = await readSettings();
+					return {
+						source: target,
+						text: await simplify(target.text, signal, settings, onProgress),
+					};
+				} catch (error) {
+					throw new Error(withDoctor(error));
+				}
 			};
 
 			if (normalized === "open") {
@@ -910,7 +1063,7 @@ export default async function bro(pi: ExtensionAPI) {
 			}
 
 			if (normalized && normalized !== "simplify") {
-				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, open, usage, model, effort, or help.`, "warning");
+				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, open, doctor, usage, model, effort, or help.`, "warning");
 				return;
 			}
 
@@ -924,4 +1077,7 @@ export default async function bro(pi: ExtensionAPI) {
 			}
 		},
 	});
+
+	// Keep the command available even when Bro cannot create its settings file; Doctor can then explain the problem.
+	await ensureSettingsFile().catch(() => undefined);
 }

@@ -13,6 +13,7 @@ calls_file="$test_dir/agy-calls"
 args_file="$test_dir/agy-args"
 usage_calls_file="$test_dir/agy-usage-calls"
 model_calls_file="$test_dir/agy-model-calls"
+version_calls_file="$test_dir/agy-version-calls"
 canary_prefix="BRO_ONLY_CANARY_"
 usage_canary="USAGE_ONLY_CANARY"
 trap 'rm -rf -- "$test_dir"' EXIT
@@ -31,7 +32,7 @@ node --input-type=module - "$wheel_build/bro.js" <<'JS'
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 
-const { agySelection, formatAgyUsage, parseAgyModels, parseBroSettings, wheelDelta } = await import(pathToFileURL(process.argv[2]));
+const { agyFailureMessage, agySelection, formatAgyUsage, parseAgyModels, parseBroSettings, wheelDelta } = await import(pathToFileURL(process.argv[2]));
 assert.equal(wheelDelta("\u001b[<64;10;20M"), -3);
 assert.equal(wheelDelta("\u001b[<65;10;20M"), 3);
 assert.equal(wheelDelta("\u001b[<68;10;20M"), -3);
@@ -65,6 +66,9 @@ assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" })
 assert.deepEqual(agySelection({ model: "gemini-one", effort: "low" }), { model: "gemini-one", effort: "low" });
 assert.deepEqual(agySelection({ model: "gemini-one-low", effort: "high" }), { model: "gemini-one", effort: "high" });
 assert.deepEqual(agySelection({ model: "claude-one", effort: "default" }), { model: "claude-one" });
+assert.match(agyFailureMessage("start", { code: 1, killed: false, stderr: "" }), /installed and signed in/);
+assert.match(agyFailureMessage("start", { code: 1, killed: true, stderr: "" }), /timed out/);
+assert.match(agyFailureMessage("check usage", { code: 1, killed: false, stderr: "Sign in first" }), /Sign in first/);
 JS
 
 mkdir "$config_dir"
@@ -79,9 +83,15 @@ printf '%s\n' \
 printf '%s\n' \
 	'#!/bin/sh' \
 	'case "${PWD##*/}" in pi-bro-*) ;; *) exit 13;; esac' \
+	'if [ "${BRO_AGY_FAILURE:-}" = "1" ]; then exit 1; fi' \
+	'if [ "${1:-}" = "--version" ]; then' \
+	'  printf "version\n" >> "$BRO_VERSION_CALLS"' \
+	'  printf "agy 1.1.13\n"' \
+	'  exit 0' \
+	'fi' \
 	'if [ "${1:-}" = "models" ]; then' \
 	'  printf "models\n" >> "$BRO_MODEL_CALLS"' \
-	'  printf "gemini-test-one-high\tGemini Test One (High)\ngemini-test-one-low\tGemini Test One (Low)\ngemini-test-two-high\tGemini Test Two (High)\ngemini-test-two-low\tGemini Test Two (Low)\n"' \
+	'  printf "gemini-3.7-flash-high\tGemini 3.7 Flash (High)\ngemini-3.7-flash-low\tGemini 3.7 Flash (Low)\ngemini-test-one-high\tGemini Test One (High)\ngemini-test-one-low\tGemini Test One (Low)\ngemini-test-two-high\tGemini Test Two (High)\ngemini-test-two-low\tGemini Test Two (Low)\n"' \
 	'  exit 0' \
 	'fi' \
 	'if [ "${2:-}" = "/usage" ]; then' \
@@ -111,12 +121,14 @@ printf '%s\n' \
 	> "$test_dir/agy"
 chmod +x "$test_dir/agy"
 
-touch "$calls_file" "$args_file" "$usage_calls_file" "$model_calls_file"
+touch "$calls_file" "$args_file" "$usage_calls_file" "$model_calls_file" "$version_calls_file"
 output=$(
 	{
 		printf '%s\n' '{"id":"bro-open-empty","type":"prompt","message":"/bro open"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-help","type":"prompt","message":"/bro help"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-doctor","type":"prompt","message":"/bro doctor"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-usage","type":"prompt","message":"/bro usage"}'
 		sleep 1
@@ -142,12 +154,12 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
 		sleep 1
-	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 13 ]; then
-	printf 'Expected 13 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 14 ]; then
+	printf 'Expected 14 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
 	exit 1
 fi
 
@@ -172,10 +184,10 @@ assert.deepEqual(JSON.parse(await readFile(process.argv[3], "utf8")), {
 });
 JS
 
-expected_model_calls=$(printf 'models\nmodels\nmodels')
+expected_model_calls=$(printf 'models\nmodels\nmodels\nmodels')
 actual_model_calls=$(cat "$model_calls_file")
 if [ "$actual_model_calls" != "$expected_model_calls" ]; then
-	printf 'Expected exactly three Agy model-list calls, got:\n%s\n' "$actual_model_calls" >&2
+	printf 'Expected exactly four Agy model-list calls, got:\n%s\n' "$actual_model_calls" >&2
 	exit 1
 fi
 
@@ -191,10 +203,15 @@ if [ "$actual_calls" != "$expected_calls" ]; then
 	exit 1
 fi
 
-expected_usage_calls=$(printf 'usage\nusage')
+expected_usage_calls=$(printf 'usage\nusage\nusage')
 actual_usage_calls=$(cat "$usage_calls_file")
 if [ "$actual_usage_calls" != "$expected_usage_calls" ]; then
-	printf 'Expected exactly two Agy usage calls, got:\n%s\n' "$actual_usage_calls" >&2
+	printf 'Expected exactly three Agy usage calls, got:\n%s\n' "$actual_usage_calls" >&2
+	exit 1
+fi
+
+if [ "$(cat "$version_calls_file")" != "version" ]; then
+	printf 'Doctor did not check the Agy version\n' >&2
 	exit 1
 fi
 
@@ -215,4 +232,75 @@ if (serialized.includes(process.argv[3]) || serialized.includes(process.argv[4])
 }
 JS
 
-printf 'bro output stayed out of the session and model context\n'
+missing_config="$test_dir/missing-config"
+missing_session="$test_dir/missing-session.jsonl"
+cp "$session_file" "$missing_session"
+missing_output=$(
+	{
+		printf '%s\n' '{"id":"missing-doctor","type":"prompt","message":"/bro doctor"}'
+		sleep 1
+		printf '%s\n' '{"id":"missing-usage","type":"prompt","message":"/bro usage"}'
+		sleep 1
+		printf '%s\n' '{"id":"missing-model","type":"prompt","message":"/bro model gemini-3.7-flash"}'
+		sleep 1
+		printf '%s\n' '{"id":"missing-effort","type":"prompt","message":"/bro effort low"}'
+		sleep 1
+		printf '%s\n' '{"id":"missing-simplify","type":"prompt","message":"/bro"}'
+		sleep 1
+		printf '%s\n' '{"id":"missing-help","type":"prompt","message":"/bro help"}'
+		sleep 1
+	} | PATH="$test_dir:$PATH" BRO_AGY_FAILURE=1 PI_CODING_AGENT_DIR="$missing_config" "$pi_bin" --offline --mode rpc --session "$missing_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+)
+
+missing_success_count=$(printf '%s\n' "$missing_output" | grep -c '"success":true' || true)
+if [ "$missing_success_count" -ne 6 ]; then
+	printf 'Bro did not contain a missing-Agy failure:\n%s\n' "$missing_output" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$missing_output" | grep -q '/bro doctor'; then
+	printf 'Missing-Agy errors did not suggest Doctor:\n%s\n' "$missing_output" >&2
+	exit 1
+fi
+if printf '%s\n' "$missing_output" | grep -q -e 'ENOENT' -e 'spawn agy'; then
+	printf 'Missing-Agy errors exposed raw process details:\n%s\n' "$missing_output" >&2
+	exit 1
+fi
+
+broken_config="$test_dir/broken-config"
+broken_settings="$broken_config/bro-settings.json"
+broken_prompt="$broken_config/bro-prompt.md"
+broken_session="$test_dir/broken-session.jsonl"
+mkdir "$broken_config"
+printf '{not json}\n' > "$broken_settings"
+printf 'CUSTOM_TEMPLATE_MARKER\n\n{{response}}\n' > "$broken_prompt"
+cp "$session_file" "$broken_session"
+broken_output=$(
+	{
+		printf '%s\n' '{"id":"broken-help","type":"prompt","message":"/bro help"}'
+		sleep 1
+		printf '%s\n' '{"id":"broken-settings-doctor","type":"prompt","message":"/bro doctor"}'
+		sleep 1
+		printf '{"model":"gemini-3.7-flash","effort":"low"}\n' > "$broken_settings"
+		printf 'This prompt has no placeholder.\n' > "$broken_prompt"
+		printf '%s\n' '{"id":"broken-prompt-doctor","type":"prompt","message":"/bro doctor"}'
+		sleep 1
+		printf '%s\n' '{"id":"broken-prompt-simplify","type":"prompt","message":"/bro"}'
+		sleep 1
+	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$broken_config" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$broken_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts" 2>&1
+)
+
+broken_success_count=$(printf '%s\n' "$broken_output" | grep -c '"success":true' || true)
+if [ "$broken_success_count" -ne 4 ]; then
+	printf 'Bro did not contain broken local configuration:\n%s\n' "$broken_output" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$broken_output" | grep -q 'must contain'; then
+	printf 'Broken-prompt errors were not actionable:\n%s\n' "$broken_output" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$broken_output" | grep -q '/bro doctor'; then
+	printf 'Broken-prompt errors did not suggest Doctor:\n%s\n' "$broken_output" >&2
+	exit 1
+fi
+
+printf 'bro setup failures stayed contained and output stayed out of the session and model context\n'

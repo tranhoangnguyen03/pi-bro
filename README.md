@@ -299,6 +299,7 @@ pi -e npm:pi-bro
 | `/bro` | Create a new plain-language explanation of the latest completed assistant response. |
 | `/bro simplify` | Same as `/bro`. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
+| `/bro doctor` | Check whether Bro, Agy, and the selected settings are ready. |
 | `/bro usage` | Show current Agy resource limits. |
 | `/bro usage --provider agy` | Same as `/bro usage`, with the provider stated explicitly. |
 | `/bro model` | Choose from the models currently available through Agy. |
@@ -312,11 +313,23 @@ pi -e npm:pi-bro
 - **Mouse wheel / trackpad**: Scroll in Pi's fullscreen mode
 - **↑ / ↓**: Scroll up or down
 - **C**: Copy the full explanation to your clipboard
-- **R**: Run the simplifier again on the same response
+- **R**: Run the current simplification or Doctor check again
 - **Esc**: Close the window, or cancel while Bro is running
 
 In Pi's regular terminal mode, the Bro title warns that mouse-wheel scrolling
 needs fullscreen mode. Arrow-key scrolling still works.
+
+## Check your setup
+
+Run `/bro doctor` when Bro is newly installed or something is not working. It
+checks Bro's settings and prompt, the installed Agy version, account access,
+available models, and the selected reasoning effort. Failed checks explain what
+to fix.
+
+Doctor contacts Agy for its model catalog and account usage. It does not send an
+assistant response or run a model completion, so it does not consume a model
+turn. A successful check confirms the setup, but cannot guarantee that a later
+provider request will succeed.
 
 ## Settings
 
@@ -374,6 +387,8 @@ immediately without reloading Pi. Bro never creates or modifies this file.
   Agy and its configured model provider.
 - **Usage checks**: `/bro usage` checks your authenticated Agy limits without
   sending an assistant response or running a model turn.
+- **Setup checks**: `/bro doctor` checks Agy account and model availability
+  without sending an assistant response or running a model turn.
 - **Context isolation**: Bro does not add explanations to Pi's conversation
   history, session files, or main-agent context.
 - **Memory cache**: The latest explanation is stored only in process memory for
@@ -409,8 +424,8 @@ pi --tui-mode fullscreen -e ./bro.ts
 ```
 
 The smoke test uses a fake `agy`, so it does not call an external model. It
-verifies command routing, settings, custom prompt handling, and context
-isolation.
+verifies command routing, healthy and broken setup handling, settings, custom
+prompt handling, and context isolation.
 
 ## License
 
