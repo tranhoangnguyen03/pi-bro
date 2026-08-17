@@ -1,6 +1,8 @@
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown, matchesKey, truncateToWidth, visibleWidth, type Focusable } from "@earendil-works/pi-tui";
@@ -20,9 +22,14 @@ Quoted response as a JSON string:
 
 type Theme = ExtensionCommandContext["ui"]["theme"];
 type TuiLike = { requestRender(): void };
-type ModalKind = "loading" | "result" | "help" | "empty" | "error";
+type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
 type AssistantSource = { id: string; text: string };
 type BroResult = { source: AssistantSource; text: string };
+type AgyEvent = {
+	event?: string;
+	step_update?: { step_type?: string; text_delta?: unknown };
+	result?: { status?: string; response?: unknown };
+};
 
 const COMMANDS = [
 	{ value: "simplify", label: "simplify", description: "Simplify the latest assistant response" },
@@ -62,20 +69,49 @@ async function promptFor(response: string): Promise<string> {
 	return parts.join(JSON.stringify(response));
 }
 
-async function simplify(pi: ExtensionAPI, response: string, signal: AbortSignal): Promise<string> {
+function parseAgyLine(line: string): { delta?: string; result?: string } {
+	let event: AgyEvent;
+	try {
+		event = JSON.parse(line) as AgyEvent;
+	} catch {
+		throw new Error("Agy returned invalid streaming data.");
+	}
+
+	if (
+		event.event === "step_update" &&
+		event.step_update?.step_type === "agent_response" &&
+		typeof event.step_update.text_delta === "string"
+	) {
+		return { delta: event.step_update.text_delta };
+	}
+
+	if (event.event === "result") {
+		if (event.result?.status !== "SUCCESS" || typeof event.result.response !== "string") {
+			throw new Error("Agy did not complete the explanation successfully.");
+		}
+		return { result: event.result.response };
+	}
+
+	return {};
+}
+
+async function simplify(
+	response: string,
+	signal: AbortSignal,
+	onProgress?: (text: string) => void,
+): Promise<string> {
 	const prompt = await promptFor(response);
 	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+	let updateTimer: ReturnType<typeof setTimeout> | undefined;
 
 	try {
-		const result = await pi.exec(
+		const child = spawn(
 			"agy",
 			[
-				"--mode",
-				"plan",
 				"--sandbox",
 				"--disable-slash-commands",
 				"--output-format",
-				"text",
+				"stream-json",
 				"--model",
 				MODEL,
 				"--print-timeout",
@@ -83,17 +119,74 @@ async function simplify(pi: ExtensionAPI, response: string, signal: AbortSignal)
 				"--print",
 				prompt,
 			],
-			{ cwd: runDirectory, signal, timeout: 125_000 },
+			{
+				cwd: runDirectory,
+				signal,
+				timeout: 125_000,
+				stdio: ["ignore", "pipe", "pipe"],
+				windowsHide: true,
+			},
 		);
 
-		if (result.killed) throw new Error(signal.aborted ? "Canceled." : "Simplification timed out.");
-		const text = result.stdout.trim();
-		if (result.code !== 0 || !text) {
-			throw new Error(result.stderr.trim() || "No explanation was generated.");
+		let processError: Error | undefined;
+		let stderr = "";
+		let partial = "";
+		let final = "";
+		let parseError: Error | undefined;
+
+		child.stderr.setEncoding("utf8");
+		child.stderr.on("data", (chunk: string) => {
+			stderr += chunk;
+		});
+		child.once("error", (error) => {
+			processError = error;
+		});
+
+		const closed = new Promise<{ code: number | null; exitSignal: NodeJS.Signals | null }>((resolve) => {
+			child.once("close", (code, exitSignal) => resolve({ code, exitSignal }));
+		});
+
+		const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+		try {
+			for await (const line of lines) {
+				if (!line.trim()) continue;
+				try {
+					const event = parseAgyLine(line);
+					if (event.delta) {
+						partial += event.delta;
+						if (onProgress && !updateTimer) {
+							updateTimer = setTimeout(() => {
+								updateTimer = undefined;
+								if (!signal.aborted) onProgress(partial);
+							}, 75);
+						}
+					}
+					if (event.result !== undefined) final = event.result;
+				} catch (error) {
+					parseError = error instanceof Error ? error : new Error(String(error));
+					child.kill();
+					break;
+				}
+			}
+		} finally {
+			lines.close();
+		}
+
+		const { code, exitSignal } = await closed;
+		if (signal.aborted) throw new Error("Canceled.");
+		if (parseError) throw parseError;
+		if (processError) throw processError;
+		if (exitSignal || code === null) throw new Error("Simplification timed out.");
+		if (code !== 0) throw new Error(stderr.trim() || `Agy exited with code ${code}.`);
+
+		const text = final.trim();
+		if (!text) {
+			throw new Error(stderr.trim() || "Agy returned no final explanation.");
 		}
 
 		return text;
 	} finally {
+		if (updateTimer) clearTimeout(updateTimer);
 		await rm(runDirectory, { recursive: true, force: true });
 	}
 }
@@ -118,7 +211,7 @@ Bro turns the latest completed assistant response into a clear, plain-language e
 
 ## Privacy and file safety
 
-Bro does not modify your project files. It runs the simplifier in plan and sandbox modes inside a temporary empty folder. This reduces project access, but it is not a security boundary.
+Bro does not modify your project files. It runs the simplifier in sandbox mode inside a temporary empty folder. This reduces project access, but it is not a security boundary.
 
 Bro does not add explanations to Pi's conversation history, session files, or main-agent context. The latest explanation is kept in process memory only so \`/bro open\` can reopen it. It is cleared when you change sessions, reload extensions, or exit Pi.
 
@@ -163,6 +256,10 @@ class BroModal implements Focusable {
 		this.setContent("loading", `**${LOADING_TEXT}**`, "", false, false);
 	}
 
+	setStreaming(text: string): void {
+		this.setContent("streaming", text, "", false, false);
+	}
+
 	setResult(text: string, retryable: boolean, notice = ""): void {
 		this.setContent("result", text, text, true, retryable, notice);
 	}
@@ -188,7 +285,7 @@ class BroModal implements Focusable {
 		this.copyable = copyable;
 		this.retryable = retryable;
 		this.notice = notice;
-		this.offset = 0;
+		if (kind !== "streaming") this.offset = 0;
 		this.markdown.setText(text);
 		this.tui.requestRender();
 	}
@@ -211,6 +308,7 @@ class BroModal implements Focusable {
 
 	private controls(): string {
 		if (this.kind === "loading") return "Esc cancel";
+		if (this.kind === "streaming") return "Simplifying… · ↑/↓ scroll · Esc cancel";
 		if (this.kind === "result") return "↑/↓ scroll · C copy · R simplify again · Esc close";
 		if (this.kind === "help") return "↑/↓ scroll · C copy · Esc close";
 		if (this.kind === "error") return "R try again · Esc close";
@@ -303,7 +401,11 @@ interface BroModalOptions {
 	kind?: "help" | "empty";
 	copyable?: boolean;
 	result?: BroResult;
-	run?: (signal: AbortSignal, source?: AssistantSource) => Promise<BroResult>;
+	run?: (
+		signal: AbortSignal,
+		source?: AssistantSource,
+		onProgress?: (text: string) => void,
+	) => Promise<BroResult>;
 	onResult?: (result: BroResult) => void;
 }
 
@@ -349,7 +451,10 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 				modal.setLoading();
 
 				void options
-					.run(nextController.signal, source)
+					.run(nextController.signal, source, (text) => {
+						if (closed || nextController.signal.aborted || controller !== nextController) return;
+						modal.setStreaming(text);
+					})
 					.then((result) => {
 						if (closed || nextController.signal.aborted) return;
 						current = result;
@@ -415,14 +520,18 @@ export default function bro(pi: ExtensionAPI) {
 				return;
 			}
 
-			const run = async (signal: AbortSignal, source?: AssistantSource): Promise<BroResult> => {
+			const run = async (
+				signal: AbortSignal,
+				source?: AssistantSource,
+				onProgress?: (text: string) => void,
+			): Promise<BroResult> => {
 				let target = source;
 				if (!target) {
 					await ctx.waitForIdle();
 					target = latestAssistant(ctx);
 				}
 				if (!target) throw new Error("No completed assistant response found.");
-				return { source: target, text: await simplify(pi, target.text, signal) };
+				return { source: target, text: await simplify(target.text, signal, onProgress) };
 			};
 
 			if (action === "open") {
