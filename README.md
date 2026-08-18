@@ -1,14 +1,87 @@
 # pi-bro
 
-Simplify Pi's latest assistant response or a local document in a separate
-pop-up window without adding extra messages to your conversation context.
+Turn a dense AI reply, local document, or public webpage into a plain-language
+explanation without adding anything to your main agent's context.
 
-`pi-bro` is a small extension for
-[Earendil Pi](https://github.com/earendil-works/pi). It uses the
+`pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
+It opens explanations in a separate modal and uses the
 [Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`)
-and your selected Agy model to stream plain-language explanations.
+with your selected model.
+
+## Quick start
+
+You need Earendil Pi `>=0.78.1 <1`, Node.js `>=22.19.0`, and `agy >=1.1.11`
+installed and available on your `PATH`. Run `agy` once in your terminal to sign
+in, then install Bro:
+
+```sh
+pi install npm:pi-bro
+```
+
+Restart Pi or run `/reload`, then try:
+
+```text
+/bro
+/bro file docs/report.pdf
+/bro url https://example.com/article
+```
+
+Run `/bro doctor` after installation or whenever Bro is not working.
+
+To install from GitHub instead, use
+`pi install git:github.com/tranhoangnguyen03/pi-bro`. To try Bro without
+installing it, use `pi -e npm:pi-bro`.
+
+## What Bro can explain
+
+| Source | Command | What Bro does |
+| --- | --- | --- |
+| Latest assistant reply | `/bro` | Explains the latest completed reply without adding the result to the conversation. |
+| Local document | `/bro file <path>` | Extracts text from a workspace-local Markdown, text, PDF, or DOCX file. |
+| Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
+
+Pressing **R** simplifies the captured source again. Running a new `/bro file`
+or `/bro url` command reads or fetches a fresh copy.
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `/bro` or `/bro simplify` | Explain the latest completed assistant response. |
+| `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
+| `/bro url <url>` | Explain one public, text-based webpage. |
+| `/bro open` | Reopen the latest explanation without calling the simplifier again. |
+| `/bro doctor` | Check Bro's settings, Agy installation, account, model, and effort. |
+| `/bro usage [--provider agy]` | Show current Agy resource limits. |
+| `/bro model [id]` | View or choose the Agy model. |
+| `/bro effort [low\|medium\|high]` | View or choose the supported reasoning effort. |
+| `/bro help` | Open the built-in quick reference. |
+
+### Modal controls
+
+- **Mouse wheel / trackpad**: Scroll in regular or fullscreen mode
+- **↑ / ↓**: Scroll in any mode
+- **C**: Copy the complete explanation
+- **R**: Simplify the captured source or run the current Doctor check again
+- **Esc**: Close the modal, or cancel while Bro is working
+
+Bro temporarily captures mouse input while its modal is open. Native mouse
+selection may be unavailable or visually extend outside the modal depending on
+your terminal mode; press **C** to copy the complete explanation reliably.
 
 ## Bro in action
+
+### Assistant response
+
+**Before `/bro`: the original agent response**
+
+[![A dense assistant response before Bro](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-before.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-before.png)
+
+**After `/bro`: the plain-language explanation**
+
+[![The assistant response explained in the Bro modal](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png)
+
+### Local document
 
 **Before: a complex PDF**
 
@@ -18,9 +91,9 @@ and your selected Agy model to stream plain-language explanations.
 
 [![The PDF explained in the Bro modal](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-after.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-after.png)
 
-Bro optimizes for understanding, not simply for fewer words. The document and
-coding-agent examples below are synthetic and were run through Bro's default
-prompt. Click a screenshot to see it at full size.
+Bro optimizes for understanding, not simply for fewer words. The written
+examples below are synthetic and were run through Bro's default prompt. Click
+a screenshot to see it at full size.
 
 <details>
 <summary><strong>Short:</strong> TypeScript says a value is <code>never</code></summary>
@@ -261,66 +334,6 @@ cached files, not your source code or dependencies.
 
 </details>
 
-## Requirements
-
-- Earendil Pi `>=0.78.1 <1` (tested on `0.84.2`)
-- Node.js `>=22.19.0`
-- `agy >=1.1.11` installed, authenticated, and on your `PATH` (tested on `1.1.13`)
-- Pi's interactive terminal UI
-
-Run `agy` once in your terminal to complete sign-in before using Bro.
-
-## Install
-
-From npm:
-
-```sh
-pi install npm:pi-bro
-```
-
-From GitHub:
-
-```sh
-pi install git:github.com/tranhoangnguyen03/pi-bro
-```
-
-Restart Pi or run `/reload`. Run `/bro` after an assistant response, or use
-`/bro file <path>` for a document in the current workspace.
-
-To test Bro without installing it:
-
-```sh
-pi -e npm:pi-bro
-```
-
-## Commands
-
-| Command | Description |
-| --- | --- |
-| `/bro` | Create a new plain-language explanation of the latest completed assistant response. |
-| `/bro simplify` | Same as `/bro`. |
-| `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
-| `/bro open` | Reopen the latest explanation without calling the simplifier again. |
-| `/bro doctor` | Check whether Bro, Agy, and the selected settings are ready. |
-| `/bro usage` | Show current Agy resource limits. |
-| `/bro usage --provider agy` | Same as `/bro usage`, with the provider stated explicitly. |
-| `/bro model` | Choose from the models currently available through Agy. |
-| `/bro model <id>` | Set an available Agy model directly. |
-| `/bro effort` | Choose an effort supported by the current model. |
-| `/bro effort <low\|medium\|high>` | Set a supported reasoning effort directly. |
-| `/bro help` | Open the built-in guide. |
-
-### Modal controls
-
-- **Mouse wheel / trackpad**: Scroll in Pi's fullscreen mode
-- **↑ / ↓**: Scroll up or down
-- **C**: Copy the full explanation to your clipboard
-- **R**: Run the current simplification or Doctor check again
-- **Esc**: Close the window, or cancel while Bro is running
-
-In Pi's regular terminal mode, the Bro title warns that mouse-wheel scrolling
-needs fullscreen mode. Arrow-key scrolling still works.
-
 ## Explain a document
 
 Use a path relative to Pi's current workspace, or an absolute path inside it:
@@ -336,6 +349,27 @@ new `/bro file <path>` command reads the file again.
 
 Files are limited to 10 MiB and 100,000 extracted characters. Scanned PDFs are
 not supported because Bro does not perform OCR.
+
+## Explain a webpage
+
+Pass one public HTTP or HTTPS page:
+
+```text
+/bro url https://example.com/complicated-article
+```
+
+Bro fetches the page, extracts its main readable text locally, and sends only
+that text through the existing explanation flow. The completed modal shows the
+final website and page title. Pressing **R** retries the captured page without
+fetching again; running a new `/bro url <url>` command fetches a fresh copy.
+
+The first version is intentionally limited to one public, text-based page. It
+does not use browser cookies, sign in, run page JavaScript, bypass paywalls or
+bot protection, load complete discussion threads, follow pagination, or
+understand images and video. Pages that depend on those features may fail.
+
+If Bro cannot read a page, copy its content into a `.txt` or `.md` file, or save
+it as a PDF, then use `/bro file <path>`.
 
 ## Check your setup
 
@@ -399,10 +433,11 @@ Text to explain:
 Bro re-reads this file every time you simplify, so your edits take effect
 immediately without reloading Pi. Bro never creates or modifies this file.
 
-## Privacy and files
+## Privacy and safety
 
-- **External requests**: Bro sends the latest completed assistant response or
-  extracted document text to Agy and its configured model provider.
+- **External requests**: Bro sends the latest completed assistant response,
+  extracted document text, or extracted webpage text to Agy and its configured
+  model provider.
 - **Usage checks**: `/bro usage` checks your authenticated Agy limits without
   sending an assistant response or running a model turn.
 - **Setup checks**: `/bro doctor` checks Agy account and model availability
@@ -417,24 +452,42 @@ immediately without reloading Pi. Bro never creates or modifies this file.
   not modify them. It runs Agy in sandbox mode inside a temporary empty folder.
   This reduces project access, but it is not a security boundary. Bro only
   writes its own user settings file described above.
+- **Web requests**: `/bro url` connects directly to the target website. The site
+  sees your IP address and Bro's user agent. Bro sends no browser cookies,
+  authorization, or referrer information, and it refuses local, private, and
+  reserved network destinations, including redirects. Avoid private or signed
+  URLs whose query string contains secrets.
+- **Web extraction**: Bro parses downloaded HTML locally without executing page
+  scripts or loading page subresources. It sends the extracted readable text,
+  including links preserved in that text, to Agy; it does not separately send
+  the requested URL or raw page HTML. The URL, captured text, and explanation
+  remain in process memory only and clear with the existing `/bro open` cache.
 - **Provider data**: Agy and your model provider may retain logs and request data
   according to their own settings and privacy policies.
 - **Clipboard**: Pressing **C** copies the text to your system clipboard, where
   your operating system or clipboard manager may retain it.
 
-## Current limits
+## Troubleshooting and current limits
+
+If an explanation fails, run `/bro doctor` first. If a webpage cannot be
+extracted, copy its content into a supported text file or save it as a PDF and
+use `/bro file`. If a PDF contains only scanned images, run OCR with another
+tool before giving it to Bro.
 
 - Uses Agy as its only provider.
 - Document input supports `.md`, `.markdown`, `.txt`, `.pdf`, and `.docx` only;
   it does not perform OCR.
+- Webpage input supports one public HTML page, up to 5 MiB downloaded and
+  100,000 extracted characters. JavaScript-only, authenticated, paywalled,
+  blocked, paginated, and media-first pages are not supported.
+- Direct webpage fetching does not currently use `HTTP_PROXY`, `HTTPS_PROXY`,
+  or other proxy environment variables.
 - Keeps only the latest explanation in memory.
 - Does not store history or export directly to files.
-- Mouse-wheel and trackpad scrolling work in Pi's fullscreen mode
-  (`pi --tui-mode fullscreen`). In regular mode, Bro shows a warning in its
-  title; use the arrow keys so Bro does not interfere with your terminal's
-  native text selection.
-- In fullscreen mode, mouse text selection may visually extend outside the Bro
-  window. Press **C** to copy the full explanation instead.
+- Bro temporarily captures mouse input while its modal is open so mouse-wheel
+  and trackpad scrolling work in regular and fullscreen modes. Native mouse
+  selection may be unavailable or visually extend outside the Bro window;
+  press **C** to copy the full explanation instead.
 
 ## Development
 
@@ -445,8 +498,9 @@ pi --tui-mode fullscreen -e ./bro.ts
 ```
 
 The smoke test uses a fake `agy`, so it does not call an external model. It
-verifies command routing, document boundaries, healthy and broken setup
-handling, settings, custom prompt handling, and context isolation.
+verifies command routing, document and URL safety boundaries, HTML extraction,
+healthy and broken setup handling, settings, custom prompt handling, and
+context isolation.
 
 ## License
 
