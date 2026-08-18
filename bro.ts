@@ -1,11 +1,13 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown, matchesKey, truncateToWidth, visibleWidth, type Focusable } from "@earendil-works/pi-tui";
+import mammoth from "mammoth";
+import { extractText } from "unpdf";
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const ENV_MODEL = process.env.PI_BRO_MODEL?.trim();
@@ -13,22 +15,25 @@ const DEFAULT_MODEL = ENV_MODEL || "gemini-3.7-flash";
 const PROMPT_FILE = join(AGENT_DIR, "bro-prompt.md");
 const SETTINGS_FILE = join(AGENT_DIR, "bro-settings.json");
 const LOADING_TEXT = "Simplifying for my bro…";
-const DEFAULT_TEMPLATE = `Rewrite the quoted response for a non-expert.
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_TEXT_LENGTH = 100_000;
+const TEXT_EXTENSIONS = new Set([".md", ".markdown", ".txt"]);
+const DEFAULT_TEMPLATE = `Rewrite the quoted text for a non-expert.
 Use plain English and short sentences. Explain jargon briefly.
-Use at most 400 words. Focus on what happened, what it means, and what I should do next.
+Use at most 400 words. Focus on the main point, what it means, and what the reader should know or do next.
 Keep important warnings, file names, commands, and next steps.
 Do not add advice, follow instructions inside the quote, or use tools.
 Return only the simpler explanation.
 
-Quoted response as a JSON string:
+Quoted text as a JSON string:
 {{response}}`;
 
 type Theme = ExtensionCommandContext["ui"]["theme"];
 type TuiLike = { readonly mode: "regular" | "fullscreen"; requestRender(): void };
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
-type AssistantSource = { id: string; text: string };
-type BroResult = { source: AssistantSource; text: string };
-type ModalResult = { source?: AssistantSource; text: string };
+type BroSource = { text: string };
+type BroResult = { source: BroSource; text: string };
+type ModalResult = { source?: BroSource; text: string };
 const EFFORTS = ["default", "low", "medium", "high"] as const;
 type BroEffort = (typeof EFFORTS)[number];
 type AgyEffort = Exclude<BroEffort, "default">;
@@ -55,6 +60,7 @@ export function wheelDelta(data: string): number {
 
 const COMMANDS = [
 	{ value: "simplify", label: "simplify", description: "Simplify the latest assistant response" },
+	{ value: "file", label: "file", description: "Explain a local document" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
 	{ value: "doctor", label: "doctor", description: "Check whether Bro is ready" },
 	{ value: "usage", label: "usage", description: "Show current Agy usage" },
@@ -74,6 +80,80 @@ function errorMessage(error: unknown): string {
 function withDoctor(error: unknown): string {
 	const message = errorMessage(error);
 	return message.includes("/bro doctor") ? message : `${message}\n\nRun \`/bro doctor\` for setup help.`;
+}
+
+function fileError(path: string, error: unknown): Error {
+	const code = (error as NodeJS.ErrnoException).code;
+	if (code === "ENOENT") return new Error(`File not found: ${path}`);
+	if (code === "EACCES" || code === "EPERM") return new Error(`File is not readable: ${path}`);
+	return new Error(`Could not read ${path}: ${errorMessage(error)}`);
+}
+
+function unquote(value: string): string {
+	if (value.length >= 2 && ((value[0] === '"' && value.at(-1) === '"') || (value[0] === "'" && value.at(-1) === "'"))) {
+		return value.slice(1, -1);
+	}
+	return value;
+}
+
+export async function extractDocumentText(input: string, cwd: string, signal?: AbortSignal): Promise<string> {
+	const requested = unquote(input.trim());
+	if (!requested) throw new Error("Use /bro file <path>.");
+
+	let root: string;
+	let path: string;
+	try {
+		root = await realpath(cwd);
+		path = await realpath(resolve(cwd, requested));
+	} catch (error) {
+		throw fileError(requested, error);
+	}
+
+	const fromRoot = relative(root, path);
+	if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+		throw new Error("Bro can read only files inside the current workspace.");
+	}
+
+	let info;
+	try {
+		info = await stat(path);
+	} catch (error) {
+		throw fileError(requested, error);
+	}
+	if (!info.isFile()) throw new Error(`Not a regular file: ${requested}`);
+	if (info.size > MAX_FILE_BYTES) throw new Error("File is larger than Bro's 10 MiB limit.");
+
+	let buffer: Buffer;
+	try {
+		buffer = await readFile(path, { signal });
+	} catch (error) {
+		if (signal?.aborted) throw new Error("Canceled.");
+		throw fileError(requested, error);
+	}
+	if (buffer.byteLength > MAX_FILE_BYTES) throw new Error("File is larger than Bro's 10 MiB limit.");
+	if (signal?.aborted) throw new Error("Canceled.");
+
+	const extension = extname(path).toLowerCase();
+	let text: string;
+	try {
+		if (TEXT_EXTENSIONS.has(extension)) {
+			text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+		} else if (extension === ".pdf") {
+			text = (await extractText(new Uint8Array(buffer), { mergePages: true })).text;
+		} else if (extension === ".docx") {
+			text = (await mammoth.extractRawText({ buffer })).value;
+		} else {
+			throw new Error("Unsupported file type. Use .md, .markdown, .txt, .pdf, or .docx.");
+		}
+	} catch (error) {
+		if (error instanceof Error && error.message.startsWith("Unsupported file type.")) throw error;
+		throw new Error(`Could not extract text from ${requested}: ${errorMessage(error)}`);
+	}
+
+	text = text.trim();
+	if (!text) throw new Error("No readable text found. Scanned PDFs need OCR, which Bro does not support.");
+	if (text.length > MAX_TEXT_LENGTH) throw new Error("Extracted text is longer than Bro's 100,000-character limit.");
+	return text;
 }
 
 export function agyFailureMessage(
@@ -332,7 +412,7 @@ async function doctorReport(pi: ExtensionAPI, signal: AbortSignal): Promise<stri
 	}`;
 }
 
-function latestAssistant(ctx: ExtensionCommandContext): AssistantSource | undefined {
+function latestAssistant(ctx: ExtensionCommandContext): BroSource | undefined {
 	const branch = ctx.sessionManager.getBranch();
 
 	for (let i = branch.length - 1; i >= 0; i--) {
@@ -347,7 +427,7 @@ function latestAssistant(ctx: ExtensionCommandContext): AssistantSource | undefi
 			.join("\n")
 			.trim();
 
-		if (text) return { id: entry.id, text };
+		if (text) return { text };
 	}
 }
 
@@ -506,17 +586,24 @@ function helpText(settings?: BroSettings, settingsError?: string): string {
 		: `Bro could not read its settings: ${settingsError}\n\nRun \`/bro doctor\` for setup help.`;
 	return `# Bro
 
-Bro turns the latest completed assistant response into a clear, plain-language explanation.
+Bro turns the latest completed assistant response or a local document into a clear, plain-language explanation.
 
 ## Commands
 
 - \`/bro\` or \`/bro simplify\` — create a new explanation
+- \`/bro file <path>\` — explain a Markdown, text, PDF, or DOCX file
 - \`/bro open\` — reopen the last explanation
 - \`/bro doctor\` — check whether Bro is ready
 - \`/bro usage\` or \`/bro usage --provider agy\` — show current Agy usage
 - \`/bro model\` — choose the Agy model
 - \`/bro effort\` — choose the Agy reasoning effort
 - \`/bro help\` — show this guide
+
+## Documents
+
+\`/bro file\` accepts \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, and \`.docx\` files. Use a relative path or an absolute path inside the current workspace. Paths may contain spaces; matching single or double quotes are optional.
+
+Files are limited to 10 MiB and 100,000 extracted characters. Scanned PDFs need OCR, which Bro does not support. Pressing **R** retries the extracted snapshot; a new \`/bro file <path>\` command reads the file again.
 
 ## Current simplifier settings
 
@@ -547,6 +634,8 @@ Bro does not modify your project files. It creates and updates only its user set
 Bro does not add explanations to Pi's conversation history, session files, or main-agent context. The latest explanation is kept in process memory only so \`/bro open\` can reopen it. It is cleared when you change sessions, reload extensions, or exit Pi.
 
 Bro sends the assistant response to an external simplifier (currently Agy with your selected model). Agy and the model provider may retain request data or logs under their own policies.
+
+\`/bro file\` sends the selected document's extracted text to the same external simplifier. Bro reads only regular files whose resolved path remains inside the current workspace, including after resolving symlinks. It never modifies them and does not expose the workspace to Agy.
 
 \`/bro usage\` checks your authenticated Agy limits without sending an assistant response or running a model turn.
 
@@ -742,7 +831,7 @@ interface BroModalOptions {
 	result?: ModalResult;
 	run?: (
 		signal: AbortSignal,
-		source?: AssistantSource,
+		source?: BroSource,
 		onProgress?: (text: string) => void,
 	) => Promise<ModalResult>;
 	onResult?: (result: ModalResult) => void;
@@ -765,7 +854,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 			let closed = false;
 			let controller: AbortController | undefined;
 			let current = options.result;
-			let execute: (source?: AssistantSource) => void = () => {};
+			let execute: (source?: BroSource) => void = () => {};
 
 			const close = () => {
 				if (closed) return;
@@ -786,7 +875,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 				options.retryLabel ?? "simplify again",
 			);
 
-			execute = (source?: AssistantSource) => {
+			execute = (source?: BroSource) => {
 				if (!options.run || controller || closed) return;
 				const previous = current;
 				const nextController = new AbortController();
@@ -860,9 +949,43 @@ export default async function bro(pi: ExtensionAPI) {
 			return matches.length ? matches : null;
 		},
 		handler: async (args, ctx) => {
-			const normalized = args.trim().toLowerCase();
+			const raw = args.trim();
+			const normalized = raw.toLowerCase();
 			const parts = normalized ? normalized.split(/\s+/) : [];
 			const action = parts[0] ?? "";
+			const value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
+
+			if (action === "file") {
+				if (!value) {
+					ctx.ui.notify("Use /bro file <path>.", "warning");
+					return;
+				}
+				const runFile = async (
+					signal: AbortSignal,
+					source?: BroSource,
+					onProgress?: (text: string) => void,
+				): Promise<BroResult> => {
+					const target = source ?? { text: await extractDocumentText(value, ctx.cwd, signal) };
+					try {
+						return {
+							source: target,
+							text: await simplify(target.text, signal, await readSettings(), onProgress),
+						};
+					} catch (error) {
+						throw new Error(withDoctor(error));
+					}
+				};
+				try {
+					await showBroModal(ctx, {
+						loadingText: "Reading and simplifying document…",
+						run: runFile,
+						onResult: remember,
+					});
+				} catch (error) {
+					ctx.ui.notify(errorMessage(error), "error");
+				}
+				return;
+			}
 
 			if (action === "doctor") {
 				if (parts.length !== 1) {
@@ -1025,7 +1148,7 @@ export default async function bro(pi: ExtensionAPI) {
 
 			const run = async (
 				signal: AbortSignal,
-				source?: AssistantSource,
+				source?: BroSource,
 				onProgress?: (text: string) => void,
 			): Promise<BroResult> => {
 				let target = source;
@@ -1048,7 +1171,7 @@ export default async function bro(pi: ExtensionAPI) {
 			if (normalized === "open") {
 				if (!lastResult) {
 					await showBroModal(ctx, {
-						text: "# Nothing to open yet\n\nRun `/bro` after an assistant response.",
+						text: "# Nothing to open yet\n\nRun `/bro` after an assistant response, or use `/bro file <path>`.",
 						kind: "empty",
 					});
 					return;
@@ -1063,7 +1186,7 @@ export default async function bro(pi: ExtensionAPI) {
 			}
 
 			if (normalized && normalized !== "simplify") {
-				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, open, doctor, usage, model, effort, or help.`, "warning");
+				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, file, open, doctor, usage, model, effort, or help.`, "warning");
 				return;
 			}
 

@@ -1,7 +1,7 @@
 # pi-bro
 
-Simplify Pi's latest assistant response in a separate pop-up window without
-adding extra messages to your conversation context.
+Simplify Pi's latest assistant response or a local document in a separate
+pop-up window without adding extra messages to your conversation context.
 
 `pi-bro` is a small extension for
 [Earendil Pi](https://github.com/earendil-works/pi). It uses the
@@ -10,17 +10,17 @@ and your selected Agy model to stream plain-language explanations.
 
 ## Bro in action
 
-**Before**
+**Before: a complex PDF**
 
-[![A dense coding-agent response before Bro](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-before.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-before.png)
+[![A complex PDF before Bro](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-before.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-before.png)
 
-**After `/bro`**
+**After `/bro file <path>`**
 
-[![The same response explained in the Bro modal](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-after.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-after.png)
+[![The PDF explained in the Bro modal](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-after.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-after.png)
 
-Bro optimizes for understanding, not simply for fewer words. The examples below
-are synthetic coding-agent answers run through Bro's default prompt and edited
-lightly for presentation and safety. Click a screenshot to see it at full size.
+Bro optimizes for understanding, not simply for fewer words. The document and
+coding-agent examples below are synthetic and were run through Bro's default
+prompt. Click a screenshot to see it at full size.
 
 <details>
 <summary><strong>Short:</strong> TypeScript says a value is <code>never</code></summary>
@@ -284,7 +284,8 @@ From GitHub:
 pi install git:github.com/tranhoangnguyen03/pi-bro
 ```
 
-Restart Pi or run `/reload`. Once an assistant response finishes, run `/bro`.
+Restart Pi or run `/reload`. Run `/bro` after an assistant response, or use
+`/bro file <path>` for a document in the current workspace.
 
 To test Bro without installing it:
 
@@ -298,6 +299,7 @@ pi -e npm:pi-bro
 | --- | --- |
 | `/bro` | Create a new plain-language explanation of the latest completed assistant response. |
 | `/bro simplify` | Same as `/bro`. |
+| `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
 | `/bro doctor` | Check whether Bro, Agy, and the selected settings are ready. |
 | `/bro usage` | Show current Agy resource limits. |
@@ -318,6 +320,22 @@ pi -e npm:pi-bro
 
 In Pi's regular terminal mode, the Bro title warns that mouse-wheel scrolling
 needs fullscreen mode. Arrow-key scrolling still works.
+
+## Explain a document
+
+Use a path relative to Pi's current workspace, or an absolute path inside it:
+
+```text
+/bro file docs/incident review.pdf
+```
+
+Paths may contain spaces; matching single or double quotes are also accepted.
+Bro extracts text locally, then sends that text through the same explanation
+flow used by `/bro`. Pressing **R** retries the extracted snapshot; running a
+new `/bro file <path>` command reads the file again.
+
+Files are limited to 10 MiB and 100,000 extracted characters. Scanned PDFs are
+not supported because Bro does not perform OCR.
 
 ## Check your setup
 
@@ -374,7 +392,7 @@ Your prompt must include `{{response}}` exactly once. For example:
 Explain this in plain English in no more than 200 words.
 Keep important warnings and next steps.
 
-Assistant response:
+Text to explain:
 {{response}}
 ```
 
@@ -383,8 +401,8 @@ immediately without reloading Pi. Bro never creates or modifies this file.
 
 ## Privacy and files
 
-- **External requests**: Bro sends the latest completed assistant response to
-  Agy and its configured model provider.
+- **External requests**: Bro sends the latest completed assistant response or
+  extracted document text to Agy and its configured model provider.
 - **Usage checks**: `/bro usage` checks your authenticated Agy limits without
   sending an assistant response or running a model turn.
 - **Setup checks**: `/bro doctor` checks Agy account and model availability
@@ -394,10 +412,11 @@ immediately without reloading Pi. Bro never creates or modifies this file.
 - **Memory cache**: The latest explanation is stored only in process memory for
   `/bro open`. It clears when you switch Pi sessions, reload extensions, or quit
   Pi.
-- **File safety**: Bro does not modify project files. It runs Agy in sandbox
-  mode inside a temporary empty folder. This reduces project access, but it is
-  not a security boundary. Bro only writes its own user settings file described
-  above.
+- **File safety**: `/bro file` reads only regular files whose resolved path is
+  inside Pi's current workspace, including after resolving symlinks. Bro does
+  not modify them. It runs Agy in sandbox mode inside a temporary empty folder.
+  This reduces project access, but it is not a security boundary. Bro only
+  writes its own user settings file described above.
 - **Provider data**: Agy and your model provider may retain logs and request data
   according to their own settings and privacy policies.
 - **Clipboard**: Pressing **C** copies the text to your system clipboard, where
@@ -406,6 +425,8 @@ immediately without reloading Pi. Bro never creates or modifies this file.
 ## Current limits
 
 - Uses Agy as its only provider.
+- Document input supports `.md`, `.markdown`, `.txt`, `.pdf`, and `.docx` only;
+  it does not perform OCR.
 - Keeps only the latest explanation in memory.
 - Does not store history or export directly to files.
 - Mouse-wheel and trackpad scrolling work in Pi's fullscreen mode
@@ -424,8 +445,8 @@ pi --tui-mode fullscreen -e ./bro.ts
 ```
 
 The smoke test uses a fake `agy`, so it does not call an external model. It
-verifies command routing, healthy and broken setup handling, settings, custom
-prompt handling, and context isolation.
+verifies command routing, document boundaries, healthy and broken setup
+handling, settings, custom prompt handling, and context isolation.
 
 ## License
 

@@ -16,7 +16,9 @@ model_calls_file="$test_dir/agy-model-calls"
 version_calls_file="$test_dir/agy-version-calls"
 canary_prefix="BRO_ONLY_CANARY_"
 usage_canary="USAGE_ONLY_CANARY"
-trap 'rm -rf -- "$test_dir"' EXIT
+document_canary="DOCUMENT_ONLY_CANARY"
+document_file="$repo_dir/.bro-smoke-document-$$.MD"
+trap 'rm -rf -- "$test_dir"; rm -f -- "$document_file"' EXIT
 
 if [ ! -x "$pi_bin" ]; then
 	printf 'Pi was not found at %s. Run npm install first.\n' "$pi_bin" >&2
@@ -30,9 +32,12 @@ wheel_build="$test_dir/wheel-build"
 ln -s "$repo_dir/node_modules" "$wheel_build/node_modules"
 node --input-type=module - "$wheel_build/bro.js" <<'JS'
 import assert from "node:assert/strict";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const { agyFailureMessage, agySelection, formatAgyUsage, parseAgyModels, parseBroSettings, wheelDelta } = await import(pathToFileURL(process.argv[2]));
+const { agyFailureMessage, agySelection, extractDocumentText, formatAgyUsage, parseAgyModels, parseBroSettings, wheelDelta } = await import(pathToFileURL(process.argv[2]));
 assert.equal(wheelDelta("\u001b[<64;10;20M"), -3);
 assert.equal(wheelDelta("\u001b[<65;10;20M"), 3);
 assert.equal(wheelDelta("\u001b[<68;10;20M"), -3);
@@ -69,16 +74,32 @@ assert.deepEqual(agySelection({ model: "claude-one", effort: "default" }), { mod
 assert.match(agyFailureMessage("start", { code: 1, killed: false, stderr: "" }), /installed and signed in/);
 assert.match(agyFailureMessage("start", { code: 1, killed: true, stderr: "" }), /timed out/);
 assert.match(agyFailureMessage("check usage", { code: 1, killed: false, stderr: "Sign in first" }), /Sign in first/);
+
+const root = await mkdtemp(join(tmpdir(), "pi-bro-extract-"));
+const outside = await mkdtemp(join(tmpdir(), "pi-bro-outside-"));
+try {
+	await writeFile(join(root, "Complex Notes.MD"), "  readable text  ");
+	assert.equal(await extractDocumentText("Complex Notes.MD", root), "readable text");
+	await writeFile(join(outside, "secret.txt"), "outside");
+	await symlink(join(outside, "secret.txt"), join(root, "linked.txt"));
+	await assert.rejects(extractDocumentText("linked.txt", root), /current workspace/);
+	await writeFile(join(root, "unsupported.csv"), "a,b");
+	await assert.rejects(extractDocumentText("unsupported.csv", root), /Unsupported file type/);
+} finally {
+	await rm(root, { recursive: true, force: true });
+	await rm(outside, { recursive: true, force: true });
+}
 JS
 
 mkdir "$config_dir"
 printf 'CUSTOM_TEMPLATE_MARKER\n\n{{response}}\n' > "$prompt_file"
+printf '# Complex notes\n\n%s\n' "$document_canary" > "$document_file"
 
+printf '{"type":"session","version":3,"id":"00000000-0000-7000-8000-000000000000","timestamp":"2026-01-01T00:00:00.000Z","cwd":"%s"}\n' "$repo_dir" > "$session_file"
 printf '%s\n' \
-	'{"type":"session","version":3,"id":"00000000-0000-7000-8000-000000000000","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}' \
 	'{"type":"message","id":"11111111","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":"Explain it.","timestamp":1}}' \
 	'{"type":"message","id":"22222222","parentId":"11111111","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Original complicated reply."}],"api":"google-generative-ai","provider":"google","model":"gemini-test","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":2}}' \
-	> "$session_file"
+	>> "$session_file"
 
 printf '%s\n' \
 	'#!/bin/sh' \
@@ -101,7 +122,8 @@ printf '%s\n' \
 	'  printf "{\"status\":\"SUCCESS\",\"response\":\"Gemini Models %s\\\\tWeekly Limit Remaining\\\\t97%%\\\\n\"}\n" "$BRO_USAGE_CANARY"' \
 	'  exit 0' \
 	'fi' \
-	'case "$*" in *"CUSTOM_TEMPLATE_MARKER"*"Original complicated reply."*) ;; *) exit 12;; esac' \
+	'case "$*" in *"CUSTOM_TEMPLATE_MARKER"*) ;; *) exit 12;; esac' \
+	'case "$*" in *"Original complicated reply."*|*"$BRO_DOCUMENT_CANARY"*) ;; *) exit 12;; esac' \
 	'case " $* " in *" --output-format stream-json "*) ;; *) exit 14;; esac' \
 	'call=$(( $(wc -l < "$BRO_CALLS") + 1 ))' \
 	'printf "%s\n" "$call" >> "$BRO_CALLS"' \
@@ -140,6 +162,10 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-first","type":"prompt","message":"/bro open"}'
 		sleep 1
+		printf '{"id":"bro-file","type":"prompt","message":"/bro file %s"}\n' "$document_file"
+		sleep 1
+		printf '%s\n' '{"id":"bro-open-file","type":"prompt","message":"/bro open"}'
+		sleep 1
 		printf '%s\n' '{"id":"bro-model-invalid","type":"prompt","message":"/bro model unknown"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-model","type":"prompt","message":"/bro model gemini-test-two"}'
@@ -154,16 +180,16 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
 		sleep 1
-	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 14 ]; then
-	printf 'Expected 14 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 16 ]; then
+	printf 'Expected 16 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
 	exit 1
 fi
 
-expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-test-one\tlow')
+expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow')
 actual_args=$(cat "$args_file")
 if [ "$actual_args" != "$expected_args" ]; then
 	printf 'Selected model and effort were not applied:\n%s\n' "$actual_args" >&2
@@ -196,10 +222,10 @@ if printf '%s\n' "$output" | grep -q '"method":"notify".*"notifyType":"error"'; 
 	exit 1
 fi
 
-expected_calls=$(printf '1\n2')
+expected_calls=$(printf '1\n2\n3')
 actual_calls=$(cat "$calls_file")
 if [ "$actual_calls" != "$expected_calls" ]; then
-	printf 'Expected exactly two numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
+	printf 'Expected exactly three numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
 	exit 1
 fi
 
@@ -215,19 +241,19 @@ if [ "$(cat "$version_calls_file")" != "version" ]; then
 	exit 1
 fi
 
-if grep -q -e "$canary_prefix" -e "$usage_canary" "$session_file"; then
+if grep -q -e "$canary_prefix" -e "$usage_canary" -e "$document_canary" "$session_file"; then
 	printf 'Bro output leaked into the session\n' >&2
 	exit 1
 fi
 
-node --input-type=module - "$session_file" "$canary_prefix" "$usage_canary" <<'JS'
+node --input-type=module - "$session_file" "$canary_prefix" "$usage_canary" "$document_canary" <<'JS'
 import { readFile } from "node:fs/promises";
 import { buildSessionContext, parseSessionEntries } from "@earendil-works/pi-coding-agent";
 
 const entries = parseSessionEntries(await readFile(process.argv[2], "utf8"));
 const context = buildSessionContext(entries);
 const serialized = JSON.stringify(context);
-if (serialized.includes(process.argv[3]) || serialized.includes(process.argv[4])) {
+if (serialized.includes(process.argv[3]) || serialized.includes(process.argv[4]) || serialized.includes(process.argv[5])) {
 	throw new Error("Bro output leaked into model context");
 }
 JS
