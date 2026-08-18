@@ -59,7 +59,7 @@ export function wheelDelta(data: string): number {
 }
 
 const COMMANDS = [
-	{ value: "simplify", label: "simplify", description: "Simplify the latest assistant response" },
+	{ value: "simplify", label: "simplify", description: "Simplify pasted text or the latest assistant response" },
 	{ value: "file", label: "file", description: "Explain a local document" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
 	{ value: "doctor", label: "doctor", description: "Check whether Bro is ready" },
@@ -586,11 +586,12 @@ function helpText(settings?: BroSettings, settingsError?: string): string {
 		: `Bro could not read its settings: ${settingsError}\n\nRun \`/bro doctor\` for setup help.`;
 	return `# Bro
 
-Bro turns the latest completed assistant response or a local document into a clear, plain-language explanation.
+Bro turns an assistant response, pasted text, or a local document into a clear, plain-language explanation.
 
 ## Commands
 
-- \`/bro\` or \`/bro simplify\` — create a new explanation
+- \`/bro\` — explain the latest completed assistant response
+- \`/bro simplify [text]\` — explain pasted text, or the latest response when text is omitted
 - \`/bro file <path>\` — explain a Markdown, text, PDF, or DOCX file
 - \`/bro open\` — reopen the last explanation
 - \`/bro doctor\` — check whether Bro is ready
@@ -633,7 +634,7 @@ Bro does not modify your project files. It creates and updates only its user set
 
 Bro does not add explanations to Pi's conversation history, session files, or main-agent context. The latest explanation is kept in process memory only so \`/bro open\` can reopen it. It is cleared when you change sessions, reload extensions, or exit Pi.
 
-Bro sends the assistant response to an external simplifier (currently Agy with your selected model). Agy and the model provider may retain request data or logs under their own policies.
+Bro sends the assistant response or pasted text to an external simplifier (currently Agy with your selected model). Agy and the model provider may retain request data or logs under their own policies.
 
 \`/bro file\` sends the selected document's extracted text to the same external simplifier. Bro reads only regular files whose resolved path remains inside the current workspace, including after resolving symlinks. It never modifies them and does not expose the workspace to Agy.
 
@@ -1151,7 +1152,7 @@ export default async function bro(pi: ExtensionAPI) {
 				source?: BroSource,
 				onProgress?: (text: string) => void,
 			): Promise<BroResult> => {
-				let target = source;
+				let target = source ?? (action === "simplify" && value ? { text: value } : undefined);
 				if (!target) {
 					await ctx.waitForIdle();
 					target = latestAssistant(ctx);
@@ -1185,7 +1186,7 @@ export default async function bro(pi: ExtensionAPI) {
 				return;
 			}
 
-			if (normalized && normalized !== "simplify") {
+			if (action && action !== "simplify") {
 				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, file, open, doctor, usage, model, effort, or help.`, "warning");
 				return;
 			}

@@ -1,7 +1,7 @@
 # pi-bro
 
-Simplify Pi's latest assistant response or a local document in a separate
-pop-up window without adding extra messages to your conversation context.
+Simplify Pi's latest assistant response, pasted text, or a local document in a
+separate pop-up window without adding extra messages to your conversation context.
 
 `pi-bro` is a small extension for
 [Earendil Pi](https://github.com/earendil-works/pi). It uses the
@@ -298,7 +298,7 @@ pi -e npm:pi-bro
 | Command | Description |
 | --- | --- |
 | `/bro` | Create a new plain-language explanation of the latest completed assistant response. |
-| `/bro simplify` | Same as `/bro`. |
+| `/bro simplify <text>` | Explain pasted text. With no text, this is the same as `/bro`. |
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
 | `/bro doctor` | Check whether Bro, Agy, and the selected settings are ready. |
@@ -401,8 +401,8 @@ immediately without reloading Pi. Bro never creates or modifies this file.
 
 ## Privacy and files
 
-- **External requests**: Bro sends the latest completed assistant response or
-  extracted document text to Agy and its configured model provider.
+- **External requests**: Bro sends the latest completed assistant response,
+  pasted text, or extracted document text to Agy and its configured model provider.
 - **Usage checks**: `/bro usage` checks your authenticated Agy limits without
   sending an assistant response or running a model turn.
 - **Setup checks**: `/bro doctor` checks Agy account and model availability
