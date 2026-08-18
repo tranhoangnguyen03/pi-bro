@@ -1,7 +1,7 @@
 # pi-bro
 
-Turn a dense AI reply, local document, or public webpage into a plain-language
-explanation without adding anything to your main agent's context.
+Turn a dense AI reply, pasted text, local document, or public webpage into a
+plain-language explanation without adding anything to your main agent's context.
 
 `pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
 It opens explanations in a separate modal and uses the
@@ -22,6 +22,7 @@ Restart Pi or run `/reload`, then try:
 
 ```text
 /bro
+/bro simplify Paste text here
 /bro file docs/report.pdf
 /bro url https://example.com/article
 ```
@@ -37,17 +38,19 @@ installing it, use `pi -e npm:pi-bro`.
 | Source | Command | What Bro does |
 | --- | --- | --- |
 | Latest assistant reply | `/bro` | Explains the latest completed reply without adding the result to the conversation. |
+| Pasted text | `/bro simplify <text>` | Explains text supplied directly in the command. |
 | Local document | `/bro file <path>` | Extracts text from a workspace-local Markdown, text, PDF, or DOCX file. |
 | Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
 
-Pressing **R** simplifies the captured source again. Running a new `/bro file`
-or `/bro url` command reads or fetches a fresh copy.
+Pressing **R** simplifies the captured source again. These commands capture a
+new source: `/bro simplify`, `/bro file`, and `/bro url`.
 
 ## Commands
 
 | Command | Description |
 | --- | --- |
 | `/bro` or `/bro simplify` | Explain the latest completed assistant response. |
+| `/bro simplify <text>` | Explain pasted text. |
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
@@ -334,6 +337,18 @@ cached files, not your source code or dependencies.
 
 </details>
 
+## Explain pasted text
+
+Paste text directly after the command:
+
+```text
+/bro simplify OAuth refresh tokens are rotated after every successful use.
+```
+
+Bro explains the pasted text instead of the latest assistant reply. With no text
+after `/bro simplify`, it falls back to the latest completed reply. Press **R**
+to simplify the same captured text again.
+
 ## Explain a document
 
 Use a path relative to Pi's current workspace, or an absolute path inside it:
@@ -436,8 +451,8 @@ immediately without reloading Pi. Bro never creates or modifies this file.
 ## Privacy and safety
 
 - **External requests**: Bro sends the latest completed assistant response,
-  extracted document text, or extracted webpage text to Agy and its configured
-  model provider.
+  pasted text, extracted document text, or extracted webpage text to Agy and its
+  configured model provider.
 - **Usage checks**: `/bro usage` checks your authenticated Agy limits without
   sending an assistant response or running a model turn.
 - **Setup checks**: `/bro doctor` checks Agy account and model availability

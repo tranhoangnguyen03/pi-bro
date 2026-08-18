@@ -174,7 +174,7 @@ printf '%s\n' \
 	'  exit 0' \
 	'fi' \
 	'case "$*" in *"CUSTOM_TEMPLATE_MARKER"*) ;; *) exit 12;; esac' \
-	'case "$*" in *"Original complicated reply."*|*"$BRO_DOCUMENT_CANARY"*) ;; *) exit 12;; esac' \
+	'case "$*" in *"Original complicated reply."*|*"$BRO_DOCUMENT_CANARY"*|*"PASTED_TEXT_ONLY_CANARY"*) ;; *) exit 12;; esac' \
 	'case " $* " in *" --output-format stream-json "*) ;; *) exit 14;; esac' \
 	'call=$(( $(wc -l < "$BRO_CALLS") + 1 ))' \
 	'printf "%s\n" "$call" >> "$BRO_CALLS"' \
@@ -229,7 +229,7 @@ output=$(
 		sleep 1
 		cp "$settings_file" "$settings_snapshot"
 		printf '{"model":"gemini-test-one","effort":"low"}\n' > "$settings_file"
-		printf '%s\n' '{"id":"bro-simplify","type":"prompt","message":"/bro simplify"}'
+		printf '%s\n' '{"id":"bro-simplify","type":"prompt","message":"/bro simplify PASTED_TEXT_ONLY_CANARY"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
 		sleep 1
