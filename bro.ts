@@ -1,11 +1,18 @@
 import { spawn } from "node:child_process";
+import { lookup } from "node:dns/promises";
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { request as httpRequest, type IncomingMessage } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { BlockList, isIP } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
+import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown, matchesKey, truncateToWidth, visibleWidth, type Focusable } from "@earendil-works/pi-tui";
+import { Defuddle } from "defuddle/node";
+import { parseHTML } from "linkedom";
 import mammoth from "mammoth";
 import { extractText } from "unpdf";
 
@@ -16,8 +23,13 @@ const PROMPT_FILE = join(AGENT_DIR, "bro-prompt.md");
 const SETTINGS_FILE = join(AGENT_DIR, "bro-settings.json");
 const LOADING_TEXT = "Simplifying for my bro…";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_WEB_BYTES = 5 * 1024 * 1024;
+const MAX_WEB_ELEMENTS = 100_000;
+const MAX_WEB_REDIRECTS = 5;
+const WEB_TIMEOUT_MS = 25_000;
 const MAX_TEXT_LENGTH = 100_000;
 const TEXT_EXTENSIONS = new Set([".md", ".markdown", ".txt"]);
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const DEFAULT_TEMPLATE = `Rewrite the quoted text for a non-expert.
 Use plain English and short sentences. Explain jargon briefly.
 Use at most 400 words. Focus on the main point, what it means, and what the reader should know or do next.
@@ -29,9 +41,13 @@ Quoted text as a JSON string:
 {{response}}`;
 
 type Theme = ExtensionCommandContext["ui"]["theme"];
-type TuiLike = { readonly mode: "regular" | "fullscreen"; requestRender(): void };
+type TuiLike = {
+	readonly mode: "regular" | "fullscreen";
+	readonly terminal?: { write?: (data: string) => void };
+	requestRender(): void;
+};
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
-type BroSource = { text: string };
+type BroSource = { text: string; label?: string };
 type BroResult = { source: BroSource; text: string };
 type ModalResult = { source?: BroSource; text: string };
 const EFFORTS = ["default", "low", "medium", "high"] as const;
@@ -58,9 +74,14 @@ export function wheelDelta(data: string): number {
 	return (button & 3) === 0 ? -3 : (button & 3) === 1 ? 3 : 0;
 }
 
+export function setRegularMouseReporting(tui: Pick<TuiLike, "mode" | "terminal">, enabled: boolean): void {
+	if (tui.mode === "regular") tui.terminal?.write?.(`\x1b[?1000${enabled ? "h" : "l"}\x1b[?1006${enabled ? "h" : "l"}`);
+}
+
 const COMMANDS = [
 	{ value: "simplify", label: "simplify", description: "Simplify pasted text or the latest assistant response" },
 	{ value: "file", label: "file", description: "Explain a local document" },
+	{ value: "url", label: "url", description: "Explain a public webpage" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
 	{ value: "doctor", label: "doctor", description: "Check whether Bro is ready" },
 	{ value: "usage", label: "usage", description: "Show current Agy usage" },
@@ -154,6 +175,263 @@ export async function extractDocumentText(input: string, cwd: string, signal?: A
 	if (!text) throw new Error("No readable text found. Scanned PDFs need OCR, which Bro does not support.");
 	if (text.length > MAX_TEXT_LENGTH) throw new Error("Extracted text is longer than Bro's 100,000-character limit.");
 	return text;
+}
+
+const NON_PUBLIC_ADDRESSES = new BlockList();
+for (const [network, prefix] of [
+	["0.0.0.0", 8],
+	["10.0.0.0", 8],
+	["100.64.0.0", 10],
+	["127.0.0.0", 8],
+	["169.254.0.0", 16],
+	["172.16.0.0", 12],
+	["192.0.0.0", 24],
+	["192.0.2.0", 24],
+	["192.31.196.0", 24],
+	["192.52.193.0", 24],
+	["192.88.99.0", 24],
+	["192.168.0.0", 16],
+	["192.175.48.0", 24],
+	["198.18.0.0", 15],
+	["198.51.100.0", 24],
+	["203.0.113.0", 24],
+	["224.0.0.0", 4],
+	["240.0.0.0", 4],
+] as const) {
+	NON_PUBLIC_ADDRESSES.addSubnet(network, prefix, "ipv4");
+}
+for (const [network, prefix] of [
+	["::", 128],
+	["::1", 128],
+	["64:ff9b::", 96],
+	["64:ff9b:1::", 48],
+	["100::", 64],
+	["2001::", 23],
+	["2001:db8::", 32],
+	["2002::", 16],
+	["3fff::", 20],
+	["5f00::", 16],
+	["fc00::", 7],
+	["fe80::", 10],
+	["ff00::", 8],
+] as const) {
+	NON_PUBLIC_ADDRESSES.addSubnet(network, prefix, "ipv6");
+}
+
+export function isPublicWebAddress(address: string): boolean {
+	const family = isIP(address);
+	return family === 4
+		? !NON_PUBLIC_ADDRESSES.check(address, "ipv4")
+		: family === 6
+			? !NON_PUBLIC_ADDRESSES.check(address, "ipv6")
+			: false;
+}
+
+export function parseWebUrl(input: string): URL {
+	const requested = unquote(input.trim());
+	if (!requested) throw new Error("Use /bro url <url>.");
+
+	let url: URL;
+	try {
+		url = new URL(requested);
+	} catch {
+		throw new Error("That is not a valid URL. Use /bro url https://example.com/article.");
+	}
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		throw new Error("Bro can read only public HTTP or HTTPS webpages.");
+	}
+	if (url.username || url.password) {
+		throw new Error("Bro does not accept URLs containing usernames or passwords.");
+	}
+	url.hash = "";
+	return url;
+}
+
+export function parseWebRedirect(current: URL, location: string): URL {
+	const next = parseWebUrl(new URL(location, current).href);
+	if (current.protocol === "https:" && next.protocol !== "https:") {
+		throw new Error("Bro refused an insecure HTTPS-to-HTTP redirect.");
+	}
+	return next;
+}
+
+function headerValue(value: string | string[] | undefined): string {
+	return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+async function resolvePublicAddress(hostname: string): Promise<{ address: string; family: 4 | 6 }> {
+	const host = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+	let addresses: Array<{ address: string; family: number }>;
+	try {
+		addresses = await lookup(host, { all: true, verbatim: true });
+	} catch (error) {
+		throw new Error(`Could not resolve webpage host: ${errorMessage(error)}`);
+	}
+	if (!addresses.length) throw new Error("The webpage host has no network address.");
+	if (addresses.some((item) => !isPublicWebAddress(item.address))) {
+		throw new Error("Bro cannot connect to local, private, or reserved network addresses.");
+	}
+	return { address: addresses[0].address, family: addresses[0].family === 6 ? 6 : 4 };
+}
+
+function requestWebPage(url: URL, address: { address: string; family: 4 | 6 }, signal: AbortSignal): Promise<IncomingMessage> {
+	return new Promise((resolveResponse, rejectResponse) => {
+		const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+			url,
+			{
+				method: "GET",
+				signal,
+				headers: {
+					Accept: "text/html,application/xhtml+xml",
+					"Accept-Encoding": "identity",
+					"User-Agent": "pi-bro URL reader (+https://github.com/tranhoangnguyen03/pi-bro)",
+				},
+				lookup: (_hostname, options, callback) => {
+					if (options.all) callback(null, [address]);
+					else callback(null, address.address, address.family);
+				},
+			},
+			resolveResponse,
+		);
+		request.once("error", rejectResponse);
+		request.end();
+	});
+}
+
+async function readWebBody(response: IncomingMessage): Promise<Buffer> {
+	const contentEncoding = headerValue(response.headers["content-encoding"]).trim().toLowerCase();
+	if (contentEncoding && contentEncoding !== "identity") {
+		response.destroy();
+		throw new Error(`Bro cannot read this page's ${contentEncoding} response encoding.`);
+	}
+
+	const contentLength = Number.parseInt(headerValue(response.headers["content-length"]), 10);
+	if (Number.isFinite(contentLength) && contentLength > MAX_WEB_BYTES) {
+		response.destroy();
+		throw new Error("Webpage is larger than Bro's 5 MiB download limit.");
+	}
+
+	const chunks: Buffer[] = [];
+	let size = 0;
+	try {
+		for await (const chunk of response) {
+			const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+			size += buffer.byteLength;
+			if (size > MAX_WEB_BYTES) throw new Error("Webpage is larger than Bro's 5 MiB download limit.");
+			chunks.push(buffer);
+		}
+	} catch (error) {
+		response.destroy();
+		throw error;
+	}
+	return Buffer.concat(chunks, size);
+}
+
+function decodeWebHtml(buffer: Buffer, contentType: string): string {
+	const headerCharset = /charset\s*=\s*["']?([^\s;"']+)/i.exec(contentType)?.[1];
+	const head = new TextDecoder("latin1").decode(buffer.subarray(0, 2048));
+	const metaCharset = /<meta[^>]+charset\s*=\s*["']?([^\s;"'>]+)/i.exec(head)?.[1]
+		?? /<meta[^>]+content\s*=\s*["'][^"']*charset=([^\s;"']+)/i.exec(head)?.[1];
+	const charset = headerCharset ?? metaCharset ?? "utf-8";
+	try {
+		return new TextDecoder(charset).decode(buffer);
+	} catch {
+		throw new Error(`Bro does not support this page's ${charset} character encoding.`);
+	}
+}
+
+function assertWebElementLimit(html: string): void {
+	let count = 0;
+	for (let index = 0; index < html.length - 1; index++) {
+		if (html.charCodeAt(index) !== 60) continue;
+		const next = html.charCodeAt(index + 1) | 32;
+		if (next >= 97 && next <= 122 && ++count > MAX_WEB_ELEMENTS) {
+			throw new Error("Webpage is too complex for Bro to read safely.");
+		}
+	}
+}
+
+async function fetchPublicHtml(startUrl: URL, signal: AbortSignal): Promise<{ html: string; url: URL }> {
+	let url = startUrl;
+	const visited = new Set<string>();
+
+	for (let redirects = 0; ; redirects++) {
+		if (visited.has(url.href)) throw new Error("Webpage redirect loop detected.");
+		visited.add(url.href);
+		const address = await resolvePublicAddress(url.hostname);
+		let response: IncomingMessage;
+		try {
+			response = await requestWebPage(url, address, signal);
+		} catch (error) {
+			throw new Error(`Could not fetch webpage: ${errorMessage(error)}`);
+		}
+		const status = response.statusCode ?? 0;
+
+		if (REDIRECT_STATUSES.has(status)) {
+			response.destroy();
+			if (redirects >= MAX_WEB_REDIRECTS) throw new Error("Webpage redirected too many times.");
+			const location = headerValue(response.headers.location);
+			if (!location) throw new Error(`Webpage returned HTTP ${status} without a redirect location.`);
+			url = parseWebRedirect(url, location);
+			continue;
+		}
+
+		if (status < 200 || status >= 300) {
+			response.destroy();
+			if (status === 401 || status === 403) {
+				throw new Error(`Webpage returned HTTP ${status}. It may require a login or block automated readers.`);
+			}
+			if (status === 429) throw new Error("Webpage returned HTTP 429 and is limiting automated requests.");
+			throw new Error(`Webpage returned HTTP ${status}.`);
+		}
+
+		const contentType = headerValue(response.headers["content-type"]);
+		const mime = contentType.split(";", 1)[0].trim().toLowerCase();
+		if (mime !== "text/html" && mime !== "application/xhtml+xml") {
+			response.destroy();
+			throw new Error(`Unsupported webpage content type: ${mime || "missing"}.`);
+		}
+
+		const html = decodeWebHtml(await readWebBody(response), contentType);
+		assertWebElementLimit(html);
+		return { html, url };
+	}
+}
+
+export async function extractWebHtml(html: string, url: string): Promise<BroSource> {
+	assertWebElementLimit(html);
+	const parsedUrl = parseWebUrl(url);
+	const { document } = parseHTML(html);
+	const result = await Defuddle(document, parsedUrl.href, {
+		markdown: true,
+		removeImages: true,
+		includeReplies: false,
+		useAsync: false,
+	});
+	const text = (result.contentMarkdown || result.content || "").trim();
+	if (!text) {
+		throw new Error("Bro found no readable page content. The page may require JavaScript, a login, or block automated readers.");
+	}
+	if (text.length > MAX_TEXT_LENGTH) {
+		throw new Error("Extracted webpage text is longer than Bro's 100,000-character limit.");
+	}
+	const title = result.title
+		? stripVTControlCharacters(result.title).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200)
+		: undefined;
+	return { text, label: [parsedUrl.hostname, title].filter(Boolean).join(" · ") };
+}
+
+export async function extractWebPage(input: string, signal?: AbortSignal): Promise<BroSource> {
+	const timeout = AbortSignal.timeout(WEB_TIMEOUT_MS);
+	const combinedSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+	try {
+		const fetched = await fetchPublicHtml(parseWebUrl(input), combinedSignal);
+		return await extractWebHtml(fetched.html, fetched.url.href);
+	} catch (error) {
+		if (signal?.aborted) throw new Error("Canceled.");
+		if (timeout.aborted) throw new Error("Webpage took longer than 25 seconds to respond.");
+		throw error;
+	}
 }
 
 export function agyFailureMessage(
@@ -586,73 +864,60 @@ function helpText(settings?: BroSettings, settingsError?: string): string {
 		: `Bro could not read its settings: ${settingsError}\n\nRun \`/bro doctor\` for setup help.`;
 	return `# Bro
 
-Bro turns an assistant response, pasted text, or a local document into a clear, plain-language explanation.
+Bro explains a dense assistant reply, pasted text, local document, or public webpage in plain language without adding the explanation to Pi's conversation.
 
-## Commands
+## Explain
 
-- \`/bro\` — explain the latest completed assistant response
-- \`/bro simplify [text]\` — explain pasted text, or the latest response when text is omitted
+- \`/bro\` — explain the latest completed assistant reply
+- \`/bro simplify [text]\` — explain pasted text, or the latest reply when text is omitted
 - \`/bro file <path>\` — explain a Markdown, text, PDF, or DOCX file
-- \`/bro open\` — reopen the last explanation
-- \`/bro doctor\` — check whether Bro is ready
-- \`/bro usage\` or \`/bro usage --provider agy\` — show current Agy usage
-- \`/bro model\` — choose the Agy model
-- \`/bro effort\` — choose the Agy reasoning effort
-- \`/bro help\` — show this guide
+- \`/bro url <url>\` — explain one public webpage
+- \`/bro open\` — reopen the latest explanation
 
-## Documents
+Press **R** to simplify the captured source again. Run a new \`/bro file\` or \`/bro url\` command to read or fetch a fresh copy.
 
-\`/bro file\` accepts \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, and \`.docx\` files. Use a relative path or an absolute path inside the current workspace. Paths may contain spaces; matching single or double quotes are optional.
+## Check and configure
 
-Files are limited to 10 MiB and 100,000 extracted characters. Scanned PDFs need OCR, which Bro does not support. Pressing **R** retries the extracted snapshot; a new \`/bro file <path>\` command reads the file again.
+- \`/bro doctor\` — check settings, Agy, account, model, and effort
+- \`/bro usage [--provider agy]\` — show current Agy limits
+- \`/bro model [id]\` — view or choose the Agy model
+- \`/bro effort [low|medium|high]\` — view or choose reasoning effort
 
-## Current simplifier settings
+## Current settings
 
 ${settingsSummary}
 
-These choices are saved in:
-
-\`${SETTINGS_FILE}\`
-
-Use the slash commands or edit that file directly. Changes apply to future explanations and remain active across Pi restarts until you change them. Use a model ID shown by \`/bro model\`. Use an effort shown by \`/bro effort\`; fixed-effort models use \`default\`.
+Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly. Changes apply to future explanations.
 
 ## Controls
 
-- **Mouse wheel / trackpad** — scroll in Pi's fullscreen mode
-- **↑ / ↓** — scroll in any mode
+- **Mouse wheel / trackpad** — scroll
+- **↑ / ↓** — scroll
 - **C** — copy the full explanation
-- **R** — repeat the current simplification or Doctor check
-- **Esc** — close the window, or cancel while Bro is working
+- **R** — repeat the current action
+- **Esc** — close, or cancel while Bro is working
 
-In Pi's regular terminal mode, the Bro title warns that mouse-wheel scrolling needs fullscreen mode. Arrow-key scrolling still works.
+Bro temporarily captures mouse input while the modal is open. Native mouse selection may be unavailable or extend outside the modal; press **C** to copy everything reliably.
 
-Mouse text selection may extend outside the Bro window. Press **C** to copy the complete explanation instead.
+## Important limits
 
-## Privacy and file safety
+- Documents must be inside the current workspace, are limited to 10 MiB and 100,000 extracted characters, and must be \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\`. Scanned PDFs need OCR first.
+- Web input is limited to one public HTML page. Bro cannot sign in, run page JavaScript, bypass paywalls or blocks, follow pagination, or understand images and video.
+- If a webpage fails, copy it into a text file or save it as a PDF, then use \`/bro file\`.
 
-Bro does not modify your project files. It creates and updates only its user settings file shown above. It runs the simplifier in sandbox mode inside a temporary empty folder. This reduces project access, but it is not a security boundary.
+## Privacy and safety
 
-Bro does not add explanations to Pi's conversation history, session files, or main-agent context. The latest explanation is kept in process memory only so \`/bro open\` can reopen it. It is cleared when you change sessions, reload extensions, or exit Pi.
+Bro sends the selected assistant reply, pasted text, or locally extracted document or webpage text to Agy and your model provider. They may retain request data under their own policies.
 
-Bro sends the assistant response or pasted text to an external simplifier (currently Agy with your selected model). Agy and the model provider may retain request data or logs under their own policies.
+Bro never adds the explanation to Pi's conversation, session file, or main-agent context. The captured source and latest explanation stay in process memory until you change sessions, reload extensions, or exit Pi.
 
-\`/bro file\` sends the selected document's extracted text to the same external simplifier. Bro reads only regular files whose resolved path remains inside the current workspace, including after resolving symlinks. It never modifies them and does not expose the workspace to Agy.
+Bro does not modify project files. For webpages, it connects directly to the site without browser cookies; the site sees your IP address and Bro's user agent. Do not use private or signed URLs.
 
-\`/bro usage\` checks your authenticated Agy limits without sending an assistant response or running a model turn.
-
-\`/bro doctor\` checks your settings, prompt, Agy installation, account, model, and reasoning effort. It contacts Agy but does not send an assistant response or run a model turn.
-
-Pressing **C** copies the explanation to your system clipboard, where your operating system or clipboard manager may retain it.
+Usage and Doctor checks contact Agy but do not send source text or run a model turn. Pressing **C** sends the explanation to your system clipboard.
 
 ## Custom prompt
 
-You can create or edit:
-
-\`${PROMPT_FILE}\`
-
-Bro reads this file when running but never creates or edits it. Include \`{{response}}\` exactly once in your template. Changes take effect on the next simplification.
-
-When the settings file does not exist yet, \`PI_BRO_MODEL\` can choose its initial model.`;
+Create or edit \`${PROMPT_FILE}\` and include \`{{response}}\` exactly once. Bro reads it on the next explanation and never modifies it.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.
@@ -661,6 +926,7 @@ class BroModal implements Focusable {
 	private readonly markdown = new Markdown("", 0, 0, getMarkdownTheme());
 	private kind: ModalKind = "loading";
 	private rawText = "";
+	private sourceLabel = "";
 	private notice = "";
 	private offset = 0;
 	private maxOffset = 0;
@@ -676,7 +942,9 @@ class BroModal implements Focusable {
 		private readonly onRetry: () => void,
 		private readonly onDispose: () => void,
 		private readonly retryLabel: string,
-	) {}
+	) {
+		setRegularMouseReporting(this.tui, true);
+	}
 
 	setLoading(text = LOADING_TEXT): void {
 		this.setContent("loading", `**${text}**`, "", false, false);
@@ -686,8 +954,8 @@ class BroModal implements Focusable {
 		this.setContent("streaming", text, "", false, false);
 	}
 
-	setResult(text: string, retryable: boolean, notice = ""): void {
-		this.setContent("result", text, text, true, retryable, notice);
+	setResult(text: string, retryable: boolean, notice = "", sourceLabel = ""): void {
+		this.setContent("result", text, text, true, retryable, notice, sourceLabel);
 	}
 
 	setStatic(kind: "help" | "empty", text: string, copyable: boolean): void {
@@ -705,12 +973,17 @@ class BroModal implements Focusable {
 		copyable: boolean,
 		retryable: boolean,
 		notice = "",
+		sourceLabel = "",
 	): void {
 		this.kind = kind;
 		this.rawText = rawText;
 		this.copyable = copyable;
 		this.retryable = retryable;
 		this.notice = notice;
+		this.sourceLabel = stripVTControlCharacters(sourceLabel)
+			.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
 		if (kind !== "streaming") this.offset = 0;
 		this.markdown.setText(text);
 		this.tui.requestRender();
@@ -755,13 +1028,12 @@ class BroModal implements Focusable {
 		this.offset = Math.max(0, Math.min(this.offset, this.maxOffset));
 		const visible = rendered.slice(this.offset, this.offset + this.bodyHeight);
 		const hiddenBelow = Math.max(0, this.maxOffset - this.offset);
-		const modeHint = this.tui.mode === "regular" ? " · mouse wheel needs fullscreen" : "";
 		const scroll = this.maxOffset > 0 ? ` · ↑${this.offset} ↓${hiddenBelow}` : "";
 		const controls = this.notice ? `${this.notice} · ${this.controls()}` : this.controls();
 
 		const lines = [
 			this.borderLine(innerWidth, "top"),
-			this.frameLine(this.theme.fg("accent", this.theme.bold(`Bro${modeHint}${scroll}`)), innerWidth),
+			this.frameLine(this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}${scroll}`)), innerWidth),
 			this.ruleLine(innerWidth),
 		];
 
@@ -821,6 +1093,7 @@ class BroModal implements Focusable {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		setRegularMouseReporting(this.tui, false);
 		this.onDispose();
 	}
 }
@@ -892,14 +1165,14 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 						if (closed || nextController.signal.aborted) return;
 						current = result;
 						options.onResult?.(result);
-						modal.setResult(result.text, options.retryable ?? true);
+						modal.setResult(result.text, options.retryable ?? true, "", result.source?.label);
 					})
 					.catch((error) => {
 						if (closed || nextController.signal.aborted) return;
 						const message = error instanceof Error ? error.message : String(error);
 						if (previous) {
 							current = previous;
-							modal.setResult(previous.text, options.retryable ?? true, `Retry failed: ${message}`);
+							modal.setResult(previous.text, options.retryable ?? true, `Retry failed: ${message}`, previous.source?.label);
 						} else {
 							modal.setError(message);
 						}
@@ -912,7 +1185,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 			if (options.text !== undefined) {
 				modal.setStatic(options.kind ?? "help", options.text, options.copyable ?? false);
 			} else if (current) {
-				modal.setResult(current.text, options.retryable ?? Boolean(options.run));
+				modal.setResult(current.text, options.retryable ?? Boolean(options.run), "", current.source?.label);
 			} else {
 				execute();
 			}
@@ -943,7 +1216,7 @@ export default async function bro(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("bro", {
-		description: "Simplify responses and manage Bro",
+		description: "Explain replies, documents, and webpages",
 		getArgumentCompletions: (prefix) => {
 			const normalized = prefix.trim().toLowerCase();
 			const matches = COMMANDS.filter((command) => command.value.startsWith(normalized));
@@ -956,17 +1229,19 @@ export default async function bro(pi: ExtensionAPI) {
 			const action = parts[0] ?? "";
 			const value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
 
-			if (action === "file") {
+			if (action === "file" || action === "url") {
 				if (!value) {
-					ctx.ui.notify("Use /bro file <path>.", "warning");
+					ctx.ui.notify(`Use /bro ${action} <${action === "file" ? "path" : "url"}>.`, "warning");
 					return;
 				}
-				const runFile = async (
+				const runInput = async (
 					signal: AbortSignal,
 					source?: BroSource,
 					onProgress?: (text: string) => void,
 				): Promise<BroResult> => {
-					const target = source ?? { text: await extractDocumentText(value, ctx.cwd, signal) };
+					const target = source ?? (action === "url"
+						? await extractWebPage(value, signal)
+						: { text: await extractDocumentText(value, ctx.cwd, signal), label: unquote(value) });
 					try {
 						return {
 							source: target,
@@ -978,8 +1253,8 @@ export default async function bro(pi: ExtensionAPI) {
 				};
 				try {
 					await showBroModal(ctx, {
-						loadingText: "Reading and simplifying document…",
-						run: runFile,
+						loadingText: action === "url" ? "Fetching and simplifying webpage…" : "Reading and simplifying document…",
+						run: runInput,
 						onResult: remember,
 					});
 				} catch (error) {
@@ -1172,7 +1447,7 @@ export default async function bro(pi: ExtensionAPI) {
 			if (normalized === "open") {
 				if (!lastResult) {
 					await showBroModal(ctx, {
-						text: "# Nothing to open yet\n\nRun `/bro` after an assistant response, or use `/bro file <path>`.",
+						text: "# Nothing to open yet\n\nRun `/bro` after an assistant response, use `/bro file <path>`, or use `/bro url <url>`.",
 						kind: "empty",
 					});
 					return;
@@ -1187,7 +1462,7 @@ export default async function bro(pi: ExtensionAPI) {
 			}
 
 			if (action && action !== "simplify") {
-				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, file, open, doctor, usage, model, effort, or help.`, "warning");
+				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, file, url, open, doctor, usage, model, effort, or help.`, "warning");
 				return;
 			}
 

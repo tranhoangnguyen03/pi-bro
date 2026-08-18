@@ -1,7 +1,7 @@
 {
   "name": "pi-bro",
-  "version": "0.7.0",
-  "description": "An Earendil Pi extension that explains assistant responses and local documents in a context-isolated window.",
+  "version": "0.8.0",
+  "description": "An Earendil Pi extension that explains assistant responses, local documents, and public webpages in a context-isolated window.",
   "type": "module",
   "license": "MIT",
   "author": "Tran Hoang Nguyen",
@@ -18,6 +18,8 @@
     "pi-extension",
     "pi-coding-agent",
     "document",
+    "webpage",
+    "article",
     "pdf",
     "docx",
     "simplify",
@@ -58,6 +60,8 @@
     "typescript": "6.0.2"
   },
   "dependencies": {
+    "defuddle": "0.19.2",
+    "linkedom": "0.18.13",
     "mammoth": "^1.12.1",
     "unpdf": "^1.8.1"
   }

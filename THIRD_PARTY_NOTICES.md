@@ -25,3 +25,16 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Defuddle
+
+Webpage content extraction uses
+[Defuddle](https://github.com/kepano/defuddle), copyright (c) 2025 Steph Ango
+(@kepano), licensed under the MIT License. Its complete license is distributed
+with the Defuddle npm package.
+
+## LinkeDOM
+
+HTML parsing uses [LinkeDOM](https://github.com/WebReflection/linkedom),
+copyright (c) 2021 Andrea Giammarchi (@WebReflection), licensed under the ISC
+License. Its complete license is distributed with the LinkeDOM npm package.

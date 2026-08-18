@@ -37,12 +37,32 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const { agyFailureMessage, agySelection, extractDocumentText, formatAgyUsage, parseAgyModels, parseBroSettings, wheelDelta } = await import(pathToFileURL(process.argv[2]));
+const {
+	agyFailureMessage,
+	agySelection,
+	extractDocumentText,
+	extractWebHtml,
+	extractWebPage,
+	formatAgyUsage,
+	isPublicWebAddress,
+	parseAgyModels,
+	parseBroSettings,
+	parseWebRedirect,
+	parseWebUrl,
+	setRegularMouseReporting,
+	wheelDelta,
+} = await import(pathToFileURL(process.argv[2]));
 assert.equal(wheelDelta("\u001b[<64;10;20M"), -3);
 assert.equal(wheelDelta("\u001b[<65;10;20M"), 3);
 assert.equal(wheelDelta("\u001b[<68;10;20M"), -3);
 assert.equal(wheelDelta("\u001b[<0;10;20M"), 0);
 assert.equal(wheelDelta("\u001b[A"), 0);
+const mouseWrites = [];
+const regularTui = { mode: "regular", terminal: { write: (data) => mouseWrites.push(data) } };
+setRegularMouseReporting(regularTui, true);
+setRegularMouseReporting(regularTui, false);
+setRegularMouseReporting({ mode: "fullscreen", terminal: regularTui.terminal }, true);
+assert.deepEqual(mouseWrites, ["\u001b[?1000h\u001b[?1006h", "\u001b[?1000l\u001b[?1006l"]);
 const usage = formatAgyUsage({
 	status: "SUCCESS",
 	response: "Gemini Models\tWeekly Limit Remaining\t97%\n",
@@ -74,6 +94,37 @@ assert.deepEqual(agySelection({ model: "claude-one", effort: "default" }), { mod
 assert.match(agyFailureMessage("start", { code: 1, killed: false, stderr: "" }), /installed and signed in/);
 assert.match(agyFailureMessage("start", { code: 1, killed: true, stderr: "" }), /timed out/);
 assert.match(agyFailureMessage("check usage", { code: 1, killed: false, stderr: "Sign in first" }), /Sign in first/);
+assert.equal(isPublicWebAddress("93.184.216.34"), true, "public IPv4");
+assert.equal(isPublicWebAddress("2606:4700:4700::1111"), true, "public IPv6");
+for (const address of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "192.168.1.1", "192.0.2.1", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1"]) {
+	assert.equal(isPublicWebAddress(address), false, address);
+}
+assert.equal(parseWebUrl("https://example.com/article#section").href, "https://example.com/article");
+assert.throws(() => parseWebUrl("file:///etc/passwd"), /HTTP or HTTPS/);
+assert.throws(() => parseWebUrl("https://user:secret@example.com"), /usernames or passwords/);
+assert.equal(parseWebRedirect(new URL("http://example.com/old"), "/new").href, "http://example.com/new");
+assert.throws(() => parseWebRedirect(new URL("https://example.com"), "http://example.com"), /insecure/);
+await assert.rejects(extractWebPage("http://127.0.0.1"), /local, private, or reserved/);
+const webpage = await extractWebHtml(`<!doctype html><html><head><title>Example\u001b[2J article</title></head><body>
+	<nav>Site navigation</nav><main><article><h1>Example article</h1><p>This is the important explanation with enough useful words for extraction.</p><pre><code>npm test</code></pre><div id="comments">Ignore this reply</div><img src="large.jpg" alt="Large image"></article></main>
+</body></html>`, "https://example.com/article");
+assert.match(webpage.text, /important explanation/);
+assert.match(webpage.text, /npm test/);
+assert.doesNotMatch(webpage.text, /Site navigation|Ignore this reply|large\.jpg/);
+assert.equal(webpage.label, "example.com · Example article");
+const originalFetch = globalThis.fetch;
+let extractorFetches = 0;
+globalThis.fetch = async () => {
+	extractorFetches++;
+	throw new Error("unexpected extractor network fallback");
+};
+try {
+	await extractWebHtml("<main><p>Public social post shell with enough fallback text.</p></main>", "https://x.com/example/status/123");
+} finally {
+	globalThis.fetch = originalFetch;
+}
+assert.equal(extractorFetches, 0, "web extractor called a third-party fallback");
+await assert.rejects(extractWebHtml("<p></p>".repeat(100_001), "https://example.com"), /too complex/);
 
 const root = await mkdtemp(join(tmpdir(), "pi-bro-extract-"));
 const outside = await mkdtemp(join(tmpdir(), "pi-bro-outside-"));
@@ -166,6 +217,8 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-file","type":"prompt","message":"/bro open"}'
 		sleep 1
+		printf '%s\n' '{"id":"bro-url-missing","type":"prompt","message":"/bro url"}'
+		sleep 1
 		printf '%s\n' '{"id":"bro-model-invalid","type":"prompt","message":"/bro model unknown"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-model","type":"prompt","message":"/bro model gemini-test-two"}'
@@ -184,8 +237,13 @@ output=$(
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 16 ]; then
-	printf 'Expected 16 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 17 ]; then
+	printf 'Expected 17 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+	exit 1
+fi
+
+if ! printf '%s\n' "$output" | grep -q 'Use /bro url <url>.'; then
+	printf 'Missing URL input did not produce an actionable warning:\n%s\n' "$output" >&2
 	exit 1
 fi
 
