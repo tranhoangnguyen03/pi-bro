@@ -41,7 +41,11 @@ Quoted text as a JSON string:
 {{response}}`;
 
 type Theme = ExtensionCommandContext["ui"]["theme"];
-type TuiLike = { readonly mode: "regular" | "fullscreen"; requestRender(): void };
+type TuiLike = {
+	readonly mode: "regular" | "fullscreen";
+	readonly terminal?: { write?: (data: string) => void };
+	requestRender(): void;
+};
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
 type BroSource = { text: string; label?: string };
 type BroResult = { source: BroSource; text: string };
@@ -68,6 +72,10 @@ export function wheelDelta(data: string): number {
 	const button = Number.parseInt(match[1], 10);
 	if ((button & 64) === 0) return 0;
 	return (button & 3) === 0 ? -3 : (button & 3) === 1 ? 3 : 0;
+}
+
+export function setRegularMouseReporting(tui: Pick<TuiLike, "mode" | "terminal">, enabled: boolean): void {
+	if (tui.mode === "regular") tui.terminal?.write?.(`\x1b[?1000${enabled ? "h" : "l"}\x1b[?1006${enabled ? "h" : "l"}`);
 }
 
 const COMMANDS = [
@@ -882,13 +890,13 @@ Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly.
 
 ## Controls
 
-- **Mouse wheel / trackpad** — scroll in Pi's fullscreen mode
+- **Mouse wheel / trackpad** — scroll
 - **↑ / ↓** — scroll
 - **C** — copy the full explanation
 - **R** — repeat the current action
 - **Esc** — close, or cancel while Bro is working
 
-In regular terminal mode, use the arrow keys. In fullscreen mode, mouse selection may extend outside the modal; press **C** to copy everything reliably.
+Bro temporarily captures mouse input while the modal is open. Native mouse selection may be unavailable or extend outside the modal; press **C** to copy everything reliably.
 
 ## Important limits
 
@@ -933,7 +941,9 @@ class BroModal implements Focusable {
 		private readonly onRetry: () => void,
 		private readonly onDispose: () => void,
 		private readonly retryLabel: string,
-	) {}
+	) {
+		setRegularMouseReporting(this.tui, true);
+	}
 
 	setLoading(text = LOADING_TEXT): void {
 		this.setContent("loading", `**${text}**`, "", false, false);
@@ -1017,13 +1027,12 @@ class BroModal implements Focusable {
 		this.offset = Math.max(0, Math.min(this.offset, this.maxOffset));
 		const visible = rendered.slice(this.offset, this.offset + this.bodyHeight);
 		const hiddenBelow = Math.max(0, this.maxOffset - this.offset);
-		const modeHint = this.tui.mode === "regular" ? " · mouse wheel needs fullscreen" : "";
 		const scroll = this.maxOffset > 0 ? ` · ↑${this.offset} ↓${hiddenBelow}` : "";
 		const controls = this.notice ? `${this.notice} · ${this.controls()}` : this.controls();
 
 		const lines = [
 			this.borderLine(innerWidth, "top"),
-			this.frameLine(this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}${modeHint}${scroll}`)), innerWidth),
+			this.frameLine(this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}${scroll}`)), innerWidth),
 			this.ruleLine(innerWidth),
 		];
 
@@ -1083,6 +1092,7 @@ class BroModal implements Focusable {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		setRegularMouseReporting(this.tui, false);
 		this.onDispose();
 	}
 }

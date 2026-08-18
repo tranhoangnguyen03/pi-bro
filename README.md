@@ -59,15 +59,15 @@ or `/bro url` command reads or fetches a fresh copy.
 
 ### Modal controls
 
-- **Mouse wheel / trackpad**: Scroll in Pi's fullscreen mode
+- **Mouse wheel / trackpad**: Scroll in regular or fullscreen mode
 - **↑ / ↓**: Scroll in any mode
 - **C**: Copy the complete explanation
 - **R**: Simplify the captured source or run the current Doctor check again
 - **Esc**: Close the modal, or cancel while Bro is working
 
-In regular terminal mode, use the arrow keys. Bro deliberately leaves native
-mouse selection alone. In fullscreen mode, selection can visually extend
-outside the modal; press **C** to copy the complete explanation reliably.
+Bro temporarily captures mouse input while its modal is open. Native mouse
+selection may be unavailable or visually extend outside the modal depending on
+your terminal mode; press **C** to copy the complete explanation reliably.
 
 ## Bro in action
 
@@ -484,12 +484,10 @@ tool before giving it to Bro.
   or other proxy environment variables.
 - Keeps only the latest explanation in memory.
 - Does not store history or export directly to files.
-- Mouse-wheel and trackpad scrolling work in Pi's fullscreen mode
-  (`pi --tui-mode fullscreen`). In regular mode, Bro shows a warning in its
-  title; use the arrow keys so Bro does not interfere with your terminal's
-  native text selection.
-- In fullscreen mode, mouse text selection may visually extend outside the Bro
-  window. Press **C** to copy the full explanation instead.
+- Bro temporarily captures mouse input while its modal is open so mouse-wheel
+  and trackpad scrolling work in regular and fullscreen modes. Native mouse
+  selection may be unavailable or visually extend outside the Bro window;
+  press **C** to copy the full explanation instead.
 
 ## Development
 

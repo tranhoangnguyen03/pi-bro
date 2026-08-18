@@ -49,6 +49,7 @@ const {
 	parseBroSettings,
 	parseWebRedirect,
 	parseWebUrl,
+	setRegularMouseReporting,
 	wheelDelta,
 } = await import(pathToFileURL(process.argv[2]));
 assert.equal(wheelDelta("\u001b[<64;10;20M"), -3);
@@ -56,6 +57,12 @@ assert.equal(wheelDelta("\u001b[<65;10;20M"), 3);
 assert.equal(wheelDelta("\u001b[<68;10;20M"), -3);
 assert.equal(wheelDelta("\u001b[<0;10;20M"), 0);
 assert.equal(wheelDelta("\u001b[A"), 0);
+const mouseWrites = [];
+const regularTui = { mode: "regular", terminal: { write: (data) => mouseWrites.push(data) } };
+setRegularMouseReporting(regularTui, true);
+setRegularMouseReporting(regularTui, false);
+setRegularMouseReporting({ mode: "fullscreen", terminal: regularTui.terminal }, true);
+assert.deepEqual(mouseWrites, ["\u001b[?1000h\u001b[?1006h", "\u001b[?1000l\u001b[?1006l"]);
 const usage = formatAgyUsage({
 	status: "SUCCESS",
 	response: "Gemini Models\tWeekly Limit Remaining\t97%\n",
