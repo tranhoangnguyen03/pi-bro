@@ -1,7 +1,7 @@
 # pi-bro
 
-Turn a dense AI reply, pasted text, local document, or public webpage into a plain-language
-explanation without adding anything to your main agent's context.
+Turn a dense AI reply, pasted text, local document, or public webpage into a
+plain-language explanation without adding anything to your main agent's context.
 
 `pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
 It opens explanations in a separate modal and uses the
@@ -22,6 +22,7 @@ Restart Pi or run `/reload`, then try:
 
 ```text
 /bro
+/bro simplify Paste text here
 /bro file docs/report.pdf
 /bro url https://example.com/article
 ```
@@ -41,8 +42,8 @@ installing it, use `pi -e npm:pi-bro`.
 | Local document | `/bro file <path>` | Extracts text from a workspace-local Markdown, text, PDF, or DOCX file. |
 | Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
 
-Pressing **R** simplifies the captured source again. Running a new `/bro file`
-or `/bro url` command reads or fetches a fresh copy.
+Pressing **R** simplifies the captured source again. These commands capture a
+new source: `/bro simplify`, `/bro file`, and `/bro url`.
 
 ## Commands
 
@@ -335,6 +336,18 @@ cached files, not your source code or dependencies.
      supported.
 
 </details>
+
+## Explain pasted text
+
+Paste text directly after the command:
+
+```text
+/bro simplify OAuth refresh tokens are rotated after every successful use.
+```
+
+Bro explains the pasted text instead of the latest assistant reply. With no text
+after `/bro simplify`, it falls back to the latest completed reply. Press **R**
+to simplify the same captured text again.
 
 ## Explain a document
 

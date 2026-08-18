@@ -874,7 +874,7 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro open\` — reopen the latest explanation
 
-Press **R** to simplify the captured source again. Run a new \`/bro file\` or \`/bro url\` command to read or fetch a fresh copy.
+Press **R** to simplify the captured source again. Run a new \`/bro simplify\`, \`/bro file\`, or \`/bro url\` command to capture a new source.
 
 ## Check and configure
 
@@ -1216,7 +1216,7 @@ export default async function bro(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("bro", {
-		description: "Explain replies, documents, and webpages",
+		description: "Explain pasted text, replies, documents, and webpages",
 		getArgumentCompletions: (prefix) => {
 			const normalized = prefix.trim().toLowerCase();
 			const matches = COMMANDS.filter((command) => command.value.startsWith(normalized));
@@ -1447,7 +1447,7 @@ export default async function bro(pi: ExtensionAPI) {
 			if (normalized === "open") {
 				if (!lastResult) {
 					await showBroModal(ctx, {
-						text: "# Nothing to open yet\n\nRun `/bro` after an assistant response, use `/bro file <path>`, or use `/bro url <url>`.",
+						text: "# Nothing to open yet\n\nUse `/bro simplify <text>`, run `/bro` after an assistant response, use `/bro file <path>`, or use `/bro url <url>`.",
 						kind: "empty",
 					});
 					return;
