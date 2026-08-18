@@ -1,7 +1,7 @@
 {
   "name": "pi-bro",
-  "version": "0.6.0",
-  "description": "An Earendil Pi extension that simplifies the latest assistant response in a separate, context-isolated window.",
+  "version": "0.7.0",
+  "description": "An Earendil Pi extension that explains assistant responses and local documents in a context-isolated window.",
   "type": "module",
   "license": "MIT",
   "author": "Tran Hoang Nguyen",
@@ -17,6 +17,9 @@
     "pi-package",
     "pi-extension",
     "pi-coding-agent",
+    "document",
+    "pdf",
+    "docx",
     "simplify",
     "agy",
     "gemini",
@@ -53,5 +56,9 @@
     "@earendil-works/pi-tui": "0.84.2",
     "@types/node": "^24.0.0",
     "typescript": "6.0.2"
+  },
+  "dependencies": {
+    "mammoth": "^1.12.1",
+    "unpdf": "^1.8.1"
   }
 }
