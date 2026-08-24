@@ -46,6 +46,7 @@ test("brief targets about 200 words without dropping warnings or conditions", ()
 	const prompt = buildDefaultPrompt("x", "brief");
 
 	assert.match(prompt, /roughly 200 words/);
+	assert.match(prompt, /next action if the source specifies one/);
 	assert.match(prompt, /may omit secondary examples and repetition/);
 	assert.match(prompt, /never (?:omit|drop) warnings or conditions/);
 });
