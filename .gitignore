@@ -1,4 +1,5 @@
 node_modules/
+.worktrees/
 *.tgz
 .DS_Store
 npm-debug.log*
