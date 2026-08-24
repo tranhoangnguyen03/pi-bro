@@ -15,7 +15,7 @@ Explain jargon briefly. Avoid needless rewriting of already-clear text.
 Return only the simpler explanation.`;
 
 const MODE_PROMPTS: Record<BroMode, string> = {
-	brief: "State the main point, meaning, and next action in roughly 200 words. You may omit secondary repetition, but never omit warnings or conditions.",
+	brief: "State the main point, meaning, and next action in roughly 200 words. You may omit secondary examples and repetition, but never omit warnings or conditions.",
 	balanced: "Preserve material facts and qualifications, remove repetition, and restructure when useful. Aim for 400 words, but exceed that when fidelity requires.",
 	faithful: "Simplify the wording. Preserve every claim, condition, qualification, warning, and code block. There is no fixed word ceiling.",
 };
