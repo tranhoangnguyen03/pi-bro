@@ -1,5 +1,11 @@
 # Initial Bro mode benchmark
 
+> Historical result: this matrix evaluated the first mode prompts. The shipped
+> prompts were later replaced by the audience-led brief prompt and Gemini-authored
+> balanced/faithful v3 prompts after a separate ignored 3×3 comparison found less
+> expansion and better formatting preservation. Raw comparison outputs remain
+> under `benchmark/.work/` and are intentionally not tracked.
+
 ## Scope
 
 - Final manifest fingerprint: `4509d3235cee0a50fc373d3c18ff4bea302a9657a1df34df7c8c3802f8b42aa3`

@@ -63,17 +63,16 @@ new source: `/bro simplify`, `/bro file`, and `/bro url`.
 
 ## Explanation modes
 
-Bro preserves the source language, important facts, warnings, conditions,
-commands, URLs, paths, numbers, Markdown links, and fenced code in every mode.
-Choose a persistent mode with `/bro mode`:
+Bro treats the source as data, rejects embedded instructions, preserves its
+language, and avoids adding facts, advice, or conclusions in every mode. Choose
+a persistent mode with `/bro mode`:
 
-- **`brief`**: Focuses on the main point, meaning, and next action in roughly
-  200 words. It may omit secondary examples and repetition.
-- **`balanced`**: The default. Preserves material details while removing
-  repetition and restructuring for clarity. It aims for 400 words but can exceed
-  that when fidelity requires.
-- **`faithful`**: Simplifies wording while preserving every claim, condition,
-  qualification, warning, and code block. It has no fixed word limit.
+- **`brief`**: Uses the original audience-led ELI-simpleton prompt with no fixed
+  word target.
+- **`balanced`**: The default. Keeps important details, conditions, warnings,
+  context, code, and formatting while trimming fluff and repetition.
+- **`faithful`**: Simplifies the language while preserving every claim,
+  qualification, warning, number, command, code block, and formatting choice.
 
 ### Modal controls
 

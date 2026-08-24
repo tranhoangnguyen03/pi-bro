@@ -2,6 +2,14 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.9.1] - 2026-08-24
+
+### Changed
+
+- Replaced the built-in mode prompts with the original audience-led brief prompt and Gemini-authored balanced and faithful prompts.
+- Removed fixed word targets. Balanced trims repetition while preserving important context; faithful preserves every source detail and formatting choice.
+- Kept a shared guard that rejects embedded source instructions and unsupported facts, advice, or conclusions.
+
 ## [0.9.0] - 2026-08-24
 
 ### Added
