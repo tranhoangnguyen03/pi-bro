@@ -28,6 +28,7 @@ fi
 wheel_build="$test_dir/wheel-build"
 "$repo_dir/node_modules/.bin/tsc" --ignoreConfig "$repo_dir/bro.ts" \
 	--target ES2022 --module NodeNext --moduleResolution NodeNext --strict \
+	--allowImportingTsExtensions --rewriteRelativeImportExtensions \
 	--skipLibCheck --types node --outDir "$wheel_build"
 ln -s "$repo_dir/node_modules" "$wheel_build/node_modules"
 node --input-type=module - "$wheel_build/bro.js" <<'JS'
@@ -86,7 +87,14 @@ assert.throws(() => parseAgyModels("Fetching available models...\n"), /no availa
 assert.deepEqual(parseBroSettings({ model: " gemini-one ", effort: "high" }), {
 	model: "gemini-one",
 	effort: "high",
+	mode: "balanced",
 });
+assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "faithful" }), {
+	model: "gemini-one",
+	effort: "low",
+	mode: "faithful",
+});
+assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
 assert.deepEqual(agySelection({ model: "gemini-one", effort: "low" }), { model: "gemini-one", effort: "low" });
 assert.deepEqual(agySelection({ model: "gemini-one-low", effort: "high" }), { model: "gemini-one", effort: "high" });
@@ -219,6 +227,10 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-url-missing","type":"prompt","message":"/bro url"}'
 		sleep 1
+		printf '%s\n' '{"id":"bro-mode-invalid","type":"prompt","message":"/bro mode unknown"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-mode","type":"prompt","message":"/bro mode faithful"}'
+		sleep 1
 		printf '%s\n' '{"id":"bro-model-invalid","type":"prompt","message":"/bro model unknown"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-model","type":"prompt","message":"/bro model gemini-test-two"}'
@@ -237,8 +249,8 @@ output=$(
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 17 ]; then
-	printf 'Expected 17 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 19 ]; then
+	printf 'Expected 19 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
 	exit 1
 fi
 
@@ -261,6 +273,7 @@ import { readFile } from "node:fs/promises";
 assert.deepEqual(JSON.parse(await readFile(process.argv[2], "utf8")), {
 	model: "gemini-test-two",
 	effort: "high",
+	mode: "faithful",
 });
 assert.deepEqual(JSON.parse(await readFile(process.argv[3], "utf8")), {
 	model: "gemini-test-one",
