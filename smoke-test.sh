@@ -400,4 +400,17 @@ if ! printf '%s\n' "$broken_output" | grep -q '/bro doctor'; then
 	exit 1
 fi
 
+if ! grep -q '/bro mode' "$repo_dir/README.md" || ! grep -q 'brief' "$repo_dir/README.md" || ! grep -q 'balanced' "$repo_dir/README.md" || ! grep -q 'faithful' "$repo_dir/README.md"; then
+	printf 'README does not document all Bro modes\n' >&2
+	exit 1
+fi
+if ! grep -qi 'balanced.*default\|default.*balanced' "$repo_dir/README.md"; then
+	printf 'README does not identify balanced as the default mode\n' >&2
+	exit 1
+fi
+if ! grep -qi 'custom prompt.*override\|override.*custom prompt' "$repo_dir/README.md"; then
+	printf 'README does not explain custom prompt precedence\n' >&2
+	exit 1
+fi
+
 printf 'bro setup failures stayed contained and output stayed out of the session and model context\n'
