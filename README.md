@@ -54,7 +54,7 @@ new source: `/bro simplify`, `/bro file`, and `/bro url`.
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
-| `/bro doctor` | Check Bro's settings, Agy installation, account, model, and effort. |
+| `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
 | `/bro usage [--provider agy]` | Show current Agy resource limits. |
 | `/bro model [id]` | View or choose the Agy model. |
 | `/bro effort [low\|medium\|high]` | View or choose the supported reasoning effort. |
@@ -463,8 +463,15 @@ Text to explain:
 ```
 
 Bro re-reads this file every time you simplify, so your edits take effect
-immediately without reloading Pi. Bro never creates or modifies this file. A
-valid custom prompt fully overrides the selected built-in mode.
+immediately without reloading Pi. Bro never creates or modifies this file.
+Existing valid custom prompts continue working unchanged.
+
+A valid custom prompt fully overrides all built-in mode instructions. `/bro
+mode` still changes the saved mode, but that mode remains inactive while
+`bro-prompt.md` exists. Remove or rename `bro-prompt.md` to use the saved
+built-in mode again. If the custom prompt is invalid—for example, it has no
+`{{response}}` placeholder or has more than one—Bro blocks the explanation;
+run `/bro doctor` for the exact problem.
 
 ## Privacy and safety
 
@@ -534,6 +541,10 @@ The smoke test uses a fake `agy`, so it does not call an external model. It
 verifies command routing, document and URL safety boundaries, HTML extraction,
 healthy and broken setup handling, settings, custom prompt handling, and
 context isolation.
+
+The prompt benchmark is manual and makes live Agy calls. Read
+[`benchmark/README.md`](benchmark/README.md) before running it; it is never part
+of `npm test`.
 
 ## License
 

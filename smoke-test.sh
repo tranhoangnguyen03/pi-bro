@@ -408,8 +408,28 @@ if ! grep -qi 'balanced.*default\|default.*balanced' "$repo_dir/README.md"; then
 	printf 'README does not identify balanced as the default mode\n' >&2
 	exit 1
 fi
-if ! grep -qi 'custom prompt.*override\|override.*custom prompt' "$repo_dir/README.md"; then
-	printf 'README does not explain custom prompt precedence\n' >&2
+if ! grep -qi 'custom prompt.*override\|override.*custom prompt' "$repo_dir/README.md" ||
+	! grep -qi 'saved mode.*inactive\|mode.*inactive' "$repo_dir/README.md" ||
+	! grep -qi 'remov.*bro-prompt\|renam.*bro-prompt' "$repo_dir/README.md"; then
+	printf 'README does not fully explain existing custom prompt precedence\n' >&2
+	exit 1
+fi
+if ! grep -q 'brief —' "$repo_dir/bro.ts" || ! grep -q 'balanced —' "$repo_dir/bro.ts" || ! grep -q 'faithful —' "$repo_dir/bro.ts"; then
+	printf 'Built-in help does not describe all Bro modes\n' >&2
+	exit 1
+fi
+if [ ! -f "$repo_dir/CHANGELOG.md" ] || ! grep -q '/bro mode' "$repo_dir/CHANGELOG.md" || ! grep -qi 'custom prompt' "$repo_dir/CHANGELOG.md"; then
+	printf 'CHANGELOG does not document modes and custom prompt compatibility\n' >&2
+	exit 1
+fi
+if [ ! -f "$repo_dir/benchmark/README.md" ] || ! grep -q 'benchmark:dry-run' "$repo_dir/benchmark/README.md" ||
+	! grep -q -- '--approve' "$repo_dir/benchmark/README.md" || ! grep -qi 'manual' "$repo_dir/benchmark/README.md" ||
+	! grep -qi 'never retries\|does not retry' "$repo_dir/benchmark/README.md"; then
+	printf 'Benchmark documentation is incomplete\n' >&2
+	exit 1
+fi
+if ! grep -q 'CHANGELOG.md' "$repo_dir/package.json"; then
+	printf 'CHANGELOG is not included in the npm package\n' >&2
 	exit 1
 fi
 

@@ -877,7 +877,7 @@ Press **R** to simplify the captured source again. Run a new \`/bro simplify\`, 
 
 ## Check and configure
 
-- \`/bro doctor\` — check settings, Agy, account, model, and effort
+- \`/bro doctor\` — check settings, Agy, account, model, effort, and mode
 - \`/bro usage [--provider agy]\` — show current Agy limits
 - \`/bro model [id]\` — view or choose the Agy model
 - \`/bro effort [low|medium|high]\` — view or choose reasoning effort
@@ -888,6 +888,14 @@ Press **R** to simplify the captured source again. Run a new \`/bro simplify\`, 
 ${settingsSummary}
 
 Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly. Changes apply to future explanations.
+
+## Explanation modes
+
+- brief — main point and next action, roughly 200 words
+- balanced — default; material detail with clearer structure
+- faithful — closest to the source, with no fixed word limit
+
+If \`${PROMPT_FILE}\` exists and is valid, the selected mode stays saved but inactive because the custom prompt fully overrides it. Remove or rename \`bro-prompt.md\` to use the saved built-in mode again.
 
 ## Controls
 
@@ -917,7 +925,9 @@ Usage and Doctor checks contact Agy but do not send source text or run a model t
 
 ## Custom prompt
 
-Create or edit \`${PROMPT_FILE}\` and include \`{{response}}\` exactly once. Bro reads it on the next explanation and never modifies it. A valid custom prompt fully overrides the selected built-in mode.`;
+Create or edit \`${PROMPT_FILE}\` and include \`{{response}}\` exactly once. Bro reads it on the next explanation and never modifies it. Existing valid custom prompts continue working unchanged.
+
+A valid custom prompt fully overrides all built-in mode instructions. \`/bro mode\` still changes the saved mode, but that mode remains inactive until you remove or rename \`bro-prompt.md\`. An invalid custom prompt blocks explanations; run \`/bro doctor\` for the exact problem.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.
