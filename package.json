@@ -43,6 +43,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && node --test prompt.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
+    "benchmark:dry-run": "node benchmark/run.ts dry-run",
+    "benchmark:run": "node benchmark/run.ts run",
+    "benchmark:report": "node benchmark/run.ts report",
     "prepublishOnly": "npm test"
   },
   "pi": {

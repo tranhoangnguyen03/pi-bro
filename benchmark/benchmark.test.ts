@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildBaselinePrompt } from "./baseline.ts";
 import { BENCHMARK_CORPUS, checkOutput } from "./corpus.ts";
+import { buildManifest, stableCallId, type CallIdentity } from "./run.ts";
 
 const fixture = (id: string) => {
 	const value = BENCHMARK_CORPUS.find((item) => item.id === id);
@@ -58,4 +59,36 @@ test("checks unchanged output, expected change, and length ratio", () => {
 	assert.equal(unchanged.expectedChangeSatisfied, false);
 	assert.equal(unchanged.lengthRatio, 1);
 	assert.equal(checkOutput(inflated, "Plain summary.").expectedChangeSatisfied, true);
+});
+
+test("builds an exact 32-row dry manifest", () => {
+	const manifest = buildManifest();
+	assert.equal(manifest.rows.length, 32);
+	assert.equal(new Set(manifest.rows.map((row) => row.callId)).size, 32);
+	assert.deepEqual(new Set(manifest.rows.map((row) => row.variant)), new Set(["baseline", "brief", "balanced", "faithful"]));
+	assert.deepEqual(new Set(manifest.rows.map((row) => row.model)), new Set(["gemini-3.7-flash"]));
+	assert.deepEqual(new Set(manifest.rows.map((row) => row.effort)), new Set(["low"]));
+});
+
+test("call IDs include every paid-call identity input", () => {
+	const base: CallIdentity = {
+		fixture: "fixture",
+		fixtureSha256: "fixture-hash",
+		variant: "balanced",
+		promptSha256: "prompt-hash",
+		model: "gemini-3.7-flash",
+		effort: "low",
+		timeoutMs: 125_000,
+	};
+	for (const [key, value] of [
+		["fixture", "other-fixture"],
+		["fixtureSha256", "other-fixture-hash"],
+		["variant", "brief"],
+		["promptSha256", "other-prompt-hash"],
+		["model", "other-model"],
+		["effort", "high"],
+		["timeoutMs", 45_000],
+	] as const) {
+		assert.notEqual(stableCallId(base), stableCallId({ ...base, [key]: value }));
+	}
 });
