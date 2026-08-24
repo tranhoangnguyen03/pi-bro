@@ -28,6 +28,7 @@ fi
 wheel_build="$test_dir/wheel-build"
 "$repo_dir/node_modules/.bin/tsc" --ignoreConfig "$repo_dir/bro.ts" \
 	--target ES2022 --module NodeNext --moduleResolution NodeNext --strict \
+	--allowImportingTsExtensions --rewriteRelativeImportExtensions \
 	--skipLibCheck --types node --outDir "$wheel_build"
 ln -s "$repo_dir/node_modules" "$wheel_build/node_modules"
 node --input-type=module - "$wheel_build/bro.js" <<'JS'
@@ -86,7 +87,14 @@ assert.throws(() => parseAgyModels("Fetching available models...\n"), /no availa
 assert.deepEqual(parseBroSettings({ model: " gemini-one ", effort: "high" }), {
 	model: "gemini-one",
 	effort: "high",
+	mode: "balanced",
 });
+assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "faithful" }), {
+	model: "gemini-one",
+	effort: "low",
+	mode: "faithful",
+});
+assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
 assert.deepEqual(agySelection({ model: "gemini-one", effort: "low" }), { model: "gemini-one", effort: "low" });
 assert.deepEqual(agySelection({ model: "gemini-one-low", effort: "high" }), { model: "gemini-one", effort: "high" });
@@ -219,6 +227,10 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-url-missing","type":"prompt","message":"/bro url"}'
 		sleep 1
+		printf '%s\n' '{"id":"bro-mode-invalid","type":"prompt","message":"/bro mode unknown"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-mode","type":"prompt","message":"/bro mode faithful"}'
+		sleep 1
 		printf '%s\n' '{"id":"bro-model-invalid","type":"prompt","message":"/bro model unknown"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-model","type":"prompt","message":"/bro model gemini-test-two"}'
@@ -237,8 +249,8 @@ output=$(
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 17 ]; then
-	printf 'Expected 17 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 19 ]; then
+	printf 'Expected 19 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
 	exit 1
 fi
 
@@ -261,6 +273,7 @@ import { readFile } from "node:fs/promises";
 assert.deepEqual(JSON.parse(await readFile(process.argv[2], "utf8")), {
 	model: "gemini-test-two",
 	effort: "high",
+	mode: "faithful",
 });
 assert.deepEqual(JSON.parse(await readFile(process.argv[3], "utf8")), {
 	model: "gemini-test-one",
@@ -384,6 +397,39 @@ if ! printf '%s\n' "$broken_output" | grep -q 'must contain'; then
 fi
 if ! printf '%s\n' "$broken_output" | grep -q '/bro doctor'; then
 	printf 'Broken-prompt errors did not suggest Doctor:\n%s\n' "$broken_output" >&2
+	exit 1
+fi
+
+if ! grep -q '/bro mode' "$repo_dir/README.md" || ! grep -q 'brief' "$repo_dir/README.md" || ! grep -q 'balanced' "$repo_dir/README.md" || ! grep -q 'faithful' "$repo_dir/README.md"; then
+	printf 'README does not document all Bro modes\n' >&2
+	exit 1
+fi
+if ! grep -qi 'balanced.*default\|default.*balanced' "$repo_dir/README.md"; then
+	printf 'README does not identify balanced as the default mode\n' >&2
+	exit 1
+fi
+if ! grep -qi 'custom prompt.*override\|override.*custom prompt' "$repo_dir/README.md" ||
+	! grep -qi 'saved mode.*inactive\|mode.*inactive' "$repo_dir/README.md" ||
+	! grep -qi 'remov.*bro-prompt\|renam.*bro-prompt' "$repo_dir/README.md"; then
+	printf 'README does not fully explain existing custom prompt precedence\n' >&2
+	exit 1
+fi
+if ! grep -q 'brief —' "$repo_dir/bro.ts" || ! grep -q 'balanced —' "$repo_dir/bro.ts" || ! grep -q 'faithful —' "$repo_dir/bro.ts"; then
+	printf 'Built-in help does not describe all Bro modes\n' >&2
+	exit 1
+fi
+if [ ! -f "$repo_dir/CHANGELOG.md" ] || ! grep -q '/bro mode' "$repo_dir/CHANGELOG.md" || ! grep -qi 'custom prompt' "$repo_dir/CHANGELOG.md"; then
+	printf 'CHANGELOG does not document modes and custom prompt compatibility\n' >&2
+	exit 1
+fi
+if [ ! -f "$repo_dir/benchmark/README.md" ] || ! grep -q 'benchmark:dry-run' "$repo_dir/benchmark/README.md" ||
+	! grep -q -- '--approve' "$repo_dir/benchmark/README.md" || ! grep -qi 'manual' "$repo_dir/benchmark/README.md" ||
+	! grep -qi 'never retries\|does not retry' "$repo_dir/benchmark/README.md"; then
+	printf 'Benchmark documentation is incomplete\n' >&2
+	exit 1
+fi
+if ! grep -q 'CHANGELOG.md' "$repo_dir/package.json"; then
+	printf 'CHANGELOG is not included in the npm package\n' >&2
 	exit 1
 fi
 

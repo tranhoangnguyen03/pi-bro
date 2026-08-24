@@ -54,11 +54,26 @@ new source: `/bro simplify`, `/bro file`, and `/bro url`.
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
-| `/bro doctor` | Check Bro's settings, Agy installation, account, model, and effort. |
+| `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
 | `/bro usage [--provider agy]` | Show current Agy resource limits. |
 | `/bro model [id]` | View or choose the Agy model. |
 | `/bro effort [low\|medium\|high]` | View or choose the supported reasoning effort. |
+| `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro help` | Open the built-in quick reference. |
+
+## Explanation modes
+
+Bro preserves the source language, important facts, warnings, conditions,
+commands, URLs, paths, numbers, Markdown links, and fenced code in every mode.
+Choose a persistent mode with `/bro mode`:
+
+- **`brief`**: Focuses on the main point, meaning, and next action in roughly
+  200 words. It may omit secondary examples and repetition.
+- **`balanced`**: The default. Preserves material details while removing
+  repetition and restructuring for clarity. It aims for 400 words but can exceed
+  that when fidelity requires.
+- **`faithful`**: Simplifies wording while preserving every claim, condition,
+  qualification, warning, and code block. It has no fixed word limit.
 
 ### Modal controls
 
@@ -409,16 +424,18 @@ Bro creates this user-editable settings file when the extension loads:
 ```json
 {
   "model": "gemini-3.7-flash",
-  "effort": "low"
+  "effort": "low",
+  "mode": "balanced"
 }
 ```
 
-Use `/bro model` and `/bro effort` to update it from Pi, or edit it directly.
-Bro reads the file again before each explanation, so manual changes apply to
-the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
+Use `/bro model`, `/bro effort`, and `/bro mode` to update it from Pi, or edit
+it directly. Bro reads the file again before each explanation, so manual changes
+apply to the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
 one of the levels shown by `/bro effort`. Models without adjustable effort use
-`default`. The choices remain active across Pi restarts until you change them.
-`/bro help` shows the active settings and the exact file path.
+`default`. `mode` must be `brief`, `balanced`, or `faithful`; existing settings
+without it use `balanced`. The choices remain active across Pi restarts until
+you change them. `/bro help` shows the active settings and exact file path.
 
 If `PI_CODING_AGENT_DIR` is set, the file lives there instead. `PI_BRO_MODEL`
 chooses the initial model only when Bro creates a missing settings file:
@@ -447,6 +464,14 @@ Text to explain:
 
 Bro re-reads this file every time you simplify, so your edits take effect
 immediately without reloading Pi. Bro never creates or modifies this file.
+Existing valid custom prompts continue working unchanged.
+
+A valid custom prompt fully overrides all built-in mode instructions. `/bro
+mode` still changes the saved mode, but that mode remains inactive while
+`bro-prompt.md` exists. Remove or rename `bro-prompt.md` to use the saved
+built-in mode again. If the custom prompt is invalid—for example, it has no
+`{{response}}` placeholder or has more than one—Bro blocks the explanation;
+run `/bro doctor` for the exact problem.
 
 ## Privacy and safety
 
@@ -516,6 +541,10 @@ The smoke test uses a fake `agy`, so it does not call an external model. It
 verifies command routing, document and URL safety boundaries, HTML extraction,
 healthy and broken setup handling, settings, custom prompt handling, and
 context isolation.
+
+The prompt benchmark is manual and makes live Agy calls. Read
+[`benchmark/README.md`](benchmark/README.md) before running it; it is never part
+of `npm test`.
 
 ## License
 

@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
@@ -11,6 +12,7 @@
     ]
   },
   "include": [
-    "bro.ts"
+    "*.ts",
+    "benchmark/**/*.ts"
   ]
 }
