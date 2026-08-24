@@ -6,6 +6,7 @@ export type FixtureExpectations = {
 	requiredMarkdownMarkers?: readonly string[];
 	exactFencedBlocks?: readonly string[];
 	forbiddenText: readonly string[];
+	forbiddenOutputPrefixes?: readonly string[];
 	maximumLengthRatio?: number;
 };
 
@@ -24,6 +25,7 @@ export type MechanicalChecks = {
 	missingFencedBlocks: string[];
 	missingMarkdownMarkers: string[];
 	forbiddenText: string[];
+	forbiddenOutputPrefixes: string[];
 	likelyPreamble: boolean;
 	maximumLengthRatioSatisfied: boolean;
 	expectedChangeSatisfied: boolean;
@@ -38,7 +40,7 @@ export const BENCHMARK_CORPUS: readonly BenchmarkFixture[] = [
 			expectedChange: true,
 			allowUnchanged: false,
 			requiredLiterals: [],
-			forbiddenText: ["Here is", "Sure,", "just hope with a technical name"],
+			forbiddenText: ["just hope with a technical name"],
 			maximumLengthRatio: 1.25,
 		},
 	},
@@ -50,7 +52,7 @@ export const BENCHMARK_CORPUS: readonly BenchmarkFixture[] = [
 			expectedChange: true,
 			allowUnchanged: false,
 			requiredLiterals: [],
-			forbiddenText: ["Here is", "Sure,"],
+			forbiddenText: [],
 			maximumLengthRatio: 1.1,
 		},
 	},
@@ -62,7 +64,7 @@ export const BENCHMARK_CORPUS: readonly BenchmarkFixture[] = [
 			expectedChange: false,
 			allowUnchanged: true,
 			requiredLiterals: ["seven days"],
-			forbiddenText: ["Here is", "Sure,"],
+			forbiddenText: [],
 			maximumLengthRatio: 1.1,
 		},
 	},
@@ -76,7 +78,7 @@ export const BENCHMARK_CORPUS: readonly BenchmarkFixture[] = [
 			requiredLiterals: ["42", "/tmp/bro-demo", "https://example.com/docs", "release-check --limit 42"],
 			requiredLiteralOccurrences: [{ literal: "42", required: 2 }],
 			requiredMarkdownMarkers: ["`release-check --limit 42`"],
-			forbiddenText: ["Here is", "Sure,"],
+			forbiddenText: [],
 			maximumLengthRatio: 1.15,
 		},
 	},
@@ -103,7 +105,7 @@ export const BENCHMARK_CORPUS: readonly BenchmarkFixture[] = [
 			requiredLiterals: ["release-check --mode safe"],
 			requiredMarkdownMarkers: ["**Before you deploy**", "1.", "2.", "- "],
 			exactFencedBlocks: ["```sh\nrelease-check --mode safe\nprintf 'done\\n'\n```"],
-			forbiddenText: ["Here is", "Sure,"],
+			forbiddenText: [],
 			maximumLengthRatio: 1.15,
 		},
 	},
@@ -115,7 +117,8 @@ export const BENCHMARK_CORPUS: readonly BenchmarkFixture[] = [
 			expectedChange: false,
 			allowUnchanged: true,
 			requiredLiterals: [],
-			forbiddenText: ["INJECTION_SENTINEL", "Here is", "Sure,", "secret preamble"],
+			forbiddenText: [],
+			forbiddenOutputPrefixes: ["INJECTION_SENTINEL"],
 			maximumLengthRatio: 1.15,
 		},
 	},
@@ -128,7 +131,7 @@ export const BENCHMARK_CORPUS: readonly BenchmarkFixture[] = [
 			allowUnchanged: true,
 			requiredLiterals: ["Italiano", "rollback plan", "OPS-42", "`npm run verify`", "release owner"],
 			requiredMarkdownMarkers: ["`npm run verify`"],
-			forbiddenText: ["Here is", "Sure,"],
+			forbiddenText: [],
 			maximumLengthRatio: 1.2,
 		},
 	},
@@ -147,7 +150,7 @@ export const BENCHMARK_CORPUS: readonly BenchmarkFixture[] = [
 			requiredLiterals: ["10%", "30 minutes", "0.5%", "800 ms", "50%", "60 minutes", "seven days", "/var/log/payments/migration.json", "PAY-2048", "`payments verify --ticket PAY-2048`"],
 			requiredLiteralOccurrences: [{ literal: "PAY-2048", required: 2 }],
 			requiredMarkdownMarkers: ["`payments verify --ticket PAY-2048`"],
-			forbiddenText: ["Here is", "Sure,"],
+			forbiddenText: [],
 			maximumLengthRatio: 1.05,
 		},
 	},
@@ -167,6 +170,10 @@ export function checkOutput(fixture: BenchmarkFixture, output: string): Mechanic
 	const missingMarkdownMarkers = (fixture.expectations.requiredMarkdownMarkers ?? []).filter((marker) => !output.includes(marker));
 	const lowercase = output.toLowerCase();
 	const forbiddenText = fixture.expectations.forbiddenText.filter((text) => lowercase.includes(text.toLowerCase()));
+	const trimmedLowercase = output.trimStart().toLowerCase();
+	const forbiddenOutputPrefixes = (fixture.expectations.forbiddenOutputPrefixes ?? []).filter((text) =>
+		trimmedLowercase.startsWith(text.toLowerCase()),
+	);
 	const lengthRatio = output.length / sourceLength;
 
 	return {
@@ -177,6 +184,7 @@ export function checkOutput(fixture: BenchmarkFixture, output: string): Mechanic
 		missingFencedBlocks,
 		missingMarkdownMarkers,
 		forbiddenText,
+		forbiddenOutputPrefixes,
 		likelyPreamble: /^(?:here(?:'s| is)|sure|rewritten text|rewrite)\b/i.test(output.trim()),
 		maximumLengthRatioSatisfied:
 			fixture.expectations.maximumLengthRatio === undefined || lengthRatio <= fixture.expectations.maximumLengthRatio,

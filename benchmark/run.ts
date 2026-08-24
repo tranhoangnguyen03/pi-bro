@@ -26,7 +26,7 @@ export type CallIdentity = {
 	timeoutMs: number;
 };
 
-type ManifestRow = CallIdentity & {
+export type ManifestRow = CallIdentity & {
 	callId: string;
 };
 
@@ -36,7 +36,7 @@ export type BenchmarkManifest = {
 	fingerprint: string;
 };
 
-type BenchmarkResult = {
+export type BenchmarkResult = {
 	callId: string;
 	fixture: string;
 	variant: PromptVariant;
@@ -106,7 +106,6 @@ async function runMatrix(approval: string | undefined): Promise<void> {
 	console.log(await usagePreflight());
 	console.log(`Approved ${manifest.rows.length} calls on ${MODEL} (${EFFORT}).`);
 
-	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-benchmark-"));
 	const controller = new AbortController();
 	const onSigint = () => controller.abort();
 	process.once("SIGINT", onSigint);
@@ -120,7 +119,7 @@ async function runMatrix(approval: string | undefined): Promise<void> {
 			if (controller.signal.aborted) break;
 			const fixture = fixtureFor(row.fixture);
 			console.log(`[${index + 1}/${manifest.rows.length}] ${row.fixture}/${row.variant}`);
-			const result = await executeCall(row, promptFor(fixture.target, row.variant as PromptVariant), runDirectory, controller.signal);
+			const result = await executeIsolatedCall(row, promptFor(fixture.target, row.variant as PromptVariant), controller.signal);
 			await writeAtomic(resultPath(row.callId), `${JSON.stringify(result)}\n`);
 			if (result.outcome !== "success") {
 				throw new Error(`Stopped after ${row.fixture}/${row.variant}: ${result.outcome}${result.error ? `: ${result.error}` : ""}`);
@@ -128,7 +127,21 @@ async function runMatrix(approval: string | undefined): Promise<void> {
 		}
 	} finally {
 		process.removeListener("SIGINT", onSigint);
-		await rm(runDirectory, { recursive: true, force: true });
+	}
+}
+
+export async function executeIsolatedCall(
+	row: ManifestRow,
+	prompt: string,
+	signal: AbortSignal,
+	command = "agy",
+	killGraceMs = 1_000,
+): Promise<BenchmarkResult> {
+	const cwd = await mkdtemp(join(tmpdir(), "pi-bro-benchmark-call-"));
+	try {
+		return await executeCall(row, prompt, cwd, signal, command, killGraceMs);
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
 	}
 }
 
@@ -137,10 +150,12 @@ async function executeCall(
 	prompt: string,
 	cwd: string,
 	signal: AbortSignal,
+	command: string,
+	killGraceMs: number,
 ): Promise<BenchmarkResult> {
 	if (signal.aborted) return baseResult(row, 0, "cancelled", null, "");
 	const startedAt = Date.now();
-	const child = spawn("agy", [
+	const child = spawn(command, [
 		"--sandbox",
 		"--disable-slash-commands",
 		"--output-format", "stream-json",
@@ -148,13 +163,27 @@ async function executeCall(
 		"--effort", row.effort,
 		"--print-timeout", "2m",
 		"--print", prompt,
-	], { cwd, signal, timeout: row.timeoutMs, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+	], { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 
 	let stderr = "";
 	let final = "";
 	let stopReason: string | null = null;
 	let parseError: string | undefined;
 	let processError: string | undefined;
+	let timedOut = false;
+	let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+	const terminate = () => {
+		child.kill("SIGTERM");
+		forceKillTimer ??= setTimeout(() => {
+			if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+		}, killGraceMs);
+	};
+	const timeout = setTimeout(() => {
+		timedOut = true;
+		terminate();
+	}, row.timeoutMs);
+	const abort = () => terminate();
+	signal.addEventListener("abort", abort, { once: true });
 	child.stderr.setEncoding("utf8");
 	child.stderr.on("data", (chunk: string) => { stderr += chunk; });
 	child.once("error", (error) => { processError = error.message; });
@@ -173,7 +202,7 @@ async function executeCall(
 				}
 			} catch {
 				parseError = "Agy returned malformed stream JSON.";
-				child.kill();
+				terminate();
 				break;
 			}
 		}
@@ -181,13 +210,14 @@ async function executeCall(
 		lines.close();
 	}
 	const closedResult = await closed;
+	clearTimeout(timeout);
+	if (forceKillTimer) clearTimeout(forceKillTimer);
+	signal.removeEventListener("abort", abort);
 	const elapsedMs = Date.now() - startedAt;
+	if (timedOut) return baseResult(row, elapsedMs, "timeout", stopReason, final, stderr.trim() || "Agy timed out.");
 	if (signal.aborted) return baseResult(row, elapsedMs, "cancelled", stopReason, final, "Cancelled.");
 	if (parseError) return baseResult(row, elapsedMs, "error", stopReason, final, parseError);
 	if (processError) return baseResult(row, elapsedMs, "error", stopReason, final, processError);
-	if (closedResult.exitSignal || closedResult.code === null) {
-		return baseResult(row, elapsedMs, "timeout", stopReason, final, stderr.trim() || "Agy timed out.");
-	}
 	if (closedResult.code !== 0) return baseResult(row, elapsedMs, "error", stopReason, final, stderr.trim() || `Agy exited ${closedResult.code}.`);
 	if (!final.trim() || stopReason !== "stop") return baseResult(row, elapsedMs, "error", stopReason, final, "Agy returned no successful final output.");
 	return baseResult(row, elapsedMs, "success", stopReason, final.trim());
@@ -215,22 +245,36 @@ function baseResult(
 	};
 }
 
-async function usagePreflight(): Promise<string> {
+export async function usagePreflight(command = "agy", killGraceMs = 1_000): Promise<string> {
 	const cwd = await mkdtemp(join(tmpdir(), "pi-bro-benchmark-usage-"));
 	try {
-		const child = spawn("agy", ["-p", "/usage", "--output-format", "json", "--print-timeout", "30s", "--sandbox"], {
+		const child = spawn(command, ["-p", "/usage", "--output-format", "json", "--print-timeout", "30s", "--sandbox"], {
 			cwd,
-			timeout: 35_000,
 			stdio: ["ignore", "pipe", "pipe"],
 			windowsHide: true,
 		});
 		let stdout = "";
 		let stderr = "";
+		let processError: string | undefined;
+		let timedOut = false;
+		let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+		const timeout = setTimeout(() => {
+			timedOut = true;
+			child.kill("SIGTERM");
+			forceKillTimer = setTimeout(() => {
+				if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+			}, killGraceMs);
+		}, 35_000);
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => { stdout += chunk; });
 		child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+		child.once("error", (error) => { processError = error.message; });
 		const code = await new Promise<number | null>((done) => child.once("close", done));
+		clearTimeout(timeout);
+		if (forceKillTimer) clearTimeout(forceKillTimer);
+		if (timedOut) throw new Error("Agy usage preflight timed out.");
+		if (processError) throw new Error(`Agy usage preflight could not start: ${processError}`);
 		if (code !== 0) throw new Error(stderr.trim() || "Agy usage preflight failed.");
 		return `Agy usage preflight:\n${stdout.trim()}`;
 	} finally {
@@ -320,9 +364,12 @@ function fixtureFor(id: string): BenchmarkFixture {
 	return fixture;
 }
 
+export function formatDryRun(): string {
+	return JSON.stringify(buildManifest(), null, 2);
+}
+
 function dryRun(): void {
-	const manifest = buildManifest();
-	console.log(JSON.stringify({ callCount: manifest.rows.length, model: MODEL, effort: EFFORT, variants: VARIANTS, fixtures: BENCHMARK_CORPUS.map((fixture) => fixture.id), fingerprint: manifest.fingerprint }, null, 2));
+	console.log(formatDryRun());
 }
 
 async function main(): Promise<void> {
