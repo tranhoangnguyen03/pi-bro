@@ -29,6 +29,7 @@
   ],
   "files": [
     "bro.ts",
+    "prompt.ts",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md"
@@ -41,7 +42,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && sh ./smoke-test.sh",
+    "test": "npm run typecheck && node --test prompt.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
     "prepublishOnly": "npm test"
   },
   "pi": {
