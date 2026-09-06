@@ -71,7 +71,7 @@ export function setRegularMouseReporting(tui: Pick<TuiLike, "mode" | "terminal">
 }
 
 const COMMANDS = [
-	{ value: "simplify", label: "simplify", description: "Simplify pasted text or the latest assistant response" },
+	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
 	{ value: "file", label: "file", description: "Explain a local document" },
 	{ value: "url", label: "url", description: "Explain a public webpage" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
@@ -868,12 +868,12 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 ## Explain
 
 - \`/bro\` — explain the latest completed assistant reply
-- \`/bro simplify [text]\` — explain pasted text, or the latest reply when text is omitted
+- \`/bro text [text]\` — explain pasted text, or the latest reply when text is omitted
 - \`/bro file <path>\` — explain a Markdown, text, PDF, or DOCX file
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro open\` — reopen the latest explanation
 
-Press **R** to simplify the captured source again. Run a new \`/bro simplify\`, \`/bro file\`, or \`/bro url\` command to capture a new source.
+Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/bro file\`, or \`/bro url\` command to capture a new source.
 
 ## Check and configure
 
@@ -1466,7 +1466,7 @@ export default async function bro(pi: ExtensionAPI) {
 				source?: BroSource,
 				onProgress?: (text: string) => void,
 			): Promise<BroResult> => {
-				let target = source ?? (action === "simplify" && value ? { text: value } : undefined);
+				let target = source ?? (action === "text" && value ? { text: value } : undefined);
 				if (!target) {
 					await ctx.waitForIdle();
 					target = latestAssistant(ctx);
@@ -1486,7 +1486,7 @@ export default async function bro(pi: ExtensionAPI) {
 			if (normalized === "open") {
 				if (!lastResult) {
 					await showBroModal(ctx, {
-						text: "# Nothing to open yet\n\nUse `/bro simplify <text>`, run `/bro` after an assistant response, use `/bro file <path>`, or use `/bro url <url>`.",
+						text: "# Nothing to open yet\n\nUse `/bro text <text>`, run `/bro` after an assistant response, use `/bro file <path>`, or use `/bro url <url>`.",
 						kind: "empty",
 					});
 					return;
@@ -1500,8 +1500,8 @@ export default async function bro(pi: ExtensionAPI) {
 				return;
 			}
 
-			if (action && action !== "simplify") {
-				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, file, url, open, doctor, usage, model, effort, mode, or help.`, "warning");
+			if (action && action !== "text") {
+				ctx.ui.notify(`Unknown action "${normalized}". Use text, file, url, open, doctor, usage, model, effort, mode, or help.`, "warning");
 				return;
 			}
 

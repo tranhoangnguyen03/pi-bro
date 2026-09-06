@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.9.2] - 2026-09-06
+
+### Changed
+
+- Renamed `/bro simplify` to `/bro text`, matching the `/bro file` and `/bro url` input-source commands. Bare `/bro` (or `/bro text` with no text) still explains the latest completed assistant reply.
+
 ## [0.9.1] - 2026-08-24
 
 ### Changed

@@ -241,7 +241,7 @@ output=$(
 		sleep 1
 		cp "$settings_file" "$settings_snapshot"
 		printf '{"model":"gemini-test-one","effort":"low"}\n' > "$settings_file"
-		printf '%s\n' '{"id":"bro-simplify","type":"prompt","message":"/bro simplify PASTED_TEXT_ONLY_CANARY"}'
+		printf '%s\n' '{"id":"bro-text","type":"prompt","message":"/bro text PASTED_TEXT_ONLY_CANARY"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
 		sleep 1
