@@ -9,6 +9,10 @@ All notable changes to pi-bro are documented here.
 - Renamed `/bro simplify` to `/bro text`, matching the `/bro file` and `/bro url` input-source commands. Bare `/bro` (or `/bro text` with no text) still explains the latest completed assistant reply.
 - Added context-aware routing: an unknown first word makes the whole input the source — a lone URL runs the webpage reader, an existing workspace file with a supported extension runs the document reader (including quoted paths with spaces), and anything else is explained as pasted text. Explicit subcommands are unchanged; inputs that used to fail as unknown actions are now explained as text, while `/bro open` and `/bro help` with extra words now warn instead of silently explaining the latest reply.
 
+### Fixed
+
+- Corrected the built-in help's brief-mode description, which still claimed a fixed word target removed in 0.9.1, and quoted the spaced-path example in the README.
+
 ## [0.9.1] - 2026-08-24
 
 ### Changed
