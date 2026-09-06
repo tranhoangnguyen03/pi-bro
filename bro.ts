@@ -902,7 +902,7 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro open\` — reopen the latest explanation
 
-Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text.
+Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text. Quoted paths with spaces are routed too when the file exists.
 
 Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/bro file\`, or \`/bro url\` command to capture a new source.
 
