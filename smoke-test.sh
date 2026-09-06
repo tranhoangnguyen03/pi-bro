@@ -46,6 +46,7 @@ const {
 	extractWebPage,
 	formatAgyUsage,
 	isPublicWebAddress,
+	looksLikeWebUrl,
 	parseAgyModels,
 	parseBroSettings,
 	parseWebRedirect,
@@ -110,6 +111,12 @@ for (const address of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "192.168.1.1"
 assert.equal(parseWebUrl("https://example.com/article#section").href, "https://example.com/article");
 assert.throws(() => parseWebUrl("file:///etc/passwd"), /HTTP or HTTPS/);
 assert.throws(() => parseWebUrl("https://user:secret@example.com"), /usernames or passwords/);
+assert.equal(looksLikeWebUrl("https://example.com/article"), true);
+assert.equal(looksLikeWebUrl("https://example.com/article#section"), true);
+assert.equal(looksLikeWebUrl("https://example.com is down, why?"), false, "prose stays text");
+assert.equal(looksLikeWebUrl("example.com/article"), false);
+assert.equal(looksLikeWebUrl("file:///etc/passwd"), false);
+assert.equal(looksLikeWebUrl("localhost:3000"), false);
 assert.equal(parseWebRedirect(new URL("http://example.com/old"), "/new").href, "http://example.com/new");
 assert.throws(() => parseWebRedirect(new URL("https://example.com"), "http://example.com"), /insecure/);
 await assert.rejects(extractWebPage("http://127.0.0.1"), /local, private, or reserved/);
@@ -182,7 +189,7 @@ printf '%s\n' \
 	'  exit 0' \
 	'fi' \
 	'case "$*" in *"CUSTOM_TEMPLATE_MARKER"*) ;; *) exit 12;; esac' \
-	'case "$*" in *"Original complicated reply."*|*"$BRO_DOCUMENT_CANARY"*|*"PASTED_TEXT_ONLY_CANARY"*) ;; *) exit 12;; esac' \
+	'case "$*" in *"Original complicated reply."*|*"$BRO_DOCUMENT_CANARY"*|*"PASTED_TEXT_ONLY_CANARY"*|*"ROUTED_WHOLE_RAW_CANARY"*) ;; *) exit 12;; esac' \
 	'case " $* " in *" --output-format stream-json "*) ;; *) exit 14;; esac' \
 	'call=$(( $(wc -l < "$BRO_CALLS") + 1 ))' \
 	'printf "%s\n" "$call" >> "$BRO_CALLS"' \
@@ -243,14 +250,18 @@ output=$(
 		printf '{"model":"gemini-test-one","effort":"low"}\n' > "$settings_file"
 		printf '%s\n' '{"id":"bro-text","type":"prompt","message":"/bro text PASTED_TEXT_ONLY_CANARY"}'
 		sleep 1
+		printf '{"id":"bro-route-file","type":"prompt","message":"/bro %s"}\n' "$document_file"
+		sleep 1
+		printf '%s\n' '{"id":"bro-route-text","type":"prompt","message":"/bro ROUTED_WHOLE_RAW_CANARY trailing words"}'
+		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
 		sleep 1
 	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 19 ]; then
-	printf 'Expected 19 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 21 ]; then
+	printf 'Expected 21 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
 	exit 1
 fi
 
@@ -259,7 +270,7 @@ if ! printf '%s\n' "$output" | grep -q 'Use /bro url <url>.'; then
 	exit 1
 fi
 
-expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow')
+expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow')
 actual_args=$(cat "$args_file")
 if [ "$actual_args" != "$expected_args" ]; then
 	printf 'Selected model and effort were not applied:\n%s\n' "$actual_args" >&2
@@ -293,10 +304,10 @@ if printf '%s\n' "$output" | grep -q '"method":"notify".*"notifyType":"error"'; 
 	exit 1
 fi
 
-expected_calls=$(printf '1\n2\n3')
+expected_calls=$(printf '1\n2\n3\n4\n5')
 actual_calls=$(cat "$calls_file")
 if [ "$actual_calls" != "$expected_calls" ]; then
-	printf 'Expected exactly three numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
+	printf 'Expected exactly five numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
 	exit 1
 fi
 

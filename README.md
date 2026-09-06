@@ -41,9 +41,11 @@ installing it, use `pi -e npm:pi-bro`.
 | Pasted text | `/bro text <text>` | Explains text supplied directly in the command. |
 | Local document | `/bro file <path>` | Extracts text from a workspace-local Markdown, text, PDF, or DOCX file. |
 | Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
+| Any of the above, auto-detected | `/bro <input>` | Routes a lone URL to the webpage reader, an existing workspace file with a supported extension to the document reader, and anything else to pasted text. |
 
 Pressing **R** simplifies the captured source again. These commands capture a
-new source: `/bro text`, `/bro file`, and `/bro url`.
+new source: `/bro text`, `/bro file`, and `/bro url`. Giving `/bro` a URL, path, or
+text directly captures a new source the same way.
 
 ## Commands
 
@@ -51,6 +53,7 @@ new source: `/bro text`, `/bro file`, and `/bro url`.
 | --- | --- |
 | `/bro` or `/bro text` | Explain the latest completed assistant response. |
 | `/bro text <text>` | Explain pasted text. |
+| `/bro <url \| path \| text>` | Explain it directly: a lone URL runs the webpage reader, an existing workspace file with a supported extension runs the document reader, and anything else is pasted text. |
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |

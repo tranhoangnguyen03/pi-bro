@@ -82,6 +82,7 @@ const COMMANDS = [
 	{ value: "mode", label: "mode", description: "Choose brief, balanced, or faithful explanations" },
 	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
+const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
@@ -170,6 +171,23 @@ export async function extractDocumentText(input: string, cwd: string, signal?: A
 	return text;
 }
 
+const SNIFFABLE_FILE_EXTENSIONS = new Set([...TEXT_EXTENSIONS, ".pdf", ".docx"]);
+
+async function isWorkspaceFile(input: string, cwd: string): Promise<boolean> {
+	// ponytail: duplicates extractDocumentText's workspace guard rather than sharing its error semantics.
+	try {
+		const path = await realpath(resolve(cwd, input));
+		const fromRoot = relative(await realpath(cwd), path);
+		if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+			return false;
+		}
+		const info = await stat(path);
+		return info.isFile() && SNIFFABLE_FILE_EXTENSIONS.has(extname(path).toLowerCase());
+	} catch {
+		return false;
+	}
+}
+
 const NON_PUBLIC_ADDRESSES = new BlockList();
 for (const [network, prefix] of [
 	["0.0.0.0", 8],
@@ -238,6 +256,15 @@ export function parseWebUrl(input: string): URL {
 	}
 	url.hash = "";
 	return url;
+}
+
+export function looksLikeWebUrl(input: string): boolean {
+	try {
+		parseWebUrl(input);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 export function parseWebRedirect(current: URL, location: string): URL {
@@ -873,6 +900,8 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro open\` — reopen the latest explanation
 
+Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text.
+
 Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/bro file\`, or \`/bro url\` command to capture a new source.
 
 ## Check and configure
@@ -1236,8 +1265,21 @@ export default async function bro(pi: ExtensionAPI) {
 			const raw = args.trim();
 			const normalized = raw.toLowerCase();
 			const parts = normalized ? normalized.split(/\s+/) : [];
-			const action = parts[0] ?? "";
-			const value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
+			let action = parts[0] ?? "";
+			let value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
+
+			// An unknown first word means the whole input is the source: route it by shape.
+			if (action && !KNOWN_ACTIONS.has(action)) {
+				const candidate = unquote(raw);
+				action = /\s/.test(candidate)
+					? "text"
+					: looksLikeWebUrl(candidate)
+						? "url"
+						: (await isWorkspaceFile(candidate, ctx.cwd))
+							? "file"
+							: "text";
+				value = raw;
+			}
 
 			if (action === "file" || action === "url") {
 				if (!value) {
@@ -1497,11 +1539,6 @@ export default async function bro(pi: ExtensionAPI) {
 					run,
 					onResult: remember,
 				});
-				return;
-			}
-
-			if (action && action !== "text") {
-				ctx.ui.notify(`Unknown action "${normalized}". Use text, file, url, open, doctor, usage, model, effort, mode, or help.`, "warning");
 				return;
 			}
 
