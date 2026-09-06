@@ -71,7 +71,7 @@ export function setRegularMouseReporting(tui: Pick<TuiLike, "mode" | "terminal">
 }
 
 const COMMANDS = [
-	{ value: "simplify", label: "simplify", description: "Simplify pasted text or the latest assistant response" },
+	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
 	{ value: "file", label: "file", description: "Explain a local document" },
 	{ value: "url", label: "url", description: "Explain a public webpage" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
@@ -82,6 +82,7 @@ const COMMANDS = [
 	{ value: "mode", label: "mode", description: "Choose brief, balanced, or faithful explanations" },
 	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
+const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
@@ -170,6 +171,23 @@ export async function extractDocumentText(input: string, cwd: string, signal?: A
 	return text;
 }
 
+const SNIFFABLE_FILE_EXTENSIONS = new Set([...TEXT_EXTENSIONS, ".pdf", ".docx"]);
+
+async function isWorkspaceFile(input: string, cwd: string): Promise<boolean> {
+	// ponytail: duplicates extractDocumentText's workspace guard rather than sharing its error semantics.
+	try {
+		const path = await realpath(resolve(cwd, input));
+		const fromRoot = relative(await realpath(cwd), path);
+		if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+			return false;
+		}
+		const info = await stat(path);
+		return info.isFile() && SNIFFABLE_FILE_EXTENSIONS.has(extname(path).toLowerCase());
+	} catch {
+		return false;
+	}
+}
+
 const NON_PUBLIC_ADDRESSES = new BlockList();
 for (const [network, prefix] of [
 	["0.0.0.0", 8],
@@ -238,6 +256,17 @@ export function parseWebUrl(input: string): URL {
 	}
 	url.hash = "";
 	return url;
+}
+
+export function looksLikeWebUrl(input: string): boolean {
+	// Structurally http(s) only: credential or syntax problems must surface as url errors, not text leaks.
+	let url: URL;
+	try {
+		url = new URL(input);
+	} catch {
+		return false;
+	}
+	return url.protocol === "http:" || url.protocol === "https:";
 }
 
 export function parseWebRedirect(current: URL, location: string): URL {
@@ -868,12 +897,14 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 ## Explain
 
 - \`/bro\` — explain the latest completed assistant reply
-- \`/bro simplify [text]\` — explain pasted text, or the latest reply when text is omitted
+- \`/bro text [text]\` — explain pasted text, or the latest reply when text is omitted
 - \`/bro file <path>\` — explain a Markdown, text, PDF, or DOCX file
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro open\` — reopen the latest explanation
 
-Press **R** to simplify the captured source again. Run a new \`/bro simplify\`, \`/bro file\`, or \`/bro url\` command to capture a new source.
+Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text.
+
+Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/bro file\`, or \`/bro url\` command to capture a new source.
 
 ## Check and configure
 
@@ -1236,8 +1267,22 @@ export default async function bro(pi: ExtensionAPI) {
 			const raw = args.trim();
 			const normalized = raw.toLowerCase();
 			const parts = normalized ? normalized.split(/\s+/) : [];
-			const action = parts[0] ?? "";
-			const value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
+			let action = parts[0] ?? "";
+			let value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
+
+			// An unknown first word means the whole input is the source: route it by shape.
+			if (action && !KNOWN_ACTIONS.has(action)) {
+				const candidate = unquote(raw);
+				const quoted = candidate !== raw;
+				action = quoted || !/\s/.test(candidate)
+					? looksLikeWebUrl(candidate)
+						? "url"
+						: (await isWorkspaceFile(candidate, ctx.cwd))
+							? "file"
+							: "text"
+					: "text";
+				value = raw;
+			}
 
 			if (action === "file" || action === "url") {
 				if (!value) {
@@ -1449,7 +1494,11 @@ export default async function bro(pi: ExtensionAPI) {
 				return;
 			}
 
-			if (normalized === "help") {
+			if (action === "help") {
+				if (parts.length !== 1) {
+					ctx.ui.notify("Use /bro help.", "warning");
+					return;
+				}
 				let settings: BroSettings | undefined;
 				let settingsError: string | undefined;
 				try {
@@ -1466,7 +1515,7 @@ export default async function bro(pi: ExtensionAPI) {
 				source?: BroSource,
 				onProgress?: (text: string) => void,
 			): Promise<BroResult> => {
-				let target = source ?? (action === "simplify" && value ? { text: value } : undefined);
+				let target = source ?? (action === "text" && value ? { text: value } : undefined);
 				if (!target) {
 					await ctx.waitForIdle();
 					target = latestAssistant(ctx);
@@ -1483,10 +1532,14 @@ export default async function bro(pi: ExtensionAPI) {
 				}
 			};
 
-			if (normalized === "open") {
+			if (action === "open") {
+				if (parts.length !== 1) {
+					ctx.ui.notify("Use /bro open.", "warning");
+					return;
+				}
 				if (!lastResult) {
 					await showBroModal(ctx, {
-						text: "# Nothing to open yet\n\nUse `/bro simplify <text>`, run `/bro` after an assistant response, use `/bro file <path>`, or use `/bro url <url>`.",
+						text: "# Nothing to open yet\n\nUse `/bro text <text>`, run `/bro` after an assistant response, use `/bro file <path>`, or use `/bro url <url>`.",
 						kind: "empty",
 					});
 					return;
@@ -1497,11 +1550,6 @@ export default async function bro(pi: ExtensionAPI) {
 					run,
 					onResult: remember,
 				});
-				return;
-			}
-
-			if (action && action !== "simplify") {
-				ctx.ui.notify(`Unknown action "${normalized}". Use simplify, file, url, open, doctor, usage, model, effort, mode, or help.`, "warning");
 				return;
 			}
 

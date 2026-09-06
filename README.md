@@ -22,7 +22,7 @@ Restart Pi or run `/reload`, then try:
 
 ```text
 /bro
-/bro simplify Paste text here
+/bro text Paste text here
 /bro file docs/report.pdf
 /bro url https://example.com/article
 ```
@@ -38,19 +38,22 @@ installing it, use `pi -e npm:pi-bro`.
 | Source | Command | What Bro does |
 | --- | --- | --- |
 | Latest assistant reply | `/bro` | Explains the latest completed reply without adding the result to the conversation. |
-| Pasted text | `/bro simplify <text>` | Explains text supplied directly in the command. |
+| Pasted text | `/bro text <text>` | Explains text supplied directly in the command. |
 | Local document | `/bro file <path>` | Extracts text from a workspace-local Markdown, text, PDF, or DOCX file. |
 | Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
+| Any of the above, auto-detected | `/bro <input>` | Routes a lone URL to the webpage reader, an existing workspace file with a supported extension to the document reader, and anything else to pasted text. |
 
 Pressing **R** simplifies the captured source again. These commands capture a
-new source: `/bro simplify`, `/bro file`, and `/bro url`.
+new source: `/bro text`, `/bro file`, and `/bro url`. Giving `/bro` a URL, path, or
+text directly captures a new source the same way.
 
 ## Commands
 
 | Command | Description |
 | --- | --- |
-| `/bro` or `/bro simplify` | Explain the latest completed assistant response. |
-| `/bro simplify <text>` | Explain pasted text. |
+| `/bro` or `/bro text` | Explain the latest completed assistant response. |
+| `/bro text <text>` | Explain pasted text. |
+| `/bro <input>` | Explain it directly: a lone URL runs the webpage reader, an existing workspace file with a supported extension runs the document reader, and anything else is pasted text. A quoted path with spaces is routed too when the file exists. |
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
@@ -60,6 +63,14 @@ new source: `/bro simplify`, `/bro file`, and `/bro url`.
 | `/bro effort [low\|medium\|high]` | View or choose the supported reasoning effort. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro help` | Open the built-in quick reference. |
+
+Giving `/bro` the input directly works the same way:
+
+```text
+/bro https://example.com/article
+/bro docs/report.pdf
+/bro any other text is explained as pasted text
+```
 
 ## Explanation modes
 
@@ -356,11 +367,11 @@ cached files, not your source code or dependencies.
 Paste text directly after the command:
 
 ```text
-/bro simplify OAuth refresh tokens are rotated after every successful use.
+/bro text OAuth refresh tokens are rotated after every successful use.
 ```
 
 Bro explains the pasted text instead of the latest assistant reply. With no text
-after `/bro simplify`, it falls back to the latest completed reply. Press **R**
+after `/bro text`, it falls back to the latest completed reply. Press **R**
 to simplify the same captured text again.
 
 ## Explain a document
