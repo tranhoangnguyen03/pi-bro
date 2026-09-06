@@ -259,12 +259,14 @@ export function parseWebUrl(input: string): URL {
 }
 
 export function looksLikeWebUrl(input: string): boolean {
+	// Structurally http(s) only: credential or syntax problems must surface as url errors, not text leaks.
+	let url: URL;
 	try {
-		parseWebUrl(input);
-		return true;
+		url = new URL(input);
 	} catch {
 		return false;
 	}
+	return url.protocol === "http:" || url.protocol === "https:";
 }
 
 export function parseWebRedirect(current: URL, location: string): URL {
@@ -1271,13 +1273,14 @@ export default async function bro(pi: ExtensionAPI) {
 			// An unknown first word means the whole input is the source: route it by shape.
 			if (action && !KNOWN_ACTIONS.has(action)) {
 				const candidate = unquote(raw);
-				action = /\s/.test(candidate)
-					? "text"
-					: looksLikeWebUrl(candidate)
+				const quoted = candidate !== raw;
+				action = quoted || !/\s/.test(candidate)
+					? looksLikeWebUrl(candidate)
 						? "url"
 						: (await isWorkspaceFile(candidate, ctx.cwd))
 							? "file"
-							: "text";
+							: "text"
+					: "text";
 				value = raw;
 			}
 
@@ -1491,7 +1494,11 @@ export default async function bro(pi: ExtensionAPI) {
 				return;
 			}
 
-			if (normalized === "help") {
+			if (action === "help") {
+				if (parts.length !== 1) {
+					ctx.ui.notify("Use /bro help.", "warning");
+					return;
+				}
 				let settings: BroSettings | undefined;
 				let settingsError: string | undefined;
 				try {
@@ -1525,7 +1532,11 @@ export default async function bro(pi: ExtensionAPI) {
 				}
 			};
 
-			if (normalized === "open") {
+			if (action === "open") {
+				if (parts.length !== 1) {
+					ctx.ui.notify("Use /bro open.", "warning");
+					return;
+				}
 				if (!lastResult) {
 					await showBroModal(ctx, {
 						text: "# Nothing to open yet\n\nUse `/bro text <text>`, run `/bro` after an assistant response, use `/bro file <path>`, or use `/bro url <url>`.",

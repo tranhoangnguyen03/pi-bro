@@ -18,7 +18,8 @@ canary_prefix="BRO_ONLY_CANARY_"
 usage_canary="USAGE_ONLY_CANARY"
 document_canary="DOCUMENT_ONLY_CANARY"
 document_file="$repo_dir/.bro-smoke-document-$$.MD"
-trap 'rm -rf -- "$test_dir"; rm -f -- "$document_file"' EXIT
+spaced_file="$repo_dir/.bro smoke notes $$.MD"
+trap 'rm -rf -- "$test_dir"; rm -f -- "$document_file" "$spaced_file"' EXIT
 
 if [ ! -x "$pi_bin" ]; then
 	printf 'Pi was not found at %s. Run npm install first.\n' "$pi_bin" >&2
@@ -113,9 +114,15 @@ assert.throws(() => parseWebUrl("file:///etc/passwd"), /HTTP or HTTPS/);
 assert.throws(() => parseWebUrl("https://user:secret@example.com"), /usernames or passwords/);
 assert.equal(looksLikeWebUrl("https://example.com/article"), true);
 assert.equal(looksLikeWebUrl("https://example.com/article#section"), true);
+assert.equal(looksLikeWebUrl("https://example.com/page?a=1&b=2"), true);
+assert.equal(looksLikeWebUrl("HTTPS://example.com/article"), true);
+assert.equal(looksLikeWebUrl("https://[2606:4700:4700::1111]/"), true);
+assert.equal(looksLikeWebUrl("https://user:secret@example.com"), true, "routes to the URL reader's rejection");
 assert.equal(looksLikeWebUrl("https://example.com is down, why?"), false, "prose stays text");
 assert.equal(looksLikeWebUrl("example.com/article"), false);
 assert.equal(looksLikeWebUrl("file:///etc/passwd"), false);
+assert.equal(looksLikeWebUrl("ftp://example.com/file"), false);
+assert.equal(looksLikeWebUrl("mailto:someone@example.com"), false);
 assert.equal(looksLikeWebUrl("localhost:3000"), false);
 assert.equal(parseWebRedirect(new URL("http://example.com/old"), "/new").href, "http://example.com/new");
 assert.throws(() => parseWebRedirect(new URL("https://example.com"), "http://example.com"), /insecure/);
@@ -160,6 +167,7 @@ JS
 mkdir "$config_dir"
 printf 'CUSTOM_TEMPLATE_MARKER\n\n{{response}}\n' > "$prompt_file"
 printf '# Complex notes\n\n%s\n' "$document_canary" > "$document_file"
+printf '# Spaced notes\n\n%s\n' "$document_canary" > "$spaced_file"
 
 printf '{"type":"session","version":3,"id":"00000000-0000-7000-8000-000000000000","timestamp":"2026-01-01T00:00:00.000Z","cwd":"%s"}\n' "$repo_dir" > "$session_file"
 printf '%s\n' \
@@ -234,6 +242,8 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-url-missing","type":"prompt","message":"/bro url"}'
 		sleep 1
+		printf '%s\n' '{"id":"bro-open-extra","type":"prompt","message":"/bro open the door please"}'
+		sleep 1
 		printf '%s\n' '{"id":"bro-mode-invalid","type":"prompt","message":"/bro mode unknown"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-mode","type":"prompt","message":"/bro mode faithful"}'
@@ -252,6 +262,8 @@ output=$(
 		sleep 1
 		printf '{"id":"bro-route-file","type":"prompt","message":"/bro %s"}\n' "$document_file"
 		sleep 1
+		printf '{"id":"bro-route-quoted","type":"prompt","message":"/bro \\\"%s\\\""}\n' "$spaced_file"
+		sleep 1
 		printf '%s\n' '{"id":"bro-route-text","type":"prompt","message":"/bro ROUTED_WHOLE_RAW_CANARY trailing words"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
@@ -260,8 +272,8 @@ output=$(
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 21 ]; then
-	printf 'Expected 21 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 23 ]; then
+	printf 'Expected 23 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
 	exit 1
 fi
 
@@ -270,7 +282,12 @@ if ! printf '%s\n' "$output" | grep -q 'Use /bro url <url>.'; then
 	exit 1
 fi
 
-expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow')
+if ! printf '%s\n' "$output" | grep -q 'Use /bro open.'; then
+	printf 'Extra open arguments did not produce an actionable warning:\n%s\n' "$output" >&2
+	exit 1
+fi
+
+expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow')
 actual_args=$(cat "$args_file")
 if [ "$actual_args" != "$expected_args" ]; then
 	printf 'Selected model and effort were not applied:\n%s\n' "$actual_args" >&2
@@ -304,10 +321,10 @@ if printf '%s\n' "$output" | grep -q '"method":"notify".*"notifyType":"error"'; 
 	exit 1
 fi
 
-expected_calls=$(printf '1\n2\n3\n4\n5')
+expected_calls=$(printf '1\n2\n3\n4\n5\n6')
 actual_calls=$(cat "$calls_file")
 if [ "$actual_calls" != "$expected_calls" ]; then
-	printf 'Expected exactly five numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
+	printf 'Expected exactly six numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
 	exit 1
 fi
 
@@ -353,7 +370,9 @@ missing_output=$(
 		sleep 1
 		printf '%s\n' '{"id":"missing-effort","type":"prompt","message":"/bro effort low"}'
 		sleep 1
-		printf '%s\n' '{"id":"missing-simplify","type":"prompt","message":"/bro"}'
+		printf '%s\n' '{"id":"missing-route-url","type":"prompt","message":"/bro https://user:secret@example.com/doc"}'
+		sleep 1
+		printf '%s\n' '{"id":"missing-latest","type":"prompt","message":"/bro"}'
 		sleep 1
 		printf '%s\n' '{"id":"missing-help","type":"prompt","message":"/bro help"}'
 		sleep 1
@@ -361,8 +380,12 @@ missing_output=$(
 )
 
 missing_success_count=$(printf '%s\n' "$missing_output" | grep -c '"success":true' || true)
-if [ "$missing_success_count" -ne 6 ]; then
+if [ "$missing_success_count" -ne 7 ]; then
 	printf 'Bro did not contain a missing-Agy failure:\n%s\n' "$missing_output" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$missing_output" | grep -q 'usernames or passwords'; then
+	printf 'Credential-bearing routed URL was not rejected by the URL reader:\n%s\n' "$missing_output" >&2
 	exit 1
 fi
 if ! printf '%s\n' "$missing_output" | grep -q '/bro doctor'; then
@@ -392,7 +415,7 @@ broken_output=$(
 		printf 'This prompt has no placeholder.\n' > "$broken_prompt"
 		printf '%s\n' '{"id":"broken-prompt-doctor","type":"prompt","message":"/bro doctor"}'
 		sleep 1
-		printf '%s\n' '{"id":"broken-prompt-simplify","type":"prompt","message":"/bro"}'
+		printf '%s\n' '{"id":"broken-prompt-latest","type":"prompt","message":"/bro"}'
 		sleep 1
 	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$broken_config" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$broken_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts" 2>&1
 )

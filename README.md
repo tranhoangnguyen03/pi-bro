@@ -53,7 +53,7 @@ text directly captures a new source the same way.
 | --- | --- |
 | `/bro` or `/bro text` | Explain the latest completed assistant response. |
 | `/bro text <text>` | Explain pasted text. |
-| `/bro <url \| path \| text>` | Explain it directly: a lone URL runs the webpage reader, an existing workspace file with a supported extension runs the document reader, and anything else is pasted text. |
+| `/bro <input>` | Explain it directly: a lone URL runs the webpage reader, an existing workspace file with a supported extension runs the document reader, and anything else is pasted text. A quoted path with spaces is routed too when the file exists. |
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
@@ -63,6 +63,14 @@ text directly captures a new source the same way.
 | `/bro effort [low\|medium\|high]` | View or choose the supported reasoning effort. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro help` | Open the built-in quick reference. |
+
+Giving `/bro` the input directly works the same way:
+
+```text
+/bro https://example.com/article
+/bro docs/report.pdf
+/bro any other text is explained as pasted text
+```
 
 ## Explanation modes
 
