@@ -904,7 +904,7 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 
 Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text. Quoted paths with spaces are routed too when the file exists.
 
-Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/bro file\`, or \`/bro url\` command to capture a new source.
+Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/bro file\`, or \`/bro url\` command — or give \`/bro\` the input directly — to capture a new source.
 
 ## Check and configure
 
@@ -922,7 +922,7 @@ Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly.
 
 ## Explanation modes
 
-- brief — main point and next action, roughly 200 words
+- brief — the main point and next action, with no fixed word target
 - balanced — default; material detail with clearer structure
 - faithful — closest to the source, with no fixed word limit
 

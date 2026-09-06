@@ -379,7 +379,7 @@ to simplify the same captured text again.
 Use a path relative to Pi's current workspace, or an absolute path inside it:
 
 ```text
-/bro file docs/incident review.pdf
+/bro file "docs/incident review.pdf"
 ```
 
 Paths may contain spaces; matching single or double quotes are also accepted.
