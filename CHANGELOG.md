@@ -6,15 +6,16 @@ All notable changes to pi-bro are documented here.
 
 ### Added
 
-- Added `/bro show [turns]`: draw the last session turns, including tool results, as shapes — pseudocode, call trees, file trees, component trees, or diffs — instead of prose, in the same context-isolated modal. Defaults to the last 4 turns; a new `showTurns` setting (positive integer) changes the default and `/bro show <n>` overrides it for one run. Adapts the `show-me` plugin from humanlayer/skills (MIT; credited in `THIRD_PARTY_NOTICES.md`).
+- Added `/bro show [turns]`: draw the last session turns, including tool results, as shapes — pseudocode, call trees, file trees, component trees, types and signatures, or diffs — instead of prose, in the same context-isolated modal. Defaults to the last 4 turns; a new `showTurns` setting (positive integer) changes the default and `/bro show <n>` overrides it for one run. Adapts the `show-me` plugin from humanlayer/skills (MIT; credited in `THIRD_PARTY_NOTICES.md`).
 - Added an HTML escalation path for show: when a reply ends with one self-contained ` ```html ` fence, Bro writes it to `/tmp/pi-bro-<uid>/bro-show-<hash>.html` with a restrictive Content-Security-Policy, replaces it in the modal with a placeholder, and offers **O** to open it in the default browser. **C** still copies the complete reply including the fence, and **R** regenerates it.
-- Added a separate `show` benchmark track (`--track show`): serialized-transcript fixtures graded by selection semantics — hardened identifier traceability (camelCase, snake_case, and SCREAMING_CASE tokens inside fences, diff-header stripping, backtick tokenization), fence-shape rules (balanced fences, html-last with no trailing prose, no bare or untagged mermaid, no external resources), and diff-marker validation. The modes benchmark keeps its frozen 32-row baseline and fingerprint.
+- Added a separate `show` benchmark track (`--track show`): serialized-transcript fixtures graded by selection semantics — hardened identifier traceability (camelCase, snake_case, and SCREAMING_CASE tokens inside fences, diff-header stripping, backtick tokenization), fence-shape rules (balanced fences, html-last with no trailing prose, no bare or untagged mermaid, no external resources), and diff-marker validation. The corpus carries one fixture per show-me form; the modes benchmark keeps its frozen 32-row baseline and fingerprint.
 
 ### Changed
 
 - Show capture and serialization: a turn is one user message plus every assistant message, tool call, and tool result after it; section headers are plain and every payload is JSON-quoted, matching the existing injection posture; tool results are trimmed to the first and last 2,000 characters with an elision marker; tool-call arguments are head-trimmed at 500 characters; thinking and image content become one-line placeholders; oldest turns are dropped whole when the serialized transcript exceeds 100,000 characters, and the source label reports the turns actually kept.
 - `/bro show` reuses the captured transcript snapshot on **R** (like `/bro url`), feeds `/bro open` through the same remember path as the other source commands, and shows an in-modal empty state instead of an error when the session has no turns.
 - Show bypasses explanation modes and `bro-prompt.md` entirely; it has its own built-in prompt. Modes, settings, and custom-prompt precedence are unchanged.
+- Show output never wraps identifiers in Markdown links, and prose-only sessions degrade to a plain outline rather than a diff or a forced diagram.
 
 ### Development
 

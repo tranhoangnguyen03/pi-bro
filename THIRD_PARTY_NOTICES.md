@@ -69,8 +69,10 @@ License. Its complete license is distributed with the LinkeDOM npm package.
 
 ## show-me
 
-The experimental show prompt's form menu and diff grammar are adapted from the
-`show-me` plugin in [humanlayer/skills](https://github.com/humanlayer/skills),
+The experimental show prompt's form menu, diff grammar, and example
+fixtures are adapted from the `show-me` plugin in
+[humanlayer/skills](https://github.com/humanlayer/skills) and the show-me
+announcement post at <https://www.humanlayer.com/blog/show-me-skill>,
 copyright (c) 2026 HumanLayer, licensed under the MIT License:
 
 MIT License

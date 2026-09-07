@@ -73,8 +73,10 @@ The benchmark has a second, experimental track for the `/bro show` direction
 (`docs/plans/2026-09-07-bro-show-visual-design.md`). It runs serialized
 transcript fixtures through `SHOW_PROMPT` and grades selection semantics
 (traceability of identifiers, fence shape, diff markers) rather than prose
-preservation. Its manifest, fingerprint, and results are independent of the
-modes matrix:
+preservation. The corpus carries one fixture per show-me form — call stack,
+pseudocode, component tree, file layout, types and signatures, diff, HTML
+layout, and prose degradation. Its manifest, fingerprint, and results are
+independent of the modes matrix:
 
 ```sh
 npm run benchmark:dry-run -- --track show

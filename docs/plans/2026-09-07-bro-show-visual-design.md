@@ -215,3 +215,7 @@ tolerated; the capture label counts turns actually kept after budget drops;
 `/bro show` now feeds `/bro open` via the shared remember callback; the
 degradation rule tells the model to head the outline with the topic, not
 "Summary".
+
+## Form coverage (2026-09-07)
+
+SHOW_PROMPT gained the types-and-signatures form from the show-me announcement post (it was absent from the skill file). SHOW_CORPUS now carries one serialized-transcript fixture per form — call stack, pseudocode, component tree, file layout, types and signatures, diff, HTML layout, and prose degradation — seeded from the canonical examples in the skill and the blog (MIT). Markdown autolinks are banned in output, and prose-only sessions must degrade to a plain outline (no fenced block, no diff).

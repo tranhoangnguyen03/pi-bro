@@ -1066,11 +1066,11 @@ async function runAgyText(
 
 function helpText(settings?: BroSettings, settingsError?: string): string {
 	const settingsSummary = settings
-		? `- **Model:** \`${settings.model}\`\n- **Reasoning effort:** ${settings.effort === "default" ? "built into the selected model" : settings.effort}\n- **Mode:** ${settings.mode}`
+		? `- **Model:** \`${settings.model}\`\n- **Reasoning effort:** ${settings.effort === "default" ? "built into the selected model" : settings.effort}\n- **Mode:** ${settings.mode}\n- **Show turns:** ${settings.showTurns}`
 		: `Bro could not read its settings: ${settingsError}\n\nRun \`/bro doctor\` for setup help.`;
 	return `# Bro
 
-Bro explains a dense assistant reply, pasted text, local document, or public webpage in plain language without adding the explanation to Pi's conversation.
+Bro explains a dense assistant reply, pasted text, local document, or public webpage in plain language — or draws recent session turns as shapes — without adding anything to Pi's conversation.
 
 ## Explain
 
@@ -1079,6 +1079,7 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 - \`/bro file <path>\` — explain a Markdown, text, PDF, or DOCX file
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro open\` — reopen the latest explanation
+- \`/bro show [turns]\` — draw the last few session turns, including tool results, as shapes
 
 Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text. Quoted paths with spaces are routed too when the file exists.
 
@@ -1090,7 +1091,7 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 - \`/bro usage [--provider agy]\` — show current Agy limits
 - \`/bro model [id]\` — view or choose the Agy model
 - \`/bro effort [low|medium|high]\` — view or choose reasoning effort
-- \`/bro show [turns]\` — draw recent session turns, including tool results, as shapes\n- \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
+- \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
 
 ## Current settings
 
@@ -1103,6 +1104,7 @@ Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly.
 - brief — the main point and next action, with no fixed word target
 - balanced — default; material detail with clearer structure
 - faithful — closest to the source, with no fixed word limit
+/bro show uses its own built-in draw prompt; the modes and \`bro-prompt.md\` do not affect it.
 If \`${PROMPT_FILE}\` exists and is valid, the selected mode stays saved but inactive because the custom prompt fully overrides it. Remove or rename \`bro-prompt.md\` to use the saved built-in mode again.
 
 ## Controls
@@ -1451,7 +1453,7 @@ export default async function bro(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("bro", {
-		description: "Explain pasted text, replies, documents, and webpages",
+		description: "Explain replies, pasted text, documents, and webpages, or draw recent session turns",
 		getArgumentCompletions: (prefix) => {
 			const normalized = prefix.trim().toLowerCase();
 			const matches = COMMANDS.filter((command) => command.value.startsWith(normalized));
@@ -1771,7 +1773,7 @@ export default async function bro(pi: ExtensionAPI) {
 				}
 				if (!lastResult) {
 					await showBroModal(ctx, {
-						text: "# Nothing to open yet\n\nUse `/bro text <text>`, run `/bro` after an assistant response, use `/bro file <path>`, or use `/bro url <url>`.",
+						text: "# Nothing to open yet\n\nUse `/bro text <text>`, run `/bro` after an assistant response, use `/bro file <path>`, use `/bro url <url>`, or run `/bro show` to draw recent turns.",
 						kind: "empty",
 					});
 					return;
