@@ -28,7 +28,7 @@ test("required tokens exclude files that were merely inspected", () => {
 	assert.ok(!fixture("show-refactor-utils-split").expectations.requiredTokens.includes("src/utils/strings.ts"));
 });
 
-test("the show manifest is a separate two-row track", () => {
+test("the show manifest is a separate ten-row track", () => {
 	const manifest = buildManifest("show");
 	assert.equal(manifest.rows.length, 10);
 	assert.deepEqual(new Set(manifest.rows.map((row) => row.variant)), new Set(["show-v1"]));

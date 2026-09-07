@@ -1083,7 +1083,7 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 
 Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text. Quoted paths with spaces are routed too when the file exists.
 
-Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/bro file\`, or \`/bro url\` command — or give \`/bro\` the input directly — to capture a new source.
+Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/bro file\`, \`/bro url\`, or \`/bro show\` command — or give \`/bro\` the input directly — to capture a new source.
 
 ## Check and configure
 
@@ -1097,7 +1097,7 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 
 ${settingsSummary}
 
-Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly. Changes apply to future explanations.
+Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly. Changes apply to future explanations. \`showTurns\` has no setter command — edit the file directly, or override it per run with \`/bro show <n>\`.
 
 ## Explanation modes
 
@@ -1122,6 +1122,7 @@ Bro temporarily captures mouse input while the modal is open. Native mouse selec
 - Documents must be inside the current workspace, are limited to 10 MiB and 100,000 extracted characters, and must be \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\`. Scanned PDFs need OCR first.
 - Web input is limited to one public HTML page. Bro cannot sign in, run page JavaScript, bypass paywalls or blocks, follow pagination, or understand images and video.
 - If a webpage fails, copy it into a text file or save it as a PDF, then use \`/bro file\`.
+- Show draws only what already happened in this session — the last few turns including tool results — and cannot read the repository or other files on its own. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
 
 ## Privacy and safety
 

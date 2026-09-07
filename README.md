@@ -110,7 +110,8 @@ same modal, never touching your conversation. `/bro show` uses its own draw
 prompt; the explanation modes and `bro-prompt.md` do not affect it.
 
 Shapes are terminal-first: pseudocode, call trees, file trees, component
-trees, diffs, and types and signatures. When the source has no code structure
+trees, diffs, and types and signatures. Bro picks the shape from what
+happened in the session; there is no flag to request a specific one. When the source has no code structure
 to draw, Bro falls back to a plain outline instead of forcing a diagram. A
 reply that ends in one self-contained HTML block — layout, a state comparison,
 anything where position itself carries meaning — is written to a file and
@@ -147,10 +148,11 @@ interface Cursor { position: ItemId; direction: 'up' | 'down' }
 function resolveTarget(items: Item[], cursor: Cursor): ItemId | null
 ```
 
-### A layout that overlaps at narrow widths
+### A layout that collapses at narrow widths
 
-Text cannot show an overlap, so Bro ends with one self-contained HTML block and
-**O** opens it:
+Text can't show a before/after layout change at a glance, so Bro ends with one
+self-contained HTML block and **O** opens it (the terminal first shows
+`[HTML diagram saved — press O to open]`):
 
 <p align="center">
   <a href="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-show-layout.png">
@@ -202,7 +204,7 @@ SessionPage (apps/example/src/routes/session.tsx)
 
 **Pseudocode** — how scroll capture and restore work:
 
-```typescript
+```text
 capture(blocks, targetRect, scrollRect) -> Snapshot:
   target = focusedBlock ?? firstBlockIntersectingViewportTop(blocks)
   anchor = wholeBlockAnchor(blocks, target)
@@ -569,7 +571,8 @@ apply to the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
 one of the levels shown by `/bro effort`. Models without adjustable effort use
 `default`. `mode` must be `brief`, `balanced`, or `faithful`; existing settings
 without it use `balanced`. `showTurns` is the default number of turns `/bro
-show` draws (default 4); `/bro show <n>` overrides it for a single run. The choices remain active across Pi restarts until
+show` draws (default 4); `/bro show <n>` overrides it for a single run. There
+is no `/bro showTurns` command — edit the file directly. The choices remain active across Pi restarts until
 you change them. `/bro help` shows the active settings and exact file path.
 
 If `PI_CODING_AGENT_DIR` is set, the file lives there instead. `PI_BRO_MODEL`
