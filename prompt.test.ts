@@ -10,9 +10,10 @@ import {
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 test("exports and parses the built-in Bro modes", () => {
-	assert.deepEqual(BRO_MODES, ["brief", "balanced", "faithful"]);
+	assert.deepEqual(BRO_MODES, ["brief", "balanced", "faithful", "visual"]);
 	assert.equal(DEFAULT_BRO_MODE, "balanced");
 	assert.equal(parseBroMode("brief"), "brief");
+	assert.equal(parseBroMode("visual"), "visual");
 	assert.equal(parseBroMode(" balanced "), undefined);
 	assert.equal(parseBroMode("unknown"), undefined);
 	assert.equal(parseBroMode(null), undefined);
@@ -62,4 +63,23 @@ test("faithful uses Gemini v3 preservation guidance", () => {
 	assert.match(prompt, /without adding, removing, or assuming anything new/);
 	assert.match(prompt, /without turning inline snippets into full blocks/);
 	assert.match(prompt, /zero preamble/);
+});
+
+test("visual uses the show-me form menu, traceability, degradation, and HTML fence contract", () => {
+	const prompt = buildDefaultPrompt("x", "visual");
+
+	assert.match(prompt, /pseudocode/);
+	assert.match(prompt, /call tree/);
+	assert.match(prompt, /file tree/);
+	assert.match(prompt, /component tree/);
+	assert.match(prompt, /component diff, file-layout diff, call-tree diff, or state diff/);
+	assert.match(prompt, /smallest view/);
+	assert.match(prompt, /Traceability:.*verbatim in the quoted source/);
+	assert.match(prompt, /Never invent, guess, or complete a name from world knowledge/);
+	assert.match(prompt, /Degradation:.*no code structure/);
+	assert.match(prompt, /Never force a diagram/);
+	assert.match(prompt, /at most one ```html fenced block/);
+	assert.match(prompt, /only as the very last block/);
+	assert.match(prompt, /Mermaid syntax belongs only inside that single html fence/);
+	assert.match(prompt, /Zero preamble/);
 });

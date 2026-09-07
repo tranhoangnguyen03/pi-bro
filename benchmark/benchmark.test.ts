@@ -28,12 +28,25 @@ test("freezes the previous Bro prompt with JSON source framing", () => {
 	assert.ok(prompt.endsWith(JSON.stringify(source)));
 });
 
-test("defines eight unique synthetic fixtures", () => {
-	assert.equal(BENCHMARK_CORPUS.length, 8);
-	assert.equal(new Set(BENCHMARK_CORPUS.map((item) => item.id)).size, 8);
+test("defines ten unique synthetic fixtures", () => {
+	assert.equal(BENCHMARK_CORPUS.length, 10);
+	assert.equal(new Set(BENCHMARK_CORPUS.map((item) => item.id)).size, 10);
 	assert.ok(fixture("mixed-language").target.includes("Italiano"));
 	assert.ok(fixture("long-document").target.length > 1_000);
 	assert.ok(fixture("target-injection").target.includes("INJECTION_SENTINEL"));
+});
+
+test("defines two serialized transcript fixtures with quoted payloads", () => {
+	const debugging = fixture("transcript-debug-session-restore");
+	assert.match(debugging.target, /^## user\n"/);
+	assert.ok(debugging.target.includes("src/sessions/manager.ts"));
+	assert.ok(debugging.target.includes("src/config/settings.ts"));
+	assert.ok(JSON.parse(debugging.target.split("\n")[1]!).length > 0);
+
+	const refactor = fixture("transcript-refactor-utils-split");
+	assert.match(refactor.target, /^## user\n"/);
+	assert.ok(refactor.target.includes("src/utils/formatters.ts"));
+	assert.ok(refactor.target.includes("src/utils/dates.ts"));
 });
 
 test("checks required literals and occurrence counts", () => {
@@ -73,15 +86,52 @@ test("checks unchanged output, expected change, and length ratio", () => {
 	assert.equal(checkOutput(inflated, "Plain summary.").expectedChangeSatisfied, true);
 });
 
-test("builds and prints the exact 32-row dry manifest", () => {
+test("skips traceability and HTML-fence checks when not enforced by the fixture", () => {
+	const inflated = fixture("inflated-prose");
+	const result = checkOutput(inflated, "```mermaid\ngraph TD;\n```\n`madeUpFunction.helper` does not exist anywhere.");
+	assert.deepEqual(result.untraceableTokens, []);
+	assert.deepEqual(result.htmlFenceViolations, []);
+});
+
+test("flags path-like, backticked, and fenced-code tokens missing from the source", () => {
+	const transcript = fixture("transcript-debug-session-restore");
+	const traceable = checkOutput(transcript, "The bug was in `src/config/settings.ts`; loadConfig now wraps raw.timeoutMs with Number().");
+	assert.deepEqual(traceable.untraceableTokens, []);
+
+	const untraceable = checkOutput(transcript, "The bug was in `src/config/nonexistent.ts` calling madeUpFunction.helper.");
+	assert.ok(untraceable.untraceableTokens.includes("src/config/nonexistent.ts"));
+	assert.ok(untraceable.untraceableTokens.includes("madeUpFunction.helper"));
+});
+
+test("enforces at most one html fence as the last block, and no bare mermaid", () => {
+	const transcript = fixture("transcript-debug-session-restore");
+	assert.deepEqual(checkOutput(transcript, "plain text only").htmlFenceViolations, []);
+	assert.deepEqual(
+		checkOutput(transcript, "```text\nbefore\n```\n\n```html\n<div></div>\n```").htmlFenceViolations,
+		[],
+	);
+	assert.ok(checkOutput(transcript, "```mermaid\ngraph TD;\n```").htmlFenceViolations.includes("bare mermaid fence outside the html block"));
+	assert.ok(
+		checkOutput(transcript, "```html\n<div></div>\n```\n\n```text\nafter\n```").htmlFenceViolations.includes(
+			"html fence is not the last fenced block",
+		),
+	);
+	assert.ok(
+		checkOutput(transcript, "```html\n<div></div>\n```\n\n```html\n<div></div>\n```").htmlFenceViolations.includes(
+			"more than one html fence",
+		),
+	);
+});
+
+test("builds and prints the exact 50-row dry manifest", () => {
 	const manifest = buildManifest();
-	assert.equal(manifest.rows.length, 32);
-	assert.equal(new Set(manifest.rows.map((row) => row.callId)).size, 32);
-	assert.deepEqual(new Set(manifest.rows.map((row) => row.variant)), new Set(["baseline", "brief", "balanced", "faithful"]));
+	assert.equal(manifest.rows.length, 50);
+	assert.equal(new Set(manifest.rows.map((row) => row.callId)).size, 50);
+	assert.deepEqual(new Set(manifest.rows.map((row) => row.variant)), new Set(["baseline", "brief", "balanced", "faithful", "visual"]));
 	assert.deepEqual(new Set(manifest.rows.map((row) => row.model)), new Set(["gemini-3.7-flash"]));
 	assert.deepEqual(new Set(manifest.rows.map((row) => row.effort)), new Set(["low"]));
 	const printed = JSON.parse(formatDryRun());
-	assert.equal(printed.rows.length, 32);
+	assert.equal(printed.rows.length, 50);
 	assert.equal(printed.fingerprint, manifest.fingerprint);
 });
 

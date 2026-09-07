@@ -79,7 +79,7 @@ const COMMANDS = [
 	{ value: "usage", label: "usage", description: "Show current Agy usage" },
 	{ value: "model", label: "model", description: "Choose the Agy model" },
 	{ value: "effort", label: "effort", description: "Choose the Agy reasoning effort" },
-	{ value: "mode", label: "mode", description: "Choose brief, balanced, or faithful explanations" },
+	{ value: "mode", label: "mode", description: "Choose brief, balanced, faithful, or visual explanations" },
 	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
 const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
@@ -476,7 +476,7 @@ export function parseBroSettings(value: unknown): BroSettings {
 		throw new Error('Settings must contain a model and effort set to "default", "low", "medium", or "high".');
 	}
 	const mode = value.mode === undefined ? DEFAULT_BRO_MODE : parseBroMode(value.mode);
-	if (!mode) throw new Error('Settings mode must be "brief", "balanced", or "faithful".');
+	if (!mode) throw new Error('Settings mode must be "brief", "balanced", "faithful", or "visual".');
 	return { model: value.model.trim(), effort: value.effort as BroSettings["effort"], mode };
 }
 
@@ -912,7 +912,7 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 - \`/bro usage [--provider agy]\` — show current Agy limits
 - \`/bro model [id]\` — view or choose the Agy model
 - \`/bro effort [low|medium|high]\` — view or choose reasoning effort
-- \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
+- \`/bro mode [brief|balanced|faithful|visual]\` — view or choose explanation mode
 
 ## Current settings
 
@@ -925,6 +925,7 @@ Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly.
 - brief — the main point and next action, with no fixed word target
 - balanced — default; material detail with clearer structure
 - faithful — closest to the source, with no fixed word limit
+- visual — terminal-first shapes (pseudocode, trees, diffs) instead of prose, when the source has code structure to show
 
 If \`${PROMPT_FILE}\` exists and is valid, the selected mode stays saved but inactive because the custom prompt fully overrides it. Remove or rename \`bro-prompt.md\` to use the saved built-in mode again.
 
@@ -1357,7 +1358,7 @@ export default async function bro(pi: ExtensionAPI) {
 			if (action === "mode") {
 				const requested = parts[1];
 				if (parts.length > 2 || (requested && !parseBroMode(requested))) {
-					ctx.ui.notify("Use /bro mode, or choose brief, balanced, or faithful.", "warning");
+					ctx.ui.notify("Use /bro mode, or choose brief, balanced, faithful, or visual.", "warning");
 					return;
 				}
 				try {
@@ -1365,7 +1366,7 @@ export default async function bro(pi: ExtensionAPI) {
 					let selected = parseBroMode(requested);
 					if (!selected) {
 						if (ctx.mode !== "tui") {
-							ctx.ui.notify("Use /bro mode <brief|balanced|faithful> outside Pi's interactive UI.", "warning");
+							ctx.ui.notify("Use /bro mode <brief|balanced|faithful|visual> outside Pi's interactive UI.", "warning");
 							return;
 						}
 						const modes = [...BRO_MODES].sort((a, b) => Number(b === settings.mode) - Number(a === settings.mode));
