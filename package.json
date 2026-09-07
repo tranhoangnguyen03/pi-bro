@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "description": "An Earendil Pi extension that explains pasted text, assistant responses, local documents, public webpages, and recent session turns (as shapes) in a context-isolated window.",
   "type": "module",
   "license": "MIT",
