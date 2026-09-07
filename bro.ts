@@ -912,7 +912,7 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 - \`/bro usage [--provider agy]\` — show current Agy limits
 - \`/bro model [id]\` — view or choose the Agy model
 - \`/bro effort [low|medium|high]\` — view or choose reasoning effort
-- \`/bro mode [brief|balanced|faithful|visual]\` — view or choose explanation mode
+- \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
 
 ## Current settings
 
@@ -925,8 +925,6 @@ Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly.
 - brief — the main point and next action, with no fixed word target
 - balanced — default; material detail with clearer structure
 - faithful — closest to the source, with no fixed word limit
-- visual — terminal-first shapes (pseudocode, trees, diffs) instead of prose, when the source has code structure to show
-
 If \`${PROMPT_FILE}\` exists and is valid, the selected mode stays saved but inactive because the custom prompt fully overrides it. Remove or rename \`bro-prompt.md\` to use the saved built-in mode again.
 
 ## Controls

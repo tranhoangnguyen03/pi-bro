@@ -66,3 +66,20 @@ The bounded release decision and final measurements are in
 checks are adapted from
 [`wtfzambo/speak-like-you-eat`](https://github.com/wtfzambo/speak-like-you-eat)
 under the MIT license recorded in `THIRD_PARTY_NOTICES.md`.
+
+## Show track
+
+The benchmark has a second, experimental track for the `/bro show` direction
+(`docs/plans/2026-09-07-bro-show-visual-design.md`). It runs serialized
+transcript fixtures through `SHOW_PROMPT` and grades selection semantics
+(traceability of identifiers, fence shape, diff markers) rather than prose
+preservation. Its manifest, fingerprint, and results are independent of the
+modes matrix:
+
+```sh
+npm run benchmark:dry-run -- --track show
+npm run benchmark:run -- --track show --approve <fingerprint>
+npm run benchmark:report -- --track show
+```
+
+Show results live in `benchmark/.work/show/`.

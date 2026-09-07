@@ -8,8 +8,6 @@ export type FixtureExpectations = {
 	forbiddenText: readonly string[];
 	forbiddenOutputPrefixes?: readonly string[];
 	maximumLengthRatio?: number;
-	traceabilityEnforced?: boolean;
-	lastBlockHtmlFenceOnly?: boolean;
 };
 
 export type BenchmarkFixture = {
@@ -31,57 +29,7 @@ export type MechanicalChecks = {
 	likelyPreamble: boolean;
 	maximumLengthRatioSatisfied: boolean;
 	expectedChangeSatisfied: boolean;
-	untraceableTokens: string[];
-	htmlFenceViolations: string[];
 };
-
-function serializeTranscript(entries: readonly (readonly [string, string])[]): string {
-	return entries.map(([header, payload]) => `${header}\n${JSON.stringify(payload)}`).join("\n\n");
-}
-
-const DEBUG_SESSION_RESTORE_TRANSCRIPT = serializeTranscript([
-	["## user", "The session restore is throwing an error on startup. Can you find and fix it?"],
-	["## assistant", "I'll open the session manager and its config loader to find the crash."],
-	["## tool call: read", "src/sessions/manager.ts"],
-	["## tool result: read", "export function restoreSession(configPath: string): Session {\n\tconst config = loadConfig(configPath);\n\treturn new Session(config.sessionId, config.timeoutMs);\n}"],
-	["## assistant", "The crash likely comes from loadConfig. Let me check src/config/settings.ts."],
-	["## tool call: read", "src/config/settings.ts"],
-	["## tool result: read", "export function loadConfig(path: string): Config {\n\tconst raw = JSON.parse(readFileSync(path, \"utf8\"));\n\treturn { sessionId: raw.sessionId, timeoutMs: raw.timeout_ms };\n}"],
-	["## assistant", "loadConfig reads raw.timeout_ms but Session expects config.timeoutMs, so timeoutMs comes back undefined. I'll rename the key."],
-	["## tool call: edit", "src/config/settings.ts: replace `timeoutMs: raw.timeout_ms` with `timeoutMs: raw.timeoutMs`"],
-	["## tool result: edit", "Applied edit to src/config/settings.ts"],
-	["## tool call: bash", "npm test -- src/sessions/manager.test.ts"],
-	["## tool result: bash", "FAIL src/sessions/manager.test.ts\nrestoreSession > TypeError: config.timeoutMs.toFixed is not a function\n    at Session (src/sessions/manager.ts:14)"],
-	["## assistant", "timeoutMs is read from JSON as a string. I'll coerce it with Number() before loadConfig returns it."],
-	["## tool call: edit", "src/config/settings.ts: replace `timeoutMs: raw.timeoutMs` with `timeoutMs: Number(raw.timeoutMs)`"],
-	["## tool result: edit", "Applied edit to src/config/settings.ts"],
-	["## tool call: bash", "npm test -- src/sessions/manager.test.ts"],
-	["## tool result: bash", "PASS src/sessions/manager.test.ts (3 tests)"],
-	["## assistant", "Fixed: src/config/settings.ts now coerces timeoutMs to a number with Number(raw.timeoutMs) before src/sessions/manager.ts reads config.timeoutMs. All three tests pass."],
-]);
-
-const REFACTOR_UTILS_TRANSCRIPT = serializeTranscript([
-	["## user", "Please refactor src/utils/formatters.ts — split the date formatting helpers into their own file."],
-	["## assistant", "I'll list src/utils first to see what's already there."],
-	["## tool call: bash", "ls src/utils"],
-	["## tool result: bash", "formatters.ts\nstrings.ts\narrays.ts\nindex.ts"],
-	["## assistant", "Let me read formatters.ts and strings.ts before moving anything."],
-	["## tool call: read", "src/utils/formatters.ts"],
-	["## tool result: read", "export function formatCurrency(cents: number): string {\n\treturn `$${(cents / 100).toFixed(2)}`;\n}\n\nexport function formatDate(date: Date): string {\n\treturn date.toISOString().slice(0, 10);\n}\n\nexport function formatRelativeTime(date: Date, now: Date): string {\n\tconst diffMs = now.getTime() - date.getTime();\n\treturn `${Math.round(diffMs / 60000)}m ago`;\n}"],
-	["## tool call: read", "src/utils/strings.ts"],
-	["## tool result: read", "export function slugify(value: string): string {\n\treturn value.trim().toLowerCase().replace(/\\s+/g, \"-\");\n}\n\nexport function truncate(value: string, max: number): string {\n\treturn value.length > max ? `${value.slice(0, max)}…` : value;\n}"],
-	["## assistant", "formatDate and formatRelativeTime belong together; I'll move them into a new src/utils/dates.ts and leave formatCurrency in formatters.ts."],
-	["## tool call: write", "src/utils/dates.ts"],
-	["## tool result: write", "Wrote src/utils/dates.ts with formatDate and formatRelativeTime moved from src/utils/formatters.ts."],
-	["## tool call: edit", "src/utils/formatters.ts: remove formatDate and formatRelativeTime, keep formatCurrency"],
-	["## tool result: edit", "Applied edit to src/utils/formatters.ts"],
-	["## tool call: read", "src/utils/index.ts"],
-	["## tool result: read", "export * from \"./formatters\";\nexport * from \"./strings\";\nexport * from \"./arrays\";"],
-	["## assistant", "src/utils/index.ts re-exports each file, so I'll add dates.ts there too."],
-	["## tool call: edit", "src/utils/index.ts: add `export * from \"./dates\";`"],
-	["## tool result: edit", "Applied edit to src/utils/index.ts"],
-	["## assistant", "Moved formatDate and formatRelativeTime out of src/utils/formatters.ts into a new src/utils/dates.ts, and added the export to src/utils/index.ts. formatCurrency stays in src/utils/formatters.ts; no callers needed changes."],
-]);
 
 export const BENCHMARK_CORPUS: readonly BenchmarkFixture[] = [
 	{
@@ -206,50 +154,6 @@ export const BENCHMARK_CORPUS: readonly BenchmarkFixture[] = [
 			maximumLengthRatio: 1.05,
 		},
 	},
-	{
-		id: "transcript-debug-session-restore",
-		description: "Debugging exchange: a startup crash traced from the session manager to a config parsing bug",
-		target: DEBUG_SESSION_RESTORE_TRANSCRIPT,
-		expectations: {
-			expectedChange: true,
-			allowUnchanged: false,
-			requiredLiterals: [
-				"src/sessions/manager.ts",
-				"src/config/settings.ts",
-				"restoreSession",
-				"loadConfig",
-				"timeoutMs",
-				"timeout_ms",
-				"npm test -- src/sessions/manager.test.ts",
-			],
-			forbiddenText: ["Sure", "Here is", "I'll explain"],
-			maximumLengthRatio: 0.9,
-			traceabilityEnforced: true,
-			lastBlockHtmlFenceOnly: true,
-		},
-	},
-	{
-		id: "transcript-refactor-utils-split",
-		description: "Small refactor: splitting date helpers out of a shared utils module",
-		target: REFACTOR_UTILS_TRANSCRIPT,
-		expectations: {
-			expectedChange: true,
-			allowUnchanged: false,
-			requiredLiterals: [
-				"src/utils/formatters.ts",
-				"src/utils/dates.ts",
-				"src/utils/strings.ts",
-				"src/utils/index.ts",
-				"formatDate",
-				"formatRelativeTime",
-				"formatCurrency",
-			],
-			forbiddenText: ["Sure", "Here is", "I'll explain"],
-			maximumLengthRatio: 0.9,
-			traceabilityEnforced: true,
-			lastBlockHtmlFenceOnly: true,
-		},
-	},
 ] as const;
 
 export function checkOutput(fixture: BenchmarkFixture, output: string): MechanicalChecks {
@@ -271,10 +175,6 @@ export function checkOutput(fixture: BenchmarkFixture, output: string): Mechanic
 		trimmedLowercase.startsWith(text.toLowerCase()),
 	);
 	const lengthRatio = output.length / sourceLength;
-	const untraceableTokens = fixture.expectations.traceabilityEnforced
-		? extractTraceableTokens(output).filter((token) => !fixture.target.includes(token))
-		: [];
-	const htmlFenceViolations = fixture.expectations.lastBlockHtmlFenceOnly ? findHtmlFenceViolations(output) : [];
 
 	return {
 		unchanged,
@@ -291,35 +191,7 @@ export function checkOutput(fixture: BenchmarkFixture, output: string): Mechanic
 		expectedChangeSatisfied: fixture.expectations.expectedChange
 			? !unchanged
 			: fixture.expectations.allowUnchanged || !unchanged,
-		untraceableTokens,
-		htmlFenceViolations,
 	};
-}
-
-const FENCED_BLOCK_PATTERN = /```([\w-]*)\n[\s\S]*?```/g;
-const PATH_LIKE_TOKEN_PATTERN = /\b[\w-]+(?:[./][\w-]+)+\b/g;
-const BACKTICKED_TOKEN_PATTERN = /`([^`\n]+)`/g;
-
-function extractTraceableTokens(output: string): string[] {
-	const tokens = new Set<string>();
-	const fencedBlocks = [...output.matchAll(FENCED_BLOCK_PATTERN)].map((match) => match[0]);
-	for (const block of fencedBlocks) {
-		for (const match of block.matchAll(PATH_LIKE_TOKEN_PATTERN)) tokens.add(match[0]);
-	}
-	const withoutFences = output.replace(FENCED_BLOCK_PATTERN, "");
-	for (const match of withoutFences.matchAll(PATH_LIKE_TOKEN_PATTERN)) tokens.add(match[0]);
-	for (const match of withoutFences.matchAll(BACKTICKED_TOKEN_PATTERN)) tokens.add(match[1]);
-	return [...tokens];
-}
-
-function findHtmlFenceViolations(output: string): string[] {
-	const languages = [...output.matchAll(FENCED_BLOCK_PATTERN)].map((match) => match[1].toLowerCase());
-	const violations: string[] = [];
-	const htmlIndexes = languages.flatMap((language, index) => (language === "html" ? [index] : []));
-	if (htmlIndexes.length > 1) violations.push("more than one html fence");
-	if (htmlIndexes.length === 1 && htmlIndexes[0] !== languages.length - 1) violations.push("html fence is not the last fenced block");
-	if (languages.includes("mermaid")) violations.push("bare mermaid fence outside the html block");
-	return violations;
 }
 
 function countOccurrences(text: string, literal: string): number {
@@ -333,3 +205,6 @@ function countOccurrences(text: string, literal: string): number {
 		start = index + literal.length;
 	}
 }
+
+// Shared with the show track (benchmark/show-corpus.ts).
+export const FENCED_BLOCK_PATTERN = /```([\w-]*)\n[\s\S]*?```/g;

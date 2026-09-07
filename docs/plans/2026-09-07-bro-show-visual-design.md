@@ -176,3 +176,27 @@ history, `/bro session` as a user-facing prose-summary command.
   row (`visual`), routing note unchanged, settings example with `showTurns`.
 
 No new dependencies.
+
+## Separation decision (2026-09-07)
+
+After implementing `visual` as a fourth mode and live-testing plus a two-agent
+review, `show` is **no longer a mode**. The mode axis was wrong for it:
+
+- Prose modes echo transcript serializations instead of explaining them.
+- `visual` on prose sources only ever degrades defensively.
+- The shared simpleton persona fights precise technical shapes.
+- Preservation-style expectations (requiredLiterals) punish the smallest-view
+  selection that show-me demands — the benchmark contradicted the prompt.
+
+`BRO_MODES` stays `brief | balanced | faithful`. The show prompt lives beside
+them as `SHOW_PROMPT` / `buildShowPrompt` (own voice, own guard), and the
+benchmark gains a separate `show` track (`--track show`, own corpus, own
+fingerprint) with selection-semantics checks: hardened traceability (bare
+camelCase/snake_case/SCREAMING_CASE identifiers inside fences, diff-header
+stripping, backtick tokenization), fence rules (balanced fences, html-last, no
+trailing prose, self-contained, no bare or untagged mermaid), and diff marker
+validation. The modes benchmark returns to its frozen 32-row baseline, so its
+fingerprints stay comparable across releases.
+
+`/bro mode visual` is dead. If the experiment proves out, promotion to a mode
+is a later, deliberate decision.
