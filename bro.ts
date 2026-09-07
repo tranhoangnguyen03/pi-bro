@@ -30,7 +30,7 @@ const MAX_WEB_ELEMENTS = 100_000;
 const MAX_WEB_REDIRECTS = 5;
 const WEB_TIMEOUT_MS = 25_000;
 const MAX_TEXT_LENGTH = 100_000;
-const DEFAULT_SHOW_TURNS = 4;
+const DEFAULT_SHOW_TURNS = 10;
 const SHOW_TOOL_RESULT_KEEP = 2_000;
 const SHOW_TOOL_CALL_KEEP = 500;
 const SHOW_HTML_FILE_PATTERN = /^bro-show-[0-9a-f]{8}\.html$/;
@@ -1079,7 +1079,7 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 - \`/bro file <path>\` — explain a Markdown, text, PDF, or DOCX file
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro open\` — reopen the latest explanation
-- \`/bro show [turns]\` — draw the last few session turns, including tool results, as shapes
+- \`/bro show <n-turns>\` — draw the last few session turns, including tool results, as shapes
 
 Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text. Quoted paths with spaces are routed too when the file exists.
 
@@ -1097,7 +1097,7 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 
 ${settingsSummary}
 
-Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly. Changes apply to future explanations. \`showTurns\` has no setter command — edit the file directly, or override it per run with \`/bro show <n>\`.
+Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly. Changes apply to future explanations. \`showTurns\` has no setter command — edit the file directly, or override it per run with \`/bro show <n-turns>\`.
 
 ## Explanation modes
 
@@ -1484,7 +1484,7 @@ export default async function bro(pi: ExtensionAPI) {
 			if (action === "show") {
 				const requested = parts[1];
 				if (parts.length > 2 || (requested && !/^[1-9]\d*$/.test(requested))) {
-					ctx.ui.notify("Use /bro show [turns].", "warning");
+					ctx.ui.notify("Use /bro show <n-turns>.", "warning");
 					return;
 				}
 				const runShow = async (

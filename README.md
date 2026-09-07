@@ -58,7 +58,7 @@ text directly captures a new source the same way.
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
-| `/bro show [turns]` | Draw recent session turns (default last 4), including tool results, as shapes instead of prose. |
+| `/bro show <n-turns>` | Draw recent session turns (default last 10), including tool results, as shapes instead of prose. |
 | `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
 | `/bro usage [--provider agy]` | Show current Agy resource limits. |
 | `/bro model [id]` | View or choose the Agy model. |
@@ -118,7 +118,7 @@ anything where position itself carries meaning — is written to a file and
 opened with **O**.
 
 Pressing **R** redraws the same captured turns; running `/bro show` again
-captures the latest turns afresh. `/bro show <n>` overrides the default turn
+captures the latest turns afresh. `/bro show <n-turns>` overrides the default turn
 count for a single run.
 
 ### A slow session-create, traced
@@ -561,7 +561,7 @@ Bro creates this user-editable settings file when the extension loads:
   "model": "gemini-3.7-flash",
   "effort": "low",
   "mode": "balanced",
-  "showTurns": 4
+  "showTurns": 10
 }
 ```
 
@@ -571,7 +571,7 @@ apply to the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
 one of the levels shown by `/bro effort`. Models without adjustable effort use
 `default`. `mode` must be `brief`, `balanced`, or `faithful`; existing settings
 without it use `balanced`. `showTurns` is the default number of turns `/bro
-show` draws (default 4); `/bro show <n>` overrides it for a single run. There
+show` draws (default 10); `/bro show <n-turns>` overrides it for a single run. There
 is no `/bro showTurns` command — edit the file directly. The choices remain active across Pi restarts until
 you change them. `/bro help` shows the active settings and exact file path.
 

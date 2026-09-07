@@ -96,13 +96,13 @@ assert.deepEqual(parseBroSettings({ model: " gemini-one ", effort: "high" }), {
 	model: "gemini-one",
 	effort: "high",
 	mode: "balanced",
-	showTurns: 4,
+	showTurns: 10,
 });
 assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "faithful" }), {
 	model: "gemini-one",
 	effort: "low",
 	mode: "faithful",
-	showTurns: 4,
+	showTurns: 10,
 });
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
@@ -227,7 +227,7 @@ assert.ok(!(await showReaddir(showHtmlFirst.slice(0, showHtmlFirst.lastIndexOf("
 
 assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 0 }), /showTurns/);
 assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 2.5 }), /showTurns/);
-assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief" }).showTurns, 4);
+assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief" }).showTurns, 10);
 assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 9 }).showTurns, 9);
 
 const root = await mkdtemp(join(tmpdir(), "pi-bro-extract-"));
@@ -380,7 +380,7 @@ if [ "$success_count" -ne 26 ]; then
 	exit 1
 fi
 
-if ! printf '%s\n' "$output" | grep -q 'Use /bro show \[turns\].'; then
+if ! printf '%s\n' "$output" | grep -q 'Use /bro show <n-turns>.'; then
 	printf 'Invalid show arguments did not produce an actionable warning:\n%s\n' "$output" >&2
 	exit 1
 fi
@@ -410,7 +410,7 @@ assert.deepEqual(JSON.parse(await readFile(process.argv[2], "utf8")), {
 	model: "gemini-test-two",
 	effort: "high",
 	mode: "faithful",
-	showTurns: 4,
+	showTurns: 10,
 });
 assert.deepEqual(JSON.parse(await readFile(process.argv[3], "utf8")), {
 	model: "gemini-test-one",

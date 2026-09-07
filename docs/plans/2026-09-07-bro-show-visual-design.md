@@ -45,7 +45,7 @@ Deliberately not ported:
 A **turn** is one user message plus every assistant message, tool call, and
 tool result after it, up to the next user message.
 
-- `/bro show` captures the last **4 turns** by default.
+- `/bro show` captures the last **10 turns** by default.
 - New setting `showTurns` (positive integer) overrides the default. Invalid
   explicit values are errors, matching the existing settings policy; missing
   values use the default. Surfaced in `/bro help`, `/bro doctor`, README.
@@ -126,9 +126,9 @@ One entry in `MODE_PROMPTS` (`prompt.ts`), reusing the audience prompt and
 - `/bro show` forces `visual` for that invocation only; it does not persist the
   mode. `/bro mode visual` persists and applies to `text`/`file`/`url`
   sources, subject to the degradation rule.
-- `/bro show <n>` optionally overrides the turn count for one run (positive
+- `/bro show <n-turns>` optionally overrides the turn count for one run (positive
   integer). No other arguments.
-- Settings file gains `"mode": "visual"` support and `"showTurns": 4`.
+- Settings file gains `"showTurns": 10`; no mode is added.
 
 ## Doctor and smoke tests
 
