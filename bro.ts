@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
@@ -781,16 +781,17 @@ export function showEntriesForMessage(message: { role?: string; content?: unknow
 		return text ? [`## user\n${JSON.stringify(text)}`] : [];
 	}
 	if (message.role === "assistant") {
-		if (!Array.isArray(message.content)) return [];
+		const content = Array.isArray(message.content) ? message.content : [];
 		const entries: string[] = [];
-		const text = showTextContent((message.content as unknown[]).filter((part) => (part as { type?: string })?.type !== "thinking"));
+		const text = showTextContent(content.filter((part) => (part as { type?: string })?.type !== "thinking"));
 		if (text) entries.push(`## assistant\n${JSON.stringify(text)}`);
 		let thinking = false;
-		for (const part of message.content as { type?: string; name?: string; arguments?: unknown }[]) {
+		for (const part of content as { type?: string; name?: string; arguments?: unknown }[]) {
 			if (part?.type === "thinking") thinking = true;
 			if (part?.type !== "toolCall") continue;
+			const toolName = String(part.name ?? "unknown").replace(/[\u0000-\u001f\u007f]/g, " ");
 			entries.push(
-				`## tool call: ${part.name ?? "unknown"}\n${JSON.stringify(trimShowArguments(JSON.stringify(part.arguments ?? {})))}`,
+				`## tool call: ${toolName}\n${JSON.stringify(trimShowArguments(JSON.stringify(part.arguments ?? {})))}`,
 			);
 		}
 		if (!entries.length && thinking) entries.push(`## assistant\n${JSON.stringify("(reasoning omitted)")}`);
@@ -798,7 +799,8 @@ export function showEntriesForMessage(message: { role?: string; content?: unknow
 	}
 	if (message.role === "toolResult") {
 		const text = trimShowResult(showTextContent(message.content) || "(empty result)");
-		return [`## tool result: ${message.toolName ?? "unknown"}${message.isError ? " (error)" : ""}\n${JSON.stringify(text)}`];
+		const name = String(message.toolName ?? "unknown").replace(/[\u0000-\u001f\u007f]/g, " ");
+		return [`## tool result: ${name}${message.isError ? " (error)" : ""}\n${JSON.stringify(text)}`];
 	}
 	return [];
 }
@@ -842,31 +844,56 @@ export function captureShowTranscript(ctx: ExtensionCommandContext, turnsRequest
 		text = serializeShowTurns(turns.slice(start));
 	}
 	if (text.length > MAX_TEXT_LENGTH) text = `${text.slice(0, MAX_TEXT_LENGTH)}\n[… transcript truncated …]`;
-	return { text: text.trim(), label: `last ${Math.max(1, seen)} turn${seen > 1 ? "s" : ""}` };
+	const kept = turns.slice(start).filter((turn) => turn.startsTurn).length;
+	return { text: text.trim(), label: `last ${Math.max(1, kept)} turn${kept > 1 ? "s" : ""}` };
 }
 
 export function extractShowHtml(text: string): string | undefined {
-	const fences = [...text.matchAll(/^```html\n([\s\S]*?)^```$/gm)];
+	const fences = [...text.matchAll(/^```html[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\r\n]*$/gm)];
 	return fences.at(-1)?.[1]?.trim();
 }
 
 export function stripShowHtmlFence(text: string): string {
-	return text.replace(/^```html\n[\s\S]*?^```$/gm, "[HTML diagram saved — press O to open]");
+	const matches = [...text.matchAll(/^```html[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\r\n]*$/gm)];
+	const last = matches.at(-1);
+	if (!last || last.index === undefined) return text;
+	return text.slice(0, last.index) + "[HTML diagram saved — press O to open]" + text.slice(last.index + last[0].length);
+}
+
+export function showHtmlDirectory(): string {
+	// ponytail: per-uid directory so keep-one cleanup never touches other
+	// users' files in a shared /tmp, and readdir stays small.
+	return join(tmpdir(), `pi-bro-${typeof process.getuid === "function" ? process.getuid() : "user"}`);
+}
+
+function withShowCsp(html: string): string {
+	// Defense in depth: the prompt forbids external resources and scripts;
+	// a meta CSP blocks them anyway if the model slips.
+	const meta = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:;">';
+	if (/http-equiv=["']?Content-Security-Policy/i.test(html)) return html;
+	return html.replace(/^(\s*(?:<!doctype[^>]*>\s*)?)/i, `$1\n${meta}\n`);
 }
 
 export async function writeShowHtml(html: string): Promise<string> {
 	const slug = createHash("sha256").update(html).digest("hex").slice(0, 8);
-	for (const name of await readdir(tmpdir())) {
-		if (SHOW_HTML_FILE_PATTERN.test(name)) await rm(join(tmpdir(), name), { force: true });
+	const directory = showHtmlDirectory();
+	await mkdir(directory, { recursive: true, mode: 0o700 });
+	for (const name of await readdir(directory)) {
+		if (SHOW_HTML_FILE_PATTERN.test(name)) await rm(join(directory, name), { force: true });
 	}
-	const path = join(tmpdir(), `bro-show-${slug}.html`);
-	await writeFile(path, `${html}\n`, "utf8");
+	const path = join(directory, `bro-show-${slug}.html`);
+	await writeFile(path, `${withShowCsp(html)}\n`, "utf8");
 	return path;
 }
 
-function openShowHtml(path: string): void {
+function openShowHtml(path: string): boolean {
+	if (process.platform === "win32") {
+		const result = spawnSync("cmd", ["/c", "start", "", path], { stdio: "ignore", timeout: 5_000 });
+		return result.status === 0;
+	}
 	const opener = process.platform === "darwin" ? "open" : "xdg-open";
-	spawn(opener, [path], { detached: true, stdio: "ignore" }).on("error", () => undefined).unref();
+	const result = spawnSync(opener, [path], { stdio: "ignore", timeout: 5_000 });
+	return result.status === 0;
 }
 
 async function promptFor(response: string, mode: BroMode): Promise<{ text: string; custom: boolean }> {
@@ -1289,8 +1316,9 @@ class BroModal implements Focusable {
 		}
 
 		if ((matchesKey(data, "o") || matchesKey(data, "shift+o")) && this.htmlPath && this.kind === "result") {
-			openShowHtml(this.htmlPath);
-			this.notice = "Opening diagram";
+			this.notice = openShowHtml(this.htmlPath)
+				? "Opening diagram"
+				: `Could not open ${this.htmlPath}`;
 			this.tui.requestRender();
 		}
 	}
@@ -1480,6 +1508,7 @@ export default async function bro(pi: ExtensionAPI) {
 						loadingText: "Drawing what happened…",
 						retryLabel: "show again",
 						run: runShow,
+						onResult: remember,
 					});
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");

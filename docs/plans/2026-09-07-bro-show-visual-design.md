@@ -200,3 +200,18 @@ fingerprints stay comparable across releases.
 
 `/bro mode visual` is dead. If the experiment proves out, promotion to a mode
 is a later, deliberate decision.
+
+## Hardening after review (2026-09-07)
+
+Post-implementation review fixes: show HTML artifacts moved to a per-uid
+directory (`/tmp/pi-bro-<uid>/bro-show-<slug>.html`) so keep-one cleanup never
+touches other users' files in a shared /tmp; written HTML gains a meta CSP
+(`default-src 'none'`) as defense in depth against model-authored external
+references; the fence regexes tolerate CRLF and trailing whitespace; the O key
+surfaces open failures and supports Windows (`cmd /c start`); tool names in
+section headers are control-character-stripped so a hostile MCP tool name
+cannot forge transcript structure; assistant messages with string content are
+tolerated; the capture label counts turns actually kept after budget drops;
+`/bro show` now feeds `/bro open` via the shared remember callback; the
+degradation rule tells the model to head the outline with the topic, not
+"Summary".

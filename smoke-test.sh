@@ -209,15 +209,21 @@ assert.equal(
 	"<div>x</div>",
 );
 assert.equal(stripShowHtmlFence("```html\n<div>x</div>\n```\n\ntail"), "[HTML diagram saved — press O to open]\n\ntail");
+assert.equal(stripShowHtmlFence("```text\nshape\n```\n```html\n<div>x</div>\n```").trim(), "```text\nshape\n```\n[HTML diagram saved — press O to open]".trim());
+assert.equal(extractShowHtml("```html  \r\n<div>crlf</div>\r\n```  "), "<div>crlf</div>");
 
 const showHtmlFirst = await writeShowHtml("<div>one</div>");
 const showHtmlSecond = await writeShowHtml("<div>two</div>");
 assert.notEqual(showHtmlFirst, showHtmlSecond);
-const { readdir: showReaddir } = await import("node:fs/promises");
-const { tmpdir: showTmpdir } = await import("node:os");
-const leftover = (await showReaddir(showTmpdir())).filter((name) => /^bro-show-[0-9a-f]{8}\.html$/.test(name));
+const { readdir: showReaddir, readFile: showReadFile } = await import("node:fs/promises");
+const showDir = showHtmlSecond.slice(0, showHtmlSecond.lastIndexOf("/"));
+assert.ok(/pi-bro-/.test(showDir), "html files live in a per-user directory");
+const leftover = (await showReaddir(showDir)).filter((name) => /^bro-show-[0-9a-f]{8}\.html$/.test(name));
 assert.deepEqual(leftover, [showHtmlSecond.split("/").pop()]);
-assert.equal((await (await import("node:fs/promises")).readFile(showHtmlSecond, "utf8")).trim(), "<div>two</div>");
+const saved = await showReadFile(showHtmlSecond, "utf8");
+assert.match(saved, /Content-Security-Policy/);
+assert.match(saved, /<div>two<\/div>/);
+assert.ok(!(await showReaddir(showHtmlFirst.slice(0, showHtmlFirst.lastIndexOf("/")))).includes(showHtmlFirst.split("/").pop()), "keep-one cleanup");
 
 assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 0 }), /showTurns/);
 assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 2.5 }), /showTurns/);
