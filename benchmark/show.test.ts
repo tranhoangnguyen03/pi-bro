@@ -11,9 +11,9 @@ const fixture = (id: string): ShowFixture => {
 
 const debugging = () => fixture("show-debug-session-restore");
 
-test("defines two serialized transcript fixtures with quoted payloads", () => {
-	assert.equal(SHOW_CORPUS.length, 2);
-	assert.equal(new Set(SHOW_CORPUS.map((item) => item.id)).size, 2);
+test("defines serialized transcript fixtures with quoted payloads", () => {
+	assert.equal(SHOW_CORPUS.length, 10);
+	assert.equal(new Set(SHOW_CORPUS.map((item) => item.id)).size, 10);
 	for (const item of SHOW_CORPUS) {
 		assert.match(item.target, /^## user\n"/);
 		assert.ok(JSON.parse(item.target.split("\n")[1]!).length > 0);
@@ -30,9 +30,9 @@ test("required tokens exclude files that were merely inspected", () => {
 
 test("the show manifest is a separate two-row track", () => {
 	const manifest = buildManifest("show");
-	assert.equal(manifest.rows.length, 2);
+	assert.equal(manifest.rows.length, 10);
 	assert.deepEqual(new Set(manifest.rows.map((row) => row.variant)), new Set(["show-v1"]));
-	assert.equal(new Set(manifest.rows.map((row) => row.callId)).size, 2);
+	assert.equal(new Set(manifest.rows.map((row) => row.callId)).size, 10);
 	const modes = buildManifest("modes");
 	assert.equal(modes.rows.length, 32);
 	assert.notEqual(manifest.fingerprint, modes.fingerprint);

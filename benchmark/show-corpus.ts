@@ -74,6 +74,77 @@ const REFACTOR_UTILS_TRANSCRIPT = serializeTranscript([
 	["## assistant", "Moved formatDate and formatRelativeTime out of src/utils/formatters.ts into a new src/utils/dates.ts, and added the export to src/utils/index.ts. formatCurrency stays in src/utils/formatters.ts; no callers needed changes."],
 ]);
 
+const CALL_STACK_TRANSCRIPT = serializeTranscript([
+	["## user", "Creating a session is taking around two seconds. Trace the full path from the handler down so I can see where the time goes."],
+	["## assistant", "Let me read the session handler and follow the call chain."],
+	["## tool call: read", "src/sessions/handler.ts"],
+	["## tool result: read", "export async function handleCreateSession(req: Request) {\n  await validateRequest(req);\n  await SessionStore.insert(req.body);\n  await publish('session.created');\n}"],
+	["## tool call: read", "src/sessions/worker.ts"],
+	["## tool result: read", "export async function AgentWorker.run(sessionId: string) {\n  const context = await loadContext(sessionId);\n  const result = await callModel(context);\n  await persistResult(sessionId, result);\n}"],
+	["## tool call: read", "src/sessions/store.ts"],
+	["## tool result: read", "export const SessionStore = {\n  async insert(payload) { /* writes row */ },\n};"],
+	["## assistant", "The chain is handleCreateSession -> validateRequest -> SessionStore.insert -> publish(session.created), and the publish triggers AgentWorker.run -> loadContext -> callModel -> persistResult. The model call inside the worker is the slow step."],
+]);
+
+const PSEUDOCODE_TRANSCRIPT = serializeTranscript([
+	["## user", "How does the editor capture and restore scroll position? Sketch the logic."],
+	["## assistant", "Let me read the capture and restore functions."],
+	["## tool call: read", "src/editor/scroll.ts"],
+	["## tool result: read", "export function capture(blocks: Block[], targetRect: Rect, scrollRect: Rect): Snapshot {\n  const target = focusedBlock ?? firstBlockIntersectingViewportTop(blocks);\n  const anchor = wholeBlockAnchor(blocks, target);\n  const offset = targetRect.top - scrollRect.top;\n  return { anchor, offset, scrollTop: scrollRect.top, revision: revision + 1 };\n}\n\nexport function restore(snapshot: Snapshot, blocks: Block[]): number {\n  const placement = resolveAnchor(blocks, snapshot.anchor);\n  if (placement) return scrollRect.top + targetRect.top - snapshot.offset;\n  return snapshot.scrollTop;\n}"],
+	["## assistant", "capture picks the focused block or the first block at the viewport top, records a whole-block anchor plus the signed offset and a revision counter; restore resolves the anchor or falls back to the raw scrollTop."],
+]);
+
+const COMPONENT_TREE_TRANSCRIPT = serializeTranscript([
+	["## user", "What does the session page render? Show the component structure with the state hooks and module boundaries that matter."],
+	["## assistant", "Let me read the session page and its toolbar."],
+	["## tool call: read", "apps/example/src/routes/session.tsx"],
+	["## tool result: read", "export function SessionPage() {\n  useSessionEvents();\n  return (\n    <>\n      <SessionToolbar />\n      <SessionTimeline />\n    </>\n  );\n}"],
+	["## tool call: read", "packages/ui/src/toolbar.tsx"],
+	["## tool result: read", "export function SessionToolbar() {\n  return <RunSkillButton />;\n}"],
+	["## tool call: read", "packages/ui/src/timeline.tsx"],
+	["## tool result: read", "export function SessionTimeline() {\n  return <SkillResultCard />;\n}"],
+	["## assistant", "SessionPage owns the event hook and renders the toolbar and timeline; the toolbar and timeline live in packages/ui and render RunSkillButton and SkillResultCard respectively."],
+]);
+
+const FILE_LAYOUT_TRANSCRIPT = serializeTranscript([
+	["## user", "Where does everything live in src/? I need the file layout with responsibilities before I scope a refactor."],
+	["## tool call: bash", "find src -type f | sort"],
+	["## tool result: bash", "src/commands/registry.ts\nsrc/commands/show-me.ts\nsrc/sessions/store.ts\nsrc/sessions/worker.ts\nsrc/sessions/events.ts\nsrc/transport/client.ts\nsrc/transport/stream.ts\nsrc/config.ts"],
+	["## assistant", "The layout splits into commands (user intents), sessions (state and lifecycle), transport (API), and a root config."],
+]);
+
+const TYPES_SIGNATURES_TRANSCRIPT = serializeTranscript([
+	["## user", "Before we write any code: what are the types for an ordered list of items with a cursor that can move up or down? Sketch the interfaces and the resolve signature."],
+	["## assistant", "Here is the shape we agreed on, before implementation."],
+	["## tool call: bash", "cat docs/types.md"],
+	["## tool result: bash", "interface Item { id: ItemId; parentId: ItemId | null }\ninterface Cursor { position: ItemId; direction: 'up' | 'down' }\nfunction resolveTarget(items: Item[], cursor: Cursor): ItemId | null"],
+	["## assistant", "Item is an id plus an optional parent; Cursor is a position plus a direction; resolveTarget maps an item list and cursor to the target item id or null when there is no move."],
+]);
+
+const DIFF_TRANSCRIPT = serializeTranscript([
+	["## user", "What changed in the save handler? Show the diff."],
+	["## assistant", "Let me read the current and previous save handler."],
+	["## tool call: bash", "git diff -- src/save.ts"],
+	["## tool result: bash", " on(save)\n-  write content\n+  if content is unchanged\n+    return cached result\n+  write new content\n+  invalidate cache"],
+	["## assistant", "The save handler now short-circuits when content is unchanged, returns the cached result, and invalidates the cache after writing."],
+]);
+
+const HTML_TRANSCRIPT = serializeTranscript([
+	["## user", "The dashboard has four cards: Chart, Alerts, Activity, and Status. On desktop they sit in a 2x2 grid, but at narrow widths they overlap instead of stacking into one column. I need to SEE the before and after layouts side by side — a text list can't show the overlap. Draw both grids."],
+	["## assistant", "Let me read the dashboard layout."],
+	["## tool call: read", "src/dashboard/Dashboard.css"],
+	["## tool result: read", ".dashboard {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n  grid-template-areas: \"chart alerts\" \"activity status\";\n  gap: 16px;\n}\n@media (max-width: 640px) { .dashboard { grid-template-columns: 1fr 1fr; } }"],
+	["## assistant", "The media query keeps two columns under 640px, so the cards squeeze and overlap. The fix is a single column and stacked areas."],
+	["## tool call: edit", "Dashboard.css: one column under 640px with stacked chart/alerts/activity/status"],
+	["## tool result: edit", "@media (max-width: 640px) { .dashboard { grid-template-columns: 1fr; grid-template-areas: \"chart\" \"alerts\" \"activity\" \"status\"; } }"],
+	["## assistant", "Fixed: at 640px and below the four cards stack in one column in order. A side-by-side visual makes the change obvious."],
+]);
+
+const DEGRADATION_TRANSCRIPT = serializeTranscript([
+	["## user", "Our CTO says we should adopt trunk-based development instead of release branches. What changes day to day, and what risks should we plan for?"],
+	["## assistant", "Trunk-based development means merging small changes directly to main several times a day. Day to day, branches live hours not weeks, feature flags hide unfinished work, and CI must pass before every merge, so test speed becomes the first bottleneck. The main risks are integration surprises moving to every day, incomplete features reaching main behind flags that never get cleaned up, and rollback discipline replacing the safety of not merging a bad branch."],
+]);
+
 // Required tokens are the identifiers any smallest-view telling of the story
 // must include. Files that were merely inspected (src/sessions/manager.ts,
 // src/utils/strings.ts) are deliberately NOT required: show-me's smallest-view
@@ -97,7 +168,83 @@ export const SHOW_CORPUS: readonly ShowFixture[] = [
 			// at src/utils/ and names the file, so the full path never appears
 			// literally.
 			requiredTokens: ["src/utils/formatters.ts", "dates.ts", "formatDate", "formatRelativeTime", "formatCurrency"],
-			forbiddenText: ["Sure", "Here is", "I'll explain"],
+			forbiddenText: ["Sure", "Here is", "I'll explain", "file:///"],
+		},
+	},
+	// One fixture per show-me form, seeded from the canonical examples in the
+	// show-me skill and blog (https://www.humanlayer.com/blog/show-me-skill),
+	// MIT-licensed and credited in THIRD_PARTY_NOTICES.md. Each is a candidate
+	// docs showcase pending maintainer approval.
+	{
+		id: "show-call-stack",
+		description: "Runtime control flow: trace a slow session-create through the handler to the worker",
+		target: CALL_STACK_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["handleCreateSession", "validateRequest", "SessionStore.insert", "publish", "AgentWorker.run", "loadContext", "callModel", "persistResult"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
+		id: "show-pseudocode",
+		description: "Algorithm logic: editor scroll-position capture and restore",
+		target: PSEUDOCODE_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["capture", "restore", "focusedBlock", "wholeBlockAnchor", "resolveAnchor", "scrollTop", "revision"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
+		id: "show-component-tree",
+		description: "UI structure: session page component tree with state hooks and module boundaries",
+		target: COMPONENT_TREE_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["SessionPage", "useSessionEvents", "SessionToolbar", "RunSkillButton", "SessionTimeline", "SkillResultCard", "session.tsx", "packages/ui"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
+		id: "show-file-layout",
+		description: "File responsibility: shallow src/ tree for a refactor scope",
+		target: FILE_LAYOUT_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["commands", "sessions", "transport", "registry.ts", "show-me.ts", "store.ts", "worker.ts", "events.ts", "client.ts", "stream.ts", "config.ts"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
+		id: "show-types-signatures",
+		description: "Program design: interfaces and signatures before code exists",
+		target: TYPES_SIGNATURES_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["Item", "Cursor", "ItemId", "parentId", "position", "direction", "resolveTarget"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
+		id: "show-diff",
+		description: "State change: the save handler now short-circuits unchanged content",
+		target: DIFF_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["on(save)", "write content", "cached result", "invalidate cache"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
+		id: "show-html",
+		description: "Spatial layout: dashboard grid before/after at narrow widths",
+		target: HTML_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["max-width: 640px", "grid-template-columns", "chart", "alerts", "activity", "status"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
+		id: "show-degradation",
+		description: "Prose-only session: must degrade to an outline, never force a diagram",
+		target: DEGRADATION_TRANSCRIPT,
+		expectations: {
+			requiredTokens: [],
+			forbiddenText: ["Sure", "Here is", "Summary", "file:///"],
 		},
 	},
 ] as const;

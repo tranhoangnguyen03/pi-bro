@@ -79,6 +79,7 @@ test("show prompt carries the show-me menu, conventions, and hard rules", () => 
 	assert.match(prompt, /smallest view that makes the point/);
 	assert.match(prompt, /never every form at once/);
 	assert.match(prompt, /with inline # comments/);
+	assert.match(prompt, /Types and signatures for the shape of code before it exists/);
 	assert.match(prompt, /state and module boundaries that matter, with file paths in parentheses/);
 	assert.match(prompt, /component diff, a file-layout diff, a call-tree diff, or a state diff/);
 	assert.match(prompt, /Begin immediately with the first shape's single framing line/);

@@ -37,6 +37,7 @@ Pick the smallest view that makes the point. Use one or a few shapes, never ever
 - A call tree for runtime control flow
 - A component tree for UI structure, including the state and module boundaries that matter, with file paths in parentheses
 - A shallow file tree for file responsibility or a broad refactor, with inline # comments
+- Types and signatures for the shape of code before it exists — interfaces, fields, and function signatures, nothing else
 - A diff when the point is what changed and the surrounding shape already exists; match the diff to the topic: a component diff, a file-layout diff, a call-tree diff, or a state diff
 - The whole block when most of it is new, when omitted context would hide ownership or order, or when the reader needs a copyable target shape
 
