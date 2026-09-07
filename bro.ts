@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
@@ -15,7 +16,7 @@ import { Defuddle } from "defuddle/node";
 import { parseHTML } from "linkedom";
 import mammoth from "mammoth";
 import { extractText } from "unpdf";
-import { BRO_MODES, DEFAULT_BRO_MODE, buildDefaultPrompt, parseBroMode, type BroMode } from "./prompt.ts";
+import { BRO_MODES, DEFAULT_BRO_MODE, buildDefaultPrompt, buildShowPrompt, parseBroMode, type BroMode } from "./prompt.ts";
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const ENV_MODEL = process.env.PI_BRO_MODEL?.trim();
@@ -29,6 +30,10 @@ const MAX_WEB_ELEMENTS = 100_000;
 const MAX_WEB_REDIRECTS = 5;
 const WEB_TIMEOUT_MS = 25_000;
 const MAX_TEXT_LENGTH = 100_000;
+const DEFAULT_SHOW_TURNS = 4;
+const SHOW_TOOL_RESULT_KEEP = 2_000;
+const SHOW_TOOL_CALL_KEEP = 500;
+const SHOW_HTML_FILE_PATTERN = /^bro-show-[0-9a-f]{8}\.html$/;
 const TEXT_EXTENSIONS = new Set([".md", ".markdown", ".txt"]);
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -41,11 +46,11 @@ type TuiLike = {
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
 type BroSource = { text: string; label?: string };
 type BroResult = { source: BroSource; text: string };
-type ModalResult = { source?: BroSource; text: string };
+type ModalResult = { source?: BroSource; text: string; htmlPath?: string };
 const EFFORTS = ["default", "low", "medium", "high"] as const;
 type BroEffort = (typeof EFFORTS)[number];
 type AgyEffort = Exclude<BroEffort, "default">;
-type BroSettings = { model: string; effort: BroEffort; mode: BroMode };
+type BroSettings = { model: string; effort: BroEffort; mode: BroMode; showTurns: number };
 type AgyModelFamily = {
 	id: string;
 	label: string;
@@ -79,7 +84,8 @@ const COMMANDS = [
 	{ value: "usage", label: "usage", description: "Show current Agy usage" },
 	{ value: "model", label: "model", description: "Choose the Agy model" },
 	{ value: "effort", label: "effort", description: "Choose the Agy reasoning effort" },
-	{ value: "mode", label: "mode", description: "Choose brief, balanced, faithful, or visual explanations" },
+	{ value: "show", label: "show", description: "Draw what happened in recent session turns as shapes" },
+	{ value: "mode", label: "mode", description: "Choose brief, balanced, or faithful explanations" },
 	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
 const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
@@ -476,8 +482,12 @@ export function parseBroSettings(value: unknown): BroSettings {
 		throw new Error('Settings must contain a model and effort set to "default", "low", "medium", or "high".');
 	}
 	const mode = value.mode === undefined ? DEFAULT_BRO_MODE : parseBroMode(value.mode);
-	if (!mode) throw new Error('Settings mode must be "brief", "balanced", "faithful", or "visual".');
-	return { model: value.model.trim(), effort: value.effort as BroSettings["effort"], mode };
+	if (!mode) throw new Error('Settings mode must be "brief", "balanced", or "faithful".');
+	const showTurns = value.showTurns === undefined ? DEFAULT_SHOW_TURNS : value.showTurns;
+	if (typeof showTurns !== "number" || !Number.isInteger(showTurns) || showTurns < 1) {
+		throw new Error("Settings showTurns must be a positive whole number of turns.");
+	}
+	return { model: value.model.trim(), effort: value.effort as BroSettings["effort"], mode, showTurns };
 }
 
 async function ensureSettingsFile(): Promise<void> {
@@ -485,7 +495,7 @@ async function ensureSettingsFile(): Promise<void> {
 	try {
 		await writeFile(
 			SETTINGS_FILE,
-			`${JSON.stringify({ model: DEFAULT_MODEL, effort: ENV_MODEL ? "default" : "low", mode: DEFAULT_BRO_MODE }, null, 2)}\n`,
+			`${JSON.stringify({ model: DEFAULT_MODEL, effort: ENV_MODEL ? "default" : "low", mode: DEFAULT_BRO_MODE, showTurns: DEFAULT_SHOW_TURNS }, null, 2)}\n`,
 			{ encoding: "utf8", flag: "wx", mode: 0o600 },
 		);
 	} catch (error) {
@@ -734,6 +744,131 @@ function latestAssistant(ctx: ExtensionCommandContext): BroSource | undefined {
 	}
 }
 
+// /bro show: capture recent session turns (including tool results) and let the
+// show prompt draw them as shapes. See docs/plans/2026-09-07-bro-show-visual-design.md.
+type ShowTurn = { entries: string[]; startsTurn: boolean };
+
+function showTextContent(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	let text = "";
+	let images = 0;
+	for (const part of content) {
+		if (part && typeof part === "object" && (part as { type?: string }).type === "text") {
+			text += `${(part as { text?: string }).text ?? ""}\n`;
+		} else if (part && typeof part === "object" && (part as { type?: string }).type === "image") {
+			images += 1;
+		}
+	}
+	if (images) text += `(${images} image${images > 1 ? "s" : ""} omitted)\n`;
+	return text.trim();
+}
+
+export function trimShowResult(text: string): string {
+	if (text.length <= SHOW_TOOL_RESULT_KEEP * 2) return text;
+	const elided = text.length - SHOW_TOOL_RESULT_KEEP * 2;
+	return `${text.slice(0, SHOW_TOOL_RESULT_KEEP)}\n[… elided ${elided} characters …]\n${text.slice(-SHOW_TOOL_RESULT_KEEP)}`;
+}
+
+function trimShowArguments(text: string): string {
+	if (text.length <= SHOW_TOOL_CALL_KEEP) return text;
+	return `${text.slice(0, SHOW_TOOL_CALL_KEEP)}[… elided ${text.length - SHOW_TOOL_CALL_KEEP} characters …]`;
+}
+
+export function showEntriesForMessage(message: { role?: string; content?: unknown; isError?: boolean; toolName?: string }): string[] {
+	if (message.role === "user") {
+		const text = showTextContent(message.content);
+		return text ? [`## user\n${JSON.stringify(text)}`] : [];
+	}
+	if (message.role === "assistant") {
+		if (!Array.isArray(message.content)) return [];
+		const entries: string[] = [];
+		const text = showTextContent((message.content as unknown[]).filter((part) => (part as { type?: string })?.type !== "thinking"));
+		if (text) entries.push(`## assistant\n${JSON.stringify(text)}`);
+		let thinking = false;
+		for (const part of message.content as { type?: string; name?: string; arguments?: unknown }[]) {
+			if (part?.type === "thinking") thinking = true;
+			if (part?.type !== "toolCall") continue;
+			entries.push(
+				`## tool call: ${part.name ?? "unknown"}\n${JSON.stringify(trimShowArguments(JSON.stringify(part.arguments ?? {})))}`,
+			);
+		}
+		if (!entries.length && thinking) entries.push(`## assistant\n${JSON.stringify("(reasoning omitted)")}`);
+		return entries;
+	}
+	if (message.role === "toolResult") {
+		const text = trimShowResult(showTextContent(message.content) || "(empty result)");
+		return [`## tool result: ${message.toolName ?? "unknown"}${message.isError ? " (error)" : ""}\n${JSON.stringify(text)}`];
+	}
+	return [];
+}
+
+function serializeShowTurns(turns: readonly ShowTurn[]): string {
+	return turns.flatMap((turn) => turn.entries).join("\n\n");
+}
+
+export function captureShowTranscript(ctx: ExtensionCommandContext, turnsRequested: number): BroSource | undefined {
+	const turns: ShowTurn[] = [];
+	for (const entry of ctx.sessionManager.getBranch()) {
+		if (entry.type !== "message") continue;
+		const entries = showEntriesForMessage(entry.message as Parameters<typeof showEntriesForMessage>[0]);
+		if (!entries.length) continue;
+		turns.push({ entries, startsTurn: (entry.message as { role?: string }).role === "user" });
+	}
+
+	let start = 0;
+	let seen = 0;
+	for (let index = turns.length - 1; index >= 0; index -= 1) {
+		if (!turns[index]!.startsTurn) continue;
+		seen += 1;
+		if (seen === turnsRequested) {
+			start = index;
+			break;
+		}
+	}
+	if (seen === 0) return undefined;
+
+	let text = serializeShowTurns(turns.slice(start));
+	while (text.length > MAX_TEXT_LENGTH && start < turns.length - 1) {
+		let next = turns.length;
+		for (let index = start + 1; index < turns.length; index += 1) {
+			if (turns[index]!.startsTurn) {
+				next = index;
+				break;
+			}
+		}
+		if (next >= turns.length) break;
+		start = next;
+		text = serializeShowTurns(turns.slice(start));
+	}
+	if (text.length > MAX_TEXT_LENGTH) text = `${text.slice(0, MAX_TEXT_LENGTH)}\n[… transcript truncated …]`;
+	return { text: text.trim(), label: `last ${Math.max(1, seen)} turn${seen > 1 ? "s" : ""}` };
+}
+
+export function extractShowHtml(text: string): string | undefined {
+	const fences = [...text.matchAll(/^```html\n([\s\S]*?)^```$/gm)];
+	return fences.at(-1)?.[1]?.trim();
+}
+
+export function stripShowHtmlFence(text: string): string {
+	return text.replace(/^```html\n[\s\S]*?^```$/gm, "[HTML diagram saved — press O to open]");
+}
+
+export async function writeShowHtml(html: string): Promise<string> {
+	const slug = createHash("sha256").update(html).digest("hex").slice(0, 8);
+	for (const name of await readdir(tmpdir())) {
+		if (SHOW_HTML_FILE_PATTERN.test(name)) await rm(join(tmpdir(), name), { force: true });
+	}
+	const path = join(tmpdir(), `bro-show-${slug}.html`);
+	await writeFile(path, `${html}\n`, "utf8");
+	return path;
+}
+
+function openShowHtml(path: string): void {
+	const opener = process.platform === "darwin" ? "open" : "xdg-open";
+	spawn(opener, [path], { detached: true, stdio: "ignore" }).on("error", () => undefined).unref();
+}
+
 async function promptFor(response: string, mode: BroMode): Promise<{ text: string; custom: boolean }> {
 	let template: string;
 	try {
@@ -782,8 +917,24 @@ async function simplify(
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
 ): Promise<string> {
-	const prompt = (await promptFor(response, settings.mode)).text;
-	const selection = agySelection(settings);
+	return runAgyText((await promptFor(response, settings.mode)).text, agySelection(settings), signal, onProgress);
+}
+
+async function runShowExplanation(
+	transcript: string,
+	signal: AbortSignal,
+	settings: BroSettings,
+	onProgress?: (text: string) => void,
+): Promise<string> {
+	return runAgyText(buildShowPrompt(transcript), agySelection(settings), signal, onProgress);
+}
+
+async function runAgyText(
+	prompt: string,
+	selection: ReturnType<typeof agySelection>,
+	signal: AbortSignal,
+	onProgress?: (text: string) => void,
+): Promise<string> {
 	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 	let updateTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -912,7 +1063,7 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 - \`/bro usage [--provider agy]\` — show current Agy limits
 - \`/bro model [id]\` — view or choose the Agy model
 - \`/bro effort [low|medium|high]\` — view or choose reasoning effort
-- \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
+- \`/bro show [turns]\` — draw recent session turns, including tool results, as shapes\n- \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
 
 ## Current settings
 
@@ -932,7 +1083,7 @@ If \`${PROMPT_FILE}\` exists and is valid, the selected mode stays saved but ina
 - **Mouse wheel / trackpad** — scroll
 - **↑ / ↓** — scroll
 - **C** — copy the full explanation
-- **R** — repeat the current action
+- **R** — repeat the current action\n- **O** — open the HTML diagram when a show reply contains one
 - **Esc** — close, or cancel while Bro is working
 
 Bro temporarily captures mouse input while the modal is open. Native mouse selection may be unavailable or extend outside the modal; press **C** to copy everything reliably.
@@ -945,7 +1096,7 @@ Bro temporarily captures mouse input while the modal is open. Native mouse selec
 
 ## Privacy and safety
 
-Bro sends the selected assistant reply, pasted text, or locally extracted document or webpage text to Agy and your model provider. They may retain request data under their own policies.
+Bro sends the selected assistant reply, pasted text, locally extracted document or webpage text, or recent session turns including tool results to Agy and your model provider. They may retain request data under their own policies.
 
 Bro never adds the explanation to Pi's conversation, session file, or main-agent context. The captured source and latest explanation stay in process memory until you change sessions, reload extensions, or exit Pi.
 
@@ -974,6 +1125,7 @@ class BroModal implements Focusable {
 	private copyable = false;
 	private retryable = false;
 	private disposed = false;
+	private htmlPath = "";
 
 	constructor(
 		private readonly tui: TuiLike,
@@ -994,8 +1146,13 @@ class BroModal implements Focusable {
 		this.setContent("streaming", text, "", false, false);
 	}
 
-	setResult(text: string, retryable: boolean, notice = "", sourceLabel = ""): void {
-		this.setContent("result", text, text, true, retryable, notice, sourceLabel);
+	setResult(text: string, retryable: boolean, notice = "", sourceLabel = "", rawText = text): void {
+		this.setContent("result", text, rawText, true, retryable, notice, sourceLabel);
+	}
+
+	setHtmlPath(path: string): void {
+		this.htmlPath = path;
+		this.tui.requestRender();
 	}
 
 	setStatic(kind: "help" | "empty", text: string, copyable: boolean): void {
@@ -1016,6 +1173,7 @@ class BroModal implements Focusable {
 		sourceLabel = "",
 	): void {
 		this.kind = kind;
+		if (kind !== "result") this.htmlPath = "";
 		this.rawText = rawText;
 		this.copyable = copyable;
 		this.retryable = retryable;
@@ -1049,7 +1207,7 @@ class BroModal implements Focusable {
 		if (this.kind === "loading") return "Esc cancel";
 		if (this.kind === "streaming") return "Simplifying… · ↑/↓ scroll · Esc cancel";
 		if (this.kind === "result") {
-			return `↑/↓ scroll · C copy${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
+			return `↑/↓ scroll · C copy${this.htmlPath ? " · O open diagram" : ""}${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
 		}
 		if (this.kind === "help") return "↑/↓ scroll · C copy · Esc close";
 		if (this.kind === "error") return "R try again · Esc close";
@@ -1127,6 +1285,13 @@ class BroModal implements Focusable {
 			this.kind !== "loading"
 		) {
 			this.onRetry();
+			return;
+		}
+
+		if ((matchesKey(data, "o") || matchesKey(data, "shift+o")) && this.htmlPath && this.kind === "result") {
+			openShowHtml(this.htmlPath);
+			this.notice = "Opening diagram";
+			this.tui.requestRender();
 		}
 	}
 
@@ -1205,7 +1370,9 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 						if (closed || nextController.signal.aborted) return;
 						current = result;
 						options.onResult?.(result);
-						modal.setResult(result.text, options.retryable ?? true, "", result.source?.label);
+						const display = result.htmlPath ? stripShowHtmlFence(result.text) : result.text;
+						modal.setResult(display, options.retryable ?? true, "", result.source?.label, result.text);
+						if (result.htmlPath) modal.setHtmlPath(result.htmlPath);
 					})
 					.catch((error) => {
 						if (closed || nextController.signal.aborted) return;
@@ -1283,6 +1450,43 @@ export default async function bro(pi: ExtensionAPI) {
 				value = raw;
 			}
 
+			if (action === "show") {
+				const requested = parts[1];
+				if (parts.length > 2 || (requested && !/^[1-9]\d*$/.test(requested))) {
+					ctx.ui.notify("Use /bro show [turns].", "warning");
+					return;
+				}
+				const runShow = async (
+					signal: AbortSignal,
+					source?: BroSource,
+					onProgress?: (text: string) => void,
+				): Promise<ModalResult> => {
+					const captured =
+						source ?? captureShowTranscript(ctx, requested ? Number(requested) : (await readSettings()).showTurns);
+					if (!captured) {
+						return { text: "**Nothing to show yet**\n\nThis session has no conversation turns to draw. Run something first, then press **R**." };
+					}
+					let text: string;
+					try {
+						text = await runShowExplanation(captured.text, signal, await readSettings(), onProgress);
+					} catch (error) {
+						throw new Error(withDoctor(error));
+					}
+					const html = extractShowHtml(text);
+					return { source: captured, text, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
+				};
+				try {
+					await showBroModal(ctx, {
+						loadingText: "Drawing what happened…",
+						retryLabel: "show again",
+						run: runShow,
+					});
+				} catch (error) {
+					ctx.ui.notify(withDoctor(error), "error");
+				}
+				return;
+			}
+
 			if (action === "file" || action === "url") {
 				if (!value) {
 					ctx.ui.notify(`Use /bro ${action} <${action === "file" ? "path" : "url"}>.`, "warning");
@@ -1356,7 +1560,7 @@ export default async function bro(pi: ExtensionAPI) {
 			if (action === "mode") {
 				const requested = parts[1];
 				if (parts.length > 2 || (requested && !parseBroMode(requested))) {
-					ctx.ui.notify("Use /bro mode, or choose brief, balanced, faithful, or visual.", "warning");
+					ctx.ui.notify("Use /bro mode, or choose brief, balanced, or faithful.", "warning");
 					return;
 				}
 				try {
@@ -1364,7 +1568,7 @@ export default async function bro(pi: ExtensionAPI) {
 					let selected = parseBroMode(requested);
 					if (!selected) {
 						if (ctx.mode !== "tui") {
-							ctx.ui.notify("Use /bro mode <brief|balanced|faithful|visual> outside Pi's interactive UI.", "warning");
+							ctx.ui.notify("Use /bro mode <brief|balanced|faithful> outside Pi's interactive UI.", "warning");
 							return;
 						}
 						const modes = [...BRO_MODES].sort((a, b) => Number(b === settings.mode) - Number(a === settings.mode));
