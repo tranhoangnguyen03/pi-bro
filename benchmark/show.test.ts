@@ -101,6 +101,10 @@ test("flags malformed diff fences", () => {
 	);
 	assert.deepEqual(good.diffViolations, []);
 
+	// Additions-only layouts are legitimate show-me file-layout diffs.
+	const additionsOnly = checkShowOutput(debugging(), "```diff\n src/utils/\n+├── dates.ts\n├── formatters.ts\n```");
+	assert.deepEqual(additionsOnly.diffViolations, []);
+
 	const bad = checkShowOutput(debugging(), "```diff\ncontext only, no markers\n```");
 	assert.deepEqual(bad.diffViolations, ["diff fence missing + or - marker lines"]);
 });

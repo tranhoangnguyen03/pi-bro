@@ -93,7 +93,10 @@ export const SHOW_CORPUS: readonly ShowFixture[] = [
 		description: "Small refactor: splitting date helpers out of a shared utils module",
 		target: REFACTOR_UTILS_TRANSCRIPT,
 		expectations: {
-			requiredTokens: ["src/utils/formatters.ts", "src/utils/dates.ts", "formatDate", "formatRelativeTime", "formatCurrency"],
+			// "dates.ts", not "src/utils/dates.ts": a smallest-view file tree roots
+			// at src/utils/ and names the file, so the full path never appears
+			// literally.
+			requiredTokens: ["src/utils/formatters.ts", "dates.ts", "formatDate", "formatRelativeTime", "formatCurrency"],
 			forbiddenText: ["Sure", "Here is", "I'll explain"],
 		},
 	},
@@ -154,12 +157,12 @@ function findShowFenceViolations(output: string): string[] {
 	return [...new Set(violations)];
 }
 
-// ponytail: a diff fence must carry both + and - marker lines; an all-addition
-// "diff" (brand-new file) would false-positive — the prompt steers that case to
-// a whole block instead.
+// ponytail: a diff fence must carry at least one + or - marker line; pure
+// addition (new file) and pure deletion layouts are legitimate show-me forms,
+// so requiring both would false-positive — only a marker-less "diff" is junk.
 function findShowDiffViolations(output: string): string[] {
 	return [...output.matchAll(FENCED_BLOCK_PATTERN)]
 		.filter((match) => match[1].toLowerCase() === "diff")
-		.filter((match) => !/^\+[^+]/m.test(match[0]) || !/^-(?!-)/m.test(match[0]))
+		.filter((match) => !/^\+[^+]/m.test(match[0]) && !/^-(?!-)/m.test(match[0]))
 		.map(() => "diff fence missing + or - marker lines");
 }
