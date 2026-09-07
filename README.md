@@ -41,10 +41,11 @@ installing it, use `pi -e npm:pi-bro`.
 | Pasted text | `/bro text <text>` | Explains text supplied directly in the command. |
 | Local document | `/bro file <path>` | Extracts text from a workspace-local Markdown, text, PDF, or DOCX file. |
 | Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
+| Recent session turns | `/bro show` | Draws the last turns, including tool results, as shapes instead of prose. |
 | Any of the above, auto-detected | `/bro <input>` | Routes a lone URL to the webpage reader, an existing workspace file with a supported extension to the document reader, and anything else to pasted text. |
 
 Pressing **R** simplifies the captured source again. These commands capture a
-new source: `/bro text`, `/bro file`, and `/bro url`. Giving `/bro` a URL, path, or
+new source: `/bro text`, `/bro file`, `/bro url`, and `/bro show`. Giving `/bro` a URL, path, or
 text directly captures a new source the same way.
 
 ## Commands
@@ -57,6 +58,7 @@ text directly captures a new source the same way.
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
+| `/bro show <n-turns>` | Draw recent session turns (default last 10), including tool results, as shapes instead of prose. |
 | `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
 | `/bro usage [--provider agy]` | Show current Agy resource limits. |
 | `/bro model [id]` | View or choose the Agy model. |
@@ -91,11 +93,134 @@ a persistent mode with `/bro mode`:
 - **↑ / ↓**: Scroll in any mode
 - **C**: Copy the complete explanation
 - **R**: Simplify the captured source or run the current Doctor check again
+- **O**: Open the HTML diagram when a show reply contains one
 - **Esc**: Close the modal, or cancel while Bro is working
 
 Bro temporarily captures mouse input while its modal is open. Native mouse
 selection may be unavailable or visually extend outside the modal depending on
 your terminal mode; press **C** to copy the complete explanation reliably.
+
+## Bro show
+
+Where the explanation modes rewrite dense prose in simpler words, `/bro show`
+changes the form: it draws the last few session turns — the files the agent
+read, the edits it wrote, the errors it hit — as a shape instead of paragraphs.
+It runs the same isolated, sandboxed model call and shows the result in the
+same modal, never touching your conversation. `/bro show` uses its own draw
+prompt; the explanation modes and `bro-prompt.md` do not affect it.
+
+Shapes are terminal-first: pseudocode, call trees, file trees, component
+trees, diffs, and types and signatures. Bro picks the shape from what
+happened in the session; there is no flag to request a specific one. When the source has no code structure
+to draw, Bro falls back to a plain outline instead of forcing a diagram. A
+reply that ends in one self-contained HTML block — layout, a state comparison,
+anything where position itself carries meaning — is written to a file and
+opened with **O**.
+
+Pressing **R** redraws the same captured turns; running `/bro show` again
+captures the latest turns afresh. `/bro show <n-turns>` overrides the default turn
+count for a single run.
+
+### A slow session-create, traced
+
+The agent followed a two-second delay from the handler down to the worker.
+`/bro show` drew the chain:
+
+```text
+handleCreateSession(req)
+├── validateRequest(req)
+├── SessionStore.insert(req.body)
+└── publish('session.created')
+    └── AgentWorker.run(sessionId)
+        ├── loadContext(sessionId)
+        ├── callModel(context)
+        └── persistResult(sessionId, result)
+```
+
+### The shape of code before it exists
+
+A design discussion agreed on the data model ahead of implementation. `/bro
+show` kept just the shape:
+
+```typescript
+interface Item { id: ItemId; parentId: ItemId | null }
+interface Cursor { position: ItemId; direction: 'up' | 'down' }
+function resolveTarget(items: Item[], cursor: Cursor): ItemId | null
+```
+
+### A layout that collapses at narrow widths
+
+Text can't show a before/after layout change at a glance, so Bro ends with one
+self-contained HTML block and **O** opens it (the terminal first shows
+`[HTML diagram saved — press O to open]`):
+
+<p align="center">
+  <a href="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-show-layout.png">
+    <img alt="A before/after dashboard grid" src="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-show-layout.png" width="720">
+  </a>
+</p>
+
+<details>
+<summary><strong>More shapes</strong></summary>
+
+**Diff** — what changed in the save handler:
+
+```diff
+ on(save)
+-  write content
++  if content is unchanged
++    return cached result
++  write new content
++  invalidate cache
+```
+
+**File layout** — where everything lives, for a refactor:
+
+```text
+src/
+├── commands/           # user intents
+│   ├── registry.ts
+│   └── show-me.ts
+├── sessions/           # state and lifecycle
+│   ├── events.ts
+│   ├── store.ts
+│   └── worker.ts
+├── transport/          # API
+│   ├── client.ts
+│   └── stream.ts
+└── config.ts           # root config
+```
+
+**Component tree** — what the session page renders:
+
+```text
+SessionPage (apps/example/src/routes/session.tsx)
+├── [hook] useSessionEvents
+├── SessionToolbar (packages/ui)
+│   └── RunSkillButton
+└── SessionTimeline (packages/ui)
+    └── SkillResultCard
+```
+
+**Pseudocode** — how scroll capture and restore work:
+
+```text
+capture(blocks, targetRect, scrollRect) -> Snapshot:
+  target = focusedBlock ?? firstBlockIntersectingViewportTop(blocks)
+  anchor = wholeBlockAnchor(blocks, target)
+  offset = targetRect.top - scrollRect.top
+  return { anchor, offset, scrollTop, revision + 1 }
+
+restore(snapshot, blocks) -> number:
+  placement = resolveAnchor(blocks, snapshot.anchor)
+  if placement: return scrollRect.top + targetRect.top - snapshot.offset
+  return snapshot.scrollTop
+```
+
+</details>
+
+Prose in, outline out: a purely conversational session with no code to draw
+degrades to a plain outline of the discussion — never a forced diagram.
 
 ## Bro in action
 
@@ -435,7 +560,8 @@ Bro creates this user-editable settings file when the extension loads:
 {
   "model": "gemini-3.7-flash",
   "effort": "low",
-  "mode": "balanced"
+  "mode": "balanced",
+  "showTurns": 10
 }
 ```
 
@@ -444,7 +570,9 @@ it directly. Bro reads the file again before each explanation, so manual changes
 apply to the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
 one of the levels shown by `/bro effort`. Models without adjustable effort use
 `default`. `mode` must be `brief`, `balanced`, or `faithful`; existing settings
-without it use `balanced`. The choices remain active across Pi restarts until
+without it use `balanced`. `showTurns` is the default number of turns `/bro
+show` draws (default 10); `/bro show <n-turns>` overrides it for a single run. There
+is no `/bro showTurns` command — edit the file directly. The choices remain active across Pi restarts until
 you change them. `/bro help` shows the active settings and exact file path.
 
 If `PI_CODING_AGENT_DIR` is set, the file lives there instead. `PI_BRO_MODEL`
@@ -476,7 +604,9 @@ Bro re-reads this file every time you simplify, so your edits take effect
 immediately without reloading Pi. Bro never creates or modifies this file.
 Existing valid custom prompts continue working unchanged.
 
-A valid custom prompt fully overrides all built-in mode instructions. `/bro
+A valid custom prompt fully overrides all built-in mode instructions.
+`/bro show` is separate: it always uses its own built-in draw prompt and
+ignores `bro-prompt.md`. `/bro
 mode` still changes the saved mode, but that mode remains inactive while
 `bro-prompt.md` exists. Remove or rename `bro-prompt.md` to use the saved
 built-in mode again. If the custom prompt is invalid—for example, it has no
@@ -486,8 +616,8 @@ run `/bro doctor` for the exact problem.
 ## Privacy and safety
 
 - **External requests**: Bro sends the latest completed assistant response,
-  pasted text, extracted document text, or extracted webpage text to Agy and its
-  configured model provider.
+  pasted text, extracted document text, extracted webpage text, or recent
+  session turns including tool results to Agy and its configured model provider.
 - **Usage checks**: `/bro usage` checks your authenticated Agy limits without
   sending an assistant response or running a model turn.
 - **Setup checks**: `/bro doctor` checks Agy account and model availability
@@ -512,6 +642,10 @@ run `/bro doctor` for the exact problem.
   including links preserved in that text, to Agy; it does not separately send
   the requested URL or raw page HTML. The URL, captured text, and explanation
   remain in process memory only and clear with the existing `/bro open` cache.
+- **Show diagrams**: When a show reply ends in one self-contained HTML block,
+  Bro writes it to `/tmp/pi-bro-<uid>/bro-show-<hash>.html` with a restrictive
+  Content-Security-Policy, and opens it in your browser only when you press
+  **O**. **C** copies the full reply, including the HTML.
 - **Provider data**: Agy and your model provider may retain logs and request data
   according to their own settings and privacy policies.
 - **Clipboard**: Pressing **C** copies the text to your system clipboard, where
@@ -532,6 +666,12 @@ tool before giving it to Bro.
   blocked, paginated, and media-first pages are not supported.
 - Direct webpage fetching does not currently use `HTTP_PROXY`, `HTTPS_PROXY`,
   or other proxy environment variables.
+- Show captures only what already happened in the current session — the
+  last few turns including tool results; it cannot read the repository or
+  other files on its own.
+- HTML diagrams open in your default browser; pressing **O** on a remote or
+  headless session with no display reports the failure instead of opening
+  anything.
 - Keeps only the latest explanation in memory.
 - Does not store history or export directly to files.
 - Bro temporarily captures mouse input while its modal is open so mouse-wheel
@@ -548,13 +688,16 @@ pi --tui-mode fullscreen -e ./bro.ts
 ```
 
 The smoke test uses a fake `agy`, so it does not call an external model. It
-verifies command routing, document and URL safety boundaries, HTML extraction,
-healthy and broken setup handling, settings, custom prompt handling, and
-context isolation.
+verifies command routing, document and URL safety boundaries, HTML
+extraction, show capture, trimming, and HTML-diagram handling, healthy and
+broken setup handling, settings, custom prompt handling, and context
+isolation.
 
 The prompt benchmark is manual and makes live Agy calls. Read
 [`benchmark/README.md`](benchmark/README.md) before running it; it is never part
-of `npm test`.
+of `npm test`. A separate `--track show` benchmark grades the show prompt
+against serialized-transcript fixtures — one per show-me form — and is also
+manual and never part of `npm test`.
 
 ## License
 

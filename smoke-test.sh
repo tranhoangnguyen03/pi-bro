@@ -42,7 +42,13 @@ import { pathToFileURL } from "node:url";
 const {
 	agyFailureMessage,
 	agySelection,
+	captureShowTranscript,
 	extractDocumentText,
+	extractShowHtml,
+	stripShowHtmlFence,
+	showEntriesForMessage,
+	trimShowResult,
+	writeShowHtml,
 	extractWebHtml,
 	extractWebPage,
 	formatAgyUsage,
@@ -90,11 +96,13 @@ assert.deepEqual(parseBroSettings({ model: " gemini-one ", effort: "high" }), {
 	model: "gemini-one",
 	effort: "high",
 	mode: "balanced",
+	showTurns: 10,
 });
 assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "faithful" }), {
 	model: "gemini-one",
 	effort: "low",
 	mode: "faithful",
+	showTurns: 10,
 });
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
@@ -148,6 +156,80 @@ try {
 assert.equal(extractorFetches, 0, "web extractor called a third-party fallback");
 await assert.rejects(extractWebHtml("<p></p>".repeat(100_001), "https://example.com"), /too complex/);
 
+assert.equal(trimShowResult("x".repeat(100)).length, 100);
+const elided = trimShowResult(`${"h".repeat(3_000)}MIDDLE${"t".repeat(3_000)}`);
+assert.match(elided, /\[… elided 2006 characters …\]/);
+assert.ok(elided.startsWith("h".repeat(2_000)) && elided.endsWith("t".repeat(2_000)));
+
+assert.deepEqual(showEntriesForMessage({ role: "user", content: "Fix the bug" }), ['## user\n"Fix the bug"']);
+assert.deepEqual(showEntriesForMessage({ role: "user", content: [] }), []);
+const assistantEntries = showEntriesForMessage({
+	role: "assistant",
+	content: [
+		{ type: "text", text: "Checking." },
+		{ type: "toolCall", name: "read", arguments: { path: "src/config/settings.ts" } },
+	],
+});
+assert.equal(assistantEntries.length, 2);
+assert.match(assistantEntries[0], /^## assistant\n"Checking\."$/);
+assert.match(assistantEntries[1], /^## tool call: read\n/);
+assert.ok(assistantEntries[1].includes("src/config/settings.ts"));
+assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "thinking", thinking: "long reasoning" }] }), [
+	'## assistant\n"(reasoning omitted)"',
+]);
+const imageEntries = showEntriesForMessage({ role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] });
+assert.match(imageEntries[0], /\(1 image omitted\)/);
+const resultEntry = showEntriesForMessage({
+	role: "toolResult",
+	toolName: "bash",
+	isError: true,
+	content: [{ type: "text", text: "boom" }],
+});
+assert.deepEqual(resultEntry, ['## tool result: bash (error)\n"boom"']);
+
+const seededBranch = (entries) => ({ sessionManager: { getBranch: () => entries } });
+const turn = (id, parentId, message) => ({ type: "message", id, parentId, timestamp: `2026-01-01T00:00:0${id[0]}:00.000Z`, message });
+const showContext = seededBranch([
+	turn("1aaa", null, { role: "user", content: "First", timestamp: 1 }),
+	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Reply one" }], timestamp: 2 }),
+	turn("3aaa", "2aaa", { role: "user", content: "Second", timestamp: 3 }),
+	turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], timestamp: 4 }),
+]);
+const oneTurn = captureShowTranscript(showContext, 1);
+assert.ok(oneTurn.text.includes("Second") && !oneTurn.text.includes("First"));
+assert.equal(oneTurn.label, "last 1 turn");
+const twoTurns = captureShowTranscript(showContext, 2);
+assert.ok(twoTurns.text.includes("First") && twoTurns.text.includes("Second"));
+assert.equal(twoTurns.label, "last 2 turns");
+assert.equal(captureShowTranscript(seededBranch([]), 4), undefined);
+
+assert.equal(extractShowHtml("no fences"), undefined);
+assert.equal(
+	extractShowHtml("```text\nshape\n```\n\n```html\n<div>x</div>\n```"),
+	"<div>x</div>",
+);
+assert.equal(stripShowHtmlFence("```html\n<div>x</div>\n```\n\ntail"), "[HTML diagram saved — press O to open]\n\ntail");
+assert.equal(stripShowHtmlFence("```text\nshape\n```\n```html\n<div>x</div>\n```").trim(), "```text\nshape\n```\n[HTML diagram saved — press O to open]".trim());
+assert.equal(extractShowHtml("```html  \r\n<div>crlf</div>\r\n```  "), "<div>crlf</div>");
+
+const showHtmlFirst = await writeShowHtml("<div>one</div>");
+const showHtmlSecond = await writeShowHtml("<div>two</div>");
+assert.notEqual(showHtmlFirst, showHtmlSecond);
+const { readdir: showReaddir, readFile: showReadFile } = await import("node:fs/promises");
+const showDir = showHtmlSecond.slice(0, showHtmlSecond.lastIndexOf("/"));
+assert.ok(/pi-bro-/.test(showDir), "html files live in a per-user directory");
+const leftover = (await showReaddir(showDir)).filter((name) => /^bro-show-[0-9a-f]{8}\.html$/.test(name));
+assert.deepEqual(leftover, [showHtmlSecond.split("/").pop()]);
+const saved = await showReadFile(showHtmlSecond, "utf8");
+assert.match(saved, /Content-Security-Policy/);
+assert.match(saved, /<div>two<\/div>/);
+assert.ok(!(await showReaddir(showHtmlFirst.slice(0, showHtmlFirst.lastIndexOf("/")))).includes(showHtmlFirst.split("/").pop()), "keep-one cleanup");
+
+assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 0 }), /showTurns/);
+assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 2.5 }), /showTurns/);
+assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief" }).showTurns, 10);
+assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 9 }).showTurns, 9);
+
 const root = await mkdtemp(join(tmpdir(), "pi-bro-extract-"));
 const outside = await mkdtemp(join(tmpdir(), "pi-bro-outside-"));
 try {
@@ -196,6 +278,21 @@ printf '%s\n' \
 	'  printf "{\"status\":\"SUCCESS\",\"response\":\"Gemini Models %s\\\\tWeekly Limit Remaining\\\\t97%%\\\\n\"}\n" "$BRO_USAGE_CANARY"' \
 	'  exit 0' \
 	'fi' \
+	'case "$*" in *"Quoted session transcript as a JSON string"*)' \
+	'  case " $* " in *" --sandbox "*) ;; *) exit 17;; esac' \
+	'  case " $* " in *" --output-format stream-json "*) ;; *) exit 14;; esac' \
+	'  case "$*" in *"## user"*) ;; *) exit 18;; esac' \
+	'  call=$(( $(wc -l < "$BRO_CALLS") + 1 ))' \
+	'  printf "%s\n" "$call" >> "$BRO_CALLS"' \
+	'  model="" effort=""' \
+	'  while [ "$#" -gt 0 ]; do' \
+	'    case "$1" in --model) shift; model=$1;; --effort) shift; effort=$1;; esac' \
+	'    shift' \
+	'  done' \
+	'  printf "%s\t%s\n" "$model" "$effort" >> "$BRO_ARGS"' \
+	'  printf "%s\n" "{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"SHOW_OUTPUT_CANARY\"}}"' \
+	'  exit 0' \
+	'esac' \
 	'case "$*" in *"CUSTOM_TEMPLATE_MARKER"*) ;; *) exit 12;; esac' \
 	'case "$*" in *"Original complicated reply."*|*"$BRO_DOCUMENT_CANARY"*|*"PASTED_TEXT_ONLY_CANARY"*|*"ROUTED_WHOLE_RAW_CANARY"*) ;; *) exit 12;; esac' \
 	'case " $* " in *" --output-format stream-json "*) ;; *) exit 14;; esac' \
@@ -266,14 +363,25 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-route-text","type":"prompt","message":"/bro ROUTED_WHOLE_RAW_CANARY trailing words"}'
 		sleep 1
+		printf '%s\n' '{"id":"bro-show","type":"prompt","message":"/bro show"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-show-two-turns","type":"prompt","message":"/bro show 2"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-show-invalid","type":"prompt","message":"/bro show zero"}'
+		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
 		sleep 1
 	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 23 ]; then
-	printf 'Expected 23 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 26 ]; then
+	printf 'Expected 26 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+	exit 1
+fi
+
+if ! printf '%s\n' "$output" | grep -q 'Use /bro show <n-turns>.'; then
+	printf 'Invalid show arguments did not produce an actionable warning:\n%s\n' "$output" >&2
 	exit 1
 fi
 
@@ -287,7 +395,7 @@ if ! printf '%s\n' "$output" | grep -q 'Use /bro open.'; then
 	exit 1
 fi
 
-expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow')
+expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow')
 actual_args=$(cat "$args_file")
 if [ "$actual_args" != "$expected_args" ]; then
 	printf 'Selected model and effort were not applied:\n%s\n' "$actual_args" >&2
@@ -302,6 +410,7 @@ assert.deepEqual(JSON.parse(await readFile(process.argv[2], "utf8")), {
 	model: "gemini-test-two",
 	effort: "high",
 	mode: "faithful",
+	showTurns: 10,
 });
 assert.deepEqual(JSON.parse(await readFile(process.argv[3], "utf8")), {
 	model: "gemini-test-one",
@@ -321,10 +430,10 @@ if printf '%s\n' "$output" | grep -q '"method":"notify".*"notifyType":"error"'; 
 	exit 1
 fi
 
-expected_calls=$(printf '1\n2\n3\n4\n5\n6')
+expected_calls=$(printf '1\n2\n3\n4\n5\n6\n7\n8')
 actual_calls=$(cat "$calls_file")
 if [ "$actual_calls" != "$expected_calls" ]; then
-	printf 'Expected exactly six numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
+	printf 'Expected exactly eight numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
 	exit 1
 fi
 
@@ -340,7 +449,7 @@ if [ "$(cat "$version_calls_file")" != "version" ]; then
 	exit 1
 fi
 
-if grep -q -e "$canary_prefix" -e "$usage_canary" -e "$document_canary" "$session_file"; then
+if grep -q -e "$canary_prefix" -e "$usage_canary" -e "$document_canary" -e "SHOW_OUTPUT_CANARY" "$session_file"; then
 	printf 'Bro output leaked into the session\n' >&2
 	exit 1
 fi
@@ -352,7 +461,13 @@ import { buildSessionContext, parseSessionEntries } from "@earendil-works/pi-cod
 const entries = parseSessionEntries(await readFile(process.argv[2], "utf8"));
 const context = buildSessionContext(entries);
 const serialized = JSON.stringify(context);
-if (serialized.includes(process.argv[3]) || serialized.includes(process.argv[4]) || serialized.includes(process.argv[5])) {
+if (
+	serialized.includes(process.argv[3]) ||
+	serialized.includes(process.argv[4]) ||
+	serialized.includes(process.argv[5]) ||
+	serialized.includes("SHOW_OUTPUT_CANARY") ||
+	serialized.includes("Quoted session transcript")
+) {
 	throw new Error("Bro output leaked into model context");
 }
 JS

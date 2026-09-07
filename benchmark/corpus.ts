@@ -205,3 +205,6 @@ function countOccurrences(text: string, literal: string): number {
 		start = index + literal.length;
 	}
 }
+
+// Shared with the show track (benchmark/show-corpus.ts).
+export const FENCED_BLOCK_PATTERN = /```([\w-]*)\n[\s\S]*?```/g;
