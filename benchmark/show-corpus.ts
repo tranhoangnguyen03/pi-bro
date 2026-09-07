@@ -244,7 +244,8 @@ export const SHOW_CORPUS: readonly ShowFixture[] = [
 		target: DEGRADATION_TRANSCRIPT,
 		expectations: {
 			requiredTokens: [],
-			forbiddenText: ["Sure", "Here is", "Summary", "file:///"],
+			// No fenced block of any kind: prose must degrade to a plain outline.
+			forbiddenText: ["Sure", "Here is", "Summary", "file:///", "```"],
 		},
 	},
 ] as const;

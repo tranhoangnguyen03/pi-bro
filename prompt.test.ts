@@ -88,6 +88,8 @@ test("show prompt carries the show-me menu, conventions, and hard rules", () => 
 	assert.match(prompt, /At most one ```html fenced block, only as the very last block of the reply/);
 	assert.match(prompt, /self-contained with no external resources/);
 	assert.match(prompt, /Mermaid syntax only inside that html fence/);
+	assert.match(prompt, /Never wrap identifiers or paths in Markdown links/);
+	assert.match(prompt, /with no fenced code block and no diff/);
 });
 
 test("show prompt frames the transcript as guarded JSON data", () => {
