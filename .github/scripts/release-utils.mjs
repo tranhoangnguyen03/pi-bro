@@ -33,6 +33,17 @@ const fail = (msg) => {
 
 const readVersion = (rev) => JSON.parse(run("git", ["show", `${rev}:package.json`])).version;
 
+// Files whose change means the published tarball changed.
+const SHIPPED_FILES = ["bro.ts", "prompt.ts", "package.json", "package-lock.json"];
+
+const publishedVersion = () => {
+	try {
+		return run("npm", ["view", "pi-bro", "version"]);
+	} catch {
+		fail("could not read pi-bro's published version from npm; check registry access");
+	}
+};
+
 const mode = process.argv[2];
 
 if (mode === "selftest") {
@@ -53,12 +64,21 @@ if (mode === "selftest") {
 	console.log("selftest ok");
 } else if (mode === "gt") {
 	const [a, b] = process.argv.slice(3);
-	process.exit(cmp(a, b) === 1 ? 0 : 1);
+	const result = cmp(a, b);
+	if (result === null) {
+		console.error(`cannot compare versions: ${a} / ${b}`);
+		process.exit(2);
+	}
+	process.exit(result === 1 ? 0 : 1);
 } else if (mode === "validate") {
-	const published = run("npm", ["view", "pi-bro", "version"]);
+	if (!process.env.BASE_SHA || !process.env.HEAD_SHA) fail("BASE_SHA and HEAD_SHA are required");
+	const published = publishedVersion();
 	const next = readVersion("HEAD");
 	const labels = JSON.parse(process.env.LABELS || "[]");
 	const releaseLabels = labels.filter((l) => l.startsWith("release:") && l !== "release:none");
+	if (labels.includes("release:none") && releaseLabels.length > 0) {
+		fail(`release:none cannot be combined with ${releaseLabels.join(", ")}`);
+	}
 	if (releaseLabels.length > 1) fail(`multiple release labels: ${releaseLabels.join(", ")}`);
 
 	if (cmp(next, published) === 0) {
@@ -67,10 +87,10 @@ if (mode === "selftest") {
 			process.exit(0);
 		}
 		const changed = run("git", ["diff", "--name-only", `${process.env.BASE_SHA}...${process.env.HEAD_SHA}`]).split("\n");
-		const shipped = changed.filter((f) => f === "bro.ts" || f === "prompt.ts");
+		const shipped = changed.filter((f) => SHIPPED_FILES.includes(f));
 		if (shipped.length > 0) {
 			fail(
-				`bro.ts/prompt.ts changed but package.json is still ${next}. ` +
+				`shipped files changed (${shipped.join(", ")}) but package.json is still ${next}. ` +
 					`Run "npm version patch|minor|major --no-git-tag-version", add a "## [${next}]" CHANGELOG section, ` +
 					`or label the PR release:none.`,
 			);

@@ -55,6 +55,36 @@ commit.
   `tranhoangnguyen03/pi-bro`, workflow `publish.yml`.
 - The release workflow itself uses `GITHUB_TOKEN` (`github-actions[bot]`).
 
+## Hardening after review
+
+- `main` requires branches to be up to date before merging (`strict`), so two
+  PRs cannot merge the same target version and silently drop one release.
+- `ci.yml` re-runs on `labeled`/`unlabeled`, so adding or removing a release
+  label re-evaluates the metadata check.
+- The release workflow is split: a read-only `verify` job runs install and
+  tests; only the `release` job gets `id-token: write`, and `npm publish` runs
+  with `--ignore-scripts`, so dependency install scripts never see an
+  OIDC-minting token.
+- Publishing checks out the tag first, so a re-run after `main` has moved still
+  publishes the tagged tree.
+- `workflow_dispatch` is restricted to `refs/heads/main`.
+- Version output reaches the shell through `env:`, never by interpolation.
+- `validate` treats `package.json` and `package-lock.json` as shipped, so a
+  dependency-only change still requires a release.
+- `release:none` cannot be combined with another release label.
+- `sync-check` closes a resolved drift issue and fails loudly instead of
+  silently ignoring a version it cannot parse.
+
+## Recovery
+
+- **Orphan tag** (publish failed permanently and the tag cannot be reused):
+  an admin can delete it (`git push --delete origin vX.Y.Z`) because the tag
+  ruleset allows admin bypass. Then bump to the next version in a new PR.
+- **Broken `ci.yml` or renamed `test` job**: temporarily relax branch
+  protection through the API, land the fix through a PR, then re-enable.
+- **Failed publish**: fix the cause and re-run `release` via
+  `workflow_dispatch`; every step is idempotent.
+
 ## Known limitations
 
 - `v0.6.0` is tagged in git but was never published to npm; that historical
@@ -67,3 +97,5 @@ commit.
   tag-triggered chain.
 - npm trusted publishing is only exercised on the first release that actually
   publishes a new version.
+- Prerelease versions (`1.0.0-beta.1`) are not supported by the bump check or
+  the drift comparison.
