@@ -1,0 +1,91 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Test
+        run: npm test
+      - name: Read version
+        id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Steps below are independently idempotent: a re-run resumes at the first
+      # step whose artifact is missing. Only reachable partial state is
+      # "tag exists, npm does not have it yet", which a re-run completes.
+      - name: Tag
+        run: |
+          set -eu
+          TAG="v${{ steps.v.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists"
+            exit 0
+          fi
+          git tag -a "$TAG" -m "pi-bro $TAG"
+          git push origin "$TAG"
+
+      - name: Publish to npm
+        run: |
+          set -eu
+          V="${{ steps.v.outputs.version }}"
+          if npm view "pi-bro@$V" version >/dev/null 2>&1; then
+            echo "npm already has $V"
+            exit 0
+          fi
+          npm publish --access public --provenance
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          set -eu
+          TAG="v$V"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists"
+            exit 0
+          fi
+          if ! npm view "pi-bro@$V" version >/dev/null 2>&1; then
+            echo "npm does not have $V; not creating a GitHub release"
+            exit 1
+          fi
+          NOTES=$(node -e '
+            const fs = require("fs");
+            const v = process.env.V;
+            const lines = fs.readFileSync("CHANGELOG.md", "utf8").split("\n");
+            const start = lines.findIndex((l) => l.startsWith("## [" + v + "]"));
+            if (start < 0) process.exit(0);
+            let end = lines.findIndex((l, i) => i > start && l.startsWith("## ["));
+            if (end < 0) end = lines.length;
+            process.stdout.write(lines.slice(start + 1, end).join("\n").trim());
+          ')
+          if [ -z "$NOTES" ]; then NOTES="Release $TAG"; fi
+          PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then
+            NOTES="${NOTES}"$'\n\n'"**Full Changelog**: https://github.com/tranhoangnguyen03/pi-bro/compare/${PREV}...${TAG}"
+          fi
+          printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --title "pi-bro $TAG" --notes-file "$RUNNER_TEMP/notes.md"
