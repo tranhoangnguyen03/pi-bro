@@ -99,7 +99,8 @@ commit.
 - GitHub Actions does not trigger workflows for pushes made with
   `GITHUB_TOKEN`, so tagging and publishing live in one workflow rather than a
   tag-triggered chain.
-- npm trusted publishing is only exercised on the first release that actually
-  publishes a new version.
+- npm trusted publishing is verified by the `verify_only` dispatch (npm
+  returns `201` and mints a publish token); the first real publish exercises
+  the full path.
 - Prerelease versions (`1.0.0-beta.1`) are not supported by the bump check or
   the drift comparison.
