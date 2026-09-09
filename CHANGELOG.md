@@ -2,6 +2,16 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.11.0] - 2026-09-09
+
+### Changed
+
+- Rewrote the `/bro show` prompt from single-diagram shrinking to subject-first decomposition: find what the user actually wanted and what is true now, never diagram tool chronology (tool invocations, retries, git/gh commands, test runs) unless the process itself is the subject, and treat fetching, reading, editing, and testing as sub-steps rather than separate concerns. One concern still yields exactly one shape; multiple concerns yield a small overview plus 2–4 focused shapes that each add information instead of restating one another. Read-only pages, reviews, and analyses now keep their substance instead of collapsing to labels, while incidental orientation reads and process noise are omitted. Prose and research subjects degrade to a compact outline or comparison.
+
+### Development
+
+- Added a `/bro show` decomposition validation set under `benchmark/fixtures/decomposition/`: seven serialized-transcript fixtures mined from real pi-bro sessions (one shallow single-concern baseline, four medium multi-concern, one deep, one cross-cutting stretch case), a manifest recording each window's expected concerns and expected shape count, and a 15-check binary rubric (coverage, decomposition, simplicity, coherence, traceability, usefulness) for grading outputs without 1–5 scores. Personal emails in the fixtures are redacted. Grading is manual; nothing here runs in `npm test`.
+
 ## [0.10.1] - 2026-09-09
 
 ### Development
