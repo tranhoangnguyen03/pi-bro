@@ -555,7 +555,7 @@ if ! grep -q '/bro mode' "$repo_dir/README.md" || ! grep -q 'brief' "$repo_dir/R
 	printf 'README does not document all Bro modes\n' >&2
 	exit 1
 fi
-if ! grep -qi 'balanced.*default\|default.*balanced' "$repo_dir/README.md"; then
+if ! grep -Eqi 'balanced.*default|default.*balanced' "$repo_dir/README.md"; then
 	printf 'README does not identify balanced as the default mode\n' >&2
 	exit 1
 fi
