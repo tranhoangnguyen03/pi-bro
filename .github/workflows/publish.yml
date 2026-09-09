@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      verify_only:
+        description: "Only exchange an OIDC token with npm (no release)"
+        type: boolean
+        default: false
 
 concurrency:
   group: release
@@ -13,10 +18,47 @@ permissions:
   contents: read
 
 jobs:
+  # Manual diagnostic: proves npm trusted publishing works without publishing.
+  # Must live in this file because npm binds a trusted publisher to the
+  # workflow filename.
+  oidc-check:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_only
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Exchange OIDC token with npm
+        run: |
+          set -eu
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "no OIDC request context; is id-token: write set?"
+            exit 1
+          fi
+          OIDC=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" | jq -r '.value // empty')
+          if [ -z "$OIDC" ]; then
+            echo "GitHub did not return an id_token"
+            exit 1
+          fi
+          code=$(curl -sS -o "$RUNNER_TEMP/exchange.json" -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $OIDC" \
+            "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/pi-bro")
+          echo "npm exchange HTTP $code"
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            jq -r '.message // .error // "no message"' "$RUNNER_TEMP/exchange.json" 2>/dev/null || true
+            exit 1
+          fi
+          if ! jq -e '.token' "$RUNNER_TEMP/exchange.json" >/dev/null 2>&1; then
+            echo "exchange response contained no token"
+            exit 1
+          fi
+          echo "trusted publishing is configured: npm minted a publish token (not printed)"
+
   # Read-only gate. Keeps the OIDC-minting permissions away from dependency
   # install scripts.
   verify:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name != 'workflow_dispatch' || inputs.verify_only != true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

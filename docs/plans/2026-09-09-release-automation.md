@@ -74,6 +74,10 @@ commit.
 - `release:none` cannot be combined with another release label.
 - `sync-check` closes a resolved drift issue and fails loudly instead of
   silently ignoring a version it cannot parse.
+- `publish.yml` accepts a `verify_only` dispatch input that mints a GitHub OIDC
+  token and exchanges it with npm without publishing, so trusted publishing
+  can be proven before a release. It lives in this workflow because npm binds
+  the trusted publisher to the workflow filename.
 
 ## Recovery
 
