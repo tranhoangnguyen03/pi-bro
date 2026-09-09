@@ -359,7 +359,9 @@ output=$(
 		sleep 1
 		printf '{"id":"bro-route-file","type":"prompt","message":"/bro %s"}\n' "$document_file"
 		sleep 1
-		printf '{"id":"bro-route-quoted","type":"prompt","message":"/bro \\\"%s\\\""}\n' "$spaced_file"
+		cat <<-EOF
+		{"id":"bro-route-quoted","type":"prompt","message":"/bro \"$spaced_file\""}
+		EOF
 		sleep 1
 		printf '%s\n' '{"id":"bro-route-text","type":"prompt","message":"/bro ROUTED_WHOLE_RAW_CANARY trailing words"}'
 		sleep 1

@@ -1,0 +1,46 @@
+name: sync-check
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # Versions published before release automation existed are expected to be
+      # missing from GitHub Releases; only report drift above this baseline.
+      BASELINE: "0.10.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Compare npm and GitHub releases
+        run: |
+          set -eu
+          npm_latest=$(npm view pi-bro version)
+          gh_latest=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null | sed 's/^v//')
+          echo "npm=$npm_latest github=${gh_latest:-none}"
+          if [ "$npm_latest" = "$gh_latest" ]; then
+            echo "in sync"
+            exit 0
+          fi
+          if ! node .github/scripts/release-utils.mjs gt "$npm_latest" "$BASELINE"; then
+            echo "pre-automation gap (npm $npm_latest <= baseline $BASELINE); ignoring"
+            exit 0
+          fi
+          body="npm has pi-bro@$npm_latest but the latest GitHub release is ${gh_latest:-none}.
+          Re-run the release workflow: Actions -> release -> Run workflow."
+          existing=$(gh issue list --state open --search 'in:title "Release drift"' --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "Release drift: npm vs GitHub" --body "$body"
+          fi
