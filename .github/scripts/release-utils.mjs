@@ -79,6 +79,9 @@ if (mode === "selftest") {
 	if (labels.includes("release:none") && releaseLabels.length > 0) {
 		fail(`release:none cannot be combined with ${releaseLabels.join(", ")}`);
 	}
+	if (labels.includes("release:none") && cmp(next, published) !== 0) {
+		fail(`release:none but package.json is ${next} (published ${published}); remove the label or the bump`);
+	}
 	if (releaseLabels.length > 1) fail(`multiple release labels: ${releaseLabels.join(", ")}`);
 
 	if (cmp(next, published) === 0) {
@@ -91,7 +94,7 @@ if (mode === "selftest") {
 		if (shipped.length > 0) {
 			fail(
 				`shipped files changed (${shipped.join(", ")}) but package.json is still ${next}. ` +
-					`Run "npm version patch|minor|major --no-git-tag-version", add a "## [${next}]" CHANGELOG section, ` +
+					`Run "npm version patch|minor|major --no-git-tag-version", add a "## [X.Y.Z]" CHANGELOG section for the new version, ` +
 					`or label the PR release:none.`,
 			);
 		}
