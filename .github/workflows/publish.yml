@@ -41,6 +41,11 @@ jobs:
             echo "GitHub did not return an id_token"
             exit 1
           fi
+          PAYLOAD=$(printf '%s' "$OIDC" | cut -d. -f2)
+          PAD=$(( (4 - ${#PAYLOAD} % 4) % 4 ))
+          if [ "$PAD" -gt 0 ]; then PAYLOAD="$PAYLOAD$(printf '=%.0s' $(seq 1 "$PAD"))"; fi
+          echo "--- OIDC claims (the values npm matches against the trusted publisher) ---"
+          printf '%s' "$PAYLOAD" | tr '_-' '/+' | base64 -d | jq '{repository, repository_owner, workflow, job_workflow_ref, ref, environment, event_name, aud}'
           code=$(curl -sS -o "$RUNNER_TEMP/exchange.json" -w '%{http_code}' -X POST \
             -H "Authorization: Bearer $OIDC" \
             "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/pi-bro")
