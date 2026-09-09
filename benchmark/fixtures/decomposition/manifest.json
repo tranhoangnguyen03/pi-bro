@@ -1,0 +1,126 @@
+[
+  {
+    "id": "decomp-shallow-single",
+    "source_file": "2026-08-17T08-06-44-028Z_01a00ec2-363c-7a33-a9fb-59cf49896a79.jsonl",
+    "user_turns": "U0-U0",
+    "kept_turns": 1,
+    "transcript_len": 17756,
+    "transcript_file": "benchmark/fixtures/decomposition/decomp-shallow-single.transcript.txt",
+    "depth": "shallow (1 turn)",
+    "complexity": "single-concern",
+    "description": "Fetch and summarize external URL (claude.com tutorial) — trivial single concern, tests that decomposition does NOT over-split. Fetch + summarize are sub-steps of one task, not separate concerns (expected_shapes=1 < len(expected_concerns) is intentional here).",
+    "expected_concerns": [
+      "fetch and summarize Claude Cowork customization layers"
+    ],
+    "expected_shapes": 1,
+    "should_decompose": false
+  },
+  {
+    "id": "decomp-rename-routing",
+    "source_file": "2026-09-06T15-22-21-113Z_01a07750-3839-749a-bc2d-c21c4d1d7fb7.jsonl",
+    "user_turns": "U1-U3 (requested U0-U3, oldest dropped by budget)",
+    "kept_turns": 3,
+    "transcript_len": 83023,
+    "transcript_file": "benchmark/fixtures/decomposition/decomp-rename-routing.transcript.txt",
+    "depth": "medium (3 turns kept)",
+    "complexity": "multi-concern (3)",
+    "description": "Rename /bro simplify→/bro text + context-aware routing + docs propagation — 3 concerns tangled with retries and smoke-test noise",
+    "expected_concerns": [
+      "rename simplify→text (bro.ts, smoke-test.sh, README)",
+      "context-aware routing (/bro <input> auto-detect)",
+      "docs propagation (README, CHANGELOG, agent docs)"
+    ],
+    "expected_shapes": 3,
+    "should_decompose": true
+  },
+  {
+    "id": "decomp-show-build",
+    "source_file": "2026-09-06T15-06-21-620Z_01a07741-9433-7462-89d0-e6389a88792a.jsonl",
+    "user_turns": "U5-U7",
+    "kept_turns": 3,
+    "transcript_len": 56809,
+    "transcript_file": "benchmark/fixtures/decomposition/decomp-show-build.transcript.txt",
+    "depth": "medium (3 turns)",
+    "complexity": "multi-concern (2-3)",
+    "description": "Build /bro show: branch setup + benchmark construction, two-agent review, separation decision — implementation + review + scope decision interleaved",
+    "expected_concerns": [
+      "branch setup + benchmark construction (bro.ts capture/trim/serialize, prompt.ts SHOW_PROMPT)",
+      "two-agent review against show-me (claude + agy verification)",
+      "separation decision (show as standalone direction, not a mode)"
+    ],
+    "expected_shapes": 3,
+    "should_decompose": true
+  },
+  {
+    "id": "decomp-release-automation",
+    "source_file": "2026-09-09T06-13-50-711Z_01a084cd-1ff6-7215-814b-29052758146d.jsonl",
+    "user_turns": "U1-U4",
+    "kept_turns": 4,
+    "transcript_len": 87235,
+    "transcript_file": "benchmark/fixtures/decomposition/decomp-release-automation.transcript.txt",
+    "depth": "medium (4 turns)",
+    "complexity": "multi-concern (3)",
+    "description": "Release automation: npm+GitHub sync via GitHub Actions + branch protection + version bump strategy",
+    "expected_concerns": [
+      "GitHub Actions release workflow (.github/workflows/publish.yml)",
+      "branch protection + OIDC/trusted publishing",
+      "version bump strategy (patch/minor/major, CHANGELOG)"
+    ],
+    "expected_shapes": 3,
+    "should_decompose": true
+  },
+  {
+    "id": "decomp-modes-analysis",
+    "source_file": "2026-08-23T17-06-01-532Z_01a02f96-1abc-7166-a9da-7b92f6045187.jsonl",
+    "user_turns": "U4-U5",
+    "kept_turns": 2,
+    "transcript_len": 89671,
+    "transcript_file": "benchmark/fixtures/decomposition/decomp-modes-analysis.transcript.txt",
+    "depth": "medium (2 turns)",
+    "complexity": "multi-concern (2)",
+    "description": "Analyze speak-like-you-eat repo + identify gaps for pi-bro modes — research + synthesis, no code yet",
+    "expected_concerns": [
+      "external repo analysis (speak-like-you-eat innovations)",
+      "gap identification + mode design (Understanding-first / Fidelity-first / Balanced)"
+    ],
+    "expected_shapes": 2,
+    "should_decompose": true
+  },
+  {
+    "id": "decomp-deep-modes-publish",
+    "source_file": "2026-08-23T17-06-01-532Z_01a02f96-1abc-7166-a9da-7b92f6045187.jsonl",
+    "user_turns": "U22-U27 (requested U20-U27, oldest dropped by budget)",
+    "kept_turns": 6,
+    "transcript_len": 68096,
+    "transcript_file": "benchmark/fixtures/decomposition/decomp-deep-modes-publish.transcript.txt",
+    "depth": "deep (6 turns kept)",
+    "complexity": "multi-concern (3) + compaction",
+    "description": "Deep: benchmark verification + docs + publish prep — tests trimming/budget + overview coherence. Compaction signal is structural (turns silently dropped, kept_turns < requested span), not a labeled event in the transcript.",
+    "expected_concerns": [
+      "benchmark test verification and completion status",
+      "docs propagation and custom-prompt compatibility (README, CHANGELOG, smoke-test)",
+      "publish and release preparation (npm auth, version bump, branch)"
+    ],
+    "expected_shapes": 3,
+    "should_decompose": true
+  },
+  {
+    "id": "decomp-cross-cutting-show",
+    "source_file": "2026-09-06T15-06-21-620Z_01a07741-9433-7462-89d0-e6389a88792a.jsonl",
+    "user_turns": "U19-U23",
+    "kept_turns": 5,
+    "transcript_len": 81693,
+    "transcript_file": "benchmark/fixtures/decomposition/decomp-cross-cutting-show.transcript.txt",
+    "depth": "medium-deep (5 turns)",
+    "complexity": "cross-cutting (4-5) — stretch",
+    "description": "Cross-cutting: docs propagation + sample conversations + turn-count config + HTML contract — 4-5 concerns, stretch case (score, don't block)",
+    "expected_concerns": [
+      "docs propagation (README, help, CHANGELOG)",
+      "sample conversations + demo sessions (/tmp/bro-show-demo)",
+      "turn-count config (showTurns setting, 10 default)",
+      "HTML contract verification + two-agent review (extractShowHtml, writeShowHtml, CSP, keep-one)"
+    ],
+    "expected_shapes": 4,
+    "should_decompose": true
+  }
+]

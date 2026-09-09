@@ -78,6 +78,19 @@ test("show prompt carries the show-me menu, conventions, and hard rules", () => 
 
 	assert.match(prompt, /smallest view that makes the point/);
 	assert.match(prompt, /never every form at once/);
+	assert.match(prompt, /Decompose second, then draw/);
+	assert.match(prompt, /Find the subject first/);
+	assert.match(prompt, /never every form at once/);
+	assert.match(prompt, /Do not draw tool invocations/);
+	assert.match(prompt, /Fetching, reading, editing, and testing are usually sub-steps/);
+	assert.match(prompt, /Preserve substance, not just labels/);
+	assert.match(prompt, /one concern → one shape/iu);
+	assert.match(prompt, /one concern → one shape/iu);
+	assert.match(prompt, /overview \+ 2–4 focused shapes at most/);
+	assert.match(prompt, /never merge distinct dimensions/);
+	assert.match(prompt, /one form per shape/iu);
+	assert.match(prompt, /depth ≤ 3–4 levels/);
+	assert.match(prompt, /explicit call, import, or execution event/);
 	assert.match(prompt, /with inline # comments/);
 	assert.match(prompt, /Types and signatures for the shape of code before it exists/);
 	assert.match(prompt, /state and module boundaries that matter, with file paths in parentheses/);

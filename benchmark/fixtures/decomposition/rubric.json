@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "description": "Binary yes/no rubric for /bro show decomposition — big-complicated → well-organized simple parts. Each check is answerable from transcript + output alone. No 1-5 scores.",
+  "scoring": "Count of yes / total applicable. No weighting. Mechanical checks (traceability literals, fence balance, html-last) stay in show-corpus.ts; these cover the semantic decomposition gap.",
+  "groups": [
+    {
+      "id": "coverage",
+      "label": "Coverage",
+      "source": "Concept-map completeness rubrics (Waterloo CTE; Novak & Cañas) + arXiv 2411.11916 text-to-diagram faithfulness axis"
+    },
+    {
+      "id": "decomposition",
+      "label": "Decomposition / Separation",
+      "source": "SHOW_PROMPT + C4 model single-abstraction-level + Moody 2009 Physics of Notations (Semiotic Clarity, Complexity Management)"
+    },
+    {
+      "id": "simplicity",
+      "label": "Simplicity per shape",
+      "source": "Purchase graph-drawing aesthetics + Larkin & Simon 1987 + arXiv 1609.07688 cognitive-task graph evaluation + show-me smallest-view"
+    },
+    {
+      "id": "coherence",
+      "label": "Overview coherence",
+      "source": "Concept-map root-concept rubrics + SHOW_PROMPT framing rule + Moody Cognitive Integration"
+    },
+    {
+      "id": "traceability",
+      "label": "Traceability / Groundedness",
+      "source": "Summarization faithfulness (arXiv 2005.00661, 2501.00269) + DiagramEval (arXiv:2402.14817) + pi-bro traceability contract"
+    },
+    {
+      "id": "usefulness",
+      "label": "Usefulness / Orientation",
+      "source": "Larkin & Simon 1987 + C4 model + SHOW_PROMPT degradation rule"
+    }
+  ],
+  "checks": [
+    {
+      "id": "coverage.every_concern_appears",
+      "group": "coverage",
+      "question": "Does every distinct concern listed in expected_concerns appear in at least one shape?",
+      "rationale": "Completeness relative to the focus question, not just node count.",
+      "automatable": false
+    },
+    {
+      "id": "coverage.no_load_bearing_omission",
+      "group": "coverage",
+      "question": "Is there no file/function/flag the user's question explicitly named that is absent from every shape?",
+      "rationale": "Faithfulness/completeness is distinct from conciseness.",
+      "automatable": false
+    },
+    {
+      "id": "decomposition.single_form_per_shape",
+      "group": "decomposition",
+      "question": "Does each fenced shape stick to one form (no mixing call-tree edges into a file-tree, etc.)?",
+      "rationale": "SHOW_PROMPT mandates one-or-a-few shapes, never every form mixed together.",
+      "automatable": false
+    },
+    {
+      "id": "decomposition.no_redundant_shape",
+      "group": "decomposition",
+      "question": "If multiple shapes are present, does each cover a genuinely distinct aspect rather than restating the same relationships?",
+      "rationale": "Structural scoring rewards distinct branches/cross-links, not duplicated propositions.",
+      "automatable": false
+    },
+    {
+      "id": "decomposition.separate_dimensions",
+      "group": "decomposition",
+      "question": "Are distinct architectural dimensions (directory layout vs runtime call stack vs diff) in separate fenced blocks rather than merged into a single god-diagram?",
+      "rationale": "Prevents cognitive overload; the core big-complicated → well-organized simple parts test.",
+      "automatable": false
+    },
+    {
+      "id": "simplicity.no_padding",
+      "group": "simplicity",
+      "question": "Does every node/line directly contribute to explaining a relevant entity, relationship, or state transition from the transcript (no extraneous padding or decorative filler)?",
+      "rationale": "Diagrams gain their edge via locational indexing of only relevant elements.",
+      "automatable": false
+    },
+    {
+      "id": "simplicity.shallow",
+      "group": "simplicity",
+      "question": "Is each shape compact enough to read as one block — tree depth <= 3-4 levels, no unnecessary sibling branches or deep nesting beyond the shape's root?",
+      "rationale": "Bounded cognitive load; graphic economy. Concrete anchor (depth <= 3-4) keeps scoring stable across runs.",
+      "automatable": false
+    },
+    {
+      "id": "simplicity.pruned_read_only",
+      "group": "simplicity",
+      "question": "Are files/symbols that were merely inspected (read-only) but never modified/called/executed excluded from shapes?",
+      "rationale": "Smallest view that makes the point; prevents visual noise.",
+      "automatable": false
+    },
+    {
+      "id": "coherence.ordered_progression",
+      "group": "coherence",
+      "question": "Are shapes ordered in a logical progression (context/cause → effect/diff) matching the transcript's chronological problem-to-solution sequence?",
+      "rationale": "Cognitive integration across multiple shapes.",
+      "automatable": false
+    },
+    {
+      "id": "coherence.framing_matches",
+      "group": "coherence",
+      "question": "Does the one-line framing above each shape accurately describe what it contains?",
+      "rationale": "SHOW_PROMPT requires exactly one accurate framing line; mismatch is invisible to lexical checks.",
+      "automatable": false
+    },
+    {
+      "id": "coherence.has_overview",
+      "group": "coherence",
+      "question": "For multi-concern cases (shouldDecompose=true): do the shapes collectively provide a coherent progression or overview that relates the concerns without fragmented gaps? For single-concern: does the shape have a clear entry point?",
+      "rationale": "Concept-map rubrics grade around a single root concept/focus question.",
+      "automatable": false
+    },
+    {
+      "id": "traceability.relations_grounded",
+      "group": "traceability",
+      "question": "Does every drawn relationship/arrow correspond to an explicit call/import/execution event in the transcript, not just co-present tokens?",
+      "rationale": "Lexical token presence (show-corpus.ts) cannot catch a fabricated relation between two real tokens.",
+      "automatable": false
+    },
+    {
+      "id": "traceability.no_world_knowledge",
+      "group": "traceability",
+      "question": "Are there zero claims requiring outside/world knowledge — everything is directly quotable from the transcript?",
+      "rationale": "Binary faithfulness judgments are more consistent than graded scores.",
+      "automatable": false
+    },
+    {
+      "id": "usefulness.standalone_answer",
+      "group": "usefulness",
+      "question": "Can the user's primary goal, key operations, and final state be determined from the shapes and framing lines alone without reading the raw turns?",
+      "rationale": "Diagrams' advantage is supporting the specific inference without reconstruction.",
+      "automatable": false
+    },
+    {
+      "id": "usefulness.correct_form",
+      "group": "usefulness",
+      "question": "Does the chosen form match the question type (pseudocode for logic, file-tree for layout, call-tree for runtime, diff for what-changed, etc.)? If degraded to prose, did the transcript genuinely lack diagram-worthy structure (no dodge)?",
+      "rationale": "Named gap in design doc; mismatched abstraction level hurts comprehension; degradation escape hatch must not dodge legitimate work.",
+      "automatable": false,
+      "conditional": "Always applicable; for prose-only transcripts, score the degradation half."
+    }
+  ]
+}
