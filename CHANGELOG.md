@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.10.1] - 2026-09-09
+
+### Development
+
+- Added release automation: merging a PR that bumps the version now tags it, publishes to npm through trusted publishing (OIDC, with provenance), and creates the matching GitHub release. CI validates the bump against npm before merge, and a daily sync check reports any npm/GitHub drift. No packaged files changed in this release.
+
 ## [0.10.0] - 2026-09-07
 
 ### Added
