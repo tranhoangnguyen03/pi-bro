@@ -58,7 +58,7 @@ text directly captures a new source the same way.
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
-| `/bro show <n-turns>` | Draw recent session turns (default last 10), including tool results, as shapes instead of prose. |
+| `/bro show [n-turns] [query]` | Draw recent session turns (default last 1), including tool results, as shapes instead of prose. An optional query steers what the shapes focus on, with or without a leading turn count. |
 | `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
 | `/bro usage [--provider agy]` | Show current Agy resource limits. |
 | `/bro model [id]` | View or choose the Agy model. |
@@ -120,6 +120,18 @@ opened with **O**.
 Pressing **R** redraws the same captured turns; running `/bro show` again
 captures the latest turns afresh. `/bro show <n-turns>` overrides the default turn
 count for a single run.
+
+Add a query to steer what the shapes focus on, either after a turn count or on
+its own: `/bro show what changed in the auth flow`, or `/bro show 3 what
+changed in the auth flow`. The query is used as a lens on the captured turns,
+not as additional evidence, and its casing is preserved as typed. Pressing
+**R** retries with the same turn count and query.
+
+Only the first word is ever read as the turn count — a query that starts with
+digits is not ambiguous. `/bro show 1 404 handler` captures 1 turn and steers
+on "404 handler"; `/bro show 404 handler` (no leading count) steers on the
+whole phrase "404 handler" using the default turn count, since "404" alone
+would be a count but "404 handler" is not.
 
 ### A slow session-create, traced
 
@@ -561,7 +573,7 @@ Bro creates this user-editable settings file when the extension loads:
   "model": "gemini-3.7-flash",
   "effort": "low",
   "mode": "balanced",
-  "showTurns": 10
+  "showTurns": 1
 }
 ```
 
@@ -571,7 +583,7 @@ apply to the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
 one of the levels shown by `/bro effort`. Models without adjustable effort use
 `default`. `mode` must be `brief`, `balanced`, or `faithful`; existing settings
 without it use `balanced`. `showTurns` is the default number of turns `/bro
-show` draws (default 10); `/bro show <n-turns>` overrides it for a single run. There
+show` draws (default 1); `/bro show <n-turns>` overrides it for a single run. There
 is no `/bro showTurns` command — edit the file directly. The choices remain active across Pi restarts until
 you change them. `/bro help` shows the active settings and exact file path.
 

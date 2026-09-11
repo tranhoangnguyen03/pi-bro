@@ -14,6 +14,7 @@ args_file="$test_dir/agy-args"
 usage_calls_file="$test_dir/agy-usage-calls"
 model_calls_file="$test_dir/agy-model-calls"
 version_calls_file="$test_dir/agy-version-calls"
+show_prompts_file="$test_dir/agy-show-prompts"
 canary_prefix="BRO_ONLY_CANARY_"
 usage_canary="USAGE_ONLY_CANARY"
 document_canary="DOCUMENT_ONLY_CANARY"
@@ -56,6 +57,7 @@ const {
 	looksLikeWebUrl,
 	parseAgyModels,
 	parseBroSettings,
+	parseShowArguments,
 	parseWebRedirect,
 	parseWebUrl,
 	setRegularMouseReporting,
@@ -96,13 +98,13 @@ assert.deepEqual(parseBroSettings({ model: " gemini-one ", effort: "high" }), {
 	model: "gemini-one",
 	effort: "high",
 	mode: "balanced",
-	showTurns: 10,
+	showTurns: 1,
 });
 assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "faithful" }), {
 	model: "gemini-one",
 	effort: "low",
 	mode: "faithful",
-	showTurns: 10,
+	showTurns: 1,
 });
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
@@ -227,8 +229,25 @@ assert.ok(!(await showReaddir(showHtmlFirst.slice(0, showHtmlFirst.lastIndexOf("
 
 assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 0 }), /showTurns/);
 assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 2.5 }), /showTurns/);
-assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief" }).showTurns, 10);
+assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief" }).showTurns, 1);
 assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 9 }).showTurns, 9);
+
+assert.deepEqual(parseShowArguments(""), { steering: "", invalid: false });
+assert.deepEqual(parseShowArguments("3"), { requested: "3", steering: "", invalid: false });
+assert.deepEqual(parseShowArguments("what changed"), { steering: "what changed", invalid: false });
+assert.deepEqual(parseShowArguments("3 what changed"), { requested: "3", steering: "what changed", invalid: false });
+// A digit-leading query token (2FA, 404, 3D) never parses as a turn count on its own.
+assert.deepEqual(parseShowArguments("2FA the login flow"), { steering: "2FA the login flow", invalid: false });
+// A count followed by a digit-leading query word is unambiguous: only the first token is ever a count.
+assert.deepEqual(parseShowArguments("1 404 handler"), { requested: "1", steering: "404 handler", invalid: false });
+assert.equal(parseShowArguments("0").invalid, true, "zero is not a valid turn count");
+assert.equal(parseShowArguments("-1").invalid, true, "negative counts are rejected");
+assert.equal(parseShowArguments("1.5").invalid, true, "decimal counts are rejected");
+assert.equal(parseShowArguments("99999999999999999999").invalid, true, "unsafe integers are rejected");
+assert.equal(parseShowArguments(String(Number.MAX_SAFE_INTEGER)).invalid, false, "the largest safe integer is accepted");
+// Internal whitespace in the query survives verbatim; only the count/query separator is consumed.
+assert.equal(parseShowArguments("3   what   changed").steering, "what   changed");
+assert.equal(parseShowArguments("Focus  on   spacing").steering, "Focus  on   spacing");
 
 const root = await mkdtemp(join(tmpdir(), "pi-bro-extract-"));
 const outside = await mkdtemp(join(tmpdir(), "pi-bro-outside-"));
@@ -284,6 +303,7 @@ printf '%s\n' \
 	'  case "$*" in *"## user"*) ;; *) exit 18;; esac' \
 	'  call=$(( $(wc -l < "$BRO_CALLS") + 1 ))' \
 	'  printf "%s\n" "$call" >> "$BRO_CALLS"' \
+	'  printf "%s\n" "$*" >> "$BRO_SHOW_PROMPTS"' \
 	'  model="" effort=""' \
 	'  while [ "$#" -gt 0 ]; do' \
 	'    case "$1" in --model) shift; model=$1;; --effort) shift; effort=$1;; esac' \
@@ -314,7 +334,7 @@ printf '%s\n' \
 	> "$test_dir/agy"
 chmod +x "$test_dir/agy"
 
-touch "$calls_file" "$args_file" "$usage_calls_file" "$model_calls_file" "$version_calls_file"
+touch "$calls_file" "$args_file" "$usage_calls_file" "$model_calls_file" "$version_calls_file" "$show_prompts_file"
 output=$(
 	{
 		printf '%s\n' '{"id":"bro-open-empty","type":"prompt","message":"/bro open"}'
@@ -367,22 +387,24 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-show","type":"prompt","message":"/bro show"}'
 		sleep 1
-		printf '%s\n' '{"id":"bro-show-two-turns","type":"prompt","message":"/bro show 2"}'
+		printf '%s\n' '{"id":"bro-show-count-and-query","type":"prompt","message":"/bro show 2 Trace The Login Flow"}'
 		sleep 1
-		printf '%s\n' '{"id":"bro-show-invalid","type":"prompt","message":"/bro show zero"}'
+		printf '%s\n' '{"id":"bro-show-query-only","type":"prompt","message":"/bro show Explain The Auth Redirect"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-show-invalid","type":"prompt","message":"/bro show 0"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
 		sleep 1
-	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_SHOW_PROMPTS="$show_prompts_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 26 ]; then
-	printf 'Expected 26 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 27 ]; then
+	printf 'Expected 27 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
 	exit 1
 fi
 
-if ! printf '%s\n' "$output" | grep -q 'Use /bro show <n-turns>.'; then
+if ! printf '%s\n' "$output" | grep -Fq 'Use /bro show [n-turns] [query].'; then
 	printf 'Invalid show arguments did not produce an actionable warning:\n%s\n' "$output" >&2
 	exit 1
 fi
@@ -397,10 +419,28 @@ if ! printf '%s\n' "$output" | grep -q 'Use /bro open.'; then
 	exit 1
 fi
 
-expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow')
+expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow')
 actual_args=$(cat "$args_file")
 if [ "$actual_args" != "$expected_args" ]; then
 	printf 'Selected model and effort were not applied:\n%s\n' "$actual_args" >&2
+	exit 1
+fi
+
+show_call_count=$(grep -c "Quoted session transcript as a JSON string" "$show_prompts_file" || true)
+if [ "$show_call_count" -ne 3 ]; then
+	printf 'Expected exactly three /bro show Agy calls, got %s:\n%s\n' "$show_call_count" "$(cat "$show_prompts_file")" >&2
+	exit 1
+fi
+if ! grep -Fq '"Trace The Login Flow"' "$show_prompts_file"; then
+	printf 'A count+query /bro show call did not reach Agy with the original-case query:\n%s\n' "$(cat "$show_prompts_file")" >&2
+	exit 1
+fi
+if grep -Fq '"trace the login flow"' "$show_prompts_file"; then
+	printf 'Show steering was lowercased for a count+query call:\n%s\n' "$(cat "$show_prompts_file")" >&2
+	exit 1
+fi
+if ! grep -Fq '"Explain The Auth Redirect"' "$show_prompts_file"; then
+	printf 'A query-only /bro show call did not reach Agy with the original-case query:\n%s\n' "$(cat "$show_prompts_file")" >&2
 	exit 1
 fi
 
@@ -412,7 +452,7 @@ assert.deepEqual(JSON.parse(await readFile(process.argv[2], "utf8")), {
 	model: "gemini-test-two",
 	effort: "high",
 	mode: "faithful",
-	showTurns: 10,
+	showTurns: 1,
 });
 assert.deepEqual(JSON.parse(await readFile(process.argv[3], "utf8")), {
 	model: "gemini-test-one",
@@ -432,10 +472,10 @@ if printf '%s\n' "$output" | grep -q '"method":"notify".*"notifyType":"error"'; 
 	exit 1
 fi
 
-expected_calls=$(printf '1\n2\n3\n4\n5\n6\n7\n8')
+expected_calls=$(printf '1\n2\n3\n4\n5\n6\n7\n8\n9')
 actual_calls=$(cat "$calls_file")
 if [ "$actual_calls" != "$expected_calls" ]; then
-	printf 'Expected exactly eight numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
+	printf 'Expected exactly nine numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
 	exit 1
 fi
 

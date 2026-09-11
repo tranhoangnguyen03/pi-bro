@@ -30,7 +30,7 @@ const MAX_WEB_ELEMENTS = 100_000;
 const MAX_WEB_REDIRECTS = 5;
 const WEB_TIMEOUT_MS = 25_000;
 const MAX_TEXT_LENGTH = 100_000;
-const DEFAULT_SHOW_TURNS = 10;
+const DEFAULT_SHOW_TURNS = 1;
 const SHOW_TOOL_RESULT_KEEP = 2_000;
 const SHOW_TOOL_CALL_KEEP = 500;
 const SHOW_HTML_FILE_PATTERN = /^bro-show-[0-9a-f]{8}\.html$/;
@@ -848,6 +848,27 @@ export function captureShowTranscript(ctx: ExtensionCommandContext, turnsRequest
 	return { text: text.trim(), label: `last ${Math.max(1, kept)} turn${kept > 1 ? "s" : ""}` };
 }
 
+export interface ParsedShowArguments {
+	// undefined means "use the configured default"; invalid leading numeric tokens report `invalid` instead.
+	requested?: string;
+	steering: string;
+	invalid: boolean;
+}
+
+// A leading token is only ever treated as the turn count, never as the start of the query — so
+// "/bro show 1 404 handler" is count 1, query "404 handler", not an ambiguous double-numeric query.
+export function parseShowArguments(value: string): ParsedShowArguments {
+	const firstSpace = value.search(/\s/);
+	const firstToken = firstSpace === -1 ? value : value.slice(0, firstSpace);
+	const looksLikeCount = firstToken !== "" && /^-?\d+(?:\.\d+)?$/.test(firstToken);
+	if (!looksLikeCount) return { steering: value, invalid: false };
+
+	// Slicing the raw remainder (instead of split(/\s+/).join(" ")) keeps the query's original spacing intact.
+	const steering = firstSpace === -1 ? "" : value.slice(firstSpace).replace(/^\s+/, "");
+	const valid = /^[1-9]\d*$/.test(firstToken) && Number.isSafeInteger(Number(firstToken));
+	return { requested: valid ? firstToken : undefined, steering, invalid: !valid };
+}
+
 export function extractShowHtml(text: string): string | undefined {
 	const fences = [...text.matchAll(/^```html[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\r\n]*$/gm)];
 	return fences.at(-1)?.[1]?.trim();
@@ -949,11 +970,12 @@ async function simplify(
 
 async function runShowExplanation(
 	transcript: string,
+	steering: string,
 	signal: AbortSignal,
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
 ): Promise<string> {
-	return runAgyText(buildShowPrompt(transcript), agySelection(settings), signal, onProgress);
+	return runAgyText(buildShowPrompt(transcript, steering), agySelection(settings), signal, onProgress);
 }
 
 async function runAgyText(
@@ -1079,7 +1101,7 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 - \`/bro file <path>\` — explain a Markdown, text, PDF, or DOCX file
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro open\` — reopen the latest explanation
-- \`/bro show <n-turns>\` — draw the last few session turns, including tool results, as shapes
+- \`/bro show [n-turns] [query]\` — draw the last few session turns (default 1), including tool results, as shapes; add a query to steer what the shapes focus on
 
 Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text. Quoted paths with spaces are routed too when the file exists.
 
@@ -1097,7 +1119,7 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 
 ${settingsSummary}
 
-Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly. Changes apply to future explanations. \`showTurns\` has no setter command — edit the file directly, or override it per run with \`/bro show <n-turns>\`.
+Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly. Changes apply to future explanations. \`showTurns\` has no setter command — edit the file directly, or override it per run with \`/bro show <n-turns>\`. Add a query after the count — or on its own, e.g. \`/bro show what changed in the auth flow\` — to steer what the shapes focus on.
 
 ## Explanation modes
 
@@ -1482,9 +1504,9 @@ export default async function bro(pi: ExtensionAPI) {
 			}
 
 			if (action === "show") {
-				const requested = parts[1];
-				if (parts.length > 2 || (requested && !/^[1-9]\d*$/.test(requested))) {
-					ctx.ui.notify("Use /bro show <n-turns>.", "warning");
+				const { requested, steering, invalid } = parseShowArguments(value);
+				if (invalid) {
+					ctx.ui.notify("Use /bro show [n-turns] [query].", "warning");
 					return;
 				}
 				const runShow = async (
@@ -1499,7 +1521,7 @@ export default async function bro(pi: ExtensionAPI) {
 					}
 					let text: string;
 					try {
-						text = await runShowExplanation(captured.text, signal, await readSettings(), onProgress);
+						text = await runShowExplanation(captured.text, steering, signal, await readSettings(), onProgress);
 					} catch (error) {
 						throw new Error(withDoctor(error));
 					}
