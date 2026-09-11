@@ -14,6 +14,7 @@ args_file="$test_dir/agy-args"
 usage_calls_file="$test_dir/agy-usage-calls"
 model_calls_file="$test_dir/agy-model-calls"
 version_calls_file="$test_dir/agy-version-calls"
+show_prompts_file="$test_dir/agy-show-prompts"
 canary_prefix="BRO_ONLY_CANARY_"
 usage_canary="USAGE_ONLY_CANARY"
 document_canary="DOCUMENT_ONLY_CANARY"
@@ -47,7 +48,6 @@ const {
 	extractShowHtml,
 	stripShowHtmlFence,
 	showEntriesForMessage,
-	trimShowResult,
 	writeShowHtml,
 	extractWebHtml,
 	extractWebPage,
@@ -56,6 +56,7 @@ const {
 	looksLikeWebUrl,
 	parseAgyModels,
 	parseBroSettings,
+	parseShowArguments,
 	parseWebRedirect,
 	parseWebUrl,
 	setRegularMouseReporting,
@@ -96,13 +97,13 @@ assert.deepEqual(parseBroSettings({ model: " gemini-one ", effort: "high" }), {
 	model: "gemini-one",
 	effort: "high",
 	mode: "balanced",
-	showTurns: 10,
+	showTurns: 1,
 });
 assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "faithful" }), {
 	model: "gemini-one",
 	effort: "low",
 	mode: "faithful",
-	showTurns: 10,
+	showTurns: 1,
 });
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
@@ -156,52 +157,75 @@ try {
 assert.equal(extractorFetches, 0, "web extractor called a third-party fallback");
 await assert.rejects(extractWebHtml("<p></p>".repeat(100_001), "https://example.com"), /too complex/);
 
-assert.equal(trimShowResult("x".repeat(100)).length, 100);
-const elided = trimShowResult(`${"h".repeat(3_000)}MIDDLE${"t".repeat(3_000)}`);
-assert.match(elided, /\[… elided 2006 characters …\]/);
-assert.ok(elided.startsWith("h".repeat(2_000)) && elided.endsWith("t".repeat(2_000)));
-
+// Show capture is a structural role/content-type filter: only user and
+// assistant text ever becomes a transcript entry. Tool calls, tool results,
+// reasoning, and images are always dropped, with no placeholder text.
 assert.deepEqual(showEntriesForMessage({ role: "user", content: "Fix the bug" }), ['## user\n"Fix the bug"']);
 assert.deepEqual(showEntriesForMessage({ role: "user", content: [] }), []);
+assert.deepEqual(showEntriesForMessage({ role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }), [], "images produce no placeholder");
+assert.deepEqual(showEntriesForMessage({ role: "user", content: "   " }), [], "whitespace-only string content produces no entry");
+assert.deepEqual(showEntriesForMessage({ role: "user", content: "  Fix  " }), ['## user\n"Fix"'], "string content is trimmed like array content");
+
 const assistantEntries = showEntriesForMessage({
 	role: "assistant",
 	content: [
 		{ type: "text", text: "Checking." },
 		{ type: "toolCall", name: "read", arguments: { path: "src/config/settings.ts" } },
+		{ type: "text", text: "Found it." },
 	],
 });
-assert.equal(assistantEntries.length, 2);
-assert.match(assistantEntries[0], /^## assistant\n"Checking\."$/);
-assert.match(assistantEntries[1], /^## tool call: read\n/);
-assert.ok(assistantEntries[1].includes("src/config/settings.ts"));
-assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "thinking", thinking: "long reasoning" }] }), [
-	'## assistant\n"(reasoning omitted)"',
-]);
-const imageEntries = showEntriesForMessage({ role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] });
-assert.match(imageEntries[0], /\(1 image omitted\)/);
-const resultEntry = showEntriesForMessage({
-	role: "toolResult",
-	toolName: "bash",
-	isError: true,
-	content: [{ type: "text", text: "boom" }],
-});
-assert.deepEqual(resultEntry, ['## tool result: bash (error)\n"boom"']);
+assert.deepEqual(assistantEntries, [`## assistant\n${JSON.stringify("Checking.\nFound it.")}`], "all assistant text in one message is kept, joined, with the tool call dropped");
+assert.ok(!assistantEntries[0].includes("toolCall") && !assistantEntries[0].includes("src/config/settings.ts"), "tool calls never reach the captured transcript");
+assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "thinking", thinking: "long reasoning" }] }), [], "reasoning-only turns produce no placeholder entry");
+assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: {} }] }), [], "tool-call-only turns produce no entry");
+assert.deepEqual(
+	showEntriesForMessage({ role: "toolResult", toolName: "bash", isError: true, content: [{ type: "text", text: "boom" }] }),
+	[],
+	"tool results never reach the captured transcript",
+);
 
 const seededBranch = (entries) => ({ sessionManager: { getBranch: () => entries } });
 const turn = (id, parentId, message) => ({ type: "message", id, parentId, timestamp: `2026-01-01T00:00:0${id[0]}:00.000Z`, message });
 const showContext = seededBranch([
 	turn("1aaa", null, { role: "user", content: "First", timestamp: 1 }),
-	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Reply one" }], timestamp: 2 }),
-	turn("3aaa", "2aaa", { role: "user", content: "Second", timestamp: 3 }),
-	turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], timestamp: 4 }),
+	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Looking into it." }], timestamp: 2 }),
+	turn("2bbb", "2aaa", { role: "toolResult", toolName: "read", content: [{ type: "text", text: "file contents that must never reach the model" }], timestamp: 3 }),
+	turn("2ccc", "2bbb", { role: "assistant", content: [{ type: "text", text: "Reply one" }], timestamp: 4 }),
+	turn("3aaa", "2ccc", { role: "user", content: "Second", timestamp: 5 }),
+	turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], timestamp: 6 }),
 ]);
 const oneTurn = captureShowTranscript(showContext, 1);
-assert.ok(oneTurn.text.includes("Second") && !oneTurn.text.includes("First"));
-assert.equal(oneTurn.label, "last 1 turn");
+assert.ok(oneTurn.text.includes("Second") && oneTurn.text.includes("Reply two") && !oneTurn.text.includes("First"));
+assert.equal(oneTurn.label, "last 1 turn · conversation only");
 const twoTurns = captureShowTranscript(showContext, 2);
-assert.ok(twoTurns.text.includes("First") && twoTurns.text.includes("Second"));
-assert.equal(twoTurns.label, "last 2 turns");
-assert.equal(captureShowTranscript(seededBranch([]), 4), undefined);
+assert.ok(twoTurns.text.includes("First") && twoTurns.text.includes("Second"), "the requested turn count is honored");
+assert.ok(twoTurns.text.includes("Looking into it.") && twoTurns.text.includes("Reply one"), "every intermediate assistant message within a turn is retained, not just the last one");
+assert.ok(!twoTurns.text.includes("file contents that must never reach the model"), "tool results never reach the captured transcript");
+assert.equal(twoTurns.label, "last 2 turns · conversation only");
+assert.equal(captureShowTranscript(seededBranch([]), 4), undefined, "an empty session has nothing to show");
+
+// A user message with no capturable text (image-only, whitespace-only) still
+// counts as a turn boundary: /bro show 1 must never silently over-capture.
+const imageOnlyContext = seededBranch([
+	turn("1aaa", null, { role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }),
+	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Reply one" }] }),
+	turn("3aaa", "2aaa", { role: "user", content: "   " }),
+	turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], stopReason: "stop" }),
+	turn("5aaa", "4aaa", { role: "assistant", content: [{ type: "text", text: "Half-written claim" }], stopReason: "abort" }),
+]);
+const imageOnlyOneTurn = captureShowTranscript(imageOnlyContext, 1);
+assert.ok(imageOnlyOneTurn.text.includes("Reply two"), "a text-less user turn still starts a capturable turn");
+assert.ok(!imageOnlyOneTurn.text.includes("Reply one"), "the turn window is not over-captured past a text-less user turn");
+assert.ok(!imageOnlyOneTurn.text.includes("Half-written claim"), "aborted assistant text never reaches the transcript");
+assert.equal(imageOnlyOneTurn.label, "last 1 turn · conversation only");
+const imageOnlyTwoTurns = captureShowTranscript(imageOnlyContext, 2);
+assert.ok(imageOnlyTwoTurns.text.includes("Reply one"), "an image-only user turn groups its assistant replies into one turn");
+const imageOnlySession = seededBranch([
+	turn("1aaa", null, { role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }),
+	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Only reply" }] }),
+]);
+const imageOnlyCapture = captureShowTranscript(imageOnlySession, 1);
+assert.ok(imageOnlyCapture.text.includes("Only reply"), "an image-only session still has something to show");
 
 assert.equal(extractShowHtml("no fences"), undefined);
 assert.equal(
@@ -227,8 +251,25 @@ assert.ok(!(await showReaddir(showHtmlFirst.slice(0, showHtmlFirst.lastIndexOf("
 
 assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 0 }), /showTurns/);
 assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 2.5 }), /showTurns/);
-assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief" }).showTurns, 10);
+assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief" }).showTurns, 1);
 assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 9 }).showTurns, 9);
+
+assert.deepEqual(parseShowArguments(""), { steering: "", invalid: false });
+assert.deepEqual(parseShowArguments("3"), { requested: "3", steering: "", invalid: false });
+assert.deepEqual(parseShowArguments("what changed"), { steering: "what changed", invalid: false });
+assert.deepEqual(parseShowArguments("3 what changed"), { requested: "3", steering: "what changed", invalid: false });
+// A digit-leading query token (2FA, 404, 3D) never parses as a turn count on its own.
+assert.deepEqual(parseShowArguments("2FA the login flow"), { steering: "2FA the login flow", invalid: false });
+// A count followed by a digit-leading query word is unambiguous: only the first token is ever a count.
+assert.deepEqual(parseShowArguments("1 404 handler"), { requested: "1", steering: "404 handler", invalid: false });
+assert.equal(parseShowArguments("0").invalid, true, "zero is not a valid turn count");
+assert.equal(parseShowArguments("-1").invalid, true, "negative counts are rejected");
+assert.equal(parseShowArguments("1.5").invalid, true, "decimal counts are rejected");
+assert.equal(parseShowArguments("99999999999999999999").invalid, true, "unsafe integers are rejected");
+assert.equal(parseShowArguments(String(Number.MAX_SAFE_INTEGER)).invalid, false, "the largest safe integer is accepted");
+// Internal whitespace in the query survives verbatim; only the count/query separator is consumed.
+assert.equal(parseShowArguments("3   what   changed").steering, "what   changed");
+assert.equal(parseShowArguments("Focus  on   spacing").steering, "Focus  on   spacing");
 
 const root = await mkdtemp(join(tmpdir(), "pi-bro-extract-"));
 const outside = await mkdtemp(join(tmpdir(), "pi-bro-outside-"));
@@ -284,6 +325,7 @@ printf '%s\n' \
 	'  case "$*" in *"## user"*) ;; *) exit 18;; esac' \
 	'  call=$(( $(wc -l < "$BRO_CALLS") + 1 ))' \
 	'  printf "%s\n" "$call" >> "$BRO_CALLS"' \
+	'  printf "%s\n" "$*" >> "$BRO_SHOW_PROMPTS"' \
 	'  model="" effort=""' \
 	'  while [ "$#" -gt 0 ]; do' \
 	'    case "$1" in --model) shift; model=$1;; --effort) shift; effort=$1;; esac' \
@@ -314,7 +356,7 @@ printf '%s\n' \
 	> "$test_dir/agy"
 chmod +x "$test_dir/agy"
 
-touch "$calls_file" "$args_file" "$usage_calls_file" "$model_calls_file" "$version_calls_file"
+touch "$calls_file" "$args_file" "$usage_calls_file" "$model_calls_file" "$version_calls_file" "$show_prompts_file"
 output=$(
 	{
 		printf '%s\n' '{"id":"bro-open-empty","type":"prompt","message":"/bro open"}'
@@ -367,22 +409,24 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-show","type":"prompt","message":"/bro show"}'
 		sleep 1
-		printf '%s\n' '{"id":"bro-show-two-turns","type":"prompt","message":"/bro show 2"}'
+		printf '%s\n' '{"id":"bro-show-count-and-query","type":"prompt","message":"/bro show 2 Trace The Login Flow"}'
 		sleep 1
-		printf '%s\n' '{"id":"bro-show-invalid","type":"prompt","message":"/bro show zero"}'
+		printf '%s\n' '{"id":"bro-show-query-only","type":"prompt","message":"/bro show Explain The Auth Redirect"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-show-invalid","type":"prompt","message":"/bro show 0"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
 		sleep 1
-	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_SHOW_PROMPTS="$show_prompts_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 26 ]; then
-	printf 'Expected 26 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 27 ]; then
+	printf 'Expected 27 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
 	exit 1
 fi
 
-if ! printf '%s\n' "$output" | grep -q 'Use /bro show <n-turns>.'; then
+if ! printf '%s\n' "$output" | grep -Fq 'Use /bro show [n-turns] [query].'; then
 	printf 'Invalid show arguments did not produce an actionable warning:\n%s\n' "$output" >&2
 	exit 1
 fi
@@ -397,10 +441,28 @@ if ! printf '%s\n' "$output" | grep -q 'Use /bro open.'; then
 	exit 1
 fi
 
-expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow')
+expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow')
 actual_args=$(cat "$args_file")
 if [ "$actual_args" != "$expected_args" ]; then
 	printf 'Selected model and effort were not applied:\n%s\n' "$actual_args" >&2
+	exit 1
+fi
+
+show_call_count=$(grep -c "Quoted session transcript as a JSON string" "$show_prompts_file" || true)
+if [ "$show_call_count" -ne 3 ]; then
+	printf 'Expected exactly three /bro show Agy calls, got %s:\n%s\n' "$show_call_count" "$(cat "$show_prompts_file")" >&2
+	exit 1
+fi
+if ! grep -Fq '"Trace The Login Flow"' "$show_prompts_file"; then
+	printf 'A count+query /bro show call did not reach Agy with the original-case query:\n%s\n' "$(cat "$show_prompts_file")" >&2
+	exit 1
+fi
+if grep -Fq '"trace the login flow"' "$show_prompts_file"; then
+	printf 'Show steering was lowercased for a count+query call:\n%s\n' "$(cat "$show_prompts_file")" >&2
+	exit 1
+fi
+if ! grep -Fq '"Explain The Auth Redirect"' "$show_prompts_file"; then
+	printf 'A query-only /bro show call did not reach Agy with the original-case query:\n%s\n' "$(cat "$show_prompts_file")" >&2
 	exit 1
 fi
 
@@ -412,7 +474,7 @@ assert.deepEqual(JSON.parse(await readFile(process.argv[2], "utf8")), {
 	model: "gemini-test-two",
 	effort: "high",
 	mode: "faithful",
-	showTurns: 10,
+	showTurns: 1,
 });
 assert.deepEqual(JSON.parse(await readFile(process.argv[3], "utf8")), {
 	model: "gemini-test-one",
@@ -432,10 +494,10 @@ if printf '%s\n' "$output" | grep -q '"method":"notify".*"notifyType":"error"'; 
 	exit 1
 fi
 
-expected_calls=$(printf '1\n2\n3\n4\n5\n6\n7\n8')
+expected_calls=$(printf '1\n2\n3\n4\n5\n6\n7\n8\n9')
 actual_calls=$(cat "$calls_file")
 if [ "$actual_calls" != "$expected_calls" ]; then
-	printf 'Expected exactly eight numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
+	printf 'Expected exactly nine numbered AGY calls, got:\n%s\n' "$actual_calls" >&2
 	exit 1
 fi
 

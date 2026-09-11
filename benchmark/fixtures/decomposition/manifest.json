@@ -122,5 +122,22 @@
     ],
     "expected_shapes": 4,
     "should_decompose": true
+  },
+  {
+    "id": "decomp-conversation-only-config-rename",
+    "source_file": "hand-authored, not mined from a real session — see README.md in this directory",
+    "user_turns": "U0-U1",
+    "kept_turns": 2,
+    "transcript_len": 975,
+    "transcript_file": "benchmark/fixtures/decomposition/decomp-conversation-only-config-rename.transcript.txt",
+    "depth": "shallow (2 turns)",
+    "complexity": "multi-concern (2)",
+    "description": "Conversation-only capture fixture (no ## tool call / ## tool result sections, matching /bro show's current capture): rename a config key end to end, then add a backward-compatible migration for existing on-disk settings.",
+    "expected_concerns": [
+      "rename timeout_ms to timeoutMs (config loader + docs)",
+      "backward-compatible migration for existing on-disk settings"
+    ],
+    "expected_shapes": 2,
+    "should_decompose": true
   }
 ]

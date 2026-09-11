@@ -1,0 +1,17 @@
+## user
+"Our config key `timeout_ms` is inconsistent with the rest of the codebase, which uses camelCase. Rename it to `timeoutMs` everywhere and update the docs."
+
+## assistant
+"I'll rename timeout_ms to timeoutMs in the config loader and its docs."
+
+## assistant
+"Done: src/config/settings.ts now reads and writes timeoutMs instead of timeout_ms, and README.md's config example was updated to match."
+
+## user
+"Existing settings files on disk still have the old key. Add a one-time migration so we don't break existing users."
+
+## assistant
+"I'll add a migration step that reads the old timeout_ms key if timeoutMs is missing, and rewrites the file with the new key."
+
+## assistant
+"Added: readSettings() in src/config/settings.ts now falls back to timeout_ms when timeoutMs is absent, and writeSettings() always persists the new timeoutMs key going forward. This is reported as done here, not yet verified against a real on-disk settings file written by an older version."

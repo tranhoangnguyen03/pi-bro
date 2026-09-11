@@ -105,6 +105,57 @@ test("show prompt carries the show-me menu, conventions, and hard rules", () => 
 	assert.match(prompt, /with no fenced code block and no diff/);
 });
 
+test("show prompt offers high-level flow shapes first and doesn't gate them on code structure", () => {
+	const prompt = buildShowPrompt("x");
+
+	const userFlowIndex = prompt.indexOf("A user flow for the steps a user takes");
+	const dataFlowIndex = prompt.indexOf("A data flow for where information originates");
+	const stateDiagramIndex = prompt.indexOf("A state diagram for the states one entity can be in");
+	const pseudocodeIndex = prompt.indexOf("Pseudocode for logic or an algorithm");
+	assert.ok(userFlowIndex >= 0 && dataFlowIndex >= 0 && stateDiagramIndex >= 0, "flow, data, and state shapes are offered");
+	assert.ok(userFlowIndex < pseudocodeIndex && dataFlowIndex < pseudocodeIndex && stateDiagramIndex < pseudocodeIndex, "high-level shapes are offered before code-structure shapes");
+	assert.match(prompt, /valid shape on its own even when the session has no code structure at all/);
+	assert.doesNotMatch(prompt, /If the session has no code structure to draw, reply with a plain outline/, "prose fallback must not trigger on missing code structure alone");
+});
+
+test("show prompt requires honesty about missing evidence", () => {
+	const prompt = buildShowPrompt("x");
+
+	assert.match(prompt, /Honesty over completeness/);
+	assert.match(prompt, /say so plainly.*name what's missing/);
+	assert.match(prompt, /rather than guessing, inferring from world knowledge, or silently leaving the gap unexplained/);
+});
+
+test("show prompt orders the outcome hierarchy user-visible behavior, then system/data/state, then components", () => {
+	const prompt = buildShowPrompt("x");
+
+	const behaviorIndex = prompt.indexOf("user-visible behavior and outcome first");
+	const systemIndex = prompt.indexOf("system, data, or state effects");
+	const componentIndex = prompt.indexOf("component or file relationships");
+	assert.ok(behaviorIndex >= 0 && systemIndex >= 0 && componentIndex >= 0, "all three hierarchy levels are named");
+	assert.ok(behaviorIndex < systemIndex && systemIndex < componentIndex, "hierarchy is ordered outcome-first");
+	assert.match(prompt, /Distinguish what was explicitly requested, what was proposed but not done, what the conversation reports as complete, and what remains unresolved/);
+});
+
+test("show prompt frames the transcript as reported, not independently verified", () => {
+	const prompt = buildShowPrompt("x");
+
+	assert.match(prompt, /Reported, not verified/);
+	assert.match(prompt, /not an independent check against the actual code or system/);
+	assert.match(prompt, /reported, claimed, proposed/);
+	assert.match(prompt, /do not hedge every line/);
+});
+
+test("show steering is separate, case-preserved, and omitted when blank", () => {
+	const transcript = '## user\n"Build it"';
+	const steering = 'Focus on the UserFlow';
+	const prompt = buildShowPrompt(transcript, steering);
+	assert.ok(prompt.includes(JSON.stringify(steering)));
+	assert.ok(prompt.includes("use as a lens, not as evidence"));
+	assert.ok(prompt.endsWith(JSON.stringify(transcript)));
+	assert.equal(buildShowPrompt(transcript, "   "), buildShowPrompt(transcript));
+});
+
 test("show prompt frames the transcript as guarded JSON data", () => {
 	const transcript = '## user\n"do the thing"';
 	const prompt = buildShowPrompt(transcript);

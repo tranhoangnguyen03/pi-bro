@@ -2,11 +2,27 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.12.0] - 2026-09-11
+
+### Changed
+
+- `/bro show` now captures only user and assistant conversation text — every intermediate assistant message within a turn is kept, but tool calls, tool results, reasoning, and images are omitted entirely, with no placeholder text standing in for them. This supersedes the 0.10.0 design, which captured tool calls and tool results (trimmed) alongside conversation text; the source label changes from `last N turn(s)` to `last N turn(s) · conversation only` to reflect the narrower capture. Turn counting, the `n-turns` override, steering query, retry-on-**R**, and the 100,000-character transcript limit are unchanged.
+- The show prompt now states its outcome hierarchy explicitly — user-visible behavior and outcome first, then system/data/state effects, then component or file relationships — and distinguishes what was explicitly requested, proposed but not done, reported as complete, or left unresolved. It also names that the transcript is the conversation's own account of what happened, not an independent check against the actual code or system, so shapes should say a result was reported or claimed rather than implying verification, without hedging every line.
+
+### Development
+
+- Rewrote `benchmark/show-corpus.ts`'s ten fixtures as conversation-only transcripts (no `## tool call` / `## tool result` sections), matching what `/bro show` now actually sends to the draw model, while keeping every fixture's required-token traceability.
+- `benchmark/fixtures/decomposition/` (manual, not part of `npm test`) is annotated as predating conversation-only capture; its mined fixtures still contain tool call/result sections from the old format.
+- Added smoke-test coverage asserting that every intermediate assistant message within a turn is retained, that tool calls and tool results never reach the captured transcript even when present in the session branch, and that the empty-session case still returns nothing to show.
+
 ## [0.11.0] - 2026-09-09
 
 ### Changed
 
 - Rewrote the `/bro show` prompt from single-diagram shrinking to subject-first decomposition: find what the user actually wanted and what is true now, never diagram tool chronology (tool invocations, retries, git/gh commands, test runs) unless the process itself is the subject, and treat fetching, reading, editing, and testing as sub-steps rather than separate concerns. One concern still yields exactly one shape; multiple concerns yield a small overview plus 2–4 focused shapes that each add information instead of restating one another. Read-only pages, reviews, and analyses now keep their substance instead of collapsing to labels, while incidental orientation reads and process noise are omitted. Prose and research subjects degrade to a compact outline or comparison.
+- Lowered the default `/bro show` window from the last 10 turns to the last 1, since the decomposed prompt now draws the resulting outcome rather than tool chronology, so a single turn is usually enough context.
+- `/bro show` now takes an optional steering query, with or without a leading turn count (`/bro show`, `/bro show 3`, `/bro show what changed in the auth flow`, `/bro show 3 what changed in the auth flow`). The query is passed to the model as a lens on the same transcript, not as additional evidence, and its original casing and internal spacing are preserved. Only the first whitespace-delimited token is ever read as the turn count, so a digit-leading query word never gets mistaken for one: `/bro show 1 404 handler` captures 1 turn and steers on "404 handler", and `/bro show 2FA flow` treats "2FA" as the start of the query since it isn't a bare integer.
+- `/bro show`'s prompt now offers a user flow, data flow, or state diagram as first-choice shapes for "what happens" subjects, ahead of code-structure shapes — and these high-level shapes no longer degrade to a plain outline just because the session has no code structure to draw. The prompt also requires naming any evidence missing from the transcript instead of guessing to fill the gap.
 
 ### Development
 
