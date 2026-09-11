@@ -126,6 +126,26 @@ test("show prompt requires honesty about missing evidence", () => {
 	assert.match(prompt, /rather than guessing, inferring from world knowledge, or silently leaving the gap unexplained/);
 });
 
+test("show prompt orders the outcome hierarchy user-visible behavior, then system/data/state, then components", () => {
+	const prompt = buildShowPrompt("x");
+
+	const behaviorIndex = prompt.indexOf("user-visible behavior and outcome first");
+	const systemIndex = prompt.indexOf("system, data, or state effects");
+	const componentIndex = prompt.indexOf("component or file relationships");
+	assert.ok(behaviorIndex >= 0 && systemIndex >= 0 && componentIndex >= 0, "all three hierarchy levels are named");
+	assert.ok(behaviorIndex < systemIndex && systemIndex < componentIndex, "hierarchy is ordered outcome-first");
+	assert.match(prompt, /Distinguish what was explicitly requested, what was proposed but not done, what the conversation reports as complete, and what remains unresolved/);
+});
+
+test("show prompt frames the transcript as reported, not independently verified", () => {
+	const prompt = buildShowPrompt("x");
+
+	assert.match(prompt, /Reported, not verified/);
+	assert.match(prompt, /not an independent check against the actual code or system/);
+	assert.match(prompt, /reported, claimed, proposed/);
+	assert.match(prompt, /do not hedge every line/);
+});
+
 test("show steering is separate, case-preserved, and omitted when blank", () => {
 	const transcript = '## user\n"Build it"';
 	const steering = 'Focus on the UserFlow';

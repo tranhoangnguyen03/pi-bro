@@ -31,8 +31,6 @@ const MAX_WEB_REDIRECTS = 5;
 const WEB_TIMEOUT_MS = 25_000;
 const MAX_TEXT_LENGTH = 100_000;
 const DEFAULT_SHOW_TURNS = 1;
-const SHOW_TOOL_RESULT_KEEP = 2_000;
-const SHOW_TOOL_CALL_KEEP = 500;
 const SHOW_HTML_FILE_PATTERN = /^bro-show-[0-9a-f]{8}\.html$/;
 const TEXT_EXTENSIONS = new Set([".md", ".markdown", ".txt"]);
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -744,63 +742,33 @@ function latestAssistant(ctx: ExtensionCommandContext): BroSource | undefined {
 	}
 }
 
-// /bro show: capture recent session turns (including tool results) and let the
-// show prompt draw them as shapes. See docs/plans/2026-09-07-bro-show-visual-design.md.
+// /bro show: capture only the user- and assistant-visible conversation text of
+// recent session turns and let the show prompt draw it as shapes. Tool calls,
+// tool results, reasoning, and images never leave the session -- this is a
+// structural role/content-type filter, not semantic or keyword-based. See
+// docs/plans/2026-09-07-bro-show-visual-design.md (predates this change).
 type ShowTurn = { entries: string[]; startsTurn: boolean };
 
 function showTextContent(content: unknown): string {
-	if (typeof content === "string") return content;
+	if (typeof content === "string") return content.trim();
 	if (!Array.isArray(content)) return "";
 	let text = "";
-	let images = 0;
 	for (const part of content) {
 		if (part && typeof part === "object" && (part as { type?: string }).type === "text") {
 			text += `${(part as { text?: string }).text ?? ""}\n`;
-		} else if (part && typeof part === "object" && (part as { type?: string }).type === "image") {
-			images += 1;
 		}
 	}
-	if (images) text += `(${images} image${images > 1 ? "s" : ""} omitted)\n`;
 	return text.trim();
 }
 
-export function trimShowResult(text: string): string {
-	if (text.length <= SHOW_TOOL_RESULT_KEEP * 2) return text;
-	const elided = text.length - SHOW_TOOL_RESULT_KEEP * 2;
-	return `${text.slice(0, SHOW_TOOL_RESULT_KEEP)}\n[… elided ${elided} characters …]\n${text.slice(-SHOW_TOOL_RESULT_KEEP)}`;
-}
-
-function trimShowArguments(text: string): string {
-	if (text.length <= SHOW_TOOL_CALL_KEEP) return text;
-	return `${text.slice(0, SHOW_TOOL_CALL_KEEP)}[… elided ${text.length - SHOW_TOOL_CALL_KEEP} characters …]`;
-}
-
-export function showEntriesForMessage(message: { role?: string; content?: unknown; isError?: boolean; toolName?: string }): string[] {
+export function showEntriesForMessage(message: { role?: string; content?: unknown }): string[] {
 	if (message.role === "user") {
 		const text = showTextContent(message.content);
 		return text ? [`## user\n${JSON.stringify(text)}`] : [];
 	}
 	if (message.role === "assistant") {
-		const content = Array.isArray(message.content) ? message.content : [];
-		const entries: string[] = [];
-		const text = showTextContent(content.filter((part) => (part as { type?: string })?.type !== "thinking"));
-		if (text) entries.push(`## assistant\n${JSON.stringify(text)}`);
-		let thinking = false;
-		for (const part of content as { type?: string; name?: string; arguments?: unknown }[]) {
-			if (part?.type === "thinking") thinking = true;
-			if (part?.type !== "toolCall") continue;
-			const toolName = String(part.name ?? "unknown").replace(/[\u0000-\u001f\u007f]/g, " ");
-			entries.push(
-				`## tool call: ${toolName}\n${JSON.stringify(trimShowArguments(JSON.stringify(part.arguments ?? {})))}`,
-			);
-		}
-		if (!entries.length && thinking) entries.push(`## assistant\n${JSON.stringify("(reasoning omitted)")}`);
-		return entries;
-	}
-	if (message.role === "toolResult") {
-		const text = trimShowResult(showTextContent(message.content) || "(empty result)");
-		const name = String(message.toolName ?? "unknown").replace(/[\u0000-\u001f\u007f]/g, " ");
-		return [`## tool result: ${name}${message.isError ? " (error)" : ""}\n${JSON.stringify(text)}`];
+		const text = showTextContent(message.content);
+		return text ? [`## assistant\n${JSON.stringify(text)}`] : [];
 	}
 	return [];
 }
@@ -813,9 +781,15 @@ export function captureShowTranscript(ctx: ExtensionCommandContext, turnsRequest
 	const turns: ShowTurn[] = [];
 	for (const entry of ctx.sessionManager.getBranch()) {
 		if (entry.type !== "message") continue;
-		const entries = showEntriesForMessage(entry.message as Parameters<typeof showEntriesForMessage>[0]);
-		if (!entries.length) continue;
-		turns.push({ entries, startsTurn: (entry.message as { role?: string }).role === "user" });
+		const message = entry.message as { role?: string; stopReason?: string };
+		// Aborted assistant text is a half-written claim, not a report.
+		if (message.role === "assistant" && message.stopReason === "abort") continue;
+		const entries = showEntriesForMessage(message);
+		// A user message always marks a turn boundary even when it has no
+		// capturable text (image-only, whitespace-only): the turn must still
+		// count, or /bro show 1 would silently over-capture earlier turns.
+		if (message.role === "user") turns.push({ entries, startsTurn: true });
+		else if (entries.length) turns.push({ entries, startsTurn: false });
 	}
 
 	let start = 0;
@@ -845,7 +819,7 @@ export function captureShowTranscript(ctx: ExtensionCommandContext, turnsRequest
 	}
 	if (text.length > MAX_TEXT_LENGTH) text = `${text.slice(0, MAX_TEXT_LENGTH)}\n[… transcript truncated …]`;
 	const kept = turns.slice(start).filter((turn) => turn.startsTurn).length;
-	return { text: text.trim(), label: `last ${Math.max(1, kept)} turn${kept > 1 ? "s" : ""}` };
+	return { text: text.trim(), label: `last ${Math.max(1, kept)} turn${kept > 1 ? "s" : ""} · conversation only` };
 }
 
 export interface ParsedShowArguments {
@@ -1101,7 +1075,7 @@ Bro explains a dense assistant reply, pasted text, local document, or public web
 - \`/bro file <path>\` — explain a Markdown, text, PDF, or DOCX file
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro open\` — reopen the latest explanation
-- \`/bro show [n-turns] [query]\` — draw the last few session turns (default 1), including tool results, as shapes; add a query to steer what the shapes focus on
+- \`/bro show [n-turns] [query]\` — draw the last few session turns (default 1) as shapes, from user and assistant conversation text only (tool calls, tool results, reasoning, and images are omitted); add a query to steer what the shapes focus on
 
 Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text. Quoted paths with spaces are routed too when the file exists.
 
@@ -1144,11 +1118,12 @@ Bro temporarily captures mouse input while the modal is open. Native mouse selec
 - Documents must be inside the current workspace, are limited to 10 MiB and 100,000 extracted characters, and must be \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\`. Scanned PDFs need OCR first.
 - Web input is limited to one public HTML page. Bro cannot sign in, run page JavaScript, bypass paywalls or blocks, follow pagination, or understand images and video.
 - If a webpage fails, copy it into a text file or save it as a PDF, then use \`/bro file\`.
-- Show draws only what already happened in this session — the last few turns including tool results — and cannot read the repository or other files on its own. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
+- Show draws only what already happened in this session — the conversation text of the last few turns, with tool calls, tool results, reasoning, and images always omitted — and cannot read the repository or other files on its own. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
+- Show reflects what was reported in the conversation, not independent verification against the actual code or system state.
 
 ## Privacy and safety
 
-Bro sends the selected assistant reply, pasted text, locally extracted document or webpage text, or recent session turns including tool results to Agy and your model provider. They may retain request data under their own policies.
+Bro sends the selected assistant reply, pasted text, locally extracted document or webpage text, or recent session conversation text (tool calls, tool results, reasoning, and images omitted) to Agy and your model provider. They may retain request data under their own policies.
 
 Bro never adds the explanation to Pi's conversation, session file, or main-agent context. The captured source and latest explanation stay in process memory until you change sessions, reload extensions, or exit Pi.
 

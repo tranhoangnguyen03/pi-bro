@@ -41,7 +41,7 @@ installing it, use `pi -e npm:pi-bro`.
 | Pasted text | `/bro text <text>` | Explains text supplied directly in the command. |
 | Local document | `/bro file <path>` | Extracts text from a workspace-local Markdown, text, PDF, or DOCX file. |
 | Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
-| Recent session turns | `/bro show` | Draws the last turns, including tool results, as shapes instead of prose. |
+| Recent session turns | `/bro show` | Draws the last turns' conversation text as shapes instead of prose (tool calls, tool results, reasoning, and images are omitted). |
 | Any of the above, auto-detected | `/bro <input>` | Routes a lone URL to the webpage reader, an existing workspace file with a supported extension to the document reader, and anything else to pasted text. |
 
 Pressing **R** simplifies the captured source again. These commands capture a
@@ -58,7 +58,7 @@ text directly captures a new source the same way.
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
-| `/bro show [n-turns] [query]` | Draw recent session turns (default last 1), including tool results, as shapes instead of prose. An optional query steers what the shapes focus on, with or without a leading turn count. |
+| `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
 | `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
 | `/bro usage [--provider agy]` | Show current Agy resource limits. |
 | `/bro model [id]` | View or choose the Agy model. |
@@ -103,11 +103,17 @@ your terminal mode; press **C** to copy the complete explanation reliably.
 ## Bro show
 
 Where the explanation modes rewrite dense prose in simpler words, `/bro show`
-changes the form: it draws the last few session turns — the files the agent
-read, the edits it wrote, the errors it hit — as a shape instead of paragraphs.
-It runs the same isolated, sandboxed model call and shows the result in the
-same modal, never touching your conversation. `/bro show` uses its own draw
-prompt; the explanation modes and `bro-prompt.md` do not affect it.
+changes the form: it draws what you and the assistant said in the last few
+session turns as a shape instead of paragraphs. Capture keeps only user and
+assistant conversation text, including every intermediate assistant message in
+a turn — tool calls, tool results, reasoning, and images never leave the
+session. It runs the same isolated, sandboxed model call and shows the result
+in the same modal, never touching your conversation. `/bro show` uses its own
+draw prompt; the explanation modes and `bro-prompt.md` do not affect it.
+
+Because the draw model only ever sees conversation text, its shapes reflect
+what was *reported* in the conversation — what the assistant said it did or
+found — not an independent check against the actual code or system state.
 
 Shapes are terminal-first: pseudocode, call trees, file trees, component
 trees, diffs, and types and signatures. Bro picks the shape from what
@@ -629,7 +635,8 @@ run `/bro doctor` for the exact problem.
 
 - **External requests**: Bro sends the latest completed assistant response,
   pasted text, extracted document text, extracted webpage text, or recent
-  session turns including tool results to Agy and its configured model provider.
+  session conversation text (tool calls, tool results, reasoning, and images
+  omitted) to Agy and its configured model provider.
 - **Usage checks**: `/bro usage` checks your authenticated Agy limits without
   sending an assistant response or running a model turn.
 - **Setup checks**: `/bro doctor` checks Agy account and model availability
@@ -678,9 +685,11 @@ tool before giving it to Bro.
   blocked, paginated, and media-first pages are not supported.
 - Direct webpage fetching does not currently use `HTTP_PROXY`, `HTTPS_PROXY`,
   or other proxy environment variables.
-- Show captures only what already happened in the current session — the
-  last few turns including tool results; it cannot read the repository or
-  other files on its own.
+- Show captures only the conversation text of what already happened in the
+  current session — the last few turns' user and assistant messages, with
+  tool calls, tool results, reasoning, and images always omitted; it cannot
+  read the repository or other files on its own, and its shapes reflect what
+  was reported in the conversation, not independent verification.
 - HTML diagrams open in your default browser; pressing **O** on a remote or
   headless session with no display reports the failure instead of opening
   anything.
@@ -701,9 +710,9 @@ pi --tui-mode fullscreen -e ./bro.ts
 
 The smoke test uses a fake `agy`, so it does not call an external model. It
 verifies command routing, document and URL safety boundaries, HTML
-extraction, show capture, trimming, and HTML-diagram handling, healthy and
-broken setup handling, settings, custom prompt handling, and context
-isolation.
+extraction, show capture (conversation text only, tool calls and results
+absent), and HTML-diagram handling, healthy and broken setup handling,
+settings, custom prompt handling, and context isolation.
 
 The prompt benchmark is manual and makes live Agy calls. Read
 [`benchmark/README.md`](benchmark/README.md) before running it; it is never part

@@ -1,5 +1,11 @@
 # Bro Show / Visual Mode Design
 
+> **Superseded (0.12.0):** this design captured the transcript "including tool
+> results" (see Goal and "A turn is..." below). Since 0.12.0, `/bro show`
+> captures only user and assistant conversation text — tool calls, tool
+> results, reasoning, and images are omitted entirely. Kept here as a
+> historical record of the original design; see the CHANGELOG for the change.
+
 ## Goal
 
 Add `/bro show`: capture the recent session transcript, including tool results,

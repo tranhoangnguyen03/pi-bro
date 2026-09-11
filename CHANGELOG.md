@@ -2,6 +2,19 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.12.0] - 2026-09-11
+
+### Changed
+
+- `/bro show` now captures only user and assistant conversation text — every intermediate assistant message within a turn is kept, but tool calls, tool results, reasoning, and images are omitted entirely, with no placeholder text standing in for them. This supersedes the 0.10.0 design, which captured tool calls and tool results (trimmed) alongside conversation text; the source label changes from `last N turn(s)` to `last N turn(s) · conversation only` to reflect the narrower capture. Turn counting, the `n-turns` override, steering query, retry-on-**R**, and the 100,000-character transcript limit are unchanged.
+- The show prompt now states its outcome hierarchy explicitly — user-visible behavior and outcome first, then system/data/state effects, then component or file relationships — and distinguishes what was explicitly requested, proposed but not done, reported as complete, or left unresolved. It also names that the transcript is the conversation's own account of what happened, not an independent check against the actual code or system, so shapes should say a result was reported or claimed rather than implying verification, without hedging every line.
+
+### Development
+
+- Rewrote `benchmark/show-corpus.ts`'s ten fixtures as conversation-only transcripts (no `## tool call` / `## tool result` sections), matching what `/bro show` now actually sends to the draw model, while keeping every fixture's required-token traceability.
+- `benchmark/fixtures/decomposition/` (manual, not part of `npm test`) is annotated as predating conversation-only capture; its mined fixtures still contain tool call/result sections from the old format.
+- Added smoke-test coverage asserting that every intermediate assistant message within a turn is retained, that tool calls and tool results never reach the captured transcript even when present in the session branch, and that the empty-session case still returns nothing to show.
+
 ## [0.11.0] - 2026-09-09
 
 ### Changed

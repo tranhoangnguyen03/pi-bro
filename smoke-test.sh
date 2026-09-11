@@ -48,7 +48,6 @@ const {
 	extractShowHtml,
 	stripShowHtmlFence,
 	showEntriesForMessage,
-	trimShowResult,
 	writeShowHtml,
 	extractWebHtml,
 	extractWebPage,
@@ -158,52 +157,75 @@ try {
 assert.equal(extractorFetches, 0, "web extractor called a third-party fallback");
 await assert.rejects(extractWebHtml("<p></p>".repeat(100_001), "https://example.com"), /too complex/);
 
-assert.equal(trimShowResult("x".repeat(100)).length, 100);
-const elided = trimShowResult(`${"h".repeat(3_000)}MIDDLE${"t".repeat(3_000)}`);
-assert.match(elided, /\[… elided 2006 characters …\]/);
-assert.ok(elided.startsWith("h".repeat(2_000)) && elided.endsWith("t".repeat(2_000)));
-
+// Show capture is a structural role/content-type filter: only user and
+// assistant text ever becomes a transcript entry. Tool calls, tool results,
+// reasoning, and images are always dropped, with no placeholder text.
 assert.deepEqual(showEntriesForMessage({ role: "user", content: "Fix the bug" }), ['## user\n"Fix the bug"']);
 assert.deepEqual(showEntriesForMessage({ role: "user", content: [] }), []);
+assert.deepEqual(showEntriesForMessage({ role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }), [], "images produce no placeholder");
+assert.deepEqual(showEntriesForMessage({ role: "user", content: "   " }), [], "whitespace-only string content produces no entry");
+assert.deepEqual(showEntriesForMessage({ role: "user", content: "  Fix  " }), ['## user\n"Fix"'], "string content is trimmed like array content");
+
 const assistantEntries = showEntriesForMessage({
 	role: "assistant",
 	content: [
 		{ type: "text", text: "Checking." },
 		{ type: "toolCall", name: "read", arguments: { path: "src/config/settings.ts" } },
+		{ type: "text", text: "Found it." },
 	],
 });
-assert.equal(assistantEntries.length, 2);
-assert.match(assistantEntries[0], /^## assistant\n"Checking\."$/);
-assert.match(assistantEntries[1], /^## tool call: read\n/);
-assert.ok(assistantEntries[1].includes("src/config/settings.ts"));
-assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "thinking", thinking: "long reasoning" }] }), [
-	'## assistant\n"(reasoning omitted)"',
-]);
-const imageEntries = showEntriesForMessage({ role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] });
-assert.match(imageEntries[0], /\(1 image omitted\)/);
-const resultEntry = showEntriesForMessage({
-	role: "toolResult",
-	toolName: "bash",
-	isError: true,
-	content: [{ type: "text", text: "boom" }],
-});
-assert.deepEqual(resultEntry, ['## tool result: bash (error)\n"boom"']);
+assert.deepEqual(assistantEntries, [`## assistant\n${JSON.stringify("Checking.\nFound it.")}`], "all assistant text in one message is kept, joined, with the tool call dropped");
+assert.ok(!assistantEntries[0].includes("toolCall") && !assistantEntries[0].includes("src/config/settings.ts"), "tool calls never reach the captured transcript");
+assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "thinking", thinking: "long reasoning" }] }), [], "reasoning-only turns produce no placeholder entry");
+assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: {} }] }), [], "tool-call-only turns produce no entry");
+assert.deepEqual(
+	showEntriesForMessage({ role: "toolResult", toolName: "bash", isError: true, content: [{ type: "text", text: "boom" }] }),
+	[],
+	"tool results never reach the captured transcript",
+);
 
 const seededBranch = (entries) => ({ sessionManager: { getBranch: () => entries } });
 const turn = (id, parentId, message) => ({ type: "message", id, parentId, timestamp: `2026-01-01T00:00:0${id[0]}:00.000Z`, message });
 const showContext = seededBranch([
 	turn("1aaa", null, { role: "user", content: "First", timestamp: 1 }),
-	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Reply one" }], timestamp: 2 }),
-	turn("3aaa", "2aaa", { role: "user", content: "Second", timestamp: 3 }),
-	turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], timestamp: 4 }),
+	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Looking into it." }], timestamp: 2 }),
+	turn("2bbb", "2aaa", { role: "toolResult", toolName: "read", content: [{ type: "text", text: "file contents that must never reach the model" }], timestamp: 3 }),
+	turn("2ccc", "2bbb", { role: "assistant", content: [{ type: "text", text: "Reply one" }], timestamp: 4 }),
+	turn("3aaa", "2ccc", { role: "user", content: "Second", timestamp: 5 }),
+	turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], timestamp: 6 }),
 ]);
 const oneTurn = captureShowTranscript(showContext, 1);
-assert.ok(oneTurn.text.includes("Second") && !oneTurn.text.includes("First"));
-assert.equal(oneTurn.label, "last 1 turn");
+assert.ok(oneTurn.text.includes("Second") && oneTurn.text.includes("Reply two") && !oneTurn.text.includes("First"));
+assert.equal(oneTurn.label, "last 1 turn · conversation only");
 const twoTurns = captureShowTranscript(showContext, 2);
-assert.ok(twoTurns.text.includes("First") && twoTurns.text.includes("Second"));
-assert.equal(twoTurns.label, "last 2 turns");
-assert.equal(captureShowTranscript(seededBranch([]), 4), undefined);
+assert.ok(twoTurns.text.includes("First") && twoTurns.text.includes("Second"), "the requested turn count is honored");
+assert.ok(twoTurns.text.includes("Looking into it.") && twoTurns.text.includes("Reply one"), "every intermediate assistant message within a turn is retained, not just the last one");
+assert.ok(!twoTurns.text.includes("file contents that must never reach the model"), "tool results never reach the captured transcript");
+assert.equal(twoTurns.label, "last 2 turns · conversation only");
+assert.equal(captureShowTranscript(seededBranch([]), 4), undefined, "an empty session has nothing to show");
+
+// A user message with no capturable text (image-only, whitespace-only) still
+// counts as a turn boundary: /bro show 1 must never silently over-capture.
+const imageOnlyContext = seededBranch([
+	turn("1aaa", null, { role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }),
+	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Reply one" }] }),
+	turn("3aaa", "2aaa", { role: "user", content: "   " }),
+	turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], stopReason: "stop" }),
+	turn("5aaa", "4aaa", { role: "assistant", content: [{ type: "text", text: "Half-written claim" }], stopReason: "abort" }),
+]);
+const imageOnlyOneTurn = captureShowTranscript(imageOnlyContext, 1);
+assert.ok(imageOnlyOneTurn.text.includes("Reply two"), "a text-less user turn still starts a capturable turn");
+assert.ok(!imageOnlyOneTurn.text.includes("Reply one"), "the turn window is not over-captured past a text-less user turn");
+assert.ok(!imageOnlyOneTurn.text.includes("Half-written claim"), "aborted assistant text never reaches the transcript");
+assert.equal(imageOnlyOneTurn.label, "last 1 turn · conversation only");
+const imageOnlyTwoTurns = captureShowTranscript(imageOnlyContext, 2);
+assert.ok(imageOnlyTwoTurns.text.includes("Reply one"), "an image-only user turn groups its assistant replies into one turn");
+const imageOnlySession = seededBranch([
+	turn("1aaa", null, { role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }),
+	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Only reply" }] }),
+]);
+const imageOnlyCapture = captureShowTranscript(imageOnlySession, 1);
+assert.ok(imageOnlyCapture.text.includes("Only reply"), "an image-only session still has something to show");
 
 assert.equal(extractShowHtml("no fences"), undefined);
 assert.equal(

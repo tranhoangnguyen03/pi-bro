@@ -3,6 +3,11 @@
 // from the modes corpus on purpose: expectations here reward *selection*
 // (smallest view), not preservation, so they cannot share a schema with the
 // brief/balanced/faithful benchmark.
+//
+// Transcripts are conversation-only (## user / ## assistant text, no tool
+// call or tool result sections), matching what /bro show actually captures.
+// Facts that used to come from a tool result (a file's contents, a command's
+// output) now appear only if the assistant reports them in conversation text.
 import { FENCED_BLOCK_PATTERN } from "./corpus.ts";
 
 export type ShowExpectations = {
@@ -32,112 +37,53 @@ function serializeTranscript(entries: readonly (readonly [string, string])[]): s
 
 const DEBUG_SESSION_RESTORE_TRANSCRIPT = serializeTranscript([
 	["## user", "The session restore is throwing an error on startup. Can you find and fix it?"],
-	["## assistant", "I'll open the session manager and its config loader to find the crash."],
-	["## tool call: read", "src/sessions/manager.ts"],
-	["## tool result: read", "export function restoreSession(configPath: string): Session {\n\tconst config = loadConfig(configPath);\n\treturn new Session(config.sessionId, config.timeoutMs);\n}"],
-	["## assistant", "The crash likely comes from loadConfig. Let me check src/config/settings.ts."],
-	["## tool call: read", "src/config/settings.ts"],
-	["## tool result: read", "export function loadConfig(path: string): Config {\n\tconst raw = JSON.parse(readFileSync(path, \"utf8\"));\n\treturn { sessionId: raw.sessionId, timeoutMs: raw.timeout_ms };\n}"],
-	["## assistant", "loadConfig reads raw.timeout_ms but Session expects config.timeoutMs, so timeoutMs comes back undefined. I'll rename the key."],
-	["## tool call: edit", "src/config/settings.ts: replace `timeoutMs: raw.timeout_ms` with `timeoutMs: raw.timeoutMs`"],
-	["## tool result: edit", "Applied edit to src/config/settings.ts"],
-	["## tool call: bash", "npm test -- src/sessions/manager.test.ts"],
-	["## tool result: bash", "FAIL src/sessions/manager.test.ts\nrestoreSession > TypeError: config.timeoutMs.toFixed is not a function\n    at Session (src/sessions/manager.ts:14)"],
-	["## assistant", "timeoutMs is read from JSON as a string. I'll coerce it with Number() before loadConfig returns it."],
-	["## tool call: edit", "src/config/settings.ts: replace `timeoutMs: raw.timeoutMs` with `timeoutMs: Number(raw.timeoutMs)`"],
-	["## tool result: edit", "Applied edit to src/config/settings.ts"],
-	["## tool call: bash", "npm test -- src/sessions/manager.test.ts"],
-	["## tool result: bash", "PASS src/sessions/manager.test.ts (3 tests)"],
-	["## assistant", "Fixed: src/config/settings.ts now coerces timeoutMs to a number with Number(raw.timeoutMs) before src/sessions/manager.ts reads config.timeoutMs. All three tests pass."],
+	["## assistant", "Found it: src/sessions/manager.ts calls restoreSession(configPath), which calls loadConfig in src/config/settings.ts. loadConfig reads raw.timeout_ms but returns it as config.timeoutMs, so timeoutMs comes back undefined."],
+	["## assistant", "First test run failed with TypeError: config.timeoutMs.toFixed is not a function, because timeoutMs was read from JSON as a string instead of a number."],
+	["## assistant", "Fixed: src/config/settings.ts now coerces timeoutMs to a number with Number(raw.timeoutMs) before src/sessions/manager.ts reads config.timeoutMs. All three tests in src/sessions/manager.test.ts pass."],
 ]);
 
 const REFACTOR_UTILS_TRANSCRIPT = serializeTranscript([
 	["## user", "Please refactor src/utils/formatters.ts — split the date formatting helpers into their own file."],
-	["## assistant", "I'll list src/utils first to see what's already there."],
-	["## tool call: bash", "ls src/utils"],
-	["## tool result: bash", "formatters.ts\nstrings.ts\narrays.ts\nindex.ts"],
-	["## assistant", "Let me read formatters.ts and strings.ts before moving anything."],
-	["## tool call: read", "src/utils/formatters.ts"],
-	["## tool result: read", "export function formatCurrency(cents: number): string {\n\treturn `$${(cents / 100).toFixed(2)}`;\n}\n\nexport function formatDate(date: Date): string {\n\treturn date.toISOString().slice(0, 10);\n}\n\nexport function formatRelativeTime(date: Date, now: Date): string {\n\tconst diffMs = now.getTime() - date.getTime();\n\treturn `${Math.round(diffMs / 60000)}m ago`;\n}"],
-	["## tool call: read", "src/utils/strings.ts"],
-	["## tool result: read", "export function slugify(value: string): string {\n\treturn value.trim().toLowerCase().replace(/\\s+/g, \"-\");\n}\n\nexport function truncate(value: string, max: number): string {\n\treturn value.length > max ? `${value.slice(0, max)}…` : value;\n}"],
-	["## assistant", "formatDate and formatRelativeTime belong together; I'll move them into a new src/utils/dates.ts and leave formatCurrency in formatters.ts."],
-	["## tool call: write", "src/utils/dates.ts"],
-	["## tool result: write", "Wrote src/utils/dates.ts with formatDate and formatRelativeTime moved from src/utils/formatters.ts."],
-	["## tool call: edit", "src/utils/formatters.ts: remove formatDate and formatRelativeTime, keep formatCurrency"],
-	["## tool result: edit", "Applied edit to src/utils/formatters.ts"],
-	["## tool call: read", "src/utils/index.ts"],
-	["## tool result: read", "export * from \"./formatters\";\nexport * from \"./strings\";\nexport * from \"./arrays\";"],
-	["## assistant", "src/utils/index.ts re-exports each file, so I'll add dates.ts there too."],
-	["## tool call: edit", "src/utils/index.ts: add `export * from \"./dates\";`"],
-	["## tool result: edit", "Applied edit to src/utils/index.ts"],
+	["## assistant", "src/utils/formatters.ts currently holds formatCurrency, formatDate, and formatRelativeTime, alongside strings.ts and arrays.ts in src/utils/."],
+	["## assistant", "formatDate and formatRelativeTime belong together, so I moved them into a new src/utils/dates.ts and left formatCurrency in formatters.ts."],
+	["## assistant", "src/utils/index.ts re-exports each file, so I added `export * from \"./dates\";` there too."],
 	["## assistant", "Moved formatDate and formatRelativeTime out of src/utils/formatters.ts into a new src/utils/dates.ts, and added the export to src/utils/index.ts. formatCurrency stays in src/utils/formatters.ts; no callers needed changes."],
 ]);
 
 const CALL_STACK_TRANSCRIPT = serializeTranscript([
 	["## user", "Creating a session is taking around two seconds. Trace the full path from the handler down so I can see where the time goes."],
-	["## assistant", "Let me read the session handler and follow the call chain."],
-	["## tool call: read", "src/sessions/handler.ts"],
-	["## tool result: read", "export async function handleCreateSession(req: Request) {\n  await validateRequest(req);\n  await SessionStore.insert(req.body);\n  await publish('session.created');\n}"],
-	["## tool call: read", "src/sessions/worker.ts"],
-	["## tool result: read", "export async function AgentWorker.run(sessionId: string) {\n  const context = await loadContext(sessionId);\n  const result = await callModel(context);\n  await persistResult(sessionId, result);\n}"],
-	["## tool call: read", "src/sessions/store.ts"],
-	["## tool result: read", "export const SessionStore = {\n  async insert(payload) { /* writes row */ },\n};"],
-	["## assistant", "The chain is handleCreateSession -> validateRequest -> SessionStore.insert -> publish(session.created), and the publish triggers AgentWorker.run -> loadContext -> callModel -> persistResult. The model call inside the worker is the slow step."],
+	["## assistant", "The chain is handleCreateSession -> validateRequest -> SessionStore.insert -> publish('session.created'), and the publish triggers AgentWorker.run -> loadContext -> callModel -> persistResult. The model call inside the worker is the slow step."],
 ]);
 
 const PSEUDOCODE_TRANSCRIPT = serializeTranscript([
 	["## user", "How does the editor capture and restore scroll position? Sketch the logic."],
-	["## assistant", "Let me read the capture and restore functions."],
-	["## tool call: read", "src/editor/scroll.ts"],
-	["## tool result: read", "export function capture(blocks: Block[], targetRect: Rect, scrollRect: Rect): Snapshot {\n  const target = focusedBlock ?? firstBlockIntersectingViewportTop(blocks);\n  const anchor = wholeBlockAnchor(blocks, target);\n  const offset = targetRect.top - scrollRect.top;\n  return { anchor, offset, scrollTop: scrollRect.top, revision: revision + 1 };\n}\n\nexport function restore(snapshot: Snapshot, blocks: Block[]): number {\n  const placement = resolveAnchor(blocks, snapshot.anchor);\n  if (placement) return scrollRect.top + targetRect.top - snapshot.offset;\n  return snapshot.scrollTop;\n}"],
-	["## assistant", "capture picks the focused block or the first block at the viewport top, records a whole-block anchor plus the signed offset and a revision counter; restore resolves the anchor or falls back to the raw scrollTop."],
+	["## assistant", "capture picks the focused block via focusedBlock, or falls back to the first block at the viewport top, records a whole-block anchor with wholeBlockAnchor plus the signed offset, the current scrollTop, and bumps the revision counter. restore resolves the anchor with resolveAnchor and recomputes the position from there, or falls back to the raw scrollTop if the anchor can't be resolved."],
 ]);
 
 const COMPONENT_TREE_TRANSCRIPT = serializeTranscript([
 	["## user", "What does the session page render? Show the component structure with the state hooks and module boundaries that matter."],
-	["## assistant", "Let me read the session page and its toolbar."],
-	["## tool call: read", "apps/example/src/routes/session.tsx"],
-	["## tool result: read", "export function SessionPage() {\n  useSessionEvents();\n  return (\n    <>\n      <SessionToolbar />\n      <SessionTimeline />\n    </>\n  );\n}"],
-	["## tool call: read", "packages/ui/src/toolbar.tsx"],
-	["## tool result: read", "export function SessionToolbar() {\n  return <RunSkillButton />;\n}"],
-	["## tool call: read", "packages/ui/src/timeline.tsx"],
-	["## tool result: read", "export function SessionTimeline() {\n  return <SkillResultCard />;\n}"],
-	["## assistant", "SessionPage owns the event hook and renders the toolbar and timeline; the toolbar and timeline live in packages/ui and render RunSkillButton and SkillResultCard respectively."],
+	["## assistant", "SessionPage (in session.tsx) owns the useSessionEvents hook and renders SessionToolbar and SessionTimeline, both from packages/ui. SessionToolbar renders RunSkillButton, and SessionTimeline renders SkillResultCard."],
 ]);
 
 const FILE_LAYOUT_TRANSCRIPT = serializeTranscript([
 	["## user", "Where does everything live in src/? I need the file layout with responsibilities before I scope a refactor."],
-	["## tool call: bash", "find src -type f | sort"],
-	["## tool result: bash", "src/commands/registry.ts\nsrc/commands/show-me.ts\nsrc/sessions/store.ts\nsrc/sessions/worker.ts\nsrc/sessions/events.ts\nsrc/transport/client.ts\nsrc/transport/stream.ts\nsrc/config.ts"],
-	["## assistant", "The layout splits into commands (user intents), sessions (state and lifecycle), transport (API), and a root config."],
+	["## assistant", "src/ splits into four areas: commands (registry.ts, show-me.ts) for user intents, sessions (store.ts, worker.ts, events.ts) for state and lifecycle, transport (client.ts, stream.ts) for the API, and a root config.ts."],
 ]);
 
 const TYPES_SIGNATURES_TRANSCRIPT = serializeTranscript([
 	["## user", "Before we write any code: what are the types for an ordered list of items with a cursor that can move up or down? Sketch the interfaces and the resolve signature."],
-	["## assistant", "Here is the shape we agreed on, before implementation."],
-	["## tool call: bash", "cat docs/types.md"],
-	["## tool result: bash", "interface Item { id: ItemId; parentId: ItemId | null }\ninterface Cursor { position: ItemId; direction: 'up' | 'down' }\nfunction resolveTarget(items: Item[], cursor: Cursor): ItemId | null"],
-	["## assistant", "Item is an id plus an optional parent; Cursor is a position plus a direction; resolveTarget maps an item list and cursor to the target item id or null when there is no move."],
+	["## assistant", "The agreed shape, before implementation: Item is an id plus an optional parentId; Cursor is a position plus a direction of 'up' or 'down'; resolveTarget maps an item list and cursor to the target ItemId or null when there is no move."],
 ]);
 
 const DIFF_TRANSCRIPT = serializeTranscript([
 	["## user", "What changed in the save handler? Show the diff."],
-	["## assistant", "Let me read the current and previous save handler."],
-	["## tool call: bash", "git diff -- src/save.ts"],
-	["## tool result: bash", " on(save)\n-  write content\n+  if content is unchanged\n+    return cached result\n+  write new content\n+  invalidate cache"],
-	["## assistant", "The save handler now short-circuits when content is unchanged, returns the cached result, and invalidates the cache after writing."],
+		["## assistant", "The save handler's on(save) diff: the old flow was just write content unconditionally; the new flow checks if content is unchanged, returns the cached result, and otherwise still does write content and invalidate cache afterward."],
 ]);
 
 const HTML_TRANSCRIPT = serializeTranscript([
 	["## user", "The dashboard has four cards: Chart, Alerts, Activity, and Status. On desktop they sit in a 2x2 grid, but at narrow widths they overlap instead of stacking into one column. I need to SEE the before and after layouts side by side — a text list can't show the overlap. Draw both grids."],
-	["## assistant", "Let me read the dashboard layout."],
-	["## tool call: read", "src/dashboard/Dashboard.css"],
-	["## tool result: read", ".dashboard {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n  grid-template-areas: \"chart alerts\" \"activity status\";\n  gap: 16px;\n}\n@media (max-width: 640px) { .dashboard { grid-template-columns: 1fr 1fr; } }"],
-	["## assistant", "The media query keeps two columns under 640px, so the cards squeeze and overlap. The fix is a single column and stacked areas."],
-	["## tool call: edit", "Dashboard.css: one column under 640px with stacked chart/alerts/activity/status"],
-	["## tool result: edit", "@media (max-width: 640px) { .dashboard { grid-template-columns: 1fr; grid-template-areas: \"chart\" \"alerts\" \"activity\" \"status\"; } }"],
-	["## assistant", "Fixed: at 640px and below the four cards stack in one column in order. A side-by-side visual makes the change obvious."],
+	["## assistant", "Found it: the media query at max-width: 640px still sets grid-template-columns to two columns, so chart, alerts, activity, and status squeeze and overlap instead of stacking."],
+	["## assistant", "Fixed: below max-width: 640px, grid-template-columns is now a single column with chart, alerts, activity, and status stacked in that order."],
 ]);
 
 const DEGRADATION_TRANSCRIPT = serializeTranscript([
