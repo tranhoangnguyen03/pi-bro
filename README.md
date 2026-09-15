@@ -1,7 +1,8 @@
 # pi-bro
 
 Turn a dense AI reply, pasted text, local document, or public webpage into a
-plain-language explanation without adding anything to your main agent's context.
+plain-language explanation — or open a sandboxed side conversation with
+`/bro btw` — without adding anything to your main agent's context.
 
 `pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
 It opens explanations in a separate modal and uses the
@@ -25,6 +26,7 @@ Restart Pi or run `/reload`, then try:
 /bro text Paste text here
 /bro file docs/report.pdf
 /bro url https://example.com/article
+/bro btw "what file defines this route?"
 ```
 
 Run `/bro doctor` after installation or whenever Bro is not working.
@@ -64,6 +66,7 @@ text directly captures a new source the same way.
 | `/bro model [id]` | View or choose the Agy model. |
 | `/bro effort [low\|medium\|high]` | View or choose the supported reasoning effort. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
+| `/bro btw [--fresh] [--full] [question]` | Open a side conversation in a modal. Sandboxed (read-only) by default; `--full` lets it read and edit the workspace, `--fresh` skips main-session context. |
 | `/bro help` | Open the built-in quick reference. |
 
 Giving `/bro` the input directly works the same way:
@@ -99,6 +102,30 @@ a persistent mode with `/bro mode`:
 Bro temporarily captures mouse input while its modal is open. Native mouse
 selection may be unavailable or visually extend outside the modal depending on
 your terminal mode; press **C** to copy the complete explanation reliably.
+
+## Bro btw (side conversation)
+
+`/bro btw` opens a separate multi-turn conversation in a modal, so you can ask
+a quick side question while the main agent keeps working. It runs through Agy,
+the same backend as the rest of Bro, and never adds anything to Pi's
+conversation unless you explicitly send it back.
+
+- **Sandboxed by default**: the side conversation is read-only (no project
+  access). Add `--full` to let it read and edit the workspace.
+- `/bro btw <question>` asks immediately; `/bro btw` opens an empty thread.
+- `--fresh` starts a thread without seeding the main session's recent
+  conversation text.
+- The first turn is seeded with up to the last 8 turns of user/assistant
+  conversation text (40,000 characters max, with a truncation notice); the
+  side agent can also read the repo itself when running in `--full` mode.
+- **In the modal**: type a question and press Enter (empty Enter re-asks the
+  last question). `/send` copies the latest answer into the main editor
+  without submitting (use `/send!` to replace an existing draft); `/send all`
+  copies the full thread; `/retry` re-asks
+  the last question; `/clear` resets the thread; Esc closes. A visible
+  `full · edits repo` badge shows whenever `--full` mode is active.
+- The thread lives in memory only — it clears when you switch Pi sessions,
+  reload extensions, or quit Pi.
 
 ## Bro show
 
@@ -637,12 +664,21 @@ run `/bro doctor` for the exact problem.
   pasted text, extracted document text, extracted webpage text, or recent
   session conversation text (tool calls, tool results, reasoning, and images
   omitted) to Agy and its configured model provider.
+- **Side conversation requests**: `/bro btw` sends your side questions and, on
+  the first turn, the seeded main-session conversation text to Agy. In `--full`
+  mode the side agent additionally reads the workspace.
 - **Usage checks**: `/bro usage` checks your authenticated Agy limits without
   sending an assistant response or running a model turn.
 - **Setup checks**: `/bro doctor` checks Agy account and model availability
   without sending an assistant response or running a model turn.
 - **Context isolation**: Bro does not add explanations to Pi's conversation
   history, session files, or main-agent context.
+- **Side conversation (`/bro btw`)**: sandboxed by default — the side agent has
+  no project access and runs in a temporary folder. With `--full` it runs in
+  your workspace with auto-approved tools, so it can read and edit files while
+  the main agent is also working; use `--full` only when you want that. The
+  side thread is memory-only and clears when you switch sessions, reload
+  extensions, or quit Pi.
 - **Memory cache**: The latest explanation is stored only in process memory for
   `/bro open`. It clears when you switch Pi sessions, reload extensions, or quit
   Pi.
@@ -685,6 +721,9 @@ tool before giving it to Bro.
   blocked, paginated, and media-first pages are not supported.
 - Direct webpage fetching does not currently use `HTTP_PROXY`, `HTTPS_PROXY`,
   or other proxy environment variables.
+- `/bro btw` threads are memory-only and do not survive reloads or restarts.
+  The side conversation needs Agy's `--conversation` resume support; sandbox
+  mode caps a turn at 2 minutes and full mode at 10 minutes.
 - Show captures only the conversation text of what already happened in the
   current session — the last few turns' user and assistant messages, with
   tool calls, tool results, reasoning, and images always omitted; it cannot

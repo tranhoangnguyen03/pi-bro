@@ -1,7 +1,7 @@
 {
   "name": "pi-bro",
   "version": "0.12.0",
-  "description": "An Earendil Pi extension that explains pasted text, assistant responses, local documents, public webpages, and recent session turns (as shapes) in a context-isolated window.",
+  "description": "An Earendil Pi extension that explains pasted text, assistant responses, local documents, public webpages, and recent session turns (as shapes) in a context-isolated window, and opens a sandboxed side conversation with /bro btw.",
   "type": "module",
   "license": "MIT",
   "author": "Tran Hoang Nguyen",
@@ -27,7 +27,9 @@
     "gemini",
     "tui",
     "diagram",
-    "show"
+    "show",
+    "btw",
+    "side-conversation"
   ],
   "files": [
     "bro.ts",

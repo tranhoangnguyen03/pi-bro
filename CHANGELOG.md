@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [Unreleased]
+
+### Added
+
+- `/bro btw` — a side conversation in a modal, sandboxed (read-only) by default, with `--full` opting up to workspace access and `--fresh` skipping main-session context. Composer commands: `/send`, `/send all`, `/send!`, `/send all!`, `/retry`, `/clear`; empty Enter re-asks the last question. Runs through Agy, resumed via `--conversation <id>`; the thread is memory-only and clears on session change.
+
 ## [0.12.0] - 2026-09-11
 
 ### Changed

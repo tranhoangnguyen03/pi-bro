@@ -11,12 +11,12 @@ import { createInterface } from "node:readline";
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Markdown, matchesKey, truncateToWidth, visibleWidth, type Focusable } from "@earendil-works/pi-tui";
+import { Input, Markdown, matchesKey, truncateToWidth, visibleWidth, type Focusable } from "@earendil-works/pi-tui";
 import { Defuddle } from "defuddle/node";
 import { parseHTML } from "linkedom";
 import mammoth from "mammoth";
 import { extractText } from "unpdf";
-import { BRO_MODES, DEFAULT_BRO_MODE, buildDefaultPrompt, buildShowPrompt, parseBroMode, type BroMode } from "./prompt.ts";
+import { BRO_MODES, DEFAULT_BRO_MODE, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, parseBroMode, type BroMode } from "./prompt.ts";
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const ENV_MODEL = process.env.PI_BRO_MODEL?.trim();
@@ -30,6 +30,8 @@ const MAX_WEB_ELEMENTS = 100_000;
 const MAX_WEB_REDIRECTS = 5;
 const WEB_TIMEOUT_MS = 25_000;
 const MAX_TEXT_LENGTH = 100_000;
+const BTW_CONTEXT_TURNS = 8;
+const BTW_CONTEXT_MAX = 40_000;
 const DEFAULT_SHOW_TURNS = 1;
 const SHOW_HTML_FILE_PATTERN = /^bro-show-[0-9a-f]{8}\.html$/;
 const TEXT_EXTENSIONS = new Set([".md", ".markdown", ".txt"]);
@@ -45,6 +47,8 @@ type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error"
 type BroSource = { text: string; label?: string };
 type BroResult = { source: BroSource; text: string };
 type ModalResult = { source?: BroSource; text: string; htmlPath?: string };
+type BtwTurn = { question: string; answer: string };
+type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean };
 const EFFORTS = ["default", "low", "medium", "high"] as const;
 type BroEffort = (typeof EFFORTS)[number];
 type AgyEffort = Exclude<BroEffort, "default">;
@@ -57,8 +61,10 @@ type AgyModelFamily = {
 };
 type AgyEvent = {
 	event?: string;
+	conversation_id?: string;
+	init?: { model?: string; cwd?: string; permission_mode?: string; tools?: unknown };
 	step_update?: { step_type?: string; text_delta?: unknown };
-	result?: { status?: string; response?: unknown };
+	result?: { status?: string; response?: unknown; error?: unknown; conversation_id?: string };
 };
 
 export function wheelDelta(data: string): number {
@@ -84,6 +90,7 @@ const COMMANDS = [
 	{ value: "effort", label: "effort", description: "Choose the Agy reasoning effort" },
 	{ value: "show", label: "show", description: "Draw what happened in recent session turns as shapes" },
 	{ value: "mode", label: "mode", description: "Choose brief, balanced, or faithful explanations" },
+	{ value: "btw", label: "btw", description: "Open a side conversation (sandboxed by default; --full edits files)" },
 	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
 const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
@@ -1066,7 +1073,7 @@ function helpText(settings?: BroSettings, settingsError?: string): string {
 		: `Bro could not read its settings: ${settingsError}\n\nRun \`/bro doctor\` for setup help.`;
 	return `# Bro
 
-Bro explains a dense assistant reply, pasted text, local document, or public webpage in plain language — or draws recent session turns as shapes — without adding anything to Pi's conversation.
+Bro explains a dense assistant reply, pasted text, local document, or public webpage in plain language, draws recent session turns as shapes, or opens a sandboxed side conversation with \`/bro btw\` — without adding anything to Pi's conversation.
 
 ## Explain
 
@@ -1088,6 +1095,10 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 - \`/bro model [id]\` — view or choose the Agy model
 - \`/bro effort [low|medium|high]\` — view or choose reasoning effort
 - \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
+
+## Side conversation
+
+- \`/bro btw [--fresh] [--full] [question]\` — open a side conversation. Sandboxed (read-only) by default; add \`--full\` to let it read and edit the workspace, and \`--fresh\` to start without main-session context. Inside the side thread, type questions and press Enter (empty Enter re-asks); \`/send\` copies the latest answer to the main editor without submitting (use \`/send!\` to replace an existing draft), \`/send all\` the full thread, \`/retry\` re-asks the last question, and \`/clear\` resets the thread. Esc closes.
 
 ## Current settings
 
@@ -1120,6 +1131,7 @@ Bro temporarily captures mouse input while the modal is open. Native mouse selec
 - If a webpage fails, copy it into a text file or save it as a PDF, then use \`/bro file\`.
 - Show draws only what already happened in this session — the conversation text of the last few turns, with tool calls, tool results, reasoning, and images always omitted — and cannot read the repository or other files on its own. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
 - Show reflects what was reported in the conversation, not independent verification against the actual code or system state.
+- Btw threads are memory-only and do not survive reloads or restarts. A turn is capped at 2 minutes in sandbox mode and 10 minutes in full mode; the side conversation resumes through Agy's \`--conversation\` support.
 
 ## Privacy and safety
 
@@ -1127,7 +1139,8 @@ Bro sends the selected assistant reply, pasted text, locally extracted document 
 
 Bro never adds the explanation to Pi's conversation, session file, or main-agent context. The captured source and latest explanation stay in process memory until you change sessions, reload extensions, or exit Pi.
 
-Bro does not modify project files. For webpages, it connects directly to the site without browser cookies; the site sees your IP address and Bro's user agent. Do not use private or signed URLs.
+Bro's explain, show, file, and url commands never modify project files. \`/bro btw\` runs sandboxed (read-only) by default; with \`--full\` it can read and edit the workspace, so use \`--full\` only when you want the side conversation to touch your project.
+For webpages, it connects directly to the site without browser cookies; the site sees your IP address and Bro's user agent. Do not use private or signed URLs.
 
 Usage and Doctor checks contact Agy but do not send source text or run a model turn. Pressing **C** sends the explanation to your system clipboard.
 
@@ -1440,18 +1453,463 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 	);
 }
 
+export function parseBtwArguments(value: string): { fresh: boolean; full?: boolean; question: string; invalid?: string } {
+	let rest = value.trim();
+	let fresh = false;
+	let full: boolean | undefined;
+	while (rest.startsWith("--")) {
+		const space = rest.search(/\s/);
+		const token = space === -1 ? rest : rest.slice(0, space);
+		if (token === "--fresh") fresh = true;
+		else if (token === "--full") full = true;
+		else if (token === "--sandbox") full = false;
+		else return { fresh, full, question: "", invalid: `Unknown /bro btw flag: ${token}` };
+		rest = space === -1 ? "" : rest.slice(space).replace(/^\s+/, "");
+	}
+	return { fresh, full, question: rest };
+}
+
+export function resolveBtwThread(existing: BtwThread | undefined, parsed: { fresh: boolean; full?: boolean }): BtwThread {
+	const targetFull = parsed.full ?? existing?.full ?? false;
+	const startFresh = parsed.fresh || (parsed.full !== undefined && existing !== undefined && existing.full !== parsed.full);
+	return !existing || startFresh ? { turns: [], full: targetFull } : existing;
+}
+
+export function parseBtwAgyLine(line: string): { delta?: string; result?: string; conversationId?: string; error?: string } {
+	let event: AgyEvent;
+	try {
+		event = JSON.parse(line) as AgyEvent;
+	} catch {
+		throw new Error("Agy returned invalid streaming data.");
+	}
+	const conversationId = event.conversation_id ?? event.result?.conversation_id;
+	if (event.event === "step_update" && event.step_update?.step_type === "agent_response" && typeof event.step_update.text_delta === "string") {
+		return { delta: event.step_update.text_delta, conversationId };
+	}
+	if (event.event === "result") {
+		if (event.result?.status !== "SUCCESS" || typeof event.result.response !== "string") {
+			const detail = typeof event.result?.error === "string" ? event.result.error : "Agy did not complete the turn successfully.";
+			return { error: detail, conversationId };
+		}
+		return { result: event.result.response, conversationId };
+	}
+	return { conversationId };
+}
+
+async function runBtwTurn(
+	prompt: string,
+	selection: ReturnType<typeof agySelection>,
+	options: { full: boolean; cwd: string; conversationId?: string },
+	signal: AbortSignal,
+	onProgress?: (text: string) => void,
+): Promise<{ text: string; conversationId?: string }> {
+	const runDirectory = options.full ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
+	let updateTimer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		const args = [
+			"--output-format", "stream-json",
+			"--disable-slash-commands",
+			"--model", selection.model,
+			...(selection.effort ? ["--effort", selection.effort] : []),
+			"--print-timeout", options.full ? "10m" : "2m",
+			...(options.conversationId ? ["--conversation", options.conversationId] : []),
+			...(options.full ? ["--dangerously-skip-permissions"] : ["--sandbox"]),
+			"--print", prompt,
+		];
+		const child = spawn("agy", args, {
+			cwd: options.full ? options.cwd : runDirectory,
+			signal,
+			timeout: options.full ? 610_000 : 130_000,
+			stdio: ["ignore", "pipe", "pipe"],
+			windowsHide: true,
+		});
+
+		let processError: Error | undefined;
+		let stderr = "";
+		let partial = "";
+		let final = "";
+		let conversationId = options.conversationId;
+		let parseError: Error | undefined;
+
+		child.stderr.setEncoding("utf8");
+		child.stderr.on("data", (chunk: string) => {
+			stderr += chunk;
+		});
+		child.once("error", (error) => {
+			processError = error;
+		});
+
+		const closed = new Promise<{ code: number | null; exitSignal: NodeJS.Signals | null }>((resolve) => {
+			child.once("close", (code, exitSignal) => resolve({ code, exitSignal }));
+		});
+
+		const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+		try {
+			for await (const line of lines) {
+				if (!line.trim()) continue;
+				try {
+					const event = parseBtwAgyLine(line);
+					if (event.conversationId) conversationId = event.conversationId;
+					if (event.error) {
+						parseError = new Error(event.error);
+						child.kill();
+						break;
+					}
+					if (event.delta) {
+						partial += event.delta;
+						if (onProgress && !updateTimer) {
+							updateTimer = setTimeout(() => {
+								updateTimer = undefined;
+								if (!signal.aborted) onProgress(partial);
+							}, 75);
+						}
+					}
+					if (event.result !== undefined) final = event.result;
+				} catch (error) {
+					parseError = error instanceof Error ? error : new Error(String(error));
+					child.kill();
+					break;
+				}
+			}
+		} finally {
+			lines.close();
+		}
+
+		const { code, exitSignal } = await closed;
+		if (signal.aborted) throw new Error("Canceled.");
+		if (parseError) throw new Error(withDoctor(parseError));
+		if (processError) {
+			const missing = (processError as NodeJS.ErrnoException).code === "ENOENT";
+			throw new Error(
+				missing
+					? "Agy could not start. Make sure Agy is installed and on PATH, then run `/bro doctor`."
+					: `Agy could not start: ${processError.message}\n\nRun \`/bro doctor\` for setup help.`,
+			);
+		}
+		if (exitSignal || code === null) {
+			throw new Error("Agy timed out during the side conversation. Run `/bro doctor` for setup help.");
+		}
+		if (code !== 0) {
+			throw new Error(agyFailureMessage("answer the side question", { code, killed: false, stderr }));
+		}
+
+		const text = final.trim();
+		if (!text) {
+			throw new Error(withDoctor(stderr.trim() || "Agy returned no answer for the side question."));
+		}
+
+		return { text, conversationId };
+	} finally {
+		if (updateTimer) clearTimeout(updateTimer);
+		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
+	}
+}
+
+class BtwModal implements Focusable {
+	private _focused = false;
+	private readonly markdown = new Markdown("", 0, 0, getMarkdownTheme());
+	private readonly input = new Input();
+	private notice = "";
+	private offset = 0;
+	private maxOffset = 0;
+	private bodyHeight = 1;
+	private running = false;
+	private full = false;
+	private disposed = false;
+
+	get focused(): boolean {
+		return this._focused;
+	}
+
+	set focused(value: boolean) {
+		this._focused = value;
+		this.input.focused = value;
+	}
+
+	constructor(
+		private readonly tui: TuiLike,
+		private readonly theme: Theme,
+		private readonly onClose: () => void,
+		private readonly onSubmit: (value: string) => void,
+		private readonly onDispose: () => void,
+	) {
+		setRegularMouseReporting(this.tui, true);
+		this.input.onSubmit = (value) => {
+			if (!this.running) this.onSubmit(value);
+		};
+	}
+
+	setText(text: string): void {
+		this.markdown.setText(text);
+		if (!this.running) this.offset = 0;
+		this.tui.requestRender();
+	}
+
+	setNotice(notice: string): void {
+		this.notice = notice;
+		this.tui.requestRender();
+	}
+
+	setRunning(running: boolean): void {
+		this.running = running;
+		this.tui.requestRender();
+	}
+
+	setFull(full: boolean): void {
+		this.full = full;
+		this.tui.requestRender();
+	}
+
+	clearComposer(): void {
+		this.input.setValue("");
+		this.tui.requestRender();
+	}
+
+	invalidate(): void {
+		this.markdown.invalidate();
+		this.input.invalidate();
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "escape")) {
+			this.onClose();
+			return;
+		}
+		const delta = wheelDelta(data) || (matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0);
+		if (delta) {
+			this.offset = Math.max(0, Math.min(this.offset + delta, this.maxOffset));
+			this.notice = "";
+			this.tui.requestRender();
+			return;
+		}
+		this.input.handleInput(data);
+		this.tui.requestRender();
+	}
+
+	private frameLine(content: string, innerWidth: number): string {
+		const truncated = truncateToWidth(content, innerWidth, "");
+		const padding = Math.max(0, innerWidth - visibleWidth(truncated));
+		return `${this.theme.fg("border", "│")}${truncated}${" ".repeat(padding)}${this.theme.fg("border", "│")}`;
+	}
+
+	private borderLine(innerWidth: number, edge: "top" | "bottom"): string {
+		const left = edge === "top" ? "┌" : "└";
+		const right = edge === "top" ? "┐" : "┘";
+		return this.theme.fg("border", `${left}${"─".repeat(innerWidth)}${right}`);
+	}
+
+	private ruleLine(innerWidth: number): string {
+		return this.theme.fg("border", `├${"─".repeat(innerWidth)}┤`);
+	}
+
+	render(width: number): string[] {
+		const dialogWidth = Math.max(24, width);
+		const innerWidth = Math.max(22, dialogWidth - 2);
+		const terminalRows = process.stdout.rows ?? 30;
+		const dialogHeight = Math.min(34, Math.max(8, Math.floor(terminalRows * 0.82)));
+		this.bodyHeight = Math.max(1, dialogHeight - 7);
+
+		const rendered = this.markdown.render(innerWidth);
+		this.maxOffset = Math.max(0, rendered.length - this.bodyHeight);
+		this.offset = Math.max(0, Math.min(this.offset, this.maxOffset));
+		const visible = rendered.slice(this.offset, this.offset + this.bodyHeight);
+		const hiddenBelow = Math.max(0, this.maxOffset - this.offset);
+		const scroll = this.maxOffset > 0 ? ` · ↑${this.offset} ↓${hiddenBelow}` : "";
+
+		const mode = this.full
+			? this.theme.fg("accent", this.theme.bold("full · edits repo"))
+			: this.theme.fg("dim", "sandbox");
+		const header = this.theme.fg("accent", this.theme.bold("Bro · btw")) + this.theme.fg("dim", ` · ${mode}${scroll}`);
+
+		const composer = this.input.render(innerWidth)[0] ?? "";
+
+		const controls = this.running
+			? this.theme.fg("dim", "Thinking… · Esc cancel")
+			: this.theme.fg("dim", "Enter ask · Esc close · /send · /send all · /clear · /retry");
+
+		const lines = [
+			this.borderLine(innerWidth, "top"),
+			this.frameLine(header, innerWidth),
+			this.ruleLine(innerWidth),
+		];
+		for (const line of visible) lines.push(this.frameLine(line, innerWidth));
+		for (let i = visible.length; i < this.bodyHeight; i++) lines.push(this.frameLine("", innerWidth));
+		lines.push(this.ruleLine(innerWidth));
+		lines.push(this.frameLine(composer, innerWidth));
+		lines.push(this.frameLine(this.notice ? this.theme.fg("accent", this.notice) : controls, innerWidth));
+		lines.push(this.borderLine(innerWidth, "bottom"));
+		return lines;
+	}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		setRegularMouseReporting(this.tui, false);
+		this.onDispose();
+	}
+}
+
+async function openBtwModal(
+	ctx: ExtensionCommandContext,
+	options: { thread: BtwThread; initialQuestion?: string; seed: boolean },
+): Promise<void> {
+	const thread = options.thread;
+
+	await ctx.ui.custom<void>(
+		(tui, theme, _keybindings, done) => {
+			let closed = false;
+			let controller: AbortController | undefined;
+
+			const transcript = () => thread.turns.map((turn) => `## you\n${turn.question}\n\n${turn.answer}`).join("\n\n");
+
+			const close = () => {
+				if (closed) return;
+				closed = true;
+				controller?.abort();
+				done(undefined);
+			};
+
+			const modal = new BtwModal(tui, theme, close, submit, () => {
+				closed = true;
+				controller?.abort();
+			});
+
+			const runTurn = async (question: string) => {
+				if (controller) return;
+				const turnController = new AbortController();
+				controller = turnController;
+				modal.setRunning(true);
+				modal.clearComposer();
+
+				const first = thread.turns.length === 0;
+				let context: string | undefined;
+				if (first && options.seed) {
+					const captured = captureShowTranscript(ctx, BTW_CONTEXT_TURNS);
+					context = captured?.text;
+					if (context && context.length > BTW_CONTEXT_MAX) {
+						context = `${context.slice(0, BTW_CONTEXT_MAX)}\n[… context truncated …]`;
+					}
+				}
+
+				thread.turns.push({ question, answer: "…" });
+				modal.setText(transcript());
+
+				try {
+					const settings = await readSettings();
+					const result = await runBtwTurn(
+						buildBtwPrompt(context, question),
+						agySelection(settings),
+						{ full: thread.full, cwd: ctx.cwd, conversationId: thread.conversationId },
+						turnController.signal,
+						(partial) => {
+							if (closed || turnController.signal.aborted) return;
+							thread.turns[thread.turns.length - 1]!.answer = partial;
+							modal.setText(transcript());
+						},
+					);
+					if (turnController.signal.aborted) return;
+					if (result.conversationId) thread.conversationId = result.conversationId;
+					thread.turns[thread.turns.length - 1]!.answer = result.text;
+				} catch (error) {
+					if (turnController.signal.aborted || closed) return;
+					thread.turns[thread.turns.length - 1]!.answer = `_${errorMessage(error)}_`;
+					modal.setNotice(errorMessage(error));
+				} finally {
+					if (controller === turnController) controller = undefined;
+					if (!closed) {
+						modal.setRunning(false);
+						modal.setText(transcript());
+					}
+				}
+			};
+
+			const clear = () => {
+				thread.turns = [];
+				thread.conversationId = undefined;
+				modal.clearComposer();
+				modal.setNotice("");
+				modal.setText("");
+			};
+
+			const retry = () => {
+				if (controller) return;
+				const last = thread.turns.at(-1);
+				if (!last) {
+					modal.setNotice("Nothing to retry yet.");
+					return;
+				}
+				thread.turns.pop();
+				void runTurn(last.question);
+			};
+
+			const handoff = (all: boolean, force: boolean) => {
+				const text = all ? transcript() : (thread.turns.at(-1)?.answer ?? "");
+				if (!text.trim()) {
+					modal.setNotice("Nothing to send yet.");
+					return;
+				}
+				if (ctx.ui.getEditorText().trim() && !force) {
+					modal.setNotice("Main editor has a draft. Use /send! (or /send all!) to replace it.");
+					return;
+				}
+				ctx.ui.setEditorText(text);
+				modal.setNotice(all ? "Sent the full thread to the editor." : "Sent the latest answer to the editor.");
+			};
+
+			function submit(value: string): void {
+				const command = value.trim();
+				if (command === "/clear") {
+					modal.clearComposer();
+					clear();
+					return;
+				}
+				if (command === "/send" || command === "/send all" || command === "/send!" || command === "/send all!") {
+					modal.clearComposer();
+					handoff(command === "/send all" || command === "/send all!", command.endsWith("!"));
+					return;
+				}
+				if (command === "/retry" || command === "") {
+					modal.clearComposer();
+					retry();
+					return;
+				}
+				void runTurn(command);
+			}
+
+			modal.setFull(thread.full);
+			modal.setText(transcript());
+
+			if (options.initialQuestion) void runTurn(options.initialQuestion);
+
+			return modal;
+		},
+		{
+			overlay: true,
+			overlayOptions: {
+				width: "78%",
+				minWidth: 48,
+				maxHeight: "82%",
+				anchor: "top-center",
+				margin: { top: 1, left: 2, right: 2 },
+			},
+		},
+	);
+}
+
 export default async function bro(pi: ExtensionAPI) {
 	let lastResult: BroResult | undefined;
+	let btwThread: BtwThread | undefined;
 	const remember = (result: ModalResult) => {
 		if (result.source) lastResult = { source: result.source, text: result.text };
 	};
 
 	pi.on("session_start", async () => {
 		lastResult = undefined;
+		btwThread = undefined;
 	});
 
 	pi.registerCommand("bro", {
-		description: "Explain replies, pasted text, documents, and webpages, or draw recent session turns",
+		description: "Explain replies, pasted text, documents, and webpages, draw recent session turns, or open a sandboxed side conversation with /bro btw",
 		getArgumentCompletions: (prefix) => {
 			const normalized = prefix.trim().toLowerCase();
 			const matches = COMMANDS.filter((command) => command.value.startsWith(normalized));
@@ -1720,6 +2178,26 @@ export default async function bro(pi: ExtensionAPI) {
 					}
 					await writeSettings({ ...current.settings, model: current.family.id, effort: selected });
 					ctx.ui.notify(`Bro reasoning effort: ${selected}`, "info");
+				} catch (error) {
+					ctx.ui.notify(withDoctor(error), "error");
+				}
+				return;
+			}
+
+			if (action === "btw") {
+				if (ctx.mode !== "tui") {
+					ctx.ui.notify("Use /bro btw in Pi's interactive UI.", "warning");
+					return;
+				}
+				const parsed = parseBtwArguments(value);
+				if (parsed.invalid) {
+					ctx.ui.notify(parsed.invalid, "warning");
+					return;
+				}
+				try {
+					const thread = resolveBtwThread(btwThread, parsed);
+					btwThread = thread;
+					await openBtwModal(ctx, { thread, initialQuestion: parsed.question, seed: !parsed.fresh });
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");
 				}
