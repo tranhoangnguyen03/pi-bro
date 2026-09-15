@@ -56,7 +56,10 @@ const {
 	looksLikeWebUrl,
 	parseAgyModels,
 	parseBroSettings,
+	parseBtwArguments,
+	parseBtwAgyLine,
 	parseShowArguments,
+	resolveBtwThread,
 	parseWebRedirect,
 	parseWebUrl,
 	setRegularMouseReporting,
@@ -107,6 +110,19 @@ assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "f
 });
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
+assert.deepEqual(parseBtwArguments("--fresh --full what now"), { fresh: true, full: true, question: "what now" });
+assert.deepEqual(parseBtwArguments("--sandbox hi"), { fresh: false, full: false, question: "hi" });
+assert.deepEqual(parseBtwArguments("plain question"), { fresh: false, full: undefined, question: "plain question" });
+assert.deepEqual(parseBtwArguments(""), { fresh: false, full: undefined, question: "" });
+assert.deepEqual(parseBtwArguments("--wat"), { fresh: false, full: undefined, question: "", invalid: "Unknown /bro btw flag: --wat" });
+assert.deepEqual(parseBtwAgyLine('{"event":"init","conversation_id":"c1"}'), { conversationId: "c1" });
+assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"hi"}}'), { delta: "hi", conversationId: undefined });
+assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"SUCCESS","response":"done","conversation_id":"c1"}}'), { result: "done", conversationId: "c1" });
+assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
+assert.deepEqual(resolveBtwThread(undefined, { fresh: false }), { turns: [], full: false });
+assert.deepEqual(resolveBtwThread({ turns: [{ question: "q", answer: "a" }], full: true }, { fresh: false }), { turns: [{ question: "q", answer: "a" }], full: true });
+assert.deepEqual(resolveBtwThread({ turns: [], full: true }, { fresh: false, full: false }), { turns: [], full: false });
+assert.deepEqual(resolveBtwThread({ turns: [], full: false }, { fresh: true }), { turns: [], full: false });
 assert.deepEqual(agySelection({ model: "gemini-one", effort: "low" }), { model: "gemini-one", effort: "low" });
 assert.deepEqual(agySelection({ model: "gemini-one-low", effort: "high" }), { model: "gemini-one", effort: "high" });
 assert.deepEqual(agySelection({ model: "claude-one", effort: "default" }), { model: "claude-one" });
