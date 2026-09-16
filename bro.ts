@@ -1031,6 +1031,21 @@ export function parseClaudeLine(line: string): AgentEvent {
 	return {};
 }
 
+// Codex nests its failure detail as a JSON document inside a JSON string.
+function codexErrorMessage(value: unknown): string {
+	const raw = typeof value === "string" ? value.trim() : "";
+	if (!raw) return "";
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		if (isRecord(parsed) && isRecord(parsed.error) && typeof parsed.error.message === "string") {
+			return parsed.error.message.trim() || raw;
+		}
+	} catch {
+		// Not nested JSON: the message is already the detail.
+	}
+	return raw;
+}
+
 export function parseCodexLine(line: string): AgentEvent {
 	let event: unknown;
 	try {
@@ -1039,6 +1054,16 @@ export function parseCodexLine(line: string): AgentEvent {
 		throw new Error("Codex returned invalid streaming data.");
 	}
 	const record = isRecord(event) ? event : {};
+	// A failed turn or a top-level error ends the run; an item-level error is a notice Codex
+	// attaches to a run that continues (a shortened skills budget, for example).
+	if (record.type === "turn.failed") {
+		const detail = codexErrorMessage(isRecord(record.error) ? record.error.message : undefined);
+		throw new Error(detail || "Codex did not complete the explanation successfully.");
+	}
+	if (record.type === "error") {
+		const detail = codexErrorMessage(record.message);
+		throw new Error(detail || "Codex reported an error.");
+	}
 	if (record.type !== "item.completed") return {};
 	const item = isRecord(record.item) ? record.item : {};
 	if (item.type === "agent_message" && typeof item.text === "string") return { delta: item.text, result: item.text };

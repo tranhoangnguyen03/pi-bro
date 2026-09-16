@@ -167,6 +167,30 @@ assert.deepEqual(parseCodexLine('{"type":"item.completed","item":{"id":"item_1",
 assert.deepEqual(parseCodexLine('{"type":"item.completed","item":{"type":"error","message":"Exceeded skills context budget"}}'), { notice: "Exceeded skills context budget" });
 assert.deepEqual(parseCodexLine('{"type":"turn.completed","usage":{"input_tokens":10}}'), {});
 assert.throws(() => parseCodexLine("not json"), /invalid streaming data/);
+// Captured from a live Codex CLI 0.142.0-alpha.6 run whose turn failed: both lines below are
+// verbatim, and the nested JSON detail is what makes the failure actionable.
+assert.throws(
+	() =>
+		parseCodexLine(
+			String.raw`{"type":"error","message":"{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-6-astra' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again.\"}}"}`,
+		),
+	/requires a newer version of Codex. Please upgrade to the latest app or CLI/,
+);
+assert.throws(
+	() =>
+		parseCodexLine(
+			String.raw`{"type":"turn.failed","error":{"message":"{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-6-astra' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again.\"}}"}}`,
+		),
+	/requires a newer version of Codex. Please upgrade to the latest app or CLI/,
+);
+assert.throws(() => parseCodexLine('{"type":"error","message":"plain failure"}'), /plain failure/);
+assert.deepEqual(
+	parseCodexLine(
+		'{"type":"item.completed","item":{"id":"item_1","type":"error","message":"Skill descriptions were shortened to fit the 2% skills context budget."}}',
+	),
+	{ notice: "Skill descriptions were shortened to fit the 2% skills context budget." },
+	"an item-level error is a notice, not a failure",
+);
 assert.deepEqual(parseBtwArguments("--fresh --full what now"), { fresh: true, full: true, question: "what now" });
 assert.deepEqual(parseBtwArguments("--sandbox hi"), { fresh: false, full: false, question: "hi" });
 assert.deepEqual(parseBtwArguments("plain question"), { fresh: false, full: undefined, question: "plain question" });
