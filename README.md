@@ -61,10 +61,12 @@ text directly captures a new source the same way.
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
 | `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
-| `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
+| `/bro doctor` | Check Bro's settings, the active backend, account, model, effort, and mode. |
 | `/bro usage [--provider agy]` | Show current Agy resource limits. |
 | `/bro model [id]` | View or choose the Agy model. |
 | `/bro effort [low\|medium\|high]` | View or choose the supported reasoning effort. |
+| `/bro provider [id model]` | Use a provider and model Pi already knows about (for example an OpenAI-compatible endpoint declared in `models.json`) instead of Agy. `/bro provider none` returns to Agy. |
+| `/bro agent [id] [model]` | Explain through a local CLI agent instead of Agy: `claude` (Claude Code) or `codex` (Codex CLI). `/bro agent agy` returns to Agy. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro btw [--fresh] [--full] [question]` | Open a side conversation in a modal. Sandboxed (read-only) by default; `--full` lets it read and edit the workspace, `--fresh` skips main-session context. |
 | `/bro help` | Open the built-in quick reference. |
@@ -610,6 +612,54 @@ Bro creates this user-editable settings file when the extension loads:
 }
 ```
 
+Add an optional `provider` object to explain through a provider and model Pi
+already knows about instead of Agy:
+
+```json
+{
+  "model": "gemini-3.7-flash",
+  "effort": "low",
+  "mode": "balanced",
+  "showTurns": 1,
+  "provider": { "id": "my-proxy", "model": "glm-4.6" }
+}
+```
+
+With `provider` set, `/bro text`, `/bro file`, `/bro url`, and `/bro show`
+stream through Pi's model registry, so the endpoint, its API key, and OAuth all
+stay in Pi's own configuration (`models.json` and its credential store) — Bro
+never holds a credential and adds no second provider configuration. Run
+`/bro provider` with no arguments to pick from what is available, `/bro
+provider <id> <model>` to set it directly, and `/bro provider none` to go back
+to Agy. The Agy `model` and `effort` fields are not used while `provider` is
+set, so they survive switching back. `/bro usage`, `/bro effort`, and `/bro
+model` apply to the Agy backend and say so when a provider is active.
+
+Add an optional `agent` object to explain through a CLI agent you already signed
+in instead of Agy or a provider:
+
+```json
+{
+  "model": "gemini-3.7-flash",
+  "effort": "low",
+  "mode": "balanced",
+  "showTurns": 1,
+  "agent": { "id": "claude", "model": "sonnet" }
+}
+```
+
+`id` is `claude` ([Claude Code](https://claude.com/claude-code)) or `codex`
+([Codex CLI](https://developers.openai.com/codex/cli/)); `model` is optional and
+is passed to the CLI as `--model` (Claude Code) or `-m` (Codex), which fall back
+to their own default when it is omitted. Both run headless in a temporary empty
+folder, Bro streams their progress into the modal, and Esc cancels. Run
+`/bro agent` with no arguments to choose, `/bro agent claude` or
+`/bro agent codex` to set one directly — with an optional model after it — and
+`/bro agent agy` to go back to Agy. The Agy `model` and `effort` fields are not
+used while `agent` is set, so they survive switching back. Selecting a provider
+clears `agent` and selecting an agent clears `provider`, because Bro explains
+through one backend at a time.
+
 Use `/bro model`, `/bro effort`, and `/bro mode` to update it from Pi, or edit
 it directly. Bro reads the file again before each explanation, so manual changes
 apply to the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
@@ -663,7 +713,15 @@ run `/bro doctor` for the exact problem.
 - **External requests**: Bro sends the latest completed assistant response,
   pasted text, extracted document text, extracted webpage text, or recent
   session conversation text (tool calls, tool results, reasoning, and images
-  omitted) to Agy and its configured model provider.
+  omitted) to Agy by default, to the provider and model you selected with
+  `/bro provider`, or to the CLI agent you selected with `/bro agent`. Bro
+  stores no credential of its own: the endpoint, its API key, and OAuth live in
+  Pi's model configuration, and a CLI agent uses the login it already has.
+- **CLI-agent requests**: `/bro agent claude` or `/bro agent codex` sends the
+  same source text to the CLI's own service using your existing signed-in
+  account, under that vendor's terms and billing. Claude Code runs with
+  `--disallowedTools Bash Edit Write` and Codex with `-s read-only`, so an
+  explanation cannot modify the workspace.
 - **Side conversation requests**: `/bro btw` sends your side questions and, on
   the first turn, the seeded main-session conversation text to Agy. In `--full`
   mode the side agent additionally reads the workspace.
@@ -701,8 +759,9 @@ run `/bro doctor` for the exact problem.
   Bro writes it to `/tmp/pi-bro-<uid>/bro-show-<hash>.html` with a restrictive
   Content-Security-Policy, and opens it in your browser only when you press
   **O**. **C** copies the full reply, including the HTML.
-- **Provider data**: Agy and your model provider may retain logs and request data
-  according to their own settings and privacy policies.
+- **Provider data**: Agy, your model provider, and any CLI agent you select may
+  retain logs and request data according to their own settings and privacy
+  policies.
 - **Clipboard**: Pressing **C** copies the text to your system clipboard, where
   your operating system or clipboard manager may retain it.
 
@@ -713,7 +772,9 @@ extracted, copy its content into a supported text file or save it as a PDF and
 use `/bro file`. If a PDF contains only scanned images, run OCR with another
 tool before giving it to Bro.
 
-- Uses Agy as its only provider.
+- Uses Agy by default. Add a `provider` object to `bro-settings.json` (or run `/bro provider`) to explain through a provider and model Pi already knows about instead.
+- With a provider or a CLI agent selected, `/bro usage`, `/bro effort`, `/bro model`, and `/bro btw` still need Agy; the other explain commands do not.
+- Add an `agent` object to `bro-settings.json` (or run `/bro agent`) to explain through Claude Code or Codex instead. Both need to be installed and signed in, they run headless in a temporary folder, and a CLI-agent call bills your account for that vendor — the near-zero-cost Agy and provider paths stay the default.
 - Document input supports `.md`, `.markdown`, `.txt`, `.pdf`, and `.docx` only;
   it does not perform OCR.
 - Webpage input supports one public HTML page, up to 5 MiB downloaded and

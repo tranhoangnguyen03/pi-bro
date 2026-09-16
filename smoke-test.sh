@@ -15,6 +15,11 @@ usage_calls_file="$test_dir/agy-usage-calls"
 model_calls_file="$test_dir/agy-model-calls"
 version_calls_file="$test_dir/agy-version-calls"
 show_prompts_file="$test_dir/agy-show-prompts"
+claude_prompts_file="$test_dir/claude-prompts"
+claude_args_file="$test_dir/claude-args"
+codex_args_file="$test_dir/codex-args"
+claude_version_calls_file="$test_dir/claude-version-calls"
+claude_failure_branch_file="$test_dir/claude-failure-branch"
 canary_prefix="BRO_ONLY_CANARY_"
 usage_canary="USAGE_ONLY_CANARY"
 document_canary="DOCUMENT_ONLY_CANARY"
@@ -56,6 +61,11 @@ const {
 	looksLikeWebUrl,
 	parseAgyModels,
 	parseBroSettings,
+	parseAgentSelection,
+	parseClaudeLine,
+	parseCodexLine,
+	isAgentId,
+	parseProviderSelection,
 	parseBtwArguments,
 	parseBtwAgyLine,
 	parseShowArguments,
@@ -110,6 +120,77 @@ assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "f
 });
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
+assert.deepEqual(parseProviderSelection(undefined), undefined);
+assert.deepEqual(parseProviderSelection({ id: "my-proxy", model: "glm-4.6" }), { id: "my-proxy", model: "glm-4.6" });
+assert.deepEqual(parseProviderSelection({ id: "  my-proxy  ", model: " glm-4.6 " }), { id: "my-proxy", model: "glm-4.6" });
+assert.throws(() => parseProviderSelection("my-proxy"), /must be an object/);
+assert.throws(() => parseProviderSelection({ id: "my-proxy" }), /non-empty/);
+assert.throws(() => parseProviderSelection({ id: "", model: "glm-4.6" }), /non-empty/);
+assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", provider: { id: "my-proxy", model: "glm-4.6" } }), {
+	model: "gemini-one",
+	effort: "low",
+	mode: "balanced",
+	showTurns: 1,
+	provider: { id: "my-proxy", model: "glm-4.6" },
+});
+assert.equal("provider" in parseBroSettings({ model: "gemini-one", effort: "low" }), false, "Agy stays the default backend");
+assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", provider: {} }), /non-empty/);
+assert.deepEqual(parseAgentSelection(undefined), undefined);
+assert.deepEqual(parseAgentSelection({ id: "claude" }), { id: "claude" });
+assert.deepEqual(parseAgentSelection({ id: "codex", model: " gpt-5-codex " }), { id: "codex", model: "gpt-5-codex" });
+assert.deepEqual(parseAgentSelection({ id: "agy" }), { id: "agy" }, "Agy stays selectable as the default explainer");
+assert.throws(() => parseAgentSelection("claude"), /must be an object/);
+assert.throws(() => parseAgentSelection({ id: "gemini-cli" }), /"agy", "claude", or "codex"/);
+assert.throws(() => parseAgentSelection({ id: "claude", model: "" }), /non-empty/);
+assert.equal(isAgentId("codex"), true);
+assert.equal(isAgentId("gemini-cli"), false);
+assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", agent: { id: "claude", model: "sonnet-9" } }), {
+	model: "gemini-one",
+	effort: "low",
+	mode: "balanced",
+	showTurns: 1,
+	agent: { id: "claude", model: "sonnet-9" },
+});
+assert.equal("agent" in parseBroSettings({ model: "gemini-one", effort: "low" }), false, "no agent means Agy");
+assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", agent: { id: "aider" } }), /"agy", "claude", or "codex"/);
+// Event shapes below are copied verbatim from live Claude Code 2.1.272 and Codex CLI 0.154.0 runs.
+assert.deepEqual(parseClaudeLine('{"type":"system","subtype":"init","session_id":"s1"}'), {});
+assert.deepEqual(parseClaudeLine('{"type":"assistant","message":{"content":[{"type":"text","text":"pong"}]}}'), { delta: "pong" });
+assert.deepEqual(parseClaudeLine('{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"}]}}'), {});
+assert.deepEqual(parseClaudeLine('{"type":"result","subtype":"success","is_error":false,"result":"pong","session_id":"s1","total_cost_usd":0.0884}'), { result: "pong" });
+assert.throws(() => parseClaudeLine('{"type":"result","is_error":true,"result":"Invalid API key"}'), /Invalid API key/);
+assert.throws(() => parseClaudeLine("not json"), /invalid streaming data/);
+assert.deepEqual(parseCodexLine('{"type":"thread.started","thread_id":"t1"}'), {});
+assert.deepEqual(parseCodexLine('{"type":"turn.started"}'), {});
+assert.deepEqual(parseCodexLine('{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"pong"}}'), { delta: "pong", result: "pong" });
+assert.deepEqual(parseCodexLine('{"type":"item.completed","item":{"id":"item_1","type":"reasoning","text":"thinking"}}'), {});
+assert.deepEqual(parseCodexLine('{"type":"item.completed","item":{"type":"error","message":"Exceeded skills context budget"}}'), { notice: "Exceeded skills context budget" });
+assert.deepEqual(parseCodexLine('{"type":"turn.completed","usage":{"input_tokens":10}}'), {});
+assert.throws(() => parseCodexLine("not json"), /invalid streaming data/);
+// Captured from a live Codex CLI 0.142.0-alpha.6 run whose turn failed: both lines below are
+// verbatim, and the nested JSON detail is what makes the failure actionable.
+assert.throws(
+	() =>
+		parseCodexLine(
+			String.raw`{"type":"error","message":"{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-6-astra' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again.\"}}"}`,
+		),
+	/requires a newer version of Codex. Please upgrade to the latest app or CLI/,
+);
+assert.throws(
+	() =>
+		parseCodexLine(
+			String.raw`{"type":"turn.failed","error":{"message":"{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-6-astra' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again.\"}}"}}`,
+		),
+	/requires a newer version of Codex. Please upgrade to the latest app or CLI/,
+);
+assert.throws(() => parseCodexLine('{"type":"error","message":"plain failure"}'), /plain failure/);
+assert.deepEqual(
+	parseCodexLine(
+		'{"type":"item.completed","item":{"id":"item_1","type":"error","message":"Skill descriptions were shortened to fit the 2% skills context budget."}}',
+	),
+	{ notice: "Skill descriptions were shortened to fit the 2% skills context budget." },
+	"an item-level error is a notice, not a failure",
+);
 assert.deepEqual(parseBtwArguments("--fresh --full what now"), { fresh: true, full: true, question: "what now" });
 assert.deepEqual(parseBtwArguments("--sandbox hi"), { fresh: false, full: false, question: "hi" });
 assert.deepEqual(parseBtwArguments("plain question"), { fresh: false, full: undefined, question: "plain question" });
@@ -372,7 +453,46 @@ printf '%s\n' \
 	> "$test_dir/agy"
 chmod +x "$test_dir/agy"
 
+printf '%s\n' \
+	'#!/bin/sh' \
+	'case "${PWD##*/}" in pi-bro-*) ;; *) exit 13;; esac' \
+	'if [ "${1:-}" = "--version" ]; then printf "version\n" >> "$BRO_CLAUDE_VERSION_CALLS"; printf "claude 9.9.9 (fake)\n"; exit 0; fi' \
+	'printf "%s\n" "$*" >> "$BRO_CLAUDE_ARGS"' \
+	'case " $* " in *" -p "*) ;; *) exit 21;; esac' \
+	'case " $* " in *" --output-format stream-json "*) ;; *) exit 22;; esac' \
+	'case " $* " in *" --disable-slash-commands "*) ;; *) exit 23;; esac' \
+	'case " $* " in *" --disallowedTools Bash Edit Write"*) ;; *) exit 24;; esac' \
+	'if [ "${BRO_CLAUDE_FORCE_FAILURE:-}" = "1" ]; then' \
+	'  printf "failure-branch\n" >> "$BRO_CLAUDE_FAILURE_BRANCH"' \
+	'  printf "%s\n" "{\"type\":\"result\",\"subtype\":\"error\",\"is_error\":true,\"result\":\"CLI_FAILED_CANARY\"}"' \
+	'  exec sleep 6' \
+	'fi' \
+	'prompt=""' \
+	'while IFS= read -r line || [ -n "$line" ]; do prompt="$prompt$line"; done' \
+	'printf "%s\n" "$prompt" >> "$BRO_CLAUDE_PROMPTS"' \
+	'printf "%s\n" "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\"}"' \
+	'printf "%s\n" "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"CLAUDE_AGENT_CANARY\"}]}}"' \
+	'printf "%s\n" "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"CLAUDE_AGENT_CANARY\",\"session_id\":\"s1\"}"' \
+	> "$test_dir/claude"
+chmod +x "$test_dir/claude"
+
+printf '%s\n' \
+	'#!/bin/sh' \
+	'case "${PWD##*/}" in pi-bro-*) ;; *) exit 13;; esac' \
+	'if [ "${1:-}" = "--version" ]; then printf "codex-cli 9.9.9 (fake)\n"; exit 0; fi' \
+	'printf "%s\n" "$*" >> "$BRO_CODEX_ARGS"' \
+	'case " $* " in *" exec --json --skip-git-repo-check -s read-only "*) ;; *) exit 21;; esac' \
+	'case " $* " in *"CLI_AGENT_CANARY"*) ;; *) exit 22;; esac' \
+	'printf "%s\n" "{\"type\":\"thread.started\",\"thread_id\":\"t1\"}"' \
+	'printf "%s\n" "{\"type\":\"turn.started\"}"' \
+	'printf "%s\n" "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"error\",\"message\":\"Exceeded skills context budget\"}}"' \
+	'printf "%s\n" "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_1\",\"type\":\"agent_message\",\"text\":\"CODEX_AGENT_CANARY\"}}"' \
+	'printf "%s\n" "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":10,\"output_tokens\":2}}"' \
+	> "$test_dir/codex"
+chmod +x "$test_dir/codex"
+
 touch "$calls_file" "$args_file" "$usage_calls_file" "$model_calls_file" "$version_calls_file" "$show_prompts_file"
+touch "$claude_prompts_file" "$claude_args_file" "$codex_args_file" "$claude_version_calls_file" "$claude_failure_branch_file"
 output=$(
 	{
 		printf '%s\n' '{"id":"bro-open-empty","type":"prompt","message":"/bro open"}'
@@ -433,12 +553,34 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
 		sleep 1
-	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_SHOW_PROMPTS="$show_prompts_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+		printf '%s\n' '{"id":"bro-agent-list","type":"prompt","message":"/bro agent"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-agent-unknown","type":"prompt","message":"/bro agent aider"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-agent-extra","type":"prompt","message":"/bro agent claude sonnet-9 junk"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-agent-claude","type":"prompt","message":"/bro agent claude sonnet-9"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-doctor-claude","type":"prompt","message":"/bro doctor"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-model-while-agent","type":"prompt","message":"/bro model gemini-test-one"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-text-claude","type":"prompt","message":"/bro text CLI_AGENT_CANARY"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-agent-codex","type":"prompt","message":"/bro agent codex gpt-5-codex"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-text-codex","type":"prompt","message":"/bro text CLI_AGENT_CANARY"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-agent-agy","type":"prompt","message":"/bro agent agy"}'
+		sleep 1
+		printf '%s\n' '{"id":"bro-usage-after-agent","type":"prompt","message":"/bro usage"}'
+		sleep 1
+	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_SHOW_PROMPTS="$show_prompts_file" BRO_CLAUDE_PROMPTS="$claude_prompts_file" BRO_CLAUDE_ARGS="$claude_args_file" BRO_CODEX_ARGS="$codex_args_file" BRO_CLAUDE_VERSION_CALLS="$claude_version_calls_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 27 ]; then
-	printf 'Expected 27 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 38 ]; then
+	printf 'Expected 38 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
 	exit 1
 fi
 
@@ -492,10 +634,10 @@ assert.deepEqual(JSON.parse(await readFile(process.argv[2], "utf8")), {
 	mode: "faithful",
 	showTurns: 1,
 });
-assert.deepEqual(JSON.parse(await readFile(process.argv[3], "utf8")), {
-	model: "gemini-test-one",
-	effort: "low",
-});
+const afterAgent = JSON.parse(await readFile(process.argv[3], "utf8"));
+assert.deepEqual(afterAgent, { model: "gemini-test-one", effort: "low", mode: "balanced", showTurns: 1 });
+assert.equal("agent" in afterAgent, false, "/bro agent agy returns to Agy");
+assert.equal("provider" in afterAgent, false, "choosing an agent releases the provider backend");
 JS
 
 expected_model_calls=$(printf 'models\nmodels\nmodels\nmodels')
@@ -517,7 +659,7 @@ if [ "$actual_calls" != "$expected_calls" ]; then
 	exit 1
 fi
 
-expected_usage_calls=$(printf 'usage\nusage\nusage')
+expected_usage_calls=$(printf 'usage\nusage\nusage\nusage')
 actual_usage_calls=$(cat "$usage_calls_file")
 if [ "$actual_usage_calls" != "$expected_usage_calls" ]; then
 	printf 'Expected exactly three Agy usage calls, got:\n%s\n' "$actual_usage_calls" >&2
@@ -526,6 +668,44 @@ fi
 
 if [ "$(cat "$version_calls_file")" != "version" ]; then
 	printf 'Doctor did not check the Agy version\n' >&2
+	exit 1
+fi
+
+if [ "$(grep -c 'CLI_AGENT_CANARY' "$claude_prompts_file" || true)" -ne 1 ]; then
+	printf 'The Claude Code backend did not receive the prompt exactly once:\n%s\n' "$(cat "$claude_prompts_file")" >&2
+	exit 1
+fi
+if ! grep -Fq -- '--model sonnet-9' "$claude_args_file"; then
+	printf 'A model chosen with /bro agent did not reach Claude Code:\n%s\n' "$(cat "$claude_args_file")" >&2
+	exit 1
+fi
+claude_call_count=$(grep -c '^\-p ' "$claude_args_file" || true)
+if [ "$claude_call_count" -ne 1 ]; then
+	printf 'Expected exactly one Claude Code call, got %s:\n%s\n' "$claude_call_count" "$(cat "$claude_args_file")" >&2
+	exit 1
+fi
+if [ "$(grep -c 'CLI_AGENT_CANARY' "$codex_args_file" || true)" -ne 1 ]; then
+	printf 'The Codex backend did not receive the prompt exactly once:\n%s\n' "$(cat "$codex_args_file")" >&2
+	exit 1
+fi
+if ! grep -Fq -- '-m gpt-5-codex' "$codex_args_file"; then
+	printf 'A model chosen with /bro agent did not reach Codex:\n%s\n' "$(cat "$codex_args_file")" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$output" | grep -q 'Bro explainer: Claude Code · sonnet-9'; then
+	printf 'Selecting an agent backend was not confirmed to the user:\n%s\n' "$output" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$output" | grep -q 'Claude Code explains Bro.s text, so /bro model has nothing to configure'; then
+	printf 'The Agy-only guard did not refuse /bro model under a CLI-agent backend:\n%s\n' "$output" >&2
+	exit 1
+fi
+if [ "$(cat "$claude_version_calls_file")" != "version" ]; then
+	printf 'Doctor did not probe the active CLI agent\n' >&2
+	exit 1
+fi
+if ! printf '%s\n' "$output" | grep -q 'Known explainers: claude, codex'; then
+	printf 'An unknown /bro agent id did not list the known explainers:\n%s\n' "$output" >&2
 	exit 1
 fi
 
@@ -551,6 +731,60 @@ if (
 	throw new Error("Bro output leaked into model context");
 }
 JS
+
+# The explanation body never reaches the RPC stream, so the Claude Code failure path is what
+# proves the parsed event actually drove the result: a result event with is_error must surface
+# the CLI's own message instead of a silent success.
+agent_config="$test_dir/agent-config"
+agent_session="$test_dir/agent-session.jsonl"
+mkdir "$agent_config"
+printf '{"model":"gemini-test-one","effort":"low","agent":{"id":"claude"}}\n' > "$agent_config/bro-settings.json"
+cp "$session_file" "$agent_session"
+agent_started=$(date +%s)
+agent_output=$(
+	{
+		printf '%s\n' '{"id":"agent-failure","type":"prompt","message":"/bro text SOME_PASTED_TEXT"}'
+		sleep 1
+		printf '%s\n' '{"id":"agent-failure-doctor","type":"prompt","message":"/bro doctor"}'
+		sleep 1
+	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$agent_config" BRO_CLAUDE_FORCE_FAILURE=1 BRO_CLAUDE_FAILURE_BRANCH="$claude_failure_branch_file" BRO_CLAUDE_PROMPTS="$claude_prompts_file" BRO_CLAUDE_ARGS="$claude_args_file" BRO_CLAUDE_VERSION_CALLS="$claude_version_calls_file" "$pi_bin" --offline --mode rpc --session "$agent_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+)
+agent_elapsed=$(( $(date +%s) - agent_started ))
+agent_success_count=$(printf '%s\n' "$agent_output" | grep -c '"success":true' || true)
+if [ "$agent_success_count" -ne 2 ]; then
+	printf 'The CLI-agent failure run did not complete both commands:\n%s\n' "$agent_output" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$agent_output" | grep -q 'CLI_FAILED_CANARY'; then
+	printf 'A failing CLI-agent result did not surface the CLI message:\n%s\n' "$agent_output" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$agent_output" | grep -q '/bro doctor'; then
+	printf 'A failing CLI-agent result did not suggest Doctor:\n%s\n' "$agent_output" >&2
+	exit 1
+fi
+if [ "$(wc -l < "$claude_version_calls_file")" -ne 2 ]; then
+	printf 'Doctor did not probe the CLI agent again after a failure:\n%s\n' "$(cat "$claude_version_calls_file")" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$agent_output" | grep -q 'CLI_FAILED_CANARY'; then
+	printf 'A failing CLI-agent result did not surface the CLI message:\n%s\n' "$agent_output" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$agent_output" | grep -q '/bro doctor'; then
+	printf 'A failing CLI-agent result did not suggest Doctor:\n%s\n' "$agent_output" >&2
+	exit 1
+fi
+if [ "$(cat "$claude_failure_branch_file")" != "failure-branch" ]; then
+	printf 'The failing CLI never reached its failure branch\n' >&2
+	exit 1
+fi
+# The failing CLI stays alive for six seconds unless Bro stops it, so a fast run means the parsed
+# error actually ended the run instead of being ignored while the process drained.
+if [ "$agent_elapsed" -ge 5 ]; then
+	printf 'Bro waited %ss on a failed CLI agent instead of stopping it\n' "$agent_elapsed" >&2
+	exit 1
+fi
 
 missing_config="$test_dir/missing-config"
 missing_session="$test_dir/missing-session.jsonl"
@@ -645,6 +879,14 @@ if ! grep -qi 'custom prompt.*override\|override.*custom prompt' "$repo_dir/READ
 fi
 if ! grep -q 'brief —' "$repo_dir/bro.ts" || ! grep -q 'balanced —' "$repo_dir/bro.ts" || ! grep -q 'faithful —' "$repo_dir/bro.ts"; then
 	printf 'Built-in help does not describe all Bro modes\n' >&2
+	exit 1
+fi
+if ! grep -q '/bro agent' "$repo_dir/README.md" || ! grep -q 'Claude Code' "$repo_dir/README.md" || ! grep -q 'Codex' "$repo_dir/README.md"; then
+	printf 'README does not document the CLI-agent backends\n' >&2
+	exit 1
+fi
+if ! grep -q '/bro agent' "$repo_dir/bro.ts" || ! grep -q 'codex' "$repo_dir/bro.ts"; then
+	printf 'Built-in help does not offer /bro agent\n' >&2
 	exit 1
 fi
 if [ ! -f "$repo_dir/CHANGELOG.md" ] || ! grep -q '/bro mode' "$repo_dir/CHANGELOG.md" || ! grep -qi 'custom prompt' "$repo_dir/CHANGELOG.md"; then
