@@ -2,6 +2,23 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.15.0] - 2026-09-16
+
+### Added
+
+- `/bro agent [id] [model]` — explain through a local CLI agent instead of Agy: `claude` (Claude Code) or `codex` (Codex CLI). `text`, `file`, `url`, and `show` run through the selected CLI, stream progress into the modal, and cancel with Esc. `/bro agent agy` (or `none`) returns to Agy, which stays the default for every existing install.
+- `bro-settings.json` accepts an optional `agent` object (`{ "id": "claude", "model": "<model-id>" }`). The model is optional and becomes `--model` (Claude Code) or `-m` (Codex); without it each CLI uses its own default. Files without `agent` keep working unchanged.
+- `/bro doctor` reports the active CLI agent, its configured model, and the installed version when one is selected.
+
+### Changed
+
+- The Agy-only refusal for `/bro usage`, `/bro model`, and `/bro effort` now covers a CLI-agent backend too, and names the backend in use.
+- Selecting a provider or a CLI agent replaces the previous choice: Bro explains through one backend at a time.
+
+### Safety
+
+- Claude Code runs with `--disallowedTools Bash Edit Write` and Codex with `-s read-only`, in a temporary empty folder, so an explanation cannot modify the workspace.
+
 ## [0.14.0] - 2026-09-16
 
 ### Added
