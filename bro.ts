@@ -536,6 +536,17 @@ async function writeSettings(settings: BroSettings): Promise<void> {
 	await writeFile(SETTINGS_FILE, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
 
+// Reads only the provider selection, without creating the settings file and without throwing on a
+// missing or malformed file: the Agy-only command guards must have no side effects of their own.
+async function readProviderSelection(): Promise<ProviderSelection | undefined> {
+	try {
+		const parsed: unknown = JSON.parse(await readFile(SETTINGS_FILE, "utf8"));
+		return isRecord(parsed) ? parseProviderSelection(parsed.provider) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 export function formatAgyUsage(value: unknown): string {
 	if (!isRecord(value) || value.status !== "SUCCESS" || typeof value.response !== "string") {
 		throw new Error("Agy returned invalid usage data.");
@@ -2149,9 +2160,7 @@ export default async function bro(pi: ExtensionAPI) {
 			}
 
 			if (action === "usage" || action === "model" || action === "effort") {
-				const provider = await readSettings()
-					.then((value) => value.provider)
-					.catch(() => undefined);
+				const provider = await readProviderSelection();
 				if (provider) {
 					ctx.ui.notify(
 						`Bro is using provider \`${provider.id}\` · \`${provider.model}\`. Use /bro provider to change it, or /bro provider none to go back to Agy.`,
