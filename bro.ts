@@ -9,7 +9,7 @@ import { homedir, tmpdir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { stripVTControlCharacters } from "node:util";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Input, Markdown, matchesKey, truncateToWidth, visibleWidth, type Focusable } from "@earendil-works/pi-tui";
 import { Defuddle } from "defuddle/node";
@@ -52,7 +52,8 @@ type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean };
 const EFFORTS = ["default", "low", "medium", "high"] as const;
 type BroEffort = (typeof EFFORTS)[number];
 type AgyEffort = Exclude<BroEffort, "default">;
-type BroSettings = { model: string; effort: BroEffort; mode: BroMode; showTurns: number };
+type ProviderSelection = { id: string; model: string };
+type BroSettings = { model: string; effort: BroEffort; mode: BroMode; showTurns: number; provider?: ProviderSelection };
 type AgyModelFamily = {
 	id: string;
 	label: string;
@@ -88,6 +89,7 @@ const COMMANDS = [
 	{ value: "usage", label: "usage", description: "Show current Agy usage" },
 	{ value: "model", label: "model", description: "Choose the Agy model" },
 	{ value: "effort", label: "effort", description: "Choose the Agy reasoning effort" },
+	{ value: "provider", label: "provider", description: "Use a registered provider and model instead of Agy" },
 	{ value: "show", label: "show", description: "Draw what happened in recent session turns as shapes" },
 	{ value: "mode", label: "mode", description: "Choose brief, balanced, or faithful explanations" },
 	{ value: "btw", label: "btw", description: "Open a side conversation (sandboxed by default; --full edits files)" },
@@ -477,6 +479,15 @@ export function agyFailureMessage(
 	return `Agy could not ${action}. Make sure Agy is installed and signed in, then run \`/bro doctor\`.`;
 }
 
+export function parseProviderSelection(value: unknown): ProviderSelection | undefined {
+	if (value === undefined) return undefined;
+	if (!isRecord(value)) throw new Error('Settings "provider" must be an object with "id" and "model".');
+	const id = typeof value.id === "string" ? value.id.trim() : "";
+	const model = typeof value.model === "string" ? value.model.trim() : "";
+	if (!id || !model) throw new Error('Settings "provider" must contain a non-empty "id" and "model".');
+	return { id, model };
+}
+
 export function parseBroSettings(value: unknown): BroSettings {
 	if (
 		!isRecord(value) ||
@@ -492,7 +503,8 @@ export function parseBroSettings(value: unknown): BroSettings {
 	if (typeof showTurns !== "number" || !Number.isInteger(showTurns) || showTurns < 1) {
 		throw new Error("Settings showTurns must be a positive whole number of turns.");
 	}
-	return { model: value.model.trim(), effort: value.effort as BroSettings["effort"], mode, showTurns };
+	const provider = parseProviderSelection(value.provider);
+	return { model: value.model.trim(), effort: value.effort as BroSettings["effort"], mode, showTurns, ...(provider ? { provider } : {}) };
 }
 
 async function ensureSettingsFile(): Promise<void> {
@@ -940,23 +952,127 @@ function parseAgyLine(line: string): { delta?: string; result?: string } {
 	return {};
 }
 
+async function runProviderText(
+	registry: ModelRegistry,
+	selection: ProviderSelection,
+	prompt: string,
+	signal: AbortSignal,
+	onProgress?: (text: string) => void,
+): Promise<string> {
+	const model = registry.find(selection.id, selection.model);
+	if (!model) {
+		throw new Error(
+			`Provider \`${selection.id}\` has no model \`${selection.model}\`. Run \`/bro provider\` to choose another.\n\nRun \`/bro doctor\` for setup help.`,
+		);
+	}
+	if (!registry.hasConfiguredAuth(model)) {
+		throw new Error(
+			`Provider \`${selection.id}\` has no credentials for \`${selection.model}\`. Sign in or set its API key, then run \`/bro doctor\`.`,
+		);
+	}
+	const provider = registry.getProvider(selection.id);
+	if (!provider) {
+		throw new Error(
+			`Provider \`${selection.id}\` exposes no runtime for \`${selection.model}\`. Run \`/bro doctor\` for setup help.`,
+		);
+	}
+	let partial = "";
+	let updateTimer: ReturnType<typeof setTimeout> | undefined;
+	const report = (text: string) => {
+		partial = text;
+		if (onProgress && !updateTimer) {
+			updateTimer = setTimeout(() => {
+				updateTimer = undefined;
+				if (!signal.aborted) onProgress(partial);
+			}, 75);
+		}
+	};
+	let final = "";
+	try {
+		const stream = provider.streamSimple(
+			model,
+			{ messages: [{ role: "user", content: prompt, timestamp: Date.now() }] },
+			{ signal },
+		);
+		for await (const event of stream) {
+			if (event.type === "text_delta" && event.delta) report(`${partial}${event.delta}`);
+		}
+		const message = await stream.result();
+		final = message.content
+			.filter((block) => block.type === "text")
+			.map((block) => (block.type === "text" ? block.text : ""))
+			.join("");
+	} catch (error) {
+		if (signal.aborted) throw new Error("Canceled.");
+		throw new Error(
+			`Provider \`${selection.id}\` could not explain the text: ${errorMessage(error)}\n\nRun \`/bro doctor\` for setup help.`,
+		);
+	} finally {
+		if (updateTimer) clearTimeout(updateTimer);
+	}
+	const result = (final || partial).trim();
+	if (!result) throw new Error(`Provider \`${selection.id}\` returned an empty explanation.`);
+	return result;
+}
+
+async function runText(
+	registry: ModelRegistry,
+	prompt: string,
+	settings: BroSettings,
+	signal: AbortSignal,
+	onProgress?: (text: string) => void,
+): Promise<string> {
+	if (!settings.provider) return runAgyText(prompt, agySelection(settings), signal, onProgress);
+	return runProviderText(registry, settings.provider, prompt, signal, onProgress);
+}
+
+function providerDoctorReport(registry: ModelRegistry, settings: BroSettings): string {
+	const lines: string[] = [];
+	let failed = false;
+	const pass = (name: string, detail: string) => lines.push(`- ✓ **${name}:** ${detail}`);
+	const fail = (name: string, error: unknown) => {
+		failed = true;
+		lines.push(`- ✗ **${name}:** ${errorMessage(error)}`);
+	};
+	const selection = settings.provider;
+	if (!selection) {
+		fail("Provider", "no provider is selected. Run `/bro provider`.");
+	} else {
+		pass("Backend", `provider — \`${selection.id}\` (Agy is not used)`);
+		const model = registry.find(selection.id, selection.model);
+		if (!model) {
+			fail("Model", `\`${selection.id}\` has no model \`${selection.model}\`. Run \`/bro provider\` to choose one.`);
+		} else {
+			pass("Model", `\`${model.id}\``);
+			if (registry.hasConfiguredAuth(model)) pass("Credentials", "configured");
+			else fail("Credentials", `none for \`${model.id}\`; sign in or set the provider's API key`);
+		}
+		const catalogError = registry.getError();
+		if (catalogError) fail("Provider catalog", catalogError);
+	}
+	pass("Catalog", `${registry.getAvailable().length} model(s) available through Pi's registry`);
+	return `# Bro doctor\n\n${lines.join("\n")}\n\n**${failed ? "Bro needs attention." : "Bro is ready."}**\n\nProvider explanations stream through Pi's model registry. \`/bro usage\`, \`/bro effort\`, and \`/bro btw\` still require Agy.`;
+}
+
 async function simplify(
+	registry: ModelRegistry,
 	response: string,
 	signal: AbortSignal,
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
 ): Promise<string> {
-	return runAgyText((await promptFor(response, settings.mode)).text, agySelection(settings), signal, onProgress);
+	return runText(registry, (await promptFor(response, settings.mode)).text, settings, signal, onProgress);
 }
 
 async function runShowExplanation(
+	registry: ModelRegistry,
 	transcript: string,
 	steering: string,
 	signal: AbortSignal,
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
 ): Promise<string> {
-	return runAgyText(buildShowPrompt(transcript, steering), agySelection(settings), signal, onProgress);
+	return runText(registry, buildShowPrompt(transcript, steering), settings, signal, onProgress);
 }
 
 async function runAgyText(
@@ -1069,7 +1185,7 @@ async function runAgyText(
 
 function helpText(settings?: BroSettings, settingsError?: string): string {
 	const settingsSummary = settings
-		? `- **Model:** \`${settings.model}\`\n- **Reasoning effort:** ${settings.effort === "default" ? "built into the selected model" : settings.effort}\n- **Mode:** ${settings.mode}\n- **Show turns:** ${settings.showTurns}`
+		? `- **Model:** \`${settings.model}\`\n- **Reasoning effort:** ${settings.effort === "default" ? "built into the selected model" : settings.effort}\n- **Mode:** ${settings.mode}\n- **Show turns:** ${settings.showTurns}${settings.provider ? `\n- **Provider backend:** \`${settings.provider.id}\` · \`${settings.provider.model}\`` : ""}`
 		: `Bro could not read its settings: ${settingsError}\n\nRun \`/bro doctor\` for setup help.`;
 	return `# Bro
 
@@ -1090,10 +1206,11 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 
 ## Check and configure
 
-- \`/bro doctor\` — check settings, Agy, account, model, effort, and mode
+- \`/bro doctor\` — check settings, the active backend, account, model, effort, and mode
 - \`/bro usage [--provider agy]\` — show current Agy limits
 - \`/bro model [id]\` — view or choose the Agy model
 - \`/bro effort [low|medium|high]\` — view or choose reasoning effort
+- \`/bro provider [id model]\` — use a registered provider and model instead of Agy; \`/bro provider none\` returns to Agy
 - \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
 
 ## Side conversation
@@ -1132,10 +1249,11 @@ Bro temporarily captures mouse input while the modal is open. Native mouse selec
 - Show draws only what already happened in this session — the conversation text of the last few turns, with tool calls, tool results, reasoning, and images always omitted — and cannot read the repository or other files on its own. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
 - Show reflects what was reported in the conversation, not independent verification against the actual code or system state.
 - Btw threads are memory-only and do not survive reloads or restarts. A turn is capped at 2 minutes in sandbox mode and 10 minutes in full mode; the side conversation resumes through Agy's \`--conversation\` support.
+- With a provider backend selected, \`/bro text\`, \`/bro file\`, \`/bro url\`, and \`/bro show\` stream through Pi's model registry. \`/bro usage\`, \`/bro effort\`, and \`/bro btw\` still require Agy.
 
 ## Privacy and safety
 
-Bro sends the selected assistant reply, pasted text, locally extracted document or webpage text, or recent session conversation text (tool calls, tool results, reasoning, and images omitted) to Agy and your model provider. They may retain request data under their own policies.
+Bro sends the selected assistant reply, pasted text, locally extracted document or webpage text, or recent session conversation text (tool calls, tool results, reasoning, and images omitted) to Agy, or to the provider and model you selected with \`/bro provider\`. They may retain request data under their own policies.
 
 Bro never adds the explanation to Pi's conversation, session file, or main-agent context. The captured source and latest explanation stay in process memory until you change sessions, reload extensions, or exit Pi.
 
@@ -1954,7 +2072,7 @@ export default async function bro(pi: ExtensionAPI) {
 					}
 					let text: string;
 					try {
-						text = await runShowExplanation(captured.text, steering, signal, await readSettings(), onProgress);
+						text = await runShowExplanation(ctx.modelRegistry, captured.text, steering, signal, await readSettings(), onProgress);
 					} catch (error) {
 						throw new Error(withDoctor(error));
 					}
@@ -1990,7 +2108,7 @@ export default async function bro(pi: ExtensionAPI) {
 					try {
 						return {
 							source: target,
-							text: await simplify(target.text, signal, await readSettings(), onProgress),
+							text: await simplify(ctx.modelRegistry, target.text, signal, await readSettings(), onProgress),
 						};
 					} catch (error) {
 						throw new Error(withDoctor(error));
@@ -2018,12 +2136,29 @@ export default async function bro(pi: ExtensionAPI) {
 						loadingText: "Checking Bro setup…",
 						retryable: true,
 						retryLabel: "check again",
-						run: async (signal) => ({ text: await doctorReport(pi, signal) }),
+						run: async (signal) => {
+							const settings = await readSettings();
+							if (settings.provider) return { text: providerDoctorReport(ctx.modelRegistry, settings) };
+							return { text: await doctorReport(pi, signal) };
+						},
 					});
 				} catch (error) {
 					ctx.ui.notify(errorMessage(error), "error");
 				}
 				return;
+			}
+
+			if (action === "usage" || action === "model" || action === "effort") {
+				const provider = await readSettings()
+					.then((value) => value.provider)
+					.catch(() => undefined);
+				if (provider) {
+					ctx.ui.notify(
+						`Bro is using provider \`${provider.id}\` · \`${provider.model}\`. Use /bro provider to change it, or /bro provider none to go back to Agy.`,
+						"warning",
+					);
+					return;
+				}
 			}
 
 			if (action === "usage") {
@@ -2038,6 +2173,79 @@ export default async function bro(pi: ExtensionAPI) {
 						retryable: false,
 						run: async (signal) => ({ text: await checkAgyUsage(pi, signal) }),
 					});
+				} catch (error) {
+					ctx.ui.notify(withDoctor(error), "error");
+				}
+				return;
+			}
+
+			if (action === "provider") {
+				try {
+					const settings = await readSettings();
+					let selected: ProviderSelection | undefined;
+					if (parts[1] === "none") {
+						if (parts.length > 2) {
+							ctx.ui.notify("Use /bro provider, /bro provider <id> <model>, or /bro provider none.", "warning");
+							return;
+						}
+					} else if (parts.length === 3 && parts[1] && parts[2]) {
+						selected = { id: parts[1], model: parts[2] };
+					} else if (parts.length > 1) {
+						ctx.ui.notify("Use /bro provider, /bro provider <id> <model>, or /bro provider none.", "warning");
+						return;
+					} else {
+						const available = ctx.modelRegistry.getAvailable();
+						if (!available.length) {
+							const catalogError = ctx.modelRegistry.getError();
+							ctx.ui.notify(
+								catalogError
+									? `No provider models are available: ${catalogError}`
+									: "No provider models are available. Add a provider to Pi's models.json first.",
+								"warning",
+							);
+							return;
+						}
+						const byProvider = new Map<string, string[]>();
+						for (const model of available) {
+							const list = byProvider.get(model.provider) ?? [];
+							list.push(model.id);
+							byProvider.set(model.provider, list);
+						}
+						const ids = [...byProvider.keys()].sort();
+						if (ctx.mode !== "tui") {
+							ctx.ui.notify(`Providers: ${ids.join(", ")}. Use /bro provider <id> <model>.`, "info");
+							return;
+						}
+						const providerId = await ctx.ui.select("Provider", ids);
+						if (!providerId) return;
+						const models = (byProvider.get(providerId) ?? []).sort();
+						const modelId = models.length === 1 ? models[0] : await ctx.ui.select(`Model for ${providerId}`, models);
+						if (!modelId) return;
+						selected = { id: providerId, model: modelId };
+					}
+					const model = selected ? ctx.modelRegistry.find(selected.id, selected.model) : undefined;
+					if (selected && !model) {
+						ctx.ui.notify(
+							`Provider "${selected.id}" has no model "${selected.model}". Run /bro provider to choose one.`,
+							"warning",
+						);
+						return;
+					}
+					if (selected && model && !ctx.modelRegistry.hasConfiguredAuth(model)) {
+						ctx.ui.notify(
+							`Provider "${selected.id}" has no credentials for "${selected.model}". Sign in or set its API key, then run /bro doctor.`,
+							"warning",
+						);
+						return;
+					}
+					const next: BroSettings = { ...settings };
+					if (selected) next.provider = selected;
+					else delete next.provider;
+					await writeSettings(next);
+					ctx.ui.notify(
+						selected ? `Bro provider: ${selected.id} · ${selected.model}` : "Bro provider: none (using Agy)",
+						"info",
+					);
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");
 				}
@@ -2235,7 +2443,7 @@ export default async function bro(pi: ExtensionAPI) {
 					const settings = await readSettings();
 					return {
 						source: target,
-						text: await simplify(target.text, signal, settings, onProgress),
+						text: await simplify(ctx.modelRegistry, target.text, signal, settings, onProgress),
 					};
 				} catch (error) {
 					throw new Error(withDoctor(error));

@@ -2,6 +2,18 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.14.0] - 2026-09-16
+
+### Added
+
+- `/bro provider [id model]` — explain through a provider and model that Pi already knows about (for example an OpenAI-compatible endpoint declared in `models.json`) instead of Agy. `text`, `file`, `url`, and `show` stream through `ctx.modelRegistry`, including progress in the modal and Esc to cancel. Agy stays the default for every existing install, and `/bro provider none` returns to it.
+- `bro-settings.json` accepts an optional `provider` object (`{ "id": "<provider>", "model": "<model-id>" }`). Files without it keep working unchanged, and the Agy model/effort fields are untouched.
+- `/bro doctor` reports the active backend, the selected provider and model, credential status, and the catalog size when a provider is selected, and no longer requires Agy in that case.
+
+### Changed
+
+- `/bro usage`, `/bro effort`, and `/bro model` report that a provider backend is active instead of printing Agy numbers. `/bro btw` remains Agy-only.
+
 ## [0.13.0] - 2026-09-15
 
 ### Added

@@ -65,6 +65,7 @@ text directly captures a new source the same way.
 | `/bro usage [--provider agy]` | Show current Agy resource limits. |
 | `/bro model [id]` | View or choose the Agy model. |
 | `/bro effort [low\|medium\|high]` | View or choose the supported reasoning effort. |
+| `/bro provider [id model]` | Use a provider and model Pi already knows about (for example an OpenAI-compatible endpoint declared in `models.json`) instead of Agy. `/bro provider none` returns to Agy. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro btw [--fresh] [--full] [question]` | Open a side conversation in a modal. Sandboxed (read-only) by default; `--full` lets it read and edit the workspace, `--fresh` skips main-session context. |
 | `/bro help` | Open the built-in quick reference. |
@@ -610,6 +611,29 @@ Bro creates this user-editable settings file when the extension loads:
 }
 ```
 
+Add an optional `provider` object to explain through a provider and model Pi
+already knows about instead of Agy:
+
+```json
+{
+  "model": "gemini-3.7-flash",
+  "effort": "low",
+  "mode": "balanced",
+  "showTurns": 1,
+  "provider": { "id": "my-proxy", "model": "glm-4.6" }
+}
+```
+
+With `provider` set, `/bro text`, `/bro file`, `/bro url`, and `/bro show`
+stream through Pi's model registry, so the endpoint, its API key, and OAuth all
+stay in Pi's own configuration (`models.json` and its credential store) — Bro
+never holds a credential and adds no second provider configuration. Run
+`/bro provider` with no arguments to pick from what is available, `/bro
+provider <id> <model>` to set it directly, and `/bro provider none` to go back
+to Agy. The Agy `model` and `effort` fields are not used while `provider` is
+set, so they survive switching back. `/bro usage`, `/bro effort`, and `/bro
+model` apply to the Agy backend and say so when a provider is active.
+
 Use `/bro model`, `/bro effort`, and `/bro mode` to update it from Pi, or edit
 it directly. Bro reads the file again before each explanation, so manual changes
 apply to the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
@@ -663,7 +687,9 @@ run `/bro doctor` for the exact problem.
 - **External requests**: Bro sends the latest completed assistant response,
   pasted text, extracted document text, extracted webpage text, or recent
   session conversation text (tool calls, tool results, reasoning, and images
-  omitted) to Agy and its configured model provider.
+  omitted) to Agy by default, or to the provider and model you selected with
+  `/bro provider`. Bro stores no credential of its own: the endpoint, its API
+  key, and OAuth live in Pi's model configuration.
 - **Side conversation requests**: `/bro btw` sends your side questions and, on
   the first turn, the seeded main-session conversation text to Agy. In `--full`
   mode the side agent additionally reads the workspace.
@@ -713,7 +739,8 @@ extracted, copy its content into a supported text file or save it as a PDF and
 use `/bro file`. If a PDF contains only scanned images, run OCR with another
 tool before giving it to Bro.
 
-- Uses Agy as its only provider.
+- Uses Agy by default. Add a `provider` object to `bro-settings.json` (or run `/bro provider`) to explain through a provider and model Pi already knows about instead.
+- With a provider selected, `/bro usage`, `/bro effort`, `/bro model`, and `/bro btw` still need Agy; the other explain commands do not.
 - Document input supports `.md`, `.markdown`, `.txt`, `.pdf`, and `.docx` only;
   it does not perform OCR.
 - Webpage input supports one public HTML page, up to 5 MiB downloaded and

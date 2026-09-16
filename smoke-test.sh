@@ -56,6 +56,7 @@ const {
 	looksLikeWebUrl,
 	parseAgyModels,
 	parseBroSettings,
+	parseProviderSelection,
 	parseBtwArguments,
 	parseBtwAgyLine,
 	parseShowArguments,
@@ -110,6 +111,21 @@ assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "f
 });
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
+assert.deepEqual(parseProviderSelection(undefined), undefined);
+assert.deepEqual(parseProviderSelection({ id: "my-proxy", model: "glm-4.6" }), { id: "my-proxy", model: "glm-4.6" });
+assert.deepEqual(parseProviderSelection({ id: "  my-proxy  ", model: " glm-4.6 " }), { id: "my-proxy", model: "glm-4.6" });
+assert.throws(() => parseProviderSelection("my-proxy"), /must be an object/);
+assert.throws(() => parseProviderSelection({ id: "my-proxy" }), /non-empty/);
+assert.throws(() => parseProviderSelection({ id: "", model: "glm-4.6" }), /non-empty/);
+assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", provider: { id: "my-proxy", model: "glm-4.6" } }), {
+	model: "gemini-one",
+	effort: "low",
+	mode: "balanced",
+	showTurns: 1,
+	provider: { id: "my-proxy", model: "glm-4.6" },
+});
+assert.equal("provider" in parseBroSettings({ model: "gemini-one", effort: "low" }), false, "Agy stays the default backend");
+assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", provider: {} }), /non-empty/);
 assert.deepEqual(parseBtwArguments("--fresh --full what now"), { fresh: true, full: true, question: "what now" });
 assert.deepEqual(parseBtwArguments("--sandbox hi"), { fresh: false, full: false, question: "hi" });
 assert.deepEqual(parseBtwArguments("plain question"), { fresh: false, full: undefined, question: "plain question" });
