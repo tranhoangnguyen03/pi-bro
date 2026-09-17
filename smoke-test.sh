@@ -58,6 +58,7 @@ const {
 	parseBroSettings,
 	parseBtwArguments,
 	parseBtwAgyLine,
+	parseBtwComposerCommand,
 	parseShowArguments,
 	resolveBtwThread,
 	parseWebRedirect,
@@ -119,6 +120,18 @@ assert.deepEqual(parseBtwAgyLine('{"event":"init","conversation_id":"c1"}'), { c
 assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"hi"}}'), { delta: "hi", conversationId: undefined });
 assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"SUCCESS","response":"done","conversation_id":"c1"}}'), { result: "done", conversationId: "c1" });
 assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
+assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "copy", all: false, force: false });
+assert.deepEqual(parseBtwComposerCommand("/copy!"), { kind: "copy", all: false, force: true });
+assert.deepEqual(parseBtwComposerCommand("/copy-all"), { kind: "copy", all: true, force: false });
+assert.deepEqual(parseBtwComposerCommand("/copy-all!"), { kind: "copy", all: true, force: true });
+assert.deepEqual(parseBtwComposerCommand("/copy all"), { kind: "copy", all: true, force: false });
+assert.deepEqual(parseBtwComposerCommand("/copy all!"), { kind: "copy", all: true, force: true });
+assert.deepEqual(parseBtwComposerCommand("/send"), { kind: "copy", all: false, force: false });
+assert.deepEqual(parseBtwComposerCommand("/send all"), { kind: "copy", all: true, force: false });
+assert.deepEqual(parseBtwComposerCommand("/clear"), { kind: "clear" });
+assert.deepEqual(parseBtwComposerCommand("/retry"), { kind: "retry" });
+assert.deepEqual(parseBtwComposerCommand(""), { kind: "retry" });
+assert.deepEqual(parseBtwComposerCommand("how do I auth?"), { kind: "question", text: "how do I auth?" });
 assert.deepEqual(resolveBtwThread(undefined, { fresh: false }), { turns: [], full: false });
 assert.deepEqual(resolveBtwThread({ turns: [{ question: "q", answer: "a" }], full: true }, { fresh: false }), { turns: [{ question: "q", answer: "a" }], full: true });
 assert.deepEqual(resolveBtwThread({ turns: [], full: true }, { fresh: false, full: false }), { turns: [], full: false });

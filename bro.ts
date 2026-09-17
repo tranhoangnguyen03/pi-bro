@@ -1098,7 +1098,7 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 
 ## Side conversation
 
-- \`/bro btw [--fresh] [--full] [question]\` — open a side conversation. Sandboxed (read-only) by default; add \`--full\` to let it read and edit the workspace, and \`--fresh\` to start without main-session context. Inside the side thread, type questions and press Enter (empty Enter re-asks); \`/send\` copies the latest answer to the main editor without submitting (use \`/send!\` to replace an existing draft), \`/send all\` the full thread, \`/retry\` re-asks the last question, and \`/clear\` resets the thread. Esc closes.
+- \`/bro btw [--fresh] [--full] [question]\` — open a side conversation. Sandboxed (read-only) by default; add \`--full\` to let it read and edit the workspace, and \`--fresh\` to start without main-session context. Inside the side thread, type questions and press Enter (empty Enter re-asks); \`/copy\` copies the latest answer to the main editor without submitting (use \`/copy!\` to replace an existing draft), \`/copy-all\` the full thread, \`/retry\` re-asks the last question, and \`/clear\` resets the thread. Esc closes.
 
 ## Current settings
 
@@ -1496,6 +1496,37 @@ export function parseBtwAgyLine(line: string): { delta?: string; result?: string
 	return { conversationId };
 }
 
+export type BtwComposerAction =
+	| { kind: "clear" }
+	| { kind: "retry" }
+	| { kind: "copy"; all: boolean; force: boolean }
+	| { kind: "question"; text: string };
+
+export function parseBtwComposerCommand(value: string): BtwComposerAction {
+	const command = value.trim();
+	if (command === "/clear") return { kind: "clear" };
+	if (command === "/retry" || command === "") return { kind: "retry" };
+	if (
+		command === "/copy" ||
+		command === "/copy!" ||
+		command === "/copy-all" ||
+		command === "/copy-all!" ||
+		command === "/copy all" ||
+		command === "/copy all!" ||
+		command === "/send" ||
+		command === "/send!" ||
+		command === "/send all" ||
+		command === "/send all!"
+	) {
+		const all =
+			command.startsWith("/copy-all") ||
+			command.startsWith("/copy all") ||
+			command.startsWith("/send all");
+		return { kind: "copy", all, force: command.endsWith("!") };
+	}
+	return { kind: "question", text: command };
+}
+
 async function runBtwTurn(
 	prompt: string,
 	selection: ReturnType<typeof agySelection>,
@@ -1725,7 +1756,7 @@ class BtwModal implements Focusable {
 
 		const controls = this.running
 			? this.theme.fg("dim", "Thinking… · Esc cancel")
-			: this.theme.fg("dim", "Enter ask · Esc close · /send · /send all · /clear · /retry");
+			: this.theme.fg("dim", "Enter ask · Esc close · /copy · /copy-all · /clear · /retry");
 
 		const lines = [
 			this.borderLine(innerWidth, "top"),
@@ -1845,35 +1876,35 @@ async function openBtwModal(
 			const handoff = (all: boolean, force: boolean) => {
 				const text = all ? transcript() : (thread.turns.at(-1)?.answer ?? "");
 				if (!text.trim()) {
-					modal.setNotice("Nothing to send yet.");
+					modal.setNotice("Nothing to copy yet.");
 					return;
 				}
 				if (ctx.ui.getEditorText().trim() && !force) {
-					modal.setNotice("Main editor has a draft. Use /send! (or /send all!) to replace it.");
+					modal.setNotice("Main editor has a draft. Use /copy! (or /copy-all!) to replace it.");
 					return;
 				}
 				ctx.ui.setEditorText(text);
-				modal.setNotice(all ? "Sent the full thread to the editor." : "Sent the latest answer to the editor.");
+				modal.setNotice(all ? "Copied the full thread to the editor." : "Copied the latest answer to the editor.");
 			};
 
 			function submit(value: string): void {
-				const command = value.trim();
-				if (command === "/clear") {
+				const action = parseBtwComposerCommand(value);
+				if (action.kind === "clear") {
 					modal.clearComposer();
 					clear();
 					return;
 				}
-				if (command === "/send" || command === "/send all" || command === "/send!" || command === "/send all!") {
+				if (action.kind === "copy") {
 					modal.clearComposer();
-					handoff(command === "/send all" || command === "/send all!", command.endsWith("!"));
+					handoff(action.all, action.force);
 					return;
 				}
-				if (command === "/retry" || command === "") {
+				if (action.kind === "retry") {
 					modal.clearComposer();
 					retry();
 					return;
 				}
-				void runTurn(command);
+				void runTurn(action.text);
 			}
 
 			modal.setFull(thread.full);
