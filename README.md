@@ -108,7 +108,7 @@ your terminal mode; press **C** to copy the complete explanation reliably.
 `/bro btw` opens a separate multi-turn conversation in a modal, so you can ask
 a quick side question while the main agent keeps working. It runs through Agy,
 the same backend as the rest of Bro, and never adds anything to Pi's
-conversation unless you explicitly send it back.
+conversation unless you explicitly copy it into the editor.
 
 - **Sandboxed by default**: the side conversation is read-only (no project
   access). Add `--full` to let it read and edit the workspace.
@@ -119,8 +119,8 @@ conversation unless you explicitly send it back.
   conversation text (40,000 characters max, with a truncation notice); the
   side agent can also read the repo itself when running in `--full` mode.
 - **In the modal**: type a question and press Enter (empty Enter re-asks the
-  last question). `/send` copies the latest answer into the main editor
-  without submitting (use `/send!` to replace an existing draft); `/send all`
+  last question). `/copy` copies the latest answer into the main editor
+  without submitting (use `/copy!` to replace an existing draft); `/copy-all`
   copies the full thread; `/retry` re-asks
   the last question; `/clear` resets the thread; Esc closes. A visible
   `full · edits repo` badge shows whenever `--full` mode is active.

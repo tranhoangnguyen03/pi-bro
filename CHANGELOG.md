@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.13.1] - 2026-09-17
+
+### Changed
+
+- Renamed `/bro btw` composer commands from `/send` and `/send all` to `/copy` and `/copy-all` (also accepts `/copy all`), with `/copy!` and `/copy-all!` force variants to replace existing main-editor drafts. Legacy `/send` commands remain supported as aliases.
+
 ## [0.13.0] - 2026-09-15
 
 ### Added
