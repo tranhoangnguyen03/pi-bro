@@ -144,6 +144,11 @@ assert.equal(
 	]),
 	"> **You**\n>\n> first line\n> ### question heading\n\n**Bro**\n\n### Answer heading\nBody\n\n---\n\n> **You**\n>\n> second question\n\n**Bro**\n\nDone",
 );
+assert.equal(formatBtwTranscript([]), "");
+assert.equal(
+	formatBtwTranscript([{ question: "blank\n\nline", answer: "```js\ncode" }]),
+	"> **You**\n>\n> blank\n>\n> line\n\n**Bro**\n\n```js\ncode\n```",
+);
 assert.deepEqual(agySelection({ model: "gemini-one", effort: "low" }), { model: "gemini-one", effort: "low" });
 assert.deepEqual(agySelection({ model: "gemini-one-low", effort: "high" }), { model: "gemini-one", effort: "high" });
 assert.deepEqual(agySelection({ model: "claude-one", effort: "default" }), { model: "claude-one" });

@@ -1476,7 +1476,15 @@ export function resolveBtwThread(existing: BtwThread | undefined, parsed: { fres
 }
 
 export function formatBtwTranscript(turns: readonly BtwTurn[]): string {
-	return turns.map((turn) => `> **You**\n>\n${turn.question.split("\n").map((line) => `> ${line}`).join("\n")}\n\n**Bro**\n\n${turn.answer}`).join("\n\n---\n\n");
+	return turns
+		.map((turn) => {
+			const question = turn.question.split(/\r?\n/).map((line) => (line ? `> ${line}` : ">")).join("\n");
+			// A turn aborted mid-stream can end inside an unclosed code fence, which would swallow the
+			// separator and every later turn; close it so each turn renders as its own block.
+			const answer = (turn.answer.match(/^```/gm)?.length ?? 0) % 2 === 1 ? `${turn.answer}\n\`\`\`` : turn.answer;
+			return `> **You**\n>\n${question}\n\n**Bro**\n\n${answer}`;
+		})
+		.join("\n\n---\n\n");
 }
 
 export function parseBtwAgyLine(line: string): { delta?: string; result?: string; conversationId?: string; error?: string } {
