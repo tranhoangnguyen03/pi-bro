@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Renamed the `/bro btw` modal transcript so your questions render as a quoted **You** block and answers carry an explicit **Bro** label, separated by a horizontal rule between turns. The old `## you` heading was indistinguishable from headings inside Bro's answers.
+
 ## [0.13.1] - 2026-09-17
 
 ### Changed

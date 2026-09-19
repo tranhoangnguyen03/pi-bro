@@ -52,6 +52,7 @@ const {
 	extractWebHtml,
 	extractWebPage,
 	formatAgyUsage,
+	formatBtwTranscript,
 	isPublicWebAddress,
 	looksLikeWebUrl,
 	parseAgyModels,
@@ -136,6 +137,13 @@ assert.deepEqual(resolveBtwThread(undefined, { fresh: false }), { turns: [], ful
 assert.deepEqual(resolveBtwThread({ turns: [{ question: "q", answer: "a" }], full: true }, { fresh: false }), { turns: [{ question: "q", answer: "a" }], full: true });
 assert.deepEqual(resolveBtwThread({ turns: [], full: true }, { fresh: false, full: false }), { turns: [], full: false });
 assert.deepEqual(resolveBtwThread({ turns: [], full: false }, { fresh: true }), { turns: [], full: false });
+assert.equal(
+	formatBtwTranscript([
+		{ question: "first line\n### question heading", answer: "### Answer heading\nBody" },
+		{ question: "second question", answer: "Done" },
+	]),
+	"> **You**\n>\n> first line\n> ### question heading\n\n**Bro**\n\n### Answer heading\nBody\n\n---\n\n> **You**\n>\n> second question\n\n**Bro**\n\nDone",
+);
 assert.deepEqual(agySelection({ model: "gemini-one", effort: "low" }), { model: "gemini-one", effort: "low" });
 assert.deepEqual(agySelection({ model: "gemini-one-low", effort: "high" }), { model: "gemini-one", effort: "high" });
 assert.deepEqual(agySelection({ model: "claude-one", effort: "default" }), { model: "claude-one" });

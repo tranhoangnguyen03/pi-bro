@@ -1475,6 +1475,10 @@ export function resolveBtwThread(existing: BtwThread | undefined, parsed: { fres
 	return !existing || startFresh ? { turns: [], full: targetFull } : existing;
 }
 
+export function formatBtwTranscript(turns: readonly BtwTurn[]): string {
+	return turns.map((turn) => `> **You**\n>\n${turn.question.split("\n").map((line) => `> ${line}`).join("\n")}\n\n**Bro**\n\n${turn.answer}`).join("\n\n---\n\n");
+}
+
 export function parseBtwAgyLine(line: string): { delta?: string; result?: string; conversationId?: string; error?: string } {
 	let event: AgyEvent;
 	try {
@@ -1791,7 +1795,7 @@ async function openBtwModal(
 			let closed = false;
 			let controller: AbortController | undefined;
 
-			const transcript = () => thread.turns.map((turn) => `## you\n${turn.question}\n\n${turn.answer}`).join("\n\n");
+			const transcript = () => formatBtwTranscript(thread.turns);
 
 			const close = () => {
 				if (closed) return;
