@@ -2,6 +2,19 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.14.0] - 2026-09-20
+
+### Added
+
+- `bro_advisor` — a tool the **executor agent** (not the human) can voluntarily call mid-task for a second opinion from a fresh, standalone Agy process with real, unsandboxed tool access in the workspace (`--dangerously-skip-permissions`). Bro automatically captures a harness-neutral snapshot of the executor's system instructions, active tools, and conversation so far (including tool calls and results) and sends it, plus an optional executor-supplied question, to the advisor. The advisor is instructed to investigate before advising and to leave edits to the executor, but that boundary is behavioral, not enforced. Invocation failures retry twice (5s, then 10s) with the identical snapshot before surfacing Agy's own diagnostic.
+- `/bro advisor-steer` — an editor for one persistent, session-scoped steering brief the advisor always reads (e.g. "quick prototype; keep A and B careful, everything else minimal"). The brief is stored as session-only extension data, is never added to Pi's conversation or sent to the main model, persists across resume/reload, and is inherited by forks.
+- `/bro advisor` — a quick notice of whether `bro_advisor` is currently exposed and active, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`. `/bro doctor` carries the full diagnostic, including the Agy 1.1.15+ compatibility check.
+- `/bro config` — a production settings screen replacing the earlier configuration-only spike: a shared default model/effort (still owned by `/bro model`/`/bro effort`) plus optional per-capability overrides for `explain`, `show`, `btw`, and `advisor`. An override always pins both model and effort together and is only ever cleared by an explicit "Default" selection. Saves are serialized and coalesced, with in-place revert and an inline error notice on failure.
+
+### Changed
+
+- Requires Earendil Pi `>=0.84.2 <1` and `agy >=1.1.15` (up from `>=0.78.1 <1` and `>=1.1.11`).
+
 ## [0.13.2] - 2026-09-19
 
 ### Changed

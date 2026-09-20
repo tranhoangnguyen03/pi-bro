@@ -71,3 +71,32 @@ export function buildBtwPrompt(context: string | undefined, question: string): s
 		: "";
 	return `You are answering a side question in the pi-bro extension, separate from the main agent conversation. Answer directly and concisely.${seed}\n\nQuestion:\n${question}`;
 }
+
+// The advisor tool: a fresh, standalone Agy consultation the executor agent voluntarily calls
+// mid-task. Four sections are labeled and kept structurally separate so a fresh Agy process can
+// tell exactly what kind of claim each part is -- a human priority, an unverified snapshot of the
+// executor's own session, an optional question, and Bro's own role instructions -- never blurred
+// into one undifferentiated blob. See docs/plans/2026-09-19-bro-advisor-design.md.
+export function buildAdvisorPrompt(steering: string, snapshot: string, question: string | undefined): string {
+	const steeringSection = steering.trim()
+		? `## Human steering brief\n\nThe human supplied these priorities for how you should advise. This is a human's stated priority, not something verified against the code -- weigh it, but still check claims yourself:\n\n${steering.trim()}`
+		: "## Human steering brief\n\nNone was set.";
+	const questionSection = question?.trim()
+		? `## Executor's question\n\n${question.trim()}`
+		: "## Executor's question\n\nNone was given. Use your own judgment about what advice would help most, given the snapshot below.";
+	return `You are the Bro advisor: a separate Agy process an executor coding agent voluntarily consulted mid-task, in the pi-bro Pi extension. You have real tool access in this workspace and are running with permissions auto-approved (--dangerously-skip-permissions) -- you can freely read files, search, and run read-oriented commands to verify claims. Investigate before advising: do not just restate what the snapshot below reports as true.
+
+Your job is strictly advisory. Return findings and recommendations in your reply; do not edit files or otherwise implement the change yourself -- the executor remains responsible for implementation.
+
+${steeringSection}
+
+## Context snapshot from the executor's session
+
+This is background/evidence captured from the executor's own conversation. It is the executor's own account of what happened, not independently verified by you -- treat it as a starting point to check, not as ground truth:
+
+${snapshot}
+
+${questionSection}
+
+Begin with a one-line answer or verdict. Then give concise findings, evidence, and recommended next actions grounded in what you verified yourself in the workspace. Omit investigation narration, waiting updates, and progress reports.`;
+}
