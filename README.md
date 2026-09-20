@@ -11,7 +11,7 @@ with your selected model.
 
 ## Quick start
 
-You need Earendil Pi `>=0.78.1 <1`, Node.js `>=22.19.0`, and `agy >=1.1.11`
+You need Earendil Pi `>=0.84.2 <1`, Node.js `>=22.19.0`, and `agy >=1.1.15`
 installed and available on your `PATH`. Run `agy` once in your terminal to sign
 in, then install Bro:
 
@@ -63,10 +63,13 @@ text directly captures a new source the same way.
 | `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
 | `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
 | `/bro usage [--provider agy]` | Show current Agy resource limits. |
-| `/bro model [id]` | View or choose the Agy model. |
-| `/bro effort [low\|medium\|high]` | View or choose the supported reasoning effort. |
+| `/bro model [id]` | View or choose the shared default Agy model. |
+| `/bro effort [low\|medium\|high]` | View or choose the shared default reasoning effort. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
+| `/bro config` | Open an interactive settings screen for the shared default model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) model and effort overrides. |
 | `/bro btw [--fresh] [--full] [question]` | Open a side conversation in a modal. Sandboxed (read-only) by default; `--full` lets it read and edit the workspace, `--fresh` skips main-session context. |
+| `/bro advisor` | Quick notice of whether the executor's `bro_advisor` tool is available right now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`. |
+| `/bro advisor-steer` | View, edit, save, or clear the one persistent steering brief the advisor always sees. |
 | `/bro help` | Open the built-in quick reference. |
 
 Giving `/bro` the input directly works the same way:
@@ -126,6 +129,78 @@ conversation unless you explicitly copy it into the editor.
   `full · edits repo` badge shows whenever `--full` mode is active.
 - The thread lives in memory only — it clears when you switch Pi sessions,
   reload extensions, or quit Pi.
+
+## Bro advisor
+
+`bro_advisor` is a tool the **executor agent** — not you — can voluntarily
+call mid-task for a second opinion. Unlike `/bro btw`, which is a side
+conversation for you, `bro_advisor` is a tool for the model you're working
+with; it shows up as a normal tool call/result in the transcript, not a
+modal. It is registered like any other tool when the extension loads and has
+no on/off switch of its own — whether the executor can actually call it
+depends entirely on this host's own tool restrictions.
+
+`/bro advisor` is a quick notice of whether `bro_advisor` is available right
+now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`.
+`/bro doctor` has the full diagnostic: whether this host exposes and
+activates `bro_advisor`, its resolved model/effort, steering presence, and
+the Agy compatibility floor — it also checks the installed Agy version and
+gives an `agy update` action when it is too old.
+
+- **Automatic context, no prep needed**: the executor never assembles a
+  summary. Bro captures a harness-neutral snapshot — the executor's system
+  instructions, its active tools, and the conversation so far including tool
+  calls and results — and sends it, along with an optional `question` the
+  executor may pass, to a **fresh, standalone Agy process** for every
+  consultation. Nothing is resumed or reused across calls, including retries.
+- **Instructed to investigate, not implement**: the advisor process has real
+  tool access in the workspace with permissions auto-approved
+  (`--dangerously-skip-permissions`) — there is no enforced read-only
+  isolation. It is instructed to verify claims itself and return advice,
+  leaving edits to the executor, but that instruction is not enforced, so
+  treat its findings as advice to verify, not a guaranteed hands-off review.
+- **Steering**: `/bro advisor-steer` opens an editor for one persistent
+  steering brief — e.g. "quick prototype; keep A and B careful, everything
+  else minimal" — that the advisor always reads. **Ctrl+S** saves and keeps
+  the editor open; **Enter** or **Shift+Enter** inserts a newline; **Ctrl+K**
+  clears both the saved brief and draft while staying open; **Ctrl+C** copies
+  the entire current draft, including unsaved edits; and **Esc** closes without
+  saving unsaved edits. Actions and clipboard errors are reported inline. The
+  brief is stored as session-only extension data and is **never added to Pi's
+  conversation or sent to the main model** — the advisor is the only thing
+  that reads it.
+- **Persistence**: the steering brief persists with the Pi session (not
+  globally, not per project) and is restored on resume or reload. Forking a
+  session inherits it; edits made after the fork are independent of the
+  original branch.
+- **Retries**: on an invocation failure (not a completed answer — "I need
+  more evidence" is a normal result, not a failure), Bro retries with the
+  identical snapshot, steering, and question: once after 5 seconds, once more
+  after 10 seconds, then returns Agy's own diagnostic — including a
+  context-length error, verbatim — as the failure. Cancelling the tool call
+  aborts immediately and skips any pending retry wait.
+- **Progress and provenance**: while an attempt is running, Bro parses the
+  advisor's own stream for the last thing it actually reported — either a
+  tool name or a user-facing response line (hidden reasoning is never
+  surfaced) — and shows it with how long ago it arrived, e.g. `last reported:
+  Read src/app.ts (2s ago)`. Before Agy reports anything, this reads
+  explicitly as "awaiting first activity from Agy" rather than guessing at
+  what it might be doing. This is what was actually reported, not a live
+  claim about Agy's current tool, and silence is never described as
+  "stalled". Expanding a running consultation shows up to the last 4 reported
+  activity lines. Each retry starts this trail over empty — a failed
+  attempt's activity never carries into the next one. Elapsed running time
+  still ticks once a second regardless of activity; a retry countdown with
+  the last failure is shown the same way as before. The returned answer
+  starts with model, effort, actual attempt count, duration, workspace,
+  steering presence, snapshot size, no-Bro-truncation status, and known
+  omission/compaction notes; the advisor's complete answer follows unchanged.
+- **Model/effort**: resolved the same way as explain/show/btw, through
+  `/bro model`/`/bro effort` (shared default) or `/bro config` (per-capability
+  override).
+
+See [docs/plans/2026-09-19-bro-advisor-design.md](docs/plans/2026-09-19-bro-advisor-design.md)
+for the full design.
 
 ## Bro show
 
@@ -610,15 +685,41 @@ Bro creates this user-editable settings file when the extension loads:
 }
 ```
 
-Use `/bro model`, `/bro effort`, and `/bro mode` to update it from Pi, or edit
-it directly. Bro reads the file again before each explanation, so manual changes
+`model` and `effort` are the **shared default**: explain, show, and btw all use
+them unless a capability has its own override. An optional `overrides` object
+adds per-capability overrides, each a full `{ "model": ..., "effort": ... }`
+pair:
+
+```json
+{
+  "model": "gemini-3.7-flash",
+  "effort": "low",
+  "mode": "balanced",
+  "showTurns": 1,
+  "overrides": {
+    "show": { "model": "gemini-3.7-pro", "effort": "high" }
+  }
+}
+```
+
+Use `/bro model`, `/bro effort`, and `/bro mode` to update the shared default
+and mode from Pi, `/bro config` to review or change the shared default and any
+per-capability (explain/show/btw/advisor) overrides interactively, or edit the file
+directly. Bro reads the file again before each explanation, so manual changes
 apply to the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
 one of the levels shown by `/bro effort`. Models without adjustable effort use
 `default`. `mode` must be `brief`, `balanced`, or `faithful`; existing settings
 without it use `balanced`. `showTurns` is the default number of turns `/bro
-show` draws (default 1); `/bro show <n-turns>` overrides it for a single run. There
-is no `/bro showTurns` command — edit the file directly. The choices remain active across Pi restarts until
-you change them. `/bro help` shows the active settings and exact file path.
+show` draws (default 1); `/bro show <n-turns>` overrides it for a single run. Settings
+written before per-capability overrides existed load unchanged, with no overrides. The choices remain
+active across Pi restarts until you change them. `/bro help` shows the active
+settings, any overrides, and the exact file path.
+
+`/bro config`'s changes save immediately as you make them. Pressing Esc inside
+a model or effort picker cancels that pick without changing anything; pressing
+Esc on the settings screen itself just closes it, keeping whatever was already
+saved. If a save fails (for example, a read-only settings file), the screen
+shows the error inline instead of losing the change silently.
 
 If `PI_CODING_AGENT_DIR` is set, the file lives there instead. `PI_BRO_MODEL`
 chooses the initial model only when Bro creates a missing settings file:

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
 	BRO_MODES,
 	DEFAULT_BRO_MODE,
+	buildAdvisorPrompt,
 	buildBtwPrompt,
 	buildDefaultPrompt,
 	buildShowPrompt,
@@ -183,4 +184,35 @@ test("btw prompt omits the seed when no context is provided", () => {
 
 	assert.doesNotMatch(prompt, /Recent main-session conversation/);
 	assert.ok(prompt.includes("hi"));
+});
+
+test("advisor prompt separates human steering, snapshot, and question into labeled sections", () => {
+	const prompt = buildAdvisorPrompt("Prioritize A and B; everything else minimal.", "## user\nadd a cache", "Is this abstraction justified?");
+
+	assert.match(prompt, /## Human steering brief/);
+	assert.match(prompt, /Prioritize A and B; everything else minimal\./);
+	assert.match(prompt, /not something verified against the code/);
+	assert.match(prompt, /## Context snapshot from the executor's session/);
+	assert.match(prompt, /## user\nadd a cache/);
+	assert.match(prompt, /not independently verified by you/);
+	assert.match(prompt, /## Executor's question/);
+	assert.match(prompt, /Is this abstraction justified\?/);
+	assert.match(prompt, /real tool access in this workspace/);
+	assert.match(prompt, /--dangerously-skip-permissions/);
+	assert.match(prompt, /do not edit files or otherwise implement the change yourself/);
+	assert.match(prompt, /Begin with a one-line answer or verdict/);
+	assert.match(prompt, /Omit investigation narration, waiting updates, and progress reports/);
+});
+
+test("advisor prompt states explicitly when steering or a question were not given, instead of omitting the section", () => {
+	const prompt = buildAdvisorPrompt("", "## user\nx", undefined);
+
+	assert.match(prompt, /## Human steering brief\n\nNone was set\./);
+	assert.match(prompt, /## Executor's question\n\nNone was given\. Use your own judgment/);
+});
+
+test("advisor prompt trims whitespace-only steering and question the same as empty", () => {
+	const withWhitespace = buildAdvisorPrompt("   ", "## user\nx", "   ");
+	const withEmpty = buildAdvisorPrompt("", "## user\nx", undefined);
+	assert.equal(withWhitespace, withEmpty);
 });
