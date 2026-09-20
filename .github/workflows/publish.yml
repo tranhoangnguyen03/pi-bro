@@ -135,7 +135,10 @@ jobs:
             exit 0
           fi
           found=""
-          for attempt in $(seq 1 12); do
+          # ponytail: fixed 3-minute cap; npm's CDN has taken >60s to serve a freshly
+          # published version on both v0.13.1 and v0.13.2. Switch to a release-notes API
+          # check only if propagation ever exceeds this.
+          for attempt in $(seq 1 36); do
             if npm view "pi-bro@$V" version >/dev/null 2>&1; then found=1; break; fi
             echo "npm has not served $V yet (attempt $attempt/12); waiting 5s"
             sleep 5
