@@ -1428,7 +1428,12 @@ export async function runAdvisorConsultation(
 			...(selection.effort ? ["--effort", selection.effort] : []),
 			"--print-timeout", "10m",
 		],
-		{ cwd, timeout: 610_000, stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+		// detached: true (POSIX only) makes the child its own process-group leader, so a signal to
+		// -child.pid below reaches it AND every grandchild it spawned -- not just the immediate
+		// process. Without this, killing only the immediate child can leave a grandchild holding the
+		// inherited stdio pipes open, and the "close" event this function waits on never fires until
+		// that orphan exits on its own.
+		{ cwd, timeout: 610_000, stdio: ["pipe", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" },
 	);
 
 	let processError: Error | undefined;
@@ -1439,14 +1444,28 @@ export async function runAdvisorConsultation(
 	let sawTerminal = false;
 	let stdoutBuffer = "";
 
+	// Signal the whole process group when possible so a misbehaving grandchild dies too, not just
+	// the immediate agy process; child.kill() alone only ever reaches the immediate child.
+	const killAdvisorChild = (signalName: NodeJS.Signals) => {
+		if (process.platform !== "win32" && typeof child.pid === "number") {
+			try {
+				process.kill(-child.pid, signalName);
+				return;
+			} catch {
+				// Group may already be gone (e.g. the child already exited) -- fall through.
+			}
+		}
+		child.kill(signalName);
+	};
+
 	// Relying on spawn({signal}) alone only ever sends one SIGTERM and gives up if the child (or a
 	// misbehaving grandchild it spawned) ignores it, hanging this promise forever. Escalate to
 	// SIGKILL -- which cannot be ignored -- if the child hasn't exited shortly after.
 	let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
 	const onAbort = () => {
-		child.kill("SIGTERM");
+		killAdvisorChild("SIGTERM");
 		killEscalationTimer = setTimeout(() => {
-			child.kill("SIGKILL");
+			killAdvisorChild("SIGKILL");
 		}, killEscalationMs);
 	};
 	signal.addEventListener("abort", onAbort, { once: true });
@@ -1489,7 +1508,7 @@ export async function runAdvisorConsultation(
 		if (stdoutBuffer.length > ADVISOR_MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > ADVISOR_MAX_STDOUT_LINE_CHARS)) {
 			protocolError ??= `Agy emitted a stdout line over ${ADVISOR_MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
 			stdoutBuffer = "";
-			child.kill();
+			killAdvisorChild("SIGTERM");
 			return;
 		}
 		for (const line of parts) {
@@ -1497,7 +1516,7 @@ export async function runAdvisorConsultation(
 				handleLine(line);
 			} catch (error) {
 				protocolError ??= errorMessage(error);
-				child.kill();
+				killAdvisorChild("SIGTERM");
 				return;
 			}
 		}
