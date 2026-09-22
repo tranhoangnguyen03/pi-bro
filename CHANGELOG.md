@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.15.0] - 2026-09-22
+
+### Changed
+
+- In the `/bro btw` modal, `/copy` and `/copy-all` now copy the latest answer or the full thread to the **system clipboard** instead of the main editor. New `/insert` and `/insert-all` commands (with `/insert!`/`/insert-all!` force variants to replace an existing main-editor draft) insert into the main editor without submitting. Removed the legacy `/send` aliases and the spaced `/copy all`/`/insert all` spellings.
+
 ## [0.14.0] - 2026-09-20
 
 ### Added
