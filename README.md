@@ -31,6 +31,13 @@ Restart Pi or run `/reload`, then try:
 
 Run `/bro doctor` after installation or whenever Bro is not working.
 
+Explain, show, BTW and advisor share an internal execution layer; Agy remains
+its only backend and existing settings are unchanged. Cancellation, host deadlines
+and invalid execution streams terminate the subprocess group on POSIX, escalating
+after a five-second grace period. Windows cleanup targets the direct child only;
+descendant termination is not guaranteed. Unexpected signal exits are reported as
+failures, not timeouts.
+
 To install from GitHub instead, use
 `pi install git:github.com/tranhoangnguyen03/pi-bro`. To try Bro without
 installing it, use `pi -e npm:pi-bro`.

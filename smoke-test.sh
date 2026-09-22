@@ -27,6 +27,46 @@ if [ ! -x "$pi_bin" ]; then
 	exit 1
 fi
 
+# Serialize RPC requests by their acknowledgements, not machine-speed-dependent sleeps.
+# Keep stdin open until the final response; Pi exits on EOF even with work in flight.
+export BRO_SMOKE_PI_BIN="$pi_bin"
+cat > "$test_dir/pi-rpc" <<'RPC'
+#!/usr/bin/env node
+const { spawn } = require('node:child_process');
+const { createInterface } = require('node:readline');
+const child = spawn(process.env.BRO_SMOKE_PI_BIN, process.argv.slice(2), { stdio: ['pipe', 'pipe', 'inherit'] });
+const queue = [];
+let active, ended = false, timer;
+function next() {
+  if (active !== undefined) return;
+  const line = queue.shift();
+  if (line === undefined) { if (ended) child.stdin.end(); return; }
+  active = JSON.parse(line).id;
+  child.stdin.write(line + '\n');
+  timer = setTimeout(() => { console.error('RPC smoke request timed out:', active); child.kill('SIGKILL'); process.exitCode = 1; }, 30000);
+}
+const input = createInterface({ input: process.stdin });
+input.on('line', line => { if (line.trim()) queue.push(line); next(); });
+input.on('close', () => { ended = true; next(); });
+createInterface({ input: child.stdout }).on('line', line => {
+  console.log(line);
+  let event;
+  try { event = JSON.parse(line); } catch { return; }
+  if (event.type === 'response' && event.id === active) {
+    clearTimeout(timer); active = undefined; next();
+  }
+});
+child.on('error', error => { console.error(error); process.exitCode = 1; });
+child.on('close', code => {
+  clearTimeout(timer);
+  if (active !== undefined || queue.length) process.exitCode = 1;
+  else process.exitCode = code ?? 1;
+  input.close(); process.stdin.destroy();
+});
+RPC
+chmod +x "$test_dir/pi-rpc"
+pi_bin="$test_dir/pi-rpc"
+
 wheel_build="$test_dir/wheel-build"
 "$repo_dir/node_modules/.bin/tsc" --ignoreConfig "$repo_dir/bro.ts" \
 	--target ES2022 --module NodeNext --moduleResolution NodeNext --strict \

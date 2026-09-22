@@ -2,6 +2,17 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.15.1] - 2026-09-22
+
+### Changed
+
+- Explain, show, BTW and advisor now share an internal Agy execution boundary. Agy remains the only backend; existing settings, prompts, access modes, continuation and advisor retries are unchanged.
+
+### Fixed
+
+- Cancellation, host deadlines and malformed execution streams use bounded subprocess cleanup, with POSIX process-group termination and escalation. Unexpected signal exits are reported as failures rather than mislabeled timeouts. Windows cleanup remains limited to the direct child.
+- Offline RPC smoke checks wait for command acknowledgements instead of relying on fixed delays to prevent overlapping requests and premature shutdown.
+
 ## [0.15.0] - 2026-09-22
 
 ### Changed
