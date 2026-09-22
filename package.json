@@ -1,7 +1,7 @@
 {
   "name": "pi-bro",
-  "version": "0.14.0",
-  "description": "An Earendil Pi extension that explains pasted text, assistant responses, local documents, public webpages, and recent session turns (as shapes) in a context-isolated window, and opens a sandboxed side conversation with /bro btw.",
+  "version": "0.15.0",
+  "description": "An Earendil Pi extension that explains pasted text, assistant responses, local documents, public webpages, and recent session turns (as shapes) in a context-isolated window, opens a sandboxed side conversation with /bro btw, and provides a second-opinion advisor tool for executor agents.",
   "type": "module",
   "license": "MIT",
   "author": "Tran Hoang Nguyen",
@@ -29,7 +29,9 @@
     "diagram",
     "show",
     "btw",
-    "side-conversation"
+    "side-conversation",
+    "advisor",
+    "second-opinion"
   ],
   "files": [
     "bro.ts",

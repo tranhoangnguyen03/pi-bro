@@ -519,18 +519,19 @@ assert.deepEqual(parseBtwAgyLine('{"event":"init","conversation_id":"c1"}'), { c
 assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"hi"}}'), { delta: "hi", conversationId: undefined });
 assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"SUCCESS","response":"done","conversation_id":"c1"}}'), { result: "done", conversationId: "c1" });
 assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
-assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "copy", all: false, force: false });
-assert.deepEqual(parseBtwComposerCommand("/copy!"), { kind: "copy", all: false, force: true });
-assert.deepEqual(parseBtwComposerCommand("/copy-all"), { kind: "copy", all: true, force: false });
-assert.deepEqual(parseBtwComposerCommand("/copy-all!"), { kind: "copy", all: true, force: true });
-assert.deepEqual(parseBtwComposerCommand("/copy all"), { kind: "copy", all: true, force: false });
-assert.deepEqual(parseBtwComposerCommand("/copy all!"), { kind: "copy", all: true, force: true });
-assert.deepEqual(parseBtwComposerCommand("/send"), { kind: "copy", all: false, force: false });
-assert.deepEqual(parseBtwComposerCommand("/send all"), { kind: "copy", all: true, force: false });
+assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "clipboard", all: false });
+assert.deepEqual(parseBtwComposerCommand("/copy-all"), { kind: "clipboard", all: true });
+assert.deepEqual(parseBtwComposerCommand("/insert"), { kind: "insert", all: false, force: false });
+assert.deepEqual(parseBtwComposerCommand("/insert!"), { kind: "insert", all: false, force: true });
+assert.deepEqual(parseBtwComposerCommand("/insert-all"), { kind: "insert", all: true, force: false });
+assert.deepEqual(parseBtwComposerCommand("/insert-all!"), { kind: "insert", all: true, force: true });
 assert.deepEqual(parseBtwComposerCommand("/clear"), { kind: "clear" });
 assert.deepEqual(parseBtwComposerCommand("/retry"), { kind: "retry" });
 assert.deepEqual(parseBtwComposerCommand(""), { kind: "retry" });
 assert.deepEqual(parseBtwComposerCommand("how do I auth?"), { kind: "question", text: "how do I auth?" });
+assert.deepEqual(parseBtwComposerCommand("/send"), { kind: "question", text: "/send" });
+assert.deepEqual(parseBtwComposerCommand("/copy!"), { kind: "question", text: "/copy!" });
+assert.deepEqual(parseBtwComposerCommand("/insert-draft"), { kind: "question", text: "/insert-draft" });
 assert.deepEqual(resolveBtwThread(undefined, { fresh: false }), { turns: [], full: false });
 assert.deepEqual(resolveBtwThread({ turns: [{ question: "q", answer: "a" }], full: true }, { fresh: false }), { turns: [{ question: "q", answer: "a" }], full: true });
 assert.deepEqual(resolveBtwThread({ turns: [], full: true }, { fresh: false, full: false }), { turns: [], full: false });
@@ -698,9 +699,10 @@ assert.deepEqual(parseShowArguments(""), { steering: "", invalid: false });
 assert.deepEqual(parseShowArguments("3"), { requested: "3", steering: "", invalid: false });
 assert.deepEqual(parseShowArguments("what changed"), { steering: "what changed", invalid: false });
 assert.deepEqual(parseShowArguments("3 what changed"), { requested: "3", steering: "what changed", invalid: false });
-// A digit-leading query token (2FA, 404, 3D) never parses as a turn count on its own.
+// An alphanumeric leading query token (e.g. 2FA, 3D) is not purely numeric and never parses as a turn count.
 assert.deepEqual(parseShowArguments("2FA the login flow"), { steering: "2FA the login flow", invalid: false });
-// A count followed by a digit-leading query word is unambiguous: only the first token is ever a count.
+// A purely numeric leading token is always treated as a turn count; specify count first to steer on numeric phrases.
+assert.deepEqual(parseShowArguments("404 handler"), { requested: "404", steering: "handler", invalid: false });
 assert.deepEqual(parseShowArguments("1 404 handler"), { requested: "1", steering: "404 handler", invalid: false });
 assert.equal(parseShowArguments("0").invalid, true, "zero is not a valid turn count");
 assert.equal(parseShowArguments("-1").invalid, true, "negative counts are rejected");
@@ -1361,6 +1363,8 @@ try {
 	await registerBro(fakePi);
 	const registeredTool = registeredTools.get("bro_advisor");
 	assert.equal(registeredTool?.name, "bro_advisor", "the extension registers the real advisor tool");
+	assert.ok(registeredTool?.promptSnippet && !registeredTool.promptSnippet.startsWith("bro_advisor"), "promptSnippet does not redundantly repeat tool name prefix");
+	assert.ok(registeredTool?.promptGuidelines?.every((line) => line.includes("bro_advisor")), "every promptGuideline bullet explicitly names bro_advisor per Pi extension docs");
 
 	// A historical "bro-advisor-active" entry (from before the on/off state machinery was removed)
 	// must not affect anything -- the tool executes regardless, gated only by whether it was called.

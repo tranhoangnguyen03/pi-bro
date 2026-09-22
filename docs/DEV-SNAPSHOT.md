@@ -11,7 +11,7 @@
 - **Btw:** open a separate Agy-backed side conversation for questions without derailing the main agent.
 - **Advisor:** a `bro_advisor` tool the *executor* (not the human) can voluntarily call for a second opinion from a fresh, standalone Agy process with real workspace tool access.
 
-The core promise is **context isolation**. Explain/show results never become Pi messages or main-agent context. Btw remains in memory and reaches the main editor only when the user explicitly copies it. `--full` is the deliberate exception: it gives the side agent workspace access and edit permission. The advisor's steering brief is session-scoped extension state (never sent to the main model); the advisor's own tool access is real and unsandboxed by design (see "Advisor" below), which is the one deliberate departure from "read-only unless explicitly opted into".
+The core promise is **context isolation**. Explain/show results never become Pi messages or main-agent context. Btw remains in memory and reaches the main editor only when the user explicitly inserts it via `/insert` or `/insert-all`; `/copy` and `/copy-all` target only the system clipboard. `--full` is the deliberate exception: it gives the side agent workspace access and edit permission. The advisor's steering brief is session-scoped extension state (never sent to the main model); the advisor's own tool access is real and unsandboxed by design (see "Advisor" below), which is the one deliberate departure from "read-only unless explicitly opted into".
 
 ## Non-negotiable philosophy
 
@@ -113,7 +113,7 @@ The prompt is developer-facing and separate from explanation prompts. It priorit
 
 ### Btw
 
-`/bro btw` starts or resumes an in-memory side thread using Agy `--conversation`. First-turn context seeds up to eight recent conversation-only turns, capped at 40,000 characters, unless `--fresh` is used. Default mode runs Agy sandboxed in an empty temporary directory for two minutes. `--full` runs in the workspace with dangerous permission bypass and a ten-minute timeout. `/copy` and `/copy-all` write to the main editor without submitting; force variants replace a nonempty draft. Legacy `/send` aliases remain supported. `/retry`, `/clear`, and empty Enter are supported.
+`/bro btw` starts or resumes an in-memory side thread using Agy `--conversation`. First-turn context seeds up to eight recent conversation-only turns, capped at 40,000 characters, unless `--fresh` is used. Default mode runs Agy sandboxed in an empty temporary directory for two minutes. `--full` runs in the workspace with dangerous permission bypass and a ten-minute timeout. In the composer, `/copy` and `/copy-all` copy the latest answer or full thread to the system clipboard; `/insert` and `/insert-all` write to the main editor without submitting (with force variants `/insert!` and `/insert-all!` replacing a nonempty draft); `/retry` (or empty Enter) re-asks; `/clear` resets the thread. Only these exact commands trigger composer actions; there are no `/send` aliases, and any other slash-prefixed or text input is submitted as a question.
 
 ## Safety and state boundaries
 
@@ -151,7 +151,7 @@ These are superseded and must not be treated as current behavior:
 - Current Show capture does **not** include tool calls or tool results.
 - Show defaults to **one** turn, not ten.
 - Explanation modes no longer have fixed word targets.
-- Btw handoff is copy-to-editor, not submit-to-main-agent.
+- Btw handoff is insert-to-editor (`/insert`, `/insert-all`), not submit-to-main-agent, while `/copy`/`/copy-all` target the system clipboard.
 - `docs/plans/2026-09-07-bro-show-visual-design.md` is historical; its opening note and changelog describe the current conversation-only change.
 - Decomposition fixtures under `benchmark/fixtures/decomposition/` mostly predate conversation-only Show capture; use the hand-authored conversation-only fixture as the current-format example.
 - `/bro config` (`showConfigSpikeModal`) is **not** a preview/spike anymore: it is production, persists real settings, and drives explain/show/btw/advisor.
@@ -163,7 +163,7 @@ These are superseded and must not be treated as current behavior:
 ## Known seams to check before related work
 
 1. `lastResult` remembers only source/text, so `/bro open` cannot restore Show HTML metadata or the Show-specific retry prompt/steering.
-2. README's `/bro show 404 handler` example conflicts with `parseShowArguments`, which treats a bare numeric first token as a turn count.
+2. `parseShowArguments` treats any whitespace-delimited first token that looks like a number as the requested turn count; README reflects this rule and illustrates passing an explicit turn count (e.g. `/bro show 1 404 handler`) when steering on phrases starting with digits.
 3. Btw relies on Agy returning a conversation ID; without one, displayed local history is not necessarily sent on later turns.
 4. Btw cancellation/retry/clear behavior is mostly helper-tested, not fully exercised through an interactive TUI lifecycle.
 5. HTML extraction is more permissive than the prompt contract: runtime takes the last matching HTML fence rather than validating exactly one final fence.

@@ -100,10 +100,10 @@ const COMMANDS = [
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
 	{ value: "doctor", label: "doctor", description: "Check whether Bro is ready" },
 	{ value: "usage", label: "usage", description: "Show current Agy usage" },
-	{ value: "model", label: "model", description: "Choose the Agy model" },
-	{ value: "effort", label: "effort", description: "Choose the Agy reasoning effort" },
+	{ value: "model", label: "model", description: "View or choose the shared default Agy model" },
+	{ value: "effort", label: "effort", description: "View or choose the shared default reasoning effort" },
 	{ value: "show", label: "show", description: "Draw what happened in recent session turns as shapes" },
-	{ value: "mode", label: "mode", description: "Choose brief, balanced, or faithful explanations" },
+	{ value: "mode", label: "mode", description: "View or choose explanation mode (brief, balanced, faithful)" },
 	{ value: "btw", label: "btw", description: "Open a side conversation (sandboxed by default; --full edits files)" },
 	{ value: "config", label: "config", description: "Configure shared defaults and per-capability model/effort overrides" },
 	{ value: "advisor", label: "advisor", description: "Check whether the executor's advisor tool is available right now" },
@@ -2170,7 +2170,7 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 
 ## Side conversation
 
-- \`/bro btw [--fresh] [--full] [question]\` — open a side conversation. Sandboxed (read-only) by default; add \`--full\` to let it read and edit the workspace, and \`--fresh\` to start without main-session context. Inside the side thread, type questions and press Enter (empty Enter re-asks); \`/copy\` copies the latest answer to the main editor without submitting (use \`/copy!\` to replace an existing draft), \`/copy-all\` the full thread, \`/retry\` re-asks the last question, and \`/clear\` resets the thread. Esc closes.
+- \`/bro btw [--fresh] [--full] [question]\` — open a side conversation. Sandboxed (read-only) by default; add \`--full\` to let it read and edit the workspace, and \`--fresh\` to start without main-session context. Reopening preserves the thread's access mode (even with \`--fresh\`); use \`--sandbox\` to return to sandbox mode. Changing access mode starts a new thread. Inside the side thread, type questions and press Enter (empty Enter re-asks); exact commands \`/copy\` and \`/copy-all\` copy the latest answer or full thread to the system clipboard; exact commands \`/insert\` and \`/insert-all\` insert into the main editor without submitting (use \`/insert!\` or \`/insert-all!\` to replace an existing draft); \`/retry\` re-asks the last question; \`/clear\` resets the thread. Any other input is sent as a question. Esc closes.
 
 ## Advisor
 
@@ -2179,13 +2179,13 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 - \`/bro advisor-steer\` — open an editor for one persistent steering brief the advisor always sees. **Ctrl+S** saves, **Enter**/**Shift+Enter** insert newlines, **Ctrl+K** clears the saved brief and draft, **Ctrl+C** copies the full draft, and **Esc** closes without saving unsaved edits
 - \`/bro doctor\` — the full advisor diagnostic: whether this host exposes and activates \`bro_advisor\`, its resolved model/effort, steering presence, and the Agy compatibility floor
 
-Each consultation is a fresh, standalone Agy process — never resumed, never looping, never automatically triggered. Bro captures the context snapshot (system instructions, active tools, and the conversation so far) automatically; the executor never has to assemble one. The advisor has real tool access in the workspace, running with permissions auto-approved, so it can verify claims itself — it only ever returns advice, and the executor stays responsible for any actual change. The steering brief persists in the session (not sent to the model) and is restored on resume or reload; forking a session inherits it, and edits after the fork are independent of the original branch.
+Each consultation is a fresh, standalone Agy process — never resumed, never looping, never automatically triggered. Bro captures the context snapshot (system instructions, active tools, and the conversation so far including tool calls and results) automatically; the executor never has to assemble one. The advisor has real tool access in the workspace, running with permissions auto-approved, so it can verify claims itself; it is instructed to only return advice and leave edits to the executor, but that instruction is behavioral rather than an enforced sandbox constraint. The steering brief persists in the session (not sent to the model) and is restored on resume or reload; forking a session inherits it, and edits after the fork are independent of the original branch.
 
 ## Current settings
 
 ${settingsSummary}
 
-Saved in \`${SETTINGS_FILE}\`. Use the commands above or edit the file directly. Changes apply to future explanations. \`showTurns\` has no setter command — edit the file directly, or override it per run with \`/bro show <n-turns>\`. Add a query after the count — or on its own, e.g. \`/bro show what changed in the auth flow\` — to steer what the shapes focus on.
+Saved in \`${SETTINGS_FILE}\`. Use the commands above, configure interactively via \`/bro config\`, or edit the file directly. Changes apply to future explanations. \`showTurns\` can be configured interactively in \`/bro config\` or edited directly in \`${SETTINGS_FILE}\`, and overridden per run with \`/bro show <n-turns>\`. Add a query after the count — or on its own, e.g. \`/bro show what changed in the auth flow\` — to steer what the shapes focus on.
 
 ## Explanation modes
 
@@ -2213,7 +2213,7 @@ Bro temporarily captures mouse input while the modal is open. Native mouse selec
 - Show draws only what already happened in this session — the conversation text of the last few turns, with tool calls, tool results, reasoning, and images always omitted — and cannot read the repository or other files on its own. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
 - Show reflects what was reported in the conversation, not independent verification against the actual code or system state.
 - Btw threads are memory-only and do not survive reloads or restarts. A turn is capped at 2 minutes in sandbox mode and 10 minutes in full mode; the side conversation resumes through Agy's \`--conversation\` support.
-- Advisor consultations run with real tool access and auto-approved permissions (\`--dangerously-skip-permissions\`) — there is no enforced read-only isolation, only the advisor's own instructions to advise rather than implement. On invocation failure (not a completed answer), Bro retries with the identical snapshot, steering, and question: once after 5 seconds, once more after 10 seconds, then returns Agy's own diagnostic as the failure.
+- Advisor consultations run with real tool access and auto-approved permissions (\`--dangerously-skip-permissions\`) — there is no enforced read-only isolation, only the advisor's own behavioral instructions to advise rather than implement. On invocation failure (not a completed answer), Bro retries with the identical snapshot, steering, and question: once after 5 seconds, once more after 10 seconds, then returns Agy's own diagnostic as the failure.
 
 ## Privacy and safety
 
@@ -2226,7 +2226,7 @@ For webpages, it connects directly to the site without browser cookies; the site
 
 Usage and Doctor checks contact Agy but do not send source text or run a model turn. Pressing **C** sends the explanation to your system clipboard.
 
-Each advisor consultation sends the executor's system instructions, active tool list, ordered conversation (including tool calls and results, since the advisor needs to verify claims), your steering brief, and the executor's optional question to Agy and your model provider; the advisor process itself can read and edit the workspace with no permission prompts. The steering brief and activation state are stored as session-only extension data — never added to the main conversation Pi or the model sees.
+Each advisor consultation sends the executor's system instructions, active tool list, ordered conversation (including tool calls and results, since the advisor needs to verify claims), your steering brief, and the executor's optional question to Agy and your model provider; the advisor process itself can read and edit the workspace with no permission prompts. The steering brief is stored as session-only extension data — never added to the main conversation Pi or the model sees; the advisor tool has no separate activation state.
 
 ## Custom prompt
 
@@ -2595,30 +2595,24 @@ export function parseBtwAgyLine(line: string): { delta?: string; result?: string
 export type BtwComposerAction =
 	| { kind: "clear" }
 	| { kind: "retry" }
-	| { kind: "copy"; all: boolean; force: boolean }
+	| { kind: "clipboard"; all: boolean }
+	| { kind: "insert"; all: boolean; force: boolean }
 	| { kind: "question"; text: string };
 
 export function parseBtwComposerCommand(value: string): BtwComposerAction {
 	const command = value.trim();
 	if (command === "/clear") return { kind: "clear" };
 	if (command === "/retry" || command === "") return { kind: "retry" };
+	if (command === "/copy" || command === "/copy-all") {
+		return { kind: "clipboard", all: command === "/copy-all" };
+	}
 	if (
-		command === "/copy" ||
-		command === "/copy!" ||
-		command === "/copy-all" ||
-		command === "/copy-all!" ||
-		command === "/copy all" ||
-		command === "/copy all!" ||
-		command === "/send" ||
-		command === "/send!" ||
-		command === "/send all" ||
-		command === "/send all!"
+		command === "/insert" ||
+		command === "/insert!" ||
+		command === "/insert-all" ||
+		command === "/insert-all!"
 	) {
-		const all =
-			command.startsWith("/copy-all") ||
-			command.startsWith("/copy all") ||
-			command.startsWith("/send all");
-		return { kind: "copy", all, force: command.endsWith("!") };
+		return { kind: "insert", all: command.startsWith("/insert-all"), force: command.endsWith("!") };
 	}
 	return { kind: "question", text: command };
 }
@@ -2852,7 +2846,7 @@ class BtwModal implements Focusable {
 
 		const controls = this.running
 			? this.theme.fg("dim", "Thinking… · Esc cancel")
-			: this.theme.fg("dim", "Enter ask · Esc close · /copy · /copy-all · /clear · /retry");
+			: this.theme.fg("dim", "Enter ask · Esc close · /copy · /copy-all · /insert · /insert-all · /clear · /retry");
 
 		const lines = [
 			this.borderLine(innerWidth, "top"),
@@ -2969,18 +2963,32 @@ async function openBtwModal(
 				void runTurn(last.question);
 			};
 
-			const handoff = (all: boolean, force: boolean) => {
+			const copyOut = async (all: boolean) => {
 				const text = all ? transcript() : (thread.turns.at(-1)?.answer ?? "");
 				if (!text.trim()) {
 					modal.setNotice("Nothing to copy yet.");
 					return;
 				}
+				try {
+					await copyToClipboard(text);
+					modal.setNotice(all ? "Copied the full thread to the clipboard." : "Copied the latest answer to the clipboard.");
+				} catch (error) {
+					modal.setNotice(`Copy failed: ${errorMessage(error)}`);
+				}
+			};
+
+			const insert = (all: boolean, force: boolean) => {
+				const text = all ? transcript() : (thread.turns.at(-1)?.answer ?? "");
+				if (!text.trim()) {
+					modal.setNotice("Nothing to insert yet.");
+					return;
+				}
 				if (ctx.ui.getEditorText().trim() && !force) {
-					modal.setNotice("Main editor has a draft. Use /copy! (or /copy-all!) to replace it.");
+					modal.setNotice("Main editor has a draft. Use /insert! (or /insert-all!) to replace it.");
 					return;
 				}
 				ctx.ui.setEditorText(text);
-				modal.setNotice(all ? "Copied the full thread to the editor." : "Copied the latest answer to the editor.");
+				modal.setNotice(all ? "Inserted the full thread into the main editor." : "Inserted the latest answer into the main editor.");
 			};
 
 			function submit(value: string): void {
@@ -2990,9 +2998,14 @@ async function openBtwModal(
 					clear();
 					return;
 				}
-				if (action.kind === "copy") {
+				if (action.kind === "clipboard") {
 					modal.clearComposer();
-					handoff(action.all, action.force);
+					void copyOut(action.all);
+					return;
+				}
+				if (action.kind === "insert") {
+					modal.clearComposer();
+					insert(action.all, action.force);
 					return;
 				}
 				if (action.kind === "retry") {
@@ -3040,12 +3053,12 @@ export default async function bro(pi: ExtensionAPI) {
 		label: "Bro advisor",
 		description:
 			"Consult a fresh, independent Agy process for a second opinion mid-task. It has real, unsandboxed tool access in the current workspace (read files, search, run commands) with permissions auto-approved, and is instructed to investigate before advising and to leave edits to you — that is a behavioral instruction to the advisor, not an enforced restriction, so treat its findings as advice rather than a delegated implementation. You never need to prepare a summary or evidence first: Bro automatically captures your system instructions, active tools, and the conversation so far, plus any human-set steering priorities, and sends them to the advisor.",
-		promptSnippet: "bro_advisor({question?}): consult a fresh Agy process for a second opinion; it investigates the workspace itself and returns advice",
+		promptSnippet: "Consult a fresh Agy process for a second opinion mid-task; it investigates the workspace itself and returns advice",
 		promptGuidelines: [
 			"Call bro_advisor before or after a non-trivial design or scope decision, or when genuinely uncertain, for a second opinion from a fresh, independent Agy process.",
-			"question is optional — never delay a call to first prepare a summary or evidence; Bro captures your context automatically.",
-			"Any human-set steering priorities are applied automatically by the advisor; you don't need to relay or repeat them.",
-			"The advisor is instructed to only return advice and leave edits to you — that instruction is not enforced, so verify its findings yourself rather than treating them as a completed implementation.",
+			"bro_advisor's question parameter is optional — never delay a call to first prepare a summary or evidence; Bro captures context automatically.",
+			"Any human-set steering priorities are applied automatically by bro_advisor; you don't need to relay or repeat them.",
+			"bro_advisor is instructed to only return advice and leave edits to you — that instruction is not enforced, so verify its findings yourself rather than treating them as a completed implementation.",
 		],
 		parameters: Type.Object({
 			question: Type.Optional(
@@ -3137,7 +3150,7 @@ export default async function bro(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("bro", {
-		description: "Explain replies, pasted text, documents, and webpages, draw recent session turns, or open a sandboxed side conversation with /bro btw",
+		description: "Explain text, documents, and webpages; draw session turns; open a side conversation; configure Bro and the executor's advisor tool",
 		getArgumentCompletions: (prefix) => {
 			const normalized = prefix.trim().toLowerCase();
 			const matches = COMMANDS.filter((command) => command.value.startsWith(normalized));

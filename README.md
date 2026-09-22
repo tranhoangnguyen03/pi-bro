@@ -111,22 +111,28 @@ your terminal mode; press **C** to copy the complete explanation reliably.
 `/bro btw` opens a separate multi-turn conversation in a modal, so you can ask
 a quick side question while the main agent keeps working. It runs through Agy,
 the same backend as the rest of Bro, and never adds anything to Pi's
-conversation unless you explicitly copy it into the editor.
+conversation unless you explicitly insert it into the editor.
 
 - **Sandboxed by default**: the side conversation is read-only (no project
   access). Add `--full` to let it read and edit the workspace.
 - `/bro btw <question>` asks immediately; `/bro btw` opens an empty thread.
 - `--fresh` starts a thread without seeding the main session's recent
-  conversation text.
+  conversation text. Reopening without an access flag preserves the existing
+  thread's access mode, including `--full`. Use `--sandbox` to return to sandbox
+  mode; changing access mode starts a new thread. `--fresh` alone does not reset
+  the access mode.
 - The first turn is seeded with up to the last 8 turns of user/assistant
   conversation text (40,000 characters max, with a truncation notice); the
   side agent can also read the repo itself when running in `--full` mode.
 - **In the modal**: type a question and press Enter (empty Enter re-asks the
-  last question). `/copy` copies the latest answer into the main editor
-  without submitting (use `/copy!` to replace an existing draft); `/copy-all`
-  copies the full thread; `/retry` re-asks
-  the last question; `/clear` resets the thread; Esc closes. A visible
-  `full · edits repo` badge shows whenever `--full` mode is active.
+  last question). Composer actions trigger only on these exact commands:
+  - `/copy`: copies the latest answer to the system clipboard
+  - `/copy-all`: copies the full thread to the system clipboard
+  - `/insert`: inserts the latest answer into the main editor without submitting (use `/insert!` to replace an existing editor draft)
+  - `/insert-all`: inserts the full thread into the main editor without submitting (use `/insert-all!` to replace an existing editor draft)
+  - `/retry`: re-asks the last question (empty Enter does the same)
+  - `/clear`: resets the thread
+  Any other text or slash-prefixed input (such as `/send` or `/copy!`) is not a composer command and is submitted directly as a question to the side conversation. Esc closes the modal. A visible `full · edits repo` badge shows whenever `--full` mode is active.
 - The thread lives in memory only — it clears when you switch Pi sessions,
   reload extensions, or quit Pi.
 
@@ -157,8 +163,9 @@ gives an `agy update` action when it is too old.
   tool access in the workspace with permissions auto-approved
   (`--dangerously-skip-permissions`) — there is no enforced read-only
   isolation. It is instructed to verify claims itself and return advice,
-  leaving edits to the executor, but that instruction is not enforced, so
-  treat its findings as advice to verify, not a guaranteed hands-off review.
+  leaving edits to the executor, but that boundary is a behavioral prompt
+  instruction rather than an enforced sandbox constraint, so treat its
+  findings as advice to verify, not a guaranteed hands-off review.
 - **Steering**: `/bro advisor-steer` opens an editor for one persistent
   steering brief — e.g. "quick prototype; keep A and B careful, everything
   else minimal" — that the advisor always reads. **Ctrl+S** saves and keeps
@@ -170,9 +177,10 @@ gives an `agy update` action when it is too old.
   conversation or sent to the main model** — the advisor is the only thing
   that reads it.
 - **Persistence**: the steering brief persists with the Pi session (not
-  globally, not per project) and is restored on resume or reload. Forking a
-  session inherits it; edits made after the fork are independent of the
-  original branch.
+  globally, not per project) as custom extension data in the session file and
+  is restored on resume or reload. Forking a session inherits it; edits made
+  after the fork are independent of the original branch. The advisor tool has
+  no separate activation state persisted or toggled.
 - **Retries**: on an invocation failure (not a completed answer — "I need
   more evidence" is a normal result, not a failure), Bro retries with the
   identical snapshot, steering, and question: once after 5 seconds, once more
@@ -235,11 +243,14 @@ changed in the auth flow`. The query is used as a lens on the captured turns,
 not as additional evidence, and its casing is preserved as typed. Pressing
 **R** retries with the same turn count and query.
 
-Only the first word is ever read as the turn count — a query that starts with
-digits is not ambiguous. `/bro show 1 404 handler` captures 1 turn and steers
-on "404 handler"; `/bro show 404 handler` (no leading count) steers on the
-whole phrase "404 handler" using the default turn count, since "404" alone
-would be a count but "404 handler" is not.
+Any leading whitespace-delimited word that looks like a number is treated as the
+requested turn count: for example, `/bro show 3 what changed` captures 3 turns
+and steers on "what changed", while `/bro show 404 handler` parses "404" as the
+turn count and "handler" as the steering query. To steer on a phrase that starts
+with digits while choosing a turn count, specify the turn count explicitly
+first: `/bro show 1 404 handler` captures 1 turn and steers on "404 handler".
+If the first word is not a number, the whole input is treated as the steering
+query using the saved `showTurns` default.
 
 ### A slow session-create, traced
 
@@ -728,6 +739,23 @@ chooses the initial model only when Bro creates a missing settings file:
 PI_BRO_MODEL=gemini-3.7-flash-low pi
 ```
 
+### Configuration precedence
+
+When resolving model and reasoning effort:
+1. **Per-capability override**: If configured under `overrides.<capability>` (`explain`, `show`, `btw`, or `advisor`) in `bro-settings.json`, that capability pins its own `{ "model": ..., "effort": ... }` pair and ignores the shared default.
+2. **Shared default**: If no override is set for that capability, it inherits the root `model` and `effort` in `bro-settings.json`.
+3. **Catalog normalization**: Bro normalizes the resolved `{ model, effort }` against Agy's installed model catalog (mapping suffixed variant IDs and handling fixed-effort models).
+4. **Initial file creation only**: `PI_BRO_MODEL` selects the initial default model only when Bro creates a missing `bro-settings.json` file. It has no effect once the file exists.
+
+When resolving turn count for `/bro show`:
+1. **Command argument**: An explicit count like `/bro show 3` or `/bro show 1 query` overrides for that single execution.
+2. **Saved setting**: `showTurns` in `bro-settings.json` (defaults to 1; configurable interactively via `/bro config` or direct file edit).
+
+When resolving explanation prompt (`explain` capability only):
+1. **Custom prompt**: `~/.pi/agent/bro-prompt.md` (or `$PI_CODING_AGENT_DIR/bro-prompt.md`), if present and valid (`{{response}}` exactly once), completely overrides all built-in modes.
+2. **Saved mode**: `mode` in `bro-settings.json` (`brief`, `balanced`, or `faithful`; defaults to `balanced`).
+3. Note: `bro-prompt.md` applies only to `/bro`, `/bro text`, `/bro file`, and `/bro url`; it does not affect `/bro show`, `/bro btw`, or `bro_advisor`.
+
 ## Custom prompt
 
 Bro uses a built-in prompt by default. To use your own, create:
@@ -806,6 +834,24 @@ run `/bro doctor` for the exact problem.
   according to their own settings and privacy policies.
 - **Clipboard**: Pressing **C** copies the text to your system clipboard, where
   your operating system or clipboard manager may retain it.
+- **Advisor requests**: `bro_advisor` sends the executor agent's system
+  instructions, active tool list (excluding `bro_advisor`), ordered
+  conversation history including tool calls and tool results (unlike Show, which
+  omits them), human steering brief, and the executor's optional question to
+  Agy and your configured model provider. Reasoning and image bodies are
+  omitted with explicit markers (`[reasoning omitted]`, `[image omitted]`).
+- **Advisor tool execution & safety boundary**: The advisor process runs
+  directly in your workspace (`cwd`) with auto-approved permissions
+  (`--dangerously-skip-permissions`). It has real tool access (file reading,
+  search, command execution). The directive to only advise and leave edits to
+  the executor is a **behavioral prompt instruction**, not an enforced sandbox
+  or security boundary. Treat its findings as advice to verify before applying.
+- **Advisor steering persistence**: The steering brief is saved as
+  session-scoped custom extension data (`bro-advisor-steering`) in the session
+  file. It persists across session resume and reload, and is inherited on
+  session fork (post-fork edits on branches remain independent). It is never
+  sent to the main model or added to Pi's conversation. The advisor tool has
+  no separate activation state.
 
 ## Troubleshooting and current limits
 
@@ -825,6 +871,11 @@ tool before giving it to Bro.
 - `/bro btw` threads are memory-only and do not survive reloads or restarts.
   The side conversation needs Agy's `--conversation` resume support; sandbox
   mode caps a turn at 2 minutes and full mode at 10 minutes.
+- `bro_advisor` requires Agy CLI `>=1.1.15` (for `--input-format stream-json`).
+  Consultations run directly in the workspace with auto-approved permissions
+  without enforced file-modification isolation; an attempt is capped at 10
+  minutes (`--print-timeout 10m`) and retries up to 2 times on invocation
+  failure (5-second, then 10-second backoff).
 - Show captures only the conversation text of what already happened in the
   current session — the last few turns' user and assistant messages, with
   tool calls, tool results, reasoning, and images always omitted; it cannot
