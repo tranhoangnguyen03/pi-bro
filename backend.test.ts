@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync } from "node:fs";
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -384,14 +385,19 @@ test("POSIX child/grandchild ignoring TERM escalates to SIGKILL with bounded cle
 		`#!/bin/sh
 trap '' TERM
 cat > /dev/null
-sleep 30
+(trap '' TERM; while :; do sleep 1; done) &
+echo "$!" > "$BIN_DIR/grandchild.pid"
+touch "$BIN_DIR/ready"
+wait
 touch "$BIN_DIR/still-running-after-kill.txt"
 `,
 		async (binDir) => {
 			process.env.BIN_DIR = binDir;
 			const marker = join(binDir, "still-running-after-kill.txt");
 			const controller = new AbortController();
-			setTimeout(() => controller.abort(), 100);
+			const readyTimer = setInterval(() => {
+				if (existsSync(join(binDir, "ready"))) controller.abort();
+			}, 10);
 
 			const startedAt = Date.now();
 			const outcome = await execute(
@@ -402,8 +408,15 @@ touch "$BIN_DIR/still-running-after-kill.txt"
 				{ killEscalationMs: 200 },
 			);
 
+			clearInterval(readyTimer);
 			const elapsed = Date.now() - startedAt;
 			assert.equal(outcome.status, "cancelled");
+			assert.ok(existsSync(join(binDir, "ready")), "fixture reached TERM-resistant state before cancellation");
+			const grandchildPid = Number(await readFile(join(binDir, "grandchild.pid"), "utf8"));
+			// Allow the OS to reap after SIGKILL before probing the process table.
+			await new Promise(resolve => setTimeout(resolve, 100));
+			const state = spawnSync("ps", ["-o", "stat=", "-p", String(grandchildPid)], { encoding: "utf8" }).stdout.trim();
+			assert.ok(!state || state.startsWith("Z"), `grandchild must be gone or awaiting reaping, got ${state}`);
 			assert.ok(elapsed < 4_000, `SIGKILL escalation must bound cleanup time (took ${elapsed}ms, expected < 4000ms)`);
 			assert.equal(
 				existsSync(marker),
