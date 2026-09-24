@@ -17,6 +17,10 @@ All notable changes to pi-bro are documented here.
 - The `/insert!` and `/insert-all!` BTW composer commands. `/insert` and `/insert-all` never replace an existing main-editor draft; they ask you to edit or clear it first. The old force strings only show a notice and are never sent as questions.
 - The `/bro model` and `/bro effort` commands. Use `/bro config` for the shared default and per-capability model/effort. Both now show a `/bro config` pointer and never fall through to a text explanation.
 
+### Changed
+
+- Docs: the README is the single backend-neutral user guide (Agy is the default, not a requirement), with one "Backends: access and retention" section. `/bro help` is now a concise reference that points to the README. The advisor prompt no longer names a backend or CLI flags. `docs/DEVELOPMENT.md` replaces `docs/DEV-SNAPSHOT.md`, and `docs/TESTING.md` is the single manual end-to-end checklist.
+
 ## [0.17.0] - 2026-09-24
 
 ### Added

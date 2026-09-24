@@ -2303,99 +2303,62 @@ export function helpText(settings?: BroSettings, settingsError?: string): string
 	const settingsSummary = settings
 		? `- **Backend:** ${settings.backend ?? "agy"}\n- **Model:** \`${settings.model}\`\n- **Reasoning effort:** ${settings.effort === "default" ? "built into the selected model" : settings.effort}\n- **Mode:** ${settings.mode}\n- **Show turns:** ${settings.showTurns}${overrideLines.length ? `\n${overrideLines.join("\n")}` : ""}`
 		: `Bro could not read its settings: ${settingsError}\n\nRun \`/bro doctor\` for setup help.`;
-	const advisorBackend = settings ? capabilityBackend(settings, "advisor") : "agy";
-	const advisorProcess = advisorBackend === "claude" ? "Claude process" : advisorBackend === "grok" ? "Grok process" : "Agy process";
-	const advisorName = advisorBackend === "claude" ? "Claude" : advisorBackend === "grok" ? "Grok" : "Agy";
 	return `# Bro
 
-Bro explains a dense assistant reply, pasted text, local document, or public webpage in plain language, draws recent session turns as shapes, or opens a separate side conversation with \`/bro btw\` — without adding anything to Pi's conversation.
+Quick reference. The README is the full user guide: https://github.com/tranhoangnguyen03/pi-bro#readme
 
-## Explain
+## Explain and show
 
 - \`/bro\` — explain the latest completed assistant reply
 - \`/bro text [text]\` — explain pasted text, or the latest reply when text is omitted
-- \`/bro file <path>\` — explain a Markdown, text, PDF, or DOCX file
+- \`/bro file <path>\` — explain a workspace \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\` file
 - \`/bro url <url>\` — explain one public webpage
-- \`/bro open\` — reopen the latest explanation
-- \`/bro show [n-turns] [query]\` — draw the last few session turns (default 1) as shapes, from user and assistant conversation text only (tool calls, tool results, reasoning, and images are omitted); add a query to steer what the shapes focus on
-
-Any other input is the source itself: a lone URL explains that webpage, an existing workspace file with a supported extension explains that file, and anything else is explained as pasted text. Quoted paths with spaces are routed too when the file exists.
-
-Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/bro file\`, \`/bro url\`, or \`/bro show\` command — or give \`/bro\` the input directly — to capture a new source.
-
-## Check and configure
-
-- \`/bro doctor\` — check settings, backends, account, model, effort, and mode (per-feature backend/model/effort)
-- \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
-- \`/bro config\` — open an interactive settings screen for the shared default backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) backend, model, and effort overrides. Changes save immediately; Esc on a picker cancels without changing anything, Esc on the screen closes it and keeps whatever was already saved.
-
-The shared default is what explain, show, btw, and advisor fall back to when they have no override. Use \`/bro config\` to change it or to give one of them its own backend, model, or effort. \`btw\` runs on Agy, Claude, or Grok.
+- \`/bro <input>\` — a lone URL, an existing supported file, or anything else as pasted text
+- \`/bro open\` — reopen the latest explanation without a new request
+- \`/bro show [n-turns] [query]\` — draw recent turns' conversation text as shapes; an optional query steers the focus
 
 ## Side conversation
 
-- \`/bro btw [question]\` — open a side conversation. It starts conversation-only (Agy sandbox controls; Claude with tools disabled; Grok prompt request, not enforced); type \`/mode\` inside to toggle full permission (read and edit the workspace) while keeping the conversation. A new thread starts with recent main-session context; reopening keeps the thread and its mode. Inside the side thread, type questions and press Enter (empty Enter re-asks); exact commands \`/copy\` and \`/copy-all\` copy the latest answer or full thread to the system clipboard; exact commands \`/insert\` and \`/insert-all\` insert into the main editor without submitting, never replacing an existing draft (edit or clear it first); \`/retry\` re-asks the last question; \`/clear\` resets the thread. Any other input is sent as a question. Esc closes.
+- \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
+- Inside the modal: Enter asks (empty Enter re-asks); \`/mode\` toggles conversation-only / full permission (read and edit the workspace) and keeps the thread; \`/copy\` and \`/copy-all\` copy to the clipboard; \`/insert\` and \`/insert-all\` insert into an empty main editor without submitting; \`/retry\` re-asks; \`/clear\` resets. Any other text is sent as a question. Esc closes.
 
 ## Advisor
 
-- \`bro_advisor\` — a tool the executor agent can voluntarily call mid-task for a second opinion from a fresh ${advisorProcess} before or after a non-trivial decision. It is registered like any other tool and has no on/off switch of its own; whether the executor can actually call it depends entirely on this host's own tool restrictions
-- \`/bro advisor\` — a quick notice of whether \`bro_advisor\` is available right now, pointing at \`/bro config\`, \`/bro advisor-steer\`, and \`/bro doctor\`
-- \`/bro advisor-steer\` — open an editor for one persistent steering brief the advisor always sees. **Ctrl+S** saves, **Enter**/**Shift+Enter** insert newlines, **Ctrl+K** clears the saved brief and draft, **Ctrl+C** copies the full draft, and **Esc** closes without saving unsaved edits
-- \`/bro doctor\` — the full advisor diagnostic: whether this host exposes and activates \`bro_advisor\`, its resolved model/effort, steering presence, and backend compatibility
+- \`bro_advisor\` — a tool the executor agent may call for a second opinion from a fresh backend process with real, auto-approved workspace access; it is told to advise, not edit, but that is not enforced
+- \`/bro advisor\` — whether \`bro_advisor\` is available right now
+- \`/bro advisor-steer\` — edit the session's persistent steering brief (**Ctrl+S** save, **Ctrl+K** clear, **Ctrl+C** copy, **Esc** close)
 
-Each consultation is a fresh, standalone ${advisorProcess} — never resumed, never looping, never automatically triggered. Bro captures the context snapshot (system instructions, active tools, and the conversation so far including tool calls and results) automatically; the executor never has to assemble one. The advisor has real tool access in the workspace, running with permissions auto-approved, so it can verify claims itself; it is instructed to only return advice and leave edits to the executor, but that instruction is behavioral rather than an enforced sandbox constraint. The steering brief persists in the session (not sent to the model) and is restored on resume or reload; forking a session inherits it, and edits after the fork are independent of the original branch.
+## Configure and check
+
+- \`/bro config\` — shared default and per-capability (explain/show/btw/advisor) backend, model, and effort; explain mode; show turns. Changes save immediately.
+- \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
+- \`/bro doctor\` — check settings, prompt, and every selected backend without running a model turn
 
 ## Current settings
 
 ${settingsSummary}
 
-Saved in \`${SETTINGS_FILE}\`. Use the commands above, configure interactively via \`/bro config\`, or edit the file directly. Changes apply to future explanations. \`showTurns\` can be configured interactively in \`/bro config\` or edited directly in \`${SETTINGS_FILE}\`, and overridden per run with \`/bro show <n-turns>\`. Add a query after the count — or on its own, e.g. \`/bro show what changed in the auth flow\` — to steer what the shapes focus on.
+Saved in \`${SETTINGS_FILE}\`.
 
 ## Explanation modes
 
 - brief — the main point and next action, with no fixed word target
 - balanced — default; material detail with clearer structure
 - faithful — closest to the source, with no fixed word limit
-/bro show uses its own built-in draw prompt; the modes and \`bro-prompt.md\` do not affect it.
-If \`${PROMPT_FILE}\` exists and is valid, the selected mode stays saved but inactive because the custom prompt fully overrides it. Remove or rename \`bro-prompt.md\` to use the saved built-in mode again.
+
+A valid \`${PROMPT_FILE}\` (with \`{{response}}\` exactly once) overrides the modes; the saved mode stays inactive until you remove or rename it. Show always uses its own prompt.
 
 ## Controls
 
-- **Mouse wheel / trackpad** — scroll
-- **↑ / ↓** — scroll
+- **Mouse wheel / trackpad**, **↑ / ↓** — scroll
 - **C** — copy the full explanation
-- **R** — repeat the current action\n- **O** — open the HTML diagram when a show reply contains one
+- **R** — repeat the current action
+- **O** — open the HTML diagram when a show reply contains one
 - **Esc** — close, or cancel while Bro is working
 
-Bro temporarily captures mouse input while the modal is open. Native mouse selection may be unavailable or extend outside the modal; press **C** to copy everything reliably.
+## Privacy
 
-## Important limits
-
-- Documents must be inside the current workspace, are limited to 10 MiB and 100,000 extracted characters, and must be \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\`. Scanned PDFs need OCR first.
-- Web input is limited to one public HTML page. Bro cannot sign in, run page JavaScript, bypass paywalls or blocks, follow pagination, or understand images and video.
-- If a webpage fails, copy it into a text file or save it as a PDF, then use \`/bro file\`.
-- Show draws only what already happened in this session — the conversation text of the last few turns, with tool calls, tool results, reasoning, and images always omitted — and is requested not to investigate the repository; Grok retains normal tools, so this is not enforced isolation. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
-- Show reflects what was reported in the conversation, not independent verification against the actual code or system state.
-- Btw threads are memory-only and do not survive reloads or restarts. A turn is capped at 2 minutes in conversation-only mode and 10 minutes in full permission mode; the side conversation resumes through Agy \`--conversation\` or Claude/Grok \`--resume\`, and Claude/Grok keep one native session across \`/mode\` switches. Agy restarts its native session on a switch, seeded with the main-session context and the whole thread.
-- Advisor consultations run with real tool access and auto-approved permissions (Grok: \`--sandbox off --permission-mode bypassPermissions\`; Agy/Claude: \`--dangerously-skip-permissions\`) — there is no enforced read-only isolation, only the advisor's own behavioral instructions to advise rather than implement. On invocation failure (not a completed answer), Bro retries with the identical snapshot, steering, and question: once after 5 seconds, once more after 10 seconds, then returns ${advisorName}'s own diagnostic as the failure.
-
-## Privacy and safety
-
-Bro sends the selected assistant reply, pasted text, locally extracted document or webpage text, or recent session conversation text (tool calls, tool results, reasoning, and images omitted) to the selected backend and its model provider. They may retain request data under their own policies.
-
-Bro never adds the explanation to Pi's conversation, session file, or main-agent context. The captured source and latest explanation stay in process memory until you change sessions, reload extensions, or exit Pi.
-
-Bro asks explain/show backends to use supplied context; Grok retains tool authority, so this is behavioral rather than enforced. \`/bro btw\` starts conversation-only (Agy sandbox controls, Claude with tools disabled, or Grok prompt instructions); after \`/mode\` switches it to full permission it can read and edit the workspace, so switch only when you want the side conversation to touch your project.
-For webpages, it connects directly to the site without browser cookies; the site sees your IP address and Bro's user agent. Do not use private or signed URLs.
-
-Doctor checks contact only the selected backends, but never send source text or run a model turn. Pressing **C** sends the explanation to your system clipboard.
-
-Each advisor consultation sends the executor's system instructions, active tool list, ordered conversation (including tool calls and results, since the advisor needs to verify claims), your steering brief, and the executor's optional question to the selected backend and its model provider; the advisor process itself can read and edit the workspace with no permission prompts. The steering brief is stored as session-only extension data — never added to the main conversation Pi or the model sees; the advisor tool has no separate activation state.
-
-## Custom prompt
-
-Create or edit \`${PROMPT_FILE}\` and include \`{{response}}\` exactly once. Bro reads it on the next explanation and never modifies it. Existing valid custom prompts continue working unchanged.
-
-A valid custom prompt fully overrides all built-in mode instructions. \`/bro mode\` still changes the saved mode, but that mode remains inactive until you remove or rename \`bro-prompt.md\`. An invalid custom prompt blocks explanations; run \`/bro doctor\` for the exact problem.`;
+Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Nothing is added to Pi's conversation unless you insert it. Access controls differ by backend; see the README.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.

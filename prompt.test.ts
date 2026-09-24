@@ -212,10 +212,18 @@ test("advisor prompt separates human steering, snapshot, and question into label
 	assert.match(prompt, /## Executor's question/);
 	assert.match(prompt, /Is this abstraction justified\?/);
 	assert.match(prompt, /real tool access in this workspace/);
-	assert.match(prompt, /--dangerously-skip-permissions/);
 	assert.match(prompt, /do not edit files or otherwise implement the change yourself/);
 	assert.match(prompt, /Begin with a one-line answer or verdict/);
 	assert.match(prompt, /Omit investigation narration, waiting updates, and progress reports/);
+});
+
+test("advisor prompt is backend-neutral: no backend name or CLI flags, advisory contract intact", () => {
+	const prompt = buildAdvisorPrompt("steer", "## user\nx", "q");
+	assert.doesNotMatch(prompt, /\bagy\b|antigravity|claude|grok/i);
+	assert.doesNotMatch(prompt, /(^|\s)--[a-z]/m);
+	assert.match(prompt, /Investigate before advising/);
+	assert.match(prompt, /strictly advisory/);
+	assert.match(prompt, /grounded in what you verified yourself/);
 });
 
 test("advisor prompt states explicitly when steering or a question were not given, instead of omitting the section", () => {
