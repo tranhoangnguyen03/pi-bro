@@ -50,7 +50,9 @@ const {
 	resolveClaudeModel,
 	resolveGrokModel,
 	resolveModelEffort,
+	helpText,
 	selectionForCapability,
+	selectionLabel,
 	settingsPayload,
 	supportsBackend,
 	withCapabilityOverride,
@@ -292,4 +294,28 @@ test("BTW backend changes clear native continuation and transcript, same backend
  const thread = {turns:[{question:"q",answer:"a"}],conversationId:"grok-session",full:false,backend:"grok"};
  assert.equal(bro.bindBtwBackend(thread,"grok"),false); assert.equal(thread.conversationId,"grok-session");
  assert.equal(bro.bindBtwBackend(thread,"agy"),true); assert.equal(thread.conversationId,undefined); assert.deepEqual(thread.turns,[]);
+});
+
+test("modal model label shows the resolved per-capability model and effort", () => {
+	const settings = parseBroSettings({
+		version: 2,
+		default: { backend: "agy", model: "gemini-a", effort: "default" },
+		overrides: {
+			explain: { backend: "claude", model: "opus", effort: "max" },
+			show: { backend: "grok", model: "grok-4.7", effort: "default" },
+			btw: { backend: "grok", model: "grok-4.7-build-fast", effort: "xhigh" },
+		},
+	});
+	assert.equal(selectionLabel(selectionForCapability(settings, "explain")), "opus · max");
+	assert.equal(selectionLabel(selectionForCapability(settings, "show")), "grok-4.7 · default");
+	assert.equal(selectionLabel(selectionForCapability(settings, "btw")), "grok-4.7-build-fast · xhigh");
+	assert.equal(selectionLabel(selectionForCapability(settings, "advisor")), "gemini-a · default");
+	assert.equal(selectionLabel(selectionForCapability(parseBroSettings({ model: "gemini-b-low", effort: "low" }), "explain")), "gemini-b · low");
+});
+
+test("help no longer lists /bro usage or the conversation-only access label", () => {
+	const text = helpText(parseBroSettings({ model: "m", effort: "low" }));
+	assert.doesNotMatch(text, /\/bro usage/);
+	assert.doesNotMatch(text, /not sandboxed/i);
+	assert.doesNotMatch(text, /Usage checks/);
 });

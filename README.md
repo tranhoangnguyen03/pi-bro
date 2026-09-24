@@ -70,7 +70,6 @@ text directly captures a new source the same way.
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
 | `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
 | `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
-| `/bro usage [--provider agy]` | Show current Agy resource limits. |
 | `/bro model [id]` | View or choose the selected backend’s shared default model. |
 | `/bro effort [low\|medium\|high]` | View or choose the shared default reasoning effort. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
@@ -110,6 +109,10 @@ a persistent mode with `/bro mode`:
 - **O**: Open the HTML diagram when a show reply contains one
 - **Esc**: Close the modal, or cancel while Bro is working
 
+The modal header shows the model and reasoning effort the explanation or
+drawing used (`default` when the model's own effort applies); `/bro open`
+keeps the original label.
+
 Bro temporarily captures mouse input while its modal is open. Native mouse
 selection may be unavailable or visually extend outside the modal depending on
 your terminal mode; press **C** to copy the complete explanation reliably.
@@ -142,7 +145,7 @@ conversation unless you explicitly insert it into the editor.
   - `/insert-all`: inserts the full thread into the main editor without submitting (use `/insert-all!` to replace an existing editor draft)
   - `/retry`: re-asks the last question (empty Enter does the same)
   - `/clear`: resets the thread
-  Any other text or slash-prefixed input (such as `/send` or `/copy!`) is not a composer command and is submitted directly as a question to the side conversation. Esc closes the modal. A visible `full · edits repo` badge shows whenever `--full` mode is active.
+  Any other text or slash-prefixed input (such as `/send` or `/copy!`) is not a composer command and is submitted directly as a question to the side conversation. Esc closes the modal. The header shows the model and reasoning effort the latest turn used (`default` when the model's own effort applies), and a visible `full · edits repo` badge shows whenever `--full` mode is active.
 - The thread lives in memory only — it clears when you switch Pi sessions,
   reload extensions, or quit Pi.
 
@@ -735,7 +738,7 @@ that mode as root may be rejected by Claude. Claude BTW continuation is not wire
 shared default makes BTW unsupported, select an explicit Agy or Grok override.
 
 Doctor distinguishes CLI installation and configured authentication from a live
-request; it does not run a Claude model turn. `/bro usage` remains Agy-specific.
+request; it does not run a Claude model turn.
 
 ### Grok Build
 
@@ -761,7 +764,6 @@ its private temporary prompt file, but Grok may retain sessions/logs under its
 own settings. Bro does not copy credentials or change Grok configuration.
 Cancellation targets the managed process group, not independently detached shell
 work or external services. Doctor checks version, not authenticated connectivity.
-`/bro usage` remains Agy-specific.
 
 Use `/bro model`, `/bro effort`, and `/bro mode` to update the shared default
 and mode from Pi, `/bro config` to review or change the shared default and any
@@ -846,8 +848,6 @@ run `/bro doctor` for the exact problem.
 - **Side conversation requests**: `/bro btw` sends your side questions and, on
   the first turn, the seeded main-session conversation text to Agy. In `--full`
   mode the side agent additionally reads the workspace.
-- **Usage checks**: `/bro usage` checks your authenticated Agy limits without
-  sending an assistant response or running a model turn.
 - **Setup checks**: `/bro doctor` checks Agy account and model availability
   without sending an assistant response or running a model turn.
 - **Context isolation**: Bro does not add explanations to Pi's conversation

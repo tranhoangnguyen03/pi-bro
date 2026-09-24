@@ -60,10 +60,10 @@ type TuiLike = {
 };
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
 type BroSource = { text: string; label?: string };
-type BroResult = { source: BroSource; text: string };
-type ModalResult = { source?: BroSource; text: string; htmlPath?: string };
+type BroResult = { source: BroSource; text: string; model?: string };
+type ModalResult = { source?: BroSource; text: string; htmlPath?: string; model?: string };
 type BtwTurn = { question: string; answer: string };
-type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean; backend?: BackendName };
+type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean; backend?: BackendName; model?: string };
 const EFFORTS = ["default", "low", "medium", "high"] as const;
 const BACKENDS = ["agy", "claude", "grok"] as const;
 type BackendName = (typeof BACKENDS)[number];
@@ -122,7 +122,6 @@ const COMMANDS = [
 	{ value: "url", label: "url", description: "Explain a public webpage" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
 	{ value: "doctor", label: "doctor", description: "Check whether Bro is ready" },
-	{ value: "usage", label: "usage", description: "Show current Agy usage" },
 	{ value: "model", label: "model", description: "View or choose the shared default model" },
 	{ value: "effort", label: "effort", description: "View or choose the shared default reasoning effort" },
 	{ value: "show", label: "show", description: "Draw what happened in recent session turns as shapes" },
@@ -711,6 +710,12 @@ export function selectionForCapability(settings: BroSettings, capability: Capabi
 		throw new Error(`\`${pair.effort}\` is not supported on the Agy backend. Run \`/bro config\` to fix this.`);
 	}
 	return agySelection({ model: pair.model, effort: pair.effort });
+}
+
+// The modal label for the exact selection a request runs with: model plus effort, where an
+// omitted effort (the model's own default) reads simply "default".
+export function selectionLabel(selection: BackendSelection): string {
+	return `${selection.model} · ${selection.effort ?? "default"}`;
 }
 
 function resolveCapabilitySettings(
@@ -1391,8 +1396,9 @@ async function simplify(
 	signal: AbortSignal,
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
-): Promise<string> {
-	return runAgyText((await promptFor(response, settings.mode)).text, selectionForCapability(settings, "explain"), signal, onProgress);
+): Promise<{ text: string; model: string }> {
+	const selection = selectionForCapability(settings, "explain");
+	return { text: await runAgyText((await promptFor(response, settings.mode)).text, selection, signal, onProgress), model: selectionLabel(selection) };
 }
 
 async function runShowExplanation(
@@ -1401,8 +1407,9 @@ async function runShowExplanation(
 	signal: AbortSignal,
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
-): Promise<string> {
-	return runAgyText(buildShowPrompt(transcript, steering), selectionForCapability(settings, "show"), signal, onProgress, "show");
+): Promise<{ text: string; model: string }> {
+	const selection = selectionForCapability(settings, "show");
+	return { text: await runAgyText(buildShowPrompt(transcript, steering), selection, signal, onProgress, "show"), model: selectionLabel(selection) };
 }
 
 // Thin presentation-boundary wrapper around the shared backend: coalesces raw text progress to the
@@ -2323,7 +2330,6 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 ## Check and configure
 
 - \`/bro doctor\` — check settings, backends, account, model, effort, and mode (per-feature backend/model/effort)
-- \`/bro usage [--provider agy]\` — show current Agy limits
 - \`/bro model [id]\` — view or choose the shared default model (Agy catalog, sonnet/opus/explicit IDs on Claude, grok-4.7/grok-4.7-build-fast/explicit IDs on Grok)
 - \`/bro effort [low|medium|high|xhigh|max]\` — view or choose the shared default reasoning effort (xhigh on Claude/Grok, max on Claude only)
 - \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
@@ -2387,7 +2393,7 @@ Bro never adds the explanation to Pi's conversation, session file, or main-agent
 Bro asks explain/show backends to use supplied context; Grok retains tool authority, so this is behavioral rather than enforced. \`/bro btw\` uses Agy sandbox controls or Grok conversation-only prompt instructions by default; with \`--full\` it can read and edit the workspace, so use \`--full\` only when you want the side conversation to touch your project.
 For webpages, it connects directly to the site without browser cookies; the site sees your IP address and Bro's user agent. Do not use private or signed URLs.
 
-Usage checks contact Agy and Doctor version checks contact only the selected backends, but none send source text or run a model turn. Pressing **C** sends the explanation to your system clipboard.
+Doctor checks contact only the selected backends, but never send source text or run a model turn. Pressing **C** sends the explanation to your system clipboard.
 
 Each advisor consultation sends the executor's system instructions, active tool list, ordered conversation (including tool calls and results, since the advisor needs to verify claims), your steering brief, and the executor's optional question to the selected backend and its model provider; the advisor process itself can read and edit the workspace with no permission prompts. The steering brief is stored as session-only extension data — never added to the main conversation Pi or the model sees; the advisor tool has no separate activation state.
 
@@ -2405,6 +2411,7 @@ class BroModal implements Focusable {
 	private kind: ModalKind = "loading";
 	private rawText = "";
 	private sourceLabel = "";
+	private modelLabel = "";
 	private notice = "";
 	private offset = 0;
 	private maxOffset = 0;
@@ -2433,8 +2440,8 @@ class BroModal implements Focusable {
 		this.setContent("streaming", text, "", false, false);
 	}
 
-	setResult(text: string, retryable: boolean, notice = "", sourceLabel = "", rawText = text): void {
-		this.setContent("result", text, rawText, true, retryable, notice, sourceLabel);
+	setResult(text: string, retryable: boolean, notice = "", sourceLabel = "", rawText = text, modelLabel = ""): void {
+		this.setContent("result", text, rawText, true, retryable, notice, sourceLabel, modelLabel);
 	}
 
 	setHtmlPath(path: string): void {
@@ -2458,6 +2465,7 @@ class BroModal implements Focusable {
 		retryable: boolean,
 		notice = "",
 		sourceLabel = "",
+		modelLabel = "",
 	): void {
 		this.kind = kind;
 		if (kind !== "result") this.htmlPath = "";
@@ -2469,6 +2477,7 @@ class BroModal implements Focusable {
 			.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
 			.replace(/\s+/g, " ")
 			.trim();
+		this.modelLabel = modelLabel;
 		if (kind !== "streaming") this.offset = 0;
 		this.markdown.setText(text);
 		this.tui.requestRender();
@@ -2518,7 +2527,11 @@ class BroModal implements Focusable {
 
 		const lines = [
 			this.borderLine(innerWidth, "top"),
-			this.frameLine(this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}${scroll}`)), innerWidth),
+			this.frameLine(
+				this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}`)) +
+					this.theme.fg("dim", `${this.modelLabel ? ` · ${this.modelLabel}` : ""}${scroll}`),
+				innerWidth,
+			),
 			this.ruleLine(innerWidth),
 		];
 
@@ -2659,7 +2672,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 						current = result;
 						options.onResult?.(result);
 						const display = result.htmlPath ? stripShowHtmlFence(result.text) : result.text;
-						modal.setResult(display, options.retryable ?? true, "", result.source?.label, result.text);
+						modal.setResult(display, options.retryable ?? true, "", result.source?.label, result.text, result.model);
 						if (result.htmlPath) modal.setHtmlPath(result.htmlPath);
 					})
 					.catch((error) => {
@@ -2667,7 +2680,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 						const message = error instanceof Error ? error.message : String(error);
 						if (previous) {
 							current = previous;
-							modal.setResult(previous.text, options.retryable ?? true, `Retry failed: ${message}`, previous.source?.label);
+							modal.setResult(previous.text, options.retryable ?? true, `Retry failed: ${message}`, previous.source?.label, previous.text, previous.model);
 						} else {
 							modal.setError(message);
 						}
@@ -2680,7 +2693,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 			if (options.text !== undefined) {
 				modal.setStatic(options.kind ?? "help", options.text, options.copyable ?? false);
 			} else if (current) {
-				modal.setResult(current.text, options.retryable ?? Boolean(options.run), "", current.source?.label);
+				modal.setResult(current.text, options.retryable ?? Boolean(options.run), "", current.source?.label, current.text, current.model);
 			} else {
 				execute();
 			}
@@ -2829,7 +2842,7 @@ class BtwModal implements Focusable {
 	private bodyHeight = 1;
 	private running = false;
 	private full = false;
-	private backend: BackendName = "agy";
+	private model = "";
 	private disposed = false;
 
 	get focused(): boolean {
@@ -2870,7 +2883,10 @@ class BtwModal implements Focusable {
 		this.tui.requestRender();
 	}
 
-	setBackend(backend: BackendName): void { this.backend = backend; this.tui.requestRender(); }
+	setModel(model: string): void {
+		this.model = model;
+		this.tui.requestRender();
+	}
 
 	setFull(full: boolean): void {
 		this.full = full;
@@ -2933,10 +2949,9 @@ class BtwModal implements Focusable {
 		const hiddenBelow = Math.max(0, this.maxOffset - this.offset);
 		const scroll = this.maxOffset > 0 ? ` · ↑${this.offset} ↓${hiddenBelow}` : "";
 
-		const mode = this.full
-			? this.theme.fg("accent", this.theme.bold("full · edits repo"))
-			: this.theme.fg("dim", this.backend === "grok" ? "Grok · conversation-only request (not sandboxed)" : "sandbox");
-		const header = this.theme.fg("accent", this.theme.bold("Bro · btw")) + this.theme.fg("dim", ` · ${mode}${scroll}`);
+		const model = this.model ? this.theme.fg("dim", ` · ${this.model}`) : "";
+		const mode = this.full ? this.theme.fg("dim", " · ") + this.theme.fg("accent", this.theme.bold("full · edits repo")) : "";
+		const header = this.theme.fg("accent", this.theme.bold("Bro · btw")) + model + mode + this.theme.fg("dim", scroll);
 
 		const composer = this.input.render(innerWidth)[0] ?? "";
 
@@ -3003,7 +3018,6 @@ async function openBtwModal(
 					settings = await readSettings();
 					const backend = capabilityBackend(settings, "btw");
 					if (bindBtwBackend(thread, backend)) modal.setNotice("Backend changed — started a fresh side thread.");
-					modal.setBackend(backend);
 				} catch (error) {
 					controller = undefined; modal.setRunning(false); modal.setNotice(errorMessage(error)); return;
 				}
@@ -3021,9 +3035,12 @@ async function openBtwModal(
 				modal.setText(transcript());
 
 				try {
+					const selection = selectionForCapability(settings, "btw");
+					thread.model = selectionLabel(selection);
+					modal.setModel(thread.model);
 					const result = await runBtwTurn(
 						buildBtwPrompt(context, question),
-						selectionForCapability(settings, "btw"),
+						selection,
 						{ full: thread.full, cwd: ctx.cwd, conversationId: thread.conversationId },
 						turnController.signal,
 						(partial) => {
@@ -3121,7 +3138,7 @@ async function openBtwModal(
 			}
 
 			modal.setFull(thread.full);
-			modal.setBackend(thread.backend ?? "agy");
+			modal.setModel(thread.model ?? "");
 			modal.setText(transcript());
 
 			if (options.initialQuestion) void runTurn(options.initialQuestion);
@@ -3145,7 +3162,7 @@ export default async function bro(pi: ExtensionAPI) {
 	let lastResult: BroResult | undefined;
 	let btwThread: BtwThread | undefined;
 	const remember = (result: ModalResult) => {
-		if (result.source) lastResult = { source: result.source, text: result.text };
+		if (result.source) lastResult = { source: result.source, text: result.text, model: result.model };
 	};
 
 	pi.on("session_start", async (_event, _ctx) => {
@@ -3302,13 +3319,14 @@ export default async function bro(pi: ExtensionAPI) {
 						return { text: "**Nothing to show yet**\n\nThis session has no conversation turns to draw. Run something first, then press **R**." };
 					}
 					let text: string;
+					let model: string;
 					try {
-						text = await runShowExplanation(captured.text, steering, signal, await readSettings(), onProgress);
+						({ text, model } = await runShowExplanation(captured.text, steering, signal, await readSettings(), onProgress));
 					} catch (error) {
 						throw new Error(withDoctor(error));
 					}
 					const html = extractShowHtml(text);
-					return { source: captured, text, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
+					return { source: captured, text, model, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
 				};
 				try {
 					await showBroModal(ctx, {
@@ -3339,7 +3357,7 @@ export default async function bro(pi: ExtensionAPI) {
 					try {
 						return {
 							source: target,
-							text: await simplify(target.text, signal, await readSettings(), onProgress),
+							...(await simplify(target.text, signal, await readSettings(), onProgress)),
 						};
 					} catch (error) {
 						throw new Error(withDoctor(error));
@@ -3371,24 +3389,6 @@ export default async function bro(pi: ExtensionAPI) {
 					});
 				} catch (error) {
 					ctx.ui.notify(errorMessage(error), "error");
-				}
-				return;
-			}
-
-			if (action === "usage") {
-				const valid = parts.length === 1 || (parts.length === 3 && parts[1] === "--provider" && parts[2] === "agy");
-				if (!valid) {
-					ctx.ui.notify("Use /bro usage or /bro usage --provider agy.", "warning");
-					return;
-				}
-				try {
-					await showBroModal(ctx, {
-						loadingText: "Checking Agy usage…",
-						retryable: false,
-						run: async (signal) => ({ text: await checkAgyUsage(pi, signal) }),
-					});
-				} catch (error) {
-					ctx.ui.notify(withDoctor(error), "error");
 				}
 				return;
 			}
@@ -3762,7 +3762,7 @@ export default async function bro(pi: ExtensionAPI) {
 					const settings = await readSettings();
 					return {
 						source: target,
-						text: await simplify(target.text, signal, settings, onProgress),
+						...(await simplify(target.text, signal, settings, onProgress)),
 					};
 				} catch (error) {
 					throw new Error(withDoctor(error));

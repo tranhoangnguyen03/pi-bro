@@ -1794,12 +1794,6 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-doctor","type":"prompt","message":"/bro doctor"}'
 		sleep 1
-		printf '%s\n' '{"id":"bro-usage","type":"prompt","message":"/bro usage"}'
-		sleep 1
-		printf '%s\n' '{"id":"bro-usage-explicit","type":"prompt","message":"/bro usage --provider agy"}'
-		sleep 1
-		printf '%s\n' '{"id":"bro-usage-invalid","type":"prompt","message":"/bro usage --provider unknown"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-default","type":"prompt","message":"/bro"}'
 		sleep 1
 		printf '%s\n' '{"id":"bro-open-first","type":"prompt","message":"/bro open"}'
@@ -1850,8 +1844,8 @@ output=$(
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
-if [ "$success_count" -ne 27 ]; then
-	printf 'Expected 27 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
+if [ "$success_count" -ne 24 ]; then
+	printf 'Expected 24 successful /bro commands, got %s\n%s\n' "$success_count" "$output" >&2
 	exit 1
 fi
 
@@ -1930,10 +1924,10 @@ if [ "$actual_calls" != "$expected_calls" ]; then
 	exit 1
 fi
 
-expected_usage_calls=$(printf 'usage\nusage\nusage')
+expected_usage_calls=$(printf 'usage')
 actual_usage_calls=$(cat "$usage_calls_file")
 if [ "$actual_usage_calls" != "$expected_usage_calls" ]; then
-	printf 'Expected exactly three Agy usage calls, got:\n%s\n' "$actual_usage_calls" >&2
+	printf 'Expected exactly one Doctor Agy account call, got:\n%s\n' "$actual_usage_calls" >&2
 	exit 1
 fi
 
@@ -1972,8 +1966,6 @@ missing_output=$(
 	{
 		printf '%s\n' '{"id":"missing-doctor","type":"prompt","message":"/bro doctor"}'
 		sleep 1
-		printf '%s\n' '{"id":"missing-usage","type":"prompt","message":"/bro usage"}'
-		sleep 1
 		printf '%s\n' '{"id":"missing-model","type":"prompt","message":"/bro model gemini-3.7-flash"}'
 		sleep 1
 		printf '%s\n' '{"id":"missing-effort","type":"prompt","message":"/bro effort low"}'
@@ -1988,7 +1980,7 @@ missing_output=$(
 )
 
 missing_success_count=$(printf '%s\n' "$missing_output" | grep -c '"success":true' || true)
-if [ "$missing_success_count" -ne 7 ]; then
+if [ "$missing_success_count" -ne 6 ]; then
 	printf 'Bro did not contain a missing-Agy failure:\n%s\n' "$missing_output" >&2
 	exit 1
 fi
