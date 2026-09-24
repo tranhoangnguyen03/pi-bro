@@ -70,11 +70,9 @@ text directly captures a new source the same way.
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
 | `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
 | `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
-| `/bro model [id]` | View or choose the selected backend’s shared default model. |
-| `/bro effort [low\|medium\|high]` | View or choose the shared default reasoning effort. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro config` | Open an interactive settings screen for the shared default model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) model and effort overrides. |
-| `/bro btw [--fresh] [question]` | Open a side conversation in a modal. Starts conversation-only; type `/mode` inside to toggle full permission (read and edit the workspace) without losing the thread. `--fresh` skips main-session context. |
+| `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; type `/mode` inside to toggle full permission (read and edit the workspace) without losing the thread. |
 | `/bro advisor` | Quick notice of whether the executor's `bro_advisor` tool is available right now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`. |
 | `/bro advisor-steer` | View, edit, save, or clear the one persistent steering brief the advisor always sees. |
 | `/bro help` | Open the built-in quick reference. |
@@ -136,9 +134,9 @@ conversation unless you explicitly insert it into the editor.
   the thread.
 - `/bro btw <question>` asks immediately; `/bro btw` opens an empty thread.
   Reopening keeps the thread and its mode.
-- `--fresh` starts a new thread without seeding the main session's recent
-  conversation text; it keeps the current mode. The old `--full` and `--sandbox`
-  flags were removed — use `/mode` instead.
+- `/clear` in the modal starts over; every new or cleared thread is seeded with
+  the main session's recent conversation text. The old `--fresh`, `--full`, and
+  `--sandbox` flags were removed and are rejected (use `/clear` or `/mode`).
 - The first turn is seeded with up to the last 8 turns of user/assistant
   conversation text (40,000 characters max, with a truncation notice); in full
   permission mode the side agent can also read the repo itself.
@@ -146,8 +144,9 @@ conversation unless you explicitly insert it into the editor.
   last question). Composer actions trigger only on these exact commands:
   - `/copy`: copies the latest answer to the system clipboard
   - `/copy-all`: copies the full thread to the system clipboard
-  - `/insert`: inserts the latest answer into the main editor without submitting (use `/insert!` to replace an existing editor draft)
-  - `/insert-all`: inserts the full thread into the main editor without submitting (use `/insert-all!` to replace an existing editor draft)
+  - `/insert`: inserts the latest answer into the main editor without submitting
+  - `/insert-all`: inserts the full thread into the main editor without submitting
+  Neither replaces an existing main-editor draft: edit or clear it first.
   - `/mode`: toggles conversation-only / full permission, keeping the thread
   - `/retry`: re-asks the last question (empty Enter does the same)
   - `/clear`: resets the thread
@@ -223,8 +222,7 @@ gives an `agy update` action when it is too old.
   steering presence, snapshot size, no-Bro-truncation status, and known
   omission/compaction notes; the advisor's complete answer follows unchanged.
 - **Model/effort**: resolved the same way as explain/show/btw, through
-  `/bro model`/`/bro effort` (shared default) or `/bro config` (per-capability
-  override).
+  `/bro config` (shared default or per-capability override).
 
 See [docs/plans/2026-09-19-bro-advisor-design.md](docs/plans/2026-09-19-bro-advisor-design.md)
 for the full design.
@@ -776,12 +774,12 @@ own settings. Bro does not copy credentials or change Grok configuration.
 Cancellation targets the managed process group, not independently detached shell
 work or external services. Doctor checks version, not authenticated connectivity.
 
-Use `/bro model`, `/bro effort`, and `/bro mode` to update the shared default
-and mode from Pi, `/bro config` to review or change the shared default and any
-per-capability (explain/show/btw/advisor) overrides interactively, or edit the file
-directly. Bro reads the file again before each explanation, so manual changes
-apply to the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
-one of the levels shown by `/bro effort`. Models without adjustable effort use
+Use `/bro config` to review or change the shared default model/effort and any
+per-capability (explain/show/btw/advisor) overrides interactively, `/bro mode` to
+change the mode, or edit the file directly. Bro reads the file again before each
+explanation, so manual changes apply to the next `/bro`. Use a model ID shown by
+`/bro config`; `effort` must be one of the levels it offers. (`/bro model` and `/bro effort`
+were removed; they now only point to `/bro config`.) Models without adjustable effort use
 `default`. `mode` must be `brief`, `balanced`, or `faithful`; existing settings
 without it use `balanced`. `showTurns` is the default number of turns `/bro
 show` draws (default 1); `/bro show <n-turns>` overrides it for a single run. Settings

@@ -343,3 +343,11 @@ test("help no longer lists /bro usage or the conversation-only access label", ()
 	assert.doesNotMatch(text, /not sandboxed/i);
 	assert.doesNotMatch(text, /Usage checks/);
 });
+
+test("help drops removed /bro model, /bro effort, --fresh, and forced inserts", () => {
+	const text = helpText(parseBroSettings({ model: "m", effort: "low" }));
+	assert.doesNotMatch(text, /\/bro (model|effort)/);
+	assert.doesNotMatch(text, /--fresh/);
+	assert.doesNotMatch(text, /\/insert(-all)?!/);
+	assert.match(text, /\/bro config/);
+});

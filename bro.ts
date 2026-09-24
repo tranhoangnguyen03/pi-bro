@@ -124,8 +124,6 @@ const COMMANDS = [
 	{ value: "url", label: "url", description: "Explain a public webpage" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
 	{ value: "doctor", label: "doctor", description: "Check whether Bro is ready" },
-	{ value: "model", label: "model", description: "View or choose the shared default model" },
-	{ value: "effort", label: "effort", description: "View or choose the shared default reasoning effort" },
 	{ value: "show", label: "show", description: "Draw what happened in recent session turns as shapes" },
 	{ value: "mode", label: "mode", description: "View or choose explanation mode (brief, balanced, faithful)" },
 	{ value: "btw", label: "btw", description: "Open a side conversation (starts conversation-only; /mode toggles full permission)" },
@@ -1094,7 +1092,7 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 		if (defaultBackend === "claude") {
 			pass("Selected model", `claude \`${settings.model}\``);
 			if (!isClaudeEffort(settings.effort)) {
-				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro effort\` to choose another.`);
+				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
 			} else if (settings.effort === "default") {
 				pass("Reasoning effort", "built into the selected model");
 			} else {
@@ -1103,7 +1101,7 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 		} else if (defaultBackend === "grok") {
 			pass("Selected model", `grok \`${settings.model}\``);
 			if (!isGrokEffort(settings.effort)) {
-				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro effort\` to choose another.`);
+				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
 			} else if (settings.effort === "default") {
 				pass("Reasoning effort", "built into the selected model");
 			} else {
@@ -1112,7 +1110,7 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 		} else if (models) {
 			const current = resolveCatalogSettings(settings, models);
 			if (!current.family) {
-				fail("Selected model", `\`${settings.model}\` is unavailable. Run \`/bro model\` to choose another.`);
+				fail("Selected model", `\`${settings.model}\` is unavailable. Run \`/bro config\` to choose another.`);
 			} else {
 				pass("Selected model", `agy \`${current.family.id}\``);
 				const effort = current.settings.effort;
@@ -1121,7 +1119,7 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 				} else if (effort !== "default" && current.family.efforts.includes(effort as AgyEffort)) {
 					pass("Reasoning effort", effort);
 				} else {
-					fail("Reasoning effort", `\`${effort}\` is unsupported. Run \`/bro effort\` to choose another.`);
+					fail("Reasoning effort", `\`${effort}\` is unsupported. Run \`/bro config\` to choose another.`);
 				}
 			}
 		}
@@ -2328,16 +2326,14 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 ## Check and configure
 
 - \`/bro doctor\` — check settings, backends, account, model, effort, and mode (per-feature backend/model/effort)
-- \`/bro model [id]\` — view or choose the shared default model (Agy catalog, sonnet/opus/explicit IDs on Claude, grok-4.7/grok-4.7-build-fast/explicit IDs on Grok)
-- \`/bro effort [low|medium|high|xhigh|max]\` — view or choose the shared default reasoning effort (xhigh on Claude/Grok, max on Claude only)
 - \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
 - \`/bro config\` — open an interactive settings screen for the shared default backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) backend, model, and effort overrides. Changes save immediately; Esc on a picker cancels without changing anything, Esc on the screen closes it and keeps whatever was already saved.
 
-\`/bro model\` and \`/bro effort\` always change the shared default that explain, show, btw, and advisor fall back to when they have no override. Use \`/bro config\` to give one of them its own backend, model, or effort. \`btw\` runs on Agy, Claude, or Grok.
+The shared default is what explain, show, btw, and advisor fall back to when they have no override. Use \`/bro config\` to change it or to give one of them its own backend, model, or effort. \`btw\` runs on Agy, Claude, or Grok.
 
 ## Side conversation
 
-- \`/bro btw [--fresh] [question]\` — open a side conversation. It starts conversation-only (Agy sandbox controls; Claude with tools disabled; Grok prompt request, not enforced); type \`/mode\` inside to toggle full permission (read and edit the workspace) while keeping the conversation. \`--fresh\` starts a new thread without main-session context. Reopening (even with \`--fresh\`) keeps the current mode. Inside the side thread, type questions and press Enter (empty Enter re-asks); exact commands \`/copy\` and \`/copy-all\` copy the latest answer or full thread to the system clipboard; exact commands \`/insert\` and \`/insert-all\` insert into the main editor without submitting (use \`/insert!\` or \`/insert-all!\` to replace an existing draft); \`/retry\` re-asks the last question; \`/clear\` resets the thread. Any other input is sent as a question. Esc closes.
+- \`/bro btw [question]\` — open a side conversation. It starts conversation-only (Agy sandbox controls; Claude with tools disabled; Grok prompt request, not enforced); type \`/mode\` inside to toggle full permission (read and edit the workspace) while keeping the conversation. A new thread starts with recent main-session context; reopening keeps the thread and its mode. Inside the side thread, type questions and press Enter (empty Enter re-asks); exact commands \`/copy\` and \`/copy-all\` copy the latest answer or full thread to the system clipboard; exact commands \`/insert\` and \`/insert-all\` insert into the main editor without submitting, never replacing an existing draft (edit or clear it first); \`/retry\` re-asks the last question; \`/clear\` resets the thread. Any other input is sent as a question. Esc closes.
 
 ## Advisor
 
@@ -2711,25 +2707,22 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 	);
 }
 
-export function parseBtwArguments(value: string): { fresh: boolean; question: string; invalid?: string } {
-	let rest = value.trim();
-	let fresh = false;
-	while (rest.startsWith("--")) {
-		const space = rest.search(/\s/);
-		const token = space === -1 ? rest : rest.slice(0, space);
-		if (token === "--fresh") fresh = true;
-		else if (token === "--full" || token === "--sandbox") {
-			return { fresh, question: "", invalid: `${token} was removed. Open /bro btw and type /mode to switch between conversation-only and full permission.` };
-		} else return { fresh, question: "", invalid: `Unknown /bro btw flag: ${token}` };
-		rest = space === -1 ? "" : rest.slice(space).replace(/^\s+/, "");
+export function parseBtwArguments(value: string): { question: string; invalid?: string } {
+	const rest = value.trim();
+	if (!rest.startsWith("--")) return { question: rest };
+	const token = rest.split(/\s/, 1)[0]!;
+	if (token === "--full" || token === "--sandbox") {
+		return { question: "", invalid: `${token} was removed. Open /bro btw and type /mode to switch between conversation-only and full permission.` };
 	}
-	return { fresh, question: rest };
+	if (token === "--fresh") {
+		return { question: "", invalid: "--fresh was removed. Every new thread starts with main-session context; type /clear inside /bro btw to start over." };
+	}
+	return { question: "", invalid: `Unknown /bro btw flag: ${token}` };
 }
 
-// A new thread starts conversation-only; reopening (even with --fresh) keeps the thread's mode.
-export function resolveBtwThread(existing: BtwThread | undefined, parsed: { fresh: boolean }): BtwThread {
-	if (!existing) return { turns: [], full: false };
-	return parsed.fresh ? { turns: [], full: existing.full } : existing;
+// A new thread starts conversation-only; reopening keeps the thread and its mode.
+export function resolveBtwThread(existing: BtwThread | undefined): BtwThread {
+	return existing ?? { turns: [], full: false };
 }
 
 export function bindBtwBackend(thread: BtwThread, backend: BackendName): boolean {
@@ -2777,7 +2770,8 @@ export type BtwComposerAction =
 	| { kind: "mode" }
 	| { kind: "retry" }
 	| { kind: "clipboard"; all: boolean }
-	| { kind: "insert"; all: boolean; force: boolean }
+	| { kind: "insert"; all: boolean }
+	| { kind: "removed"; command: string }
 	| { kind: "question"; text: string };
 
 export function parseBtwComposerCommand(value: string): BtwComposerAction {
@@ -2788,14 +2782,8 @@ export function parseBtwComposerCommand(value: string): BtwComposerAction {
 	if (command === "/copy" || command === "/copy-all") {
 		return { kind: "clipboard", all: command === "/copy-all" };
 	}
-	if (
-		command === "/insert" ||
-		command === "/insert!" ||
-		command === "/insert-all" ||
-		command === "/insert-all!"
-	) {
-		return { kind: "insert", all: command.startsWith("/insert-all"), force: command.endsWith("!") };
-	}
+	if (command === "/insert" || command === "/insert-all") return { kind: "insert", all: command === "/insert-all" };
+	if (command === "/insert!" || command === "/insert-all!") return { kind: "removed", command };
 	return { kind: "question", text: command };
 }
 
@@ -2997,7 +2985,7 @@ class BtwModal implements Focusable {
 
 async function openBtwModal(
 	ctx: ExtensionCommandContext,
-	options: { thread: BtwThread; initialQuestion?: string; seed: boolean },
+	options: { thread: BtwThread; initialQuestion?: string },
 ): Promise<void> {
 	const thread = options.thread;
 
@@ -3037,14 +3025,11 @@ async function openBtwModal(
 				}
 				if (thread.turns.length === 0) {
 					thread.conversationId = undefined;
-					thread.context = undefined;
-					if (options.seed) {
-						let context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS)?.text;
-						if (context && context.length > BTW_CONTEXT_MAX) {
-							context = `${context.slice(0, BTW_CONTEXT_MAX)}\n[… context truncated …]`;
-						}
-						thread.context = context;
+					let context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS)?.text;
+					if (context && context.length > BTW_CONTEXT_MAX) {
+						context = `${context.slice(0, BTW_CONTEXT_MAX)}\n[… context truncated …]`;
 					}
+					thread.context = context;
 				}
 				// Resume natively when possible; otherwise seed the fresh native session with the main-session
 				// context plus every earlier turn so nothing is silently lost.
@@ -3130,14 +3115,14 @@ async function openBtwModal(
 				}
 			};
 
-			const insert = (all: boolean, force: boolean) => {
+			const insert = (all: boolean) => {
 				const text = all ? transcript() : (thread.turns.at(-1)?.answer ?? "");
 				if (!text.trim()) {
 					modal.setNotice("Nothing to insert yet.");
 					return;
 				}
-				if (ctx.ui.getEditorText().trim() && !force) {
-					modal.setNotice("Main editor has a draft. Use /insert! (or /insert-all!) to replace it.");
+				if (ctx.ui.getEditorText().trim()) {
+					modal.setNotice("Main editor has a draft. Edit or clear it first, then insert again.");
 					return;
 				}
 				ctx.ui.setEditorText(text);
@@ -3163,7 +3148,12 @@ async function openBtwModal(
 				}
 				if (action.kind === "insert") {
 					modal.clearComposer();
-					insert(action.all, action.force);
+					insert(action.all);
+					return;
+				}
+				if (action.kind === "removed") {
+					modal.clearComposer();
+					modal.setNotice(`${action.command} was removed. Edit or clear the main editor draft, then use /insert or /insert-all.`);
 					return;
 				}
 				if (action.kind === "retry") {
@@ -3325,6 +3315,12 @@ export default async function bro(pi: ExtensionAPI) {
 			let action = parts[0] ?? "";
 			let value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
 
+			// Removed commands must never fall through to a paid text explanation.
+			if (action === "model" || action === "effort") {
+				ctx.ui.notify(`/bro ${action} was removed. Use /bro config to choose the shared default and per-capability ${action}; use /bro text <text> to explain text.`, "warning");
+				return;
+			}
+
 			// An unknown first word means the whole input is the source: route it by shape.
 			if (action && !KNOWN_ACTIONS.has(action)) {
 				const candidate = unquote(raw);
@@ -3459,253 +3455,6 @@ export default async function bro(pi: ExtensionAPI) {
 				return;
 			}
 
-			if (action === "model") {
-				if (parts.length > 2) {
-					ctx.ui.notify("Use /bro model or /bro model <id>.", "warning");
-					return;
-				}
-				try {
-					const settings = await readSettings();
-					// /bro model operates on the effective shared backend: no Agy catalog
-					// when the shared default is Claude/Grok.
-					if ((settings.backend ?? "agy") === "grok") {
-						const requested = value.trim();
-						let model: string | undefined;
-						if (requested) {
-							try {
-								model = resolveGrokModel(requested);
-							} catch {
-								ctx.ui.notify("Use /bro model or /bro model <grok-4.7|grok-4.7-build-fast|model-id>.", "warning");
-								return;
-							}
-						} else {
-							if (ctx.mode !== "tui") {
-								ctx.ui.notify("Use /bro model <grok-4.7|grok-4.7-build-fast|model-id> outside Pi's interactive UI.", "warning");
-								return;
-							}
-							const choices = [
-								...GROK_MODELS.map(
-									(entry) => `${entry.id} — ${entry.label}${entry.id === settings.model ? " (current)" : ""}`,
-								),
-								"Custom — enter a model ID…",
-							];
-							const choice = await ctx.ui.select(`Grok model (current: ${settings.model})`, choices);
-							if (!choice) return;
-							if (choice.startsWith("Custom")) {
-								const input = await ctx.ui.input("Grok model", "grok-4.7, grok-4.7-build-fast, or an explicit model ID");
-								if (!input?.trim()) return;
-								model = resolveGrokModel(input);
-							} else {
-								model = GROK_MODELS[choices.indexOf(choice)]?.id;
-							}
-						}
-						if (!model) return;
-						const effort = settings.backend === "grok" && isGrokEffort(settings.effort) ? settings.effort : "default";
-						await writeSettings({ ...settings, backend: "grok", model, effort });
-						ctx.ui.notify(`Bro model: grok ${model}${effort === "default" ? "" : ` (${effort})`}`, "info");
-						return;
-					}
-					if ((settings.backend ?? "agy") === "claude") {
-						const requested = value.trim();
-						let model: string | undefined;
-						if (requested) {
-							try {
-								model = resolveClaudeModel(requested);
-							} catch {
-								ctx.ui.notify("Use /bro model or /bro model <sonnet|opus|model-id>.", "warning");
-								return;
-							}
-						} else {
-							if (ctx.mode !== "tui") {
-								ctx.ui.notify("Use /bro model <sonnet|opus|model-id> outside Pi's interactive UI.", "warning");
-								return;
-							}
-							const choices = [
-								...CLAUDE_MODELS.map(
-									(entry) => `${entry.id} — ${entry.label}${entry.id === settings.model ? " (current)" : ""}`,
-								),
-								"Custom — enter a model ID…",
-							];
-							const choice = await ctx.ui.select(`Claude model (current: ${settings.model})`, choices);
-							if (!choice) return;
-							if (choice.startsWith("Custom")) {
-								const input = await ctx.ui.input("Claude model", "sonnet, opus, or an explicit model ID");
-								if (!input?.trim()) return;
-								model = resolveClaudeModel(input);
-							} else {
-								model = CLAUDE_MODELS[choices.indexOf(choice)]?.id;
-							}
-						}
-						if (!model) return;
-						const effort = settings.backend === "claude" && isClaudeEffort(settings.effort) ? settings.effort : "default";
-						await writeSettings({ ...settings, backend: "claude", model, effort });
-						ctx.ui.notify(`Bro model: claude ${model}${effort === "default" ? "" : ` (${effort})`}`, "info");
-						return;
-					}
-					const models = await listAgyModels(pi);
-					const current = resolveCatalogSettings(settings, models);
-					const requested = parts[1];
-					let selected: AgyModelFamily | undefined;
-					let selectedEffort: BroEffort | undefined;
-					if (requested) {
-						selected = models.find((item) => item.id.toLowerCase() === requested);
-						if (!selected) {
-							for (const family of models) {
-								const variant = family.variants.find((item) => item.id.toLowerCase() === requested);
-								if (variant) {
-									selected = family;
-									selectedEffort = variant.effort ?? "default";
-									break;
-								}
-							}
-						}
-						if (!selected) {
-							ctx.ui.notify(`Unknown Agy model "${requested}". Run /bro model to see available choices.`, "warning");
-							return;
-						}
-					} else {
-						if (ctx.mode !== "tui") {
-							ctx.ui.notify("Use /bro model <id> outside Pi's interactive UI.", "warning");
-							return;
-						}
-						const ordered = [...models].sort((a, b) => Number(b.id === current.family?.id) - Number(a.id === current.family?.id));
-						const choices = ordered.map(
-							(item) =>
-								`${item.id} — ${item.label} · ${item.efforts.length ? item.efforts.join("/") : "fixed effort"}${item.id === current.family?.id ? " (current)" : ""}`,
-						);
-						const choice = await ctx.ui.select(`Agy model (current: ${current.settings.model})`, choices);
-						if (!choice) return;
-						selected = ordered[choices.indexOf(choice)];
-					}
-					if (!selectedEffort) {
-						const currentEffort = current.settings.effort;
-						const canKeepCurrent =
-							current.family?.id === selected.id &&
-							(currentEffort === "default" ? !selected.efforts.length : selected.efforts.includes(currentEffort as AgyEffort));
-						selectedEffort = canKeepCurrent ? currentEffort : preferredEffort(selected);
-					}
-					await writeSettings({ ...settings, model: selected.id, effort: selectedEffort });
-					ctx.ui.notify(
-						`Bro model: ${selected.id}${selectedEffort === "default" ? "" : ` (${selectedEffort})`}`,
-						"info",
-					);
-				} catch (error) {
-					ctx.ui.notify(withDoctor(error), "error");
-				}
-				return;
-			}
-
-			if (action === "effort") {
-				const requested = parts[1];
-				// Claude/Grok levels pass this gate; each backend branch below validates strictly
-				// (the Agy branch still rejects xhigh/max with its supports-list warning).
-				if (parts.length > 2 || (requested && !isClaudeEffort(requested) && !EFFORTS.some((effort) => effort === requested))) {
-					ctx.ui.notify("Use /bro effort, or choose low, medium, or high.", "warning");
-					return;
-				}
-				try {
-					const settings = await readSettings();
-					// /bro effort operates on the effective shared backend: no Agy catalog
-					// when the shared default is Claude/Grok.
-					if ((settings.backend ?? "agy") === "grok") {
-						const allowed = ["default", ...GROK_EFFORTS] as const;
-						if (requested && !allowed.some((effort) => effort === requested)) {
-							ctx.ui.notify("Use /bro effort, or choose default, low, medium, high, or xhigh.", "warning");
-							return;
-						}
-						let selected = requested as BroEffort | undefined;
-						if (!selected) {
-							if (ctx.mode !== "tui") {
-								ctx.ui.notify("Use /bro effort <default|low|medium|high|xhigh> outside Pi's interactive UI.", "warning");
-								return;
-							}
-							const efforts = [...allowed].sort(
-								(a, b) => Number(b === settings.effort) - Number(a === settings.effort),
-							);
-							const choices = efforts.map((effort) => `${effort}${effort === settings.effort ? " (current)" : ""}`);
-							const choice = await ctx.ui.select(`Grok reasoning effort (current: ${settings.effort})`, choices);
-							if (!choice) return;
-							selected = efforts[choices.indexOf(choice)];
-						}
-						if (!selected || !isGrokEffort(selected)) return;
-						await writeSettings({ ...settings, backend: "grok", model: settings.model, effort: selected });
-						ctx.ui.notify(
-							selected === "default" ? "Bro reasoning effort: built into the selected model" : `Bro reasoning effort: ${selected}`,
-							"info",
-						);
-						return;
-					}
-					if ((settings.backend ?? "agy") === "claude") {
-						const allowed = ["default", ...CLAUDE_EFFORTS] as const;
-						if (requested && !allowed.some((effort) => effort === requested)) {
-							ctx.ui.notify("Use /bro effort, or choose default, low, medium, high, xhigh, or max.", "warning");
-							return;
-						}
-						let selected = requested as BroEffort | undefined;
-						if (!selected) {
-							if (ctx.mode !== "tui") {
-								ctx.ui.notify("Use /bro effort <default|low|medium|high|xhigh|max> outside Pi's interactive UI.", "warning");
-								return;
-							}
-							const efforts = [...CLAUDE_EFFORTS].sort(
-								(a, b) => Number(b === settings.effort) - Number(a === settings.effort),
-							);
-							const choices = efforts.map((effort) => `${effort}${effort === settings.effort ? " (current)" : ""}`);
-							const choice = await ctx.ui.select(`Claude reasoning effort (current: ${settings.effort})`, choices);
-							if (!choice) return;
-							selected = efforts[choices.indexOf(choice)];
-						}
-						if (!selected || !isClaudeEffort(selected)) return;
-						await writeSettings({ ...settings, backend: "claude", model: settings.model, effort: selected });
-						ctx.ui.notify(
-							selected === "default" ? "Bro reasoning effort: built into the selected model" : `Bro reasoning effort: ${selected}`,
-							"info",
-						);
-						return;
-					}
-					const current = resolveCatalogSettings(settings, await listAgyModels(pi));
-					if (!current.family) {
-						ctx.ui.notify(`Model "${settings.model}" is not in Agy's current model list. Run /bro model first.`, "warning");
-						return;
-					}
-					if (!current.family.efforts.length) {
-						if (requested && requested !== "default") {
-							ctx.ui.notify(`${current.family.label} uses a fixed effort level.`, "warning");
-							return;
-						}
-						await writeSettings({ ...current.settings, model: current.family.id, effort: "default" });
-						ctx.ui.notify(`${current.family.label} uses its built-in effort level.`, "info");
-						return;
-					}
-					if (requested === "default" || (requested && !current.family.efforts.includes(requested as AgyEffort))) {
-						ctx.ui.notify(
-							`${current.family.label} supports ${current.family.efforts.join(" or ")} effort.`,
-							"warning",
-						);
-						return;
-					}
-					let selected = requested as AgyEffort | undefined;
-					if (!selected) {
-						if (ctx.mode !== "tui") {
-							ctx.ui.notify("Use /bro effort <low|medium|high> outside Pi's interactive UI.", "warning");
-							return;
-						}
-						const efforts = [...current.family.efforts].sort(
-							(a, b) => Number(b === current.settings.effort) - Number(a === current.settings.effort),
-						);
-						const choices = efforts.map((effort) => `${effort}${effort === current.settings.effort ? " (current)" : ""}`);
-						const choice = await ctx.ui.select(`Agy reasoning effort (current: ${current.settings.effort})`, choices);
-						if (!choice) return;
-						selected = efforts[choices.indexOf(choice)];
-					}
-					await writeSettings({ ...current.settings, model: current.family.id, effort: selected });
-					ctx.ui.notify(`Bro reasoning effort: ${selected}`, "info");
-				} catch (error) {
-					ctx.ui.notify(withDoctor(error), "error");
-				}
-				return;
-			}
-
 			if (action === "btw") {
 				if (ctx.mode !== "tui") {
 					ctx.ui.notify("Use /bro btw in Pi's interactive UI.", "warning");
@@ -3718,10 +3467,10 @@ export default async function bro(pi: ExtensionAPI) {
 				}
 				try {
 					const btwBackend = capabilityBackend(await readSettings(), "btw");
-					const thread = resolveBtwThread(btwThread, parsed);
+					const thread = resolveBtwThread(btwThread);
 					if (bindBtwBackend(thread, btwBackend)) ctx.ui.notify("Backend changed — started a fresh side thread.", "info");
 					btwThread = thread;
-					await openBtwModal(ctx, { thread, initialQuestion: parsed.question, seed: !parsed.fresh });
+					await openBtwModal(ctx, { thread, initialQuestion: parsed.question });
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");
 				}
