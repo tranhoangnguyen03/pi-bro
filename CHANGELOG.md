@@ -2,6 +2,13 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.16.0] - 2026-09-24
+
+### Added
+
+- Claude Code execution for explain, show and advisor, selected independently per capability through `/bro config`. Explain/show disable tools and customizations; advisor runs fresh with workspace tools. Claude-backed BTW is explicitly unsupported in this release.
+- Backend-tagged model/effort selections with atomic per-capability overrides. Existing settings remain Agy selections and are migrated to version 2 only when saved; Agy remains the default.
+
 ## [0.15.1] - 2026-09-22
 
 ### Changed

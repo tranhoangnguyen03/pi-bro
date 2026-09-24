@@ -477,11 +477,11 @@ assert.deepEqual(
 // settingsPayload only ever omits an empty `overrides` object; it does not deduplicate or drop any
 // individual entry (an override is only ever removed upstream, by an explicit Default selection).
 assert.deepEqual(settingsPayload({ model: "gemini-a", effort: "low", mode: "balanced", showTurns: 1, overrides: {} }), {
-	model: "gemini-a", effort: "low", mode: "balanced", showTurns: 1,
+	version: 2, default: { backend: "agy", model: "gemini-a", effort: "low" }, mode: "balanced", showTurns: 1,
 });
 assert.deepEqual(
 	settingsPayload({ model: "gemini-a", effort: "low", mode: "balanced", showTurns: 1, overrides: { show: { model: "gemini-a", effort: "low" } } }),
-	{ model: "gemini-a", effort: "low", mode: "balanced", showTurns: 1, overrides: { show: { model: "gemini-a", effort: "low" } } },
+	{ version: 2, default: { backend: "agy", model: "gemini-a", effort: "low" }, mode: "balanced", showTurns: 1, overrides: { show: { backend: "agy", model: "gemini-a", effort: "low" } } },
 	"an override identical to the shared default is still written to disk -- settingsPayload does not deduplicate entries",
 );
 
@@ -1900,8 +1900,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 assert.deepEqual(JSON.parse(await readFile(process.argv[2], "utf8")), {
-	model: "gemini-test-two",
-	effort: "high",
+	version: 2,
+	default: { backend: "agy", model: "gemini-test-two", effort: "high" },
 	mode: "faithful",
 	showTurns: 1,
 });

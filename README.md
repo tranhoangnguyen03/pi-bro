@@ -7,7 +7,8 @@ plain-language explanation — or open a sandboxed side conversation with
 `pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
 It opens explanations in a separate modal and uses the
 [Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`)
-with your selected model.
+with your selected model. Claude Code is also supported for explain, show and
+advisor; Agy remains the default and is required for BTW.
 
 ## Quick start
 
@@ -32,7 +33,7 @@ Restart Pi or run `/reload`, then try:
 Run `/bro doctor` after installation or whenever Bro is not working.
 
 Explain, show, BTW and advisor share an internal execution layer; Agy remains
-its only backend and existing settings are unchanged. Cancellation, host deadlines
+the default backend. Claude Code can be selected per capability in `/bro config`. Cancellation, host deadlines
 and invalid execution streams terminate the subprocess group on POSIX, escalating
 after a five-second grace period. Windows cleanup targets the direct child only;
 descendant termination is not guaranteed. Unexpected signal exits are reported as
@@ -70,7 +71,7 @@ text directly captures a new source the same way.
 | `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
 | `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
 | `/bro usage [--provider agy]` | Show current Agy resource limits. |
-| `/bro model [id]` | View or choose the shared default Agy model. |
+| `/bro model [id]` | View or choose the selected backend’s shared default model. |
 | `/bro effort [low\|medium\|high]` | View or choose the shared default reasoning effort. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro config` | Open an interactive settings screen for the shared default model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) model and effort overrides. |
@@ -164,7 +165,7 @@ gives an `agy update` action when it is too old.
   summary. Bro captures a harness-neutral snapshot — the executor's system
   instructions, its active tools, and the conversation so far including tool
   calls and results — and sends it, along with an optional `question` the
-  executor may pass, to a **fresh, standalone Agy process** for every
+  executor may pass, to a **fresh, standalone process of the selected backend** for every
   consultation. Nothing is resumed or reused across calls, including retries.
 - **Instructed to investigate, not implement**: the advisor process has real
   tool access in the workspace with permissions auto-approved
@@ -694,31 +695,45 @@ Bro creates this user-editable settings file when the extension loads:
 ~/.pi/agent/bro-settings.json
 ```
 
-```json
-{
-  "model": "gemini-3.7-flash",
-  "effort": "low",
-  "mode": "balanced",
-  "showTurns": 1
-}
-```
-
-`model` and `effort` are the **shared default**: explain, show, and btw all use
-them unless a capability has its own override. An optional `overrides` object
-adds per-capability overrides, each a full `{ "model": ..., "effort": ... }`
-pair:
+Existing flat model/effort files remain valid and select Agy. Explicit saves use
+version 2 with backend-tagged selections:
 
 ```json
 {
-  "model": "gemini-3.7-flash",
-  "effort": "low",
+  "version": 2,
+  "default": { "backend": "agy", "model": "gemini-3.7-flash", "effort": "low" },
   "mode": "balanced",
   "showTurns": 1,
   "overrides": {
-    "show": { "model": "gemini-3.7-pro", "effort": "high" }
+    "explain": { "backend": "claude", "model": "sonnet", "effort": "medium" },
+    "advisor": { "backend": "claude", "model": "opus", "effort": "high" }
   }
 }
 ```
+
+Each override is a complete backend/model/effort selection, never a field-by-field
+merge. Omitted overrides inherit the shared default. Matching an override to the
+default does not unpin it; select Default explicitly to restore inheritance.
+
+### Claude Code
+
+Install and authenticate `claude` independently (tested with Claude Code 2.1.281).
+Bro uses its CLI account and billing route, not Pi provider credentials. Choose
+Claude in `/bro config`; model aliases such as `sonnet` and `opus`, or explicit
+model IDs, are passed to the CLI. Claude efforts are `default` (omit the flag),
+`low`, `medium`, `high`, `xhigh`, and `max`; the chosen model/account must support
+the requested combination. Runtime rejection is surfaced without fallback.
+
+Explain/show use a scratch directory, safe mode, disabled tools, empty strict MCP
+configuration, disabled skills and no session persistence. This is a tool/configuration
+restriction, not an OS sandbox; built-in and managed Claude behavior can remain.
+Advisor uses safe mode and a fresh workspace process with permissions bypassed;
+it can modify files, and instructions to only advise remain behavioral. Running
+that mode as root may be rejected by Claude. BTW remains Agy-only: if a Claude
+shared default makes BTW unsupported, select an explicit Agy override.
+
+Doctor distinguishes CLI installation and configured authentication from a live
+request; it does not run a Claude model turn. `/bro usage` remains Agy-specific.
 
 Use `/bro model`, `/bro effort`, and `/bro mode` to update the shared default
 and mode from Pi, `/bro config` to review or change the shared default and any
@@ -749,9 +764,9 @@ PI_BRO_MODEL=gemini-3.7-flash-low pi
 ### Configuration precedence
 
 When resolving model and reasoning effort:
-1. **Per-capability override**: If configured under `overrides.<capability>` (`explain`, `show`, `btw`, or `advisor`) in `bro-settings.json`, that capability pins its own `{ "model": ..., "effort": ... }` pair and ignores the shared default.
-2. **Shared default**: If no override is set for that capability, it inherits the root `model` and `effort` in `bro-settings.json`.
-3. **Catalog normalization**: Bro normalizes the resolved `{ model, effort }` against Agy's installed model catalog (mapping suffixed variant IDs and handling fixed-effort models).
+1. **Per-capability override**: If configured under `overrides.<capability>` (`explain`, `show`, `btw`, or `advisor`) in `bro-settings.json`, that capability pins its own complete backend/model/effort selection and ignores the shared default.
+2. **Shared default**: If no override is set for that capability, it inherits `default` in version-2 settings (root model/effort in legacy settings).
+3. **Catalog normalization**: For Agy selections, Bro normalizes the resolved `{ model, effort }` against Agy's installed model catalog (mapping suffixed variant IDs and handling fixed-effort models).
 4. **Initial file creation only**: `PI_BRO_MODEL` selects the initial default model only when Bro creates a missing `bro-settings.json` file. It has no effect once the file exists.
 
 When resolving turn count for `/bro show`:
@@ -799,7 +814,7 @@ run `/bro doctor` for the exact problem.
 - **External requests**: Bro sends the latest completed assistant response,
   pasted text, extracted document text, extracted webpage text, or recent
   session conversation text (tool calls, tool results, reasoning, and images
-  omitted) to Agy and its configured model provider.
+  omitted) to the selected backend and its configured model provider.
 - **Side conversation requests**: `/bro btw` sends your side questions and, on
   the first turn, the seeded main-session conversation text to Agy. In `--full`
   mode the side agent additionally reads the workspace.
@@ -830,14 +845,14 @@ run `/bro doctor` for the exact problem.
   URLs whose query string contains secrets.
 - **Web extraction**: Bro parses downloaded HTML locally without executing page
   scripts or loading page subresources. It sends the extracted readable text,
-  including links preserved in that text, to Agy; it does not separately send
+  including links preserved in that text, to the selected backend; it does not separately send
   the requested URL or raw page HTML. The URL, captured text, and explanation
   remain in process memory only and clear with the existing `/bro open` cache.
 - **Show diagrams**: When a show reply ends in one self-contained HTML block,
   Bro writes it to `/tmp/pi-bro-<uid>/bro-show-<hash>.html` with a restrictive
   Content-Security-Policy, and opens it in your browser only when you press
   **O**. **C** copies the full reply, including the HTML.
-- **Provider data**: Agy and your model provider may retain logs and request data
+- **Provider data**: The selected CLI backend and your model provider may retain logs and request data
   according to their own settings and privacy policies.
 - **Clipboard**: Pressing **C** copies the text to your system clipboard, where
   your operating system or clipboard manager may retain it.
@@ -845,7 +860,7 @@ run `/bro doctor` for the exact problem.
   instructions, active tool list (excluding `bro_advisor`), ordered
   conversation history including tool calls and tool results (unlike Show, which
   omits them), human steering brief, and the executor's optional question to
-  Agy and your configured model provider. Reasoning and image bodies are
+  the selected backend and its configured model provider. Reasoning and image bodies are
   omitted with explicit markers (`[reasoning omitted]`, `[image omitted]`).
 - **Advisor tool execution & safety boundary**: The advisor process runs
   directly in your workspace (`cwd`) with auto-approved permissions
@@ -867,7 +882,7 @@ extracted, copy its content into a supported text file or save it as a PDF and
 use `/bro file`. If a PDF contains only scanned images, run OCR with another
 tool before giving it to Bro.
 
-- Uses Agy as its only provider.
+- Supports Agy for all capabilities and Claude Code for explain/show/advisor. Claude BTW is not yet supported; unsupported selections fail without fallback.
 - Document input supports `.md`, `.markdown`, `.txt`, `.pdf`, and `.docx` only;
   it does not perform OCR.
 - Webpage input supports one public HTML page, up to 5 MiB downloaded and
@@ -906,7 +921,7 @@ npm test
 pi --tui-mode fullscreen -e ./bro.ts
 ```
 
-The smoke test uses a fake `agy`, so it does not call an external model. It
+The smoke test uses a fake `agy`, and Claude adapter tests use a fake `claude`, so automated tests do not call an external model. It
 verifies command routing, document and URL safety boundaries, HTML
 extraction, show capture (conversation text only, tool calls and results
 absent), and HTML-diagram handling, healthy and broken setup handling,

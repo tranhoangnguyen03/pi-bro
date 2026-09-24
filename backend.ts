@@ -5,14 +5,18 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 // Shared internal execution boundary for all four Bro features (explain, show, btw, advisor).
-// This is the Agy-only implementation of docs/plans/2026-09-22-shared-backend-design.md: it owns
-// Agy CLI selection, process invocation, progress/outcome normalization, continuation, and
+// This implements docs/plans/2026-09-22-shared-backend-design.md for Agy (all features) and the
+// Claude Code CLI (explain/show/advisor; no btw yet): it owns CLI selection, process invocation, progress/outcome normalization, continuation, and
 // single-attempt cleanup. Feature code (bro.ts) keeps retries, UI, source/session capture and
 // settings.
 
 export type BackendFeature = "explain" | "show" | "btw" | "advisor";
 export type BackendAccess = "restricted" | "workspace-full";
 export type AgySelection = { model: string; effort?: "low" | "medium" | "high" };
+export const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type BackendSelection =
+	| ({ backend?: "agy" } & AgySelection)
+	| { backend: "claude"; model: string; effort?: (typeof CLAUDE_EFFORTS)[number] };
 export type BackendContinuation = { id: string };
 export type BackendProgress = { kind: "text"; text: string } | { kind: "activity"; label: string; timestamp: number };
 export type BackendOnProgress = (progress: BackendProgress) => void;
@@ -61,14 +65,17 @@ export function agySelection(pair: { model: string; effort: "default" | "low" | 
 	};
 }
 
-function processStartMessage(processError: NodeJS.ErrnoException): string {
-	return processError.code === "ENOENT"
-		? "Agy could not start. Make sure Agy is installed and on PATH, then run `/bro doctor`."
-		: `Agy could not start: ${processError.message}\n\nRun \`/bro doctor\` for setup help.`;
+function processStartMessage(processError: NodeJS.ErrnoException, cli = "Agy"): string {
+	if (processError.code === "ENOENT") {
+		return cli === "Agy"
+			? "Agy could not start. Make sure Agy is installed and on PATH, then run `/bro doctor`."
+			: "Claude Code could not start. Make sure `claude` is installed and on PATH, then run `/bro doctor`.";
+	}
+	return `${cli} could not start: ${processError.message}\n\nRun \`/bro doctor\` for setup help.`;
 }
 
-function unexpectedSignalMessage(exitSignal: NodeJS.Signals | null): string {
-	return withDoctor(`Agy exited unexpectedly${exitSignal ? ` (signal ${exitSignal})` : ""}, not from a request Bro made.`);
+function unexpectedSignalMessage(exitSignal: NodeJS.Signals | null, cli = "Agy"): string {
+	return withDoctor(`${cli} exited unexpectedly${exitSignal ? ` (signal ${exitSignal})` : ""}, not from a request Bro made.`);
 }
 
 // Sends to the whole POSIX process group when possible so a misbehaving grandchild dies too, not
@@ -481,6 +488,207 @@ async function executeAdvisorStdin(
 	return { status: "success", text };
 }
 
+
+// Claude Code supports every feature except btw (it has no continuation wiring yet).
+export function backendSupports(backend: "agy" | "claude", feature: BackendFeature): boolean {
+	return backend === "agy" || feature !== "btw";
+}
+
+type ClaudeEvent = {
+	type?: unknown;
+	subtype?: unknown;
+	is_error?: unknown;
+	result?: unknown;
+	parent_tool_use_id?: unknown;
+	stop_reason?: unknown;
+	terminal_reason?: unknown;
+	event?: { type?: unknown; delta?: { type?: unknown; text?: unknown } };
+	message?: { content?: unknown };
+};
+
+// Every Claude run is fresh (never resumed, nothing persisted) under --safe-mode, which disables
+// CLAUDE.md, skills, plugins, hooks and MCP servers but keeps the user's auth (--bare would break
+// OAuth). The prompt goes over stdin. explain/show additionally run tool-less in a scratch cwd;
+// advisor runs in the caller's workspace with tools auto-approved. Only the terminal `result`
+// event is authoritative; streamed text_delta events are progress only, and thinking is dropped.
+async function executeClaude(
+	request: BackendRequest,
+	selection: { model: string; effort?: string },
+	signal: AbortSignal,
+	onProgress: BackendOnProgress | undefined,
+	killEscalationMs: number,
+	deadlineMsOverride: number | undefined,
+): Promise<BackendOutcome> {
+	const isAdvisor = request.feature === "advisor";
+	const deadlineMs = deadlineMsOverride ?? (isAdvisor ? 610_000 : 125_000);
+	const action = isAdvisor ? "complete the advisor consultation" : "simplify the response";
+
+	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+	const runDirectory = isAdvisor ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
+	if (signal.aborted) {
+		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
+		return { status: "cancelled", message: "Canceled." };
+	}
+
+	try {
+		const child = spawn(
+			"claude",
+			[
+				"-p",
+				"--safe-mode",
+				"--no-session-persistence",
+				"--disable-slash-commands",
+				"--output-format",
+				"stream-json",
+				"--verbose",
+				"--include-partial-messages",
+				...(isAdvisor
+					? ["--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--dangerously-skip-permissions"]
+					: ["--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--permission-mode", "dontAsk"]),
+				"--model",
+				selection.model,
+				...(selection.effort ? ["--effort", selection.effort] : []),
+			],
+			{
+				cwd: isAdvisor ? request.cwd : runDirectory,
+				stdio: ["pipe", "pipe", "pipe"],
+				windowsHide: true,
+				detached: process.platform !== "win32",
+			},
+		);
+
+		const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
+		let processError: Error | undefined;
+		let stderr = "";
+		let partial = "";
+		let final: string | undefined;
+		let terminalError: string | undefined;
+		let protocolError: string | undefined;
+		let stdoutBuffer = "";
+
+		child.stderr?.setEncoding("utf8");
+		child.stderr?.on("data", (chunk: string) => {
+			stderr += chunk;
+		});
+		child.once("error", (error) => {
+			processError = error;
+		});
+		child.stdin?.on("error", () => {
+			// claude exiting before it reads stdin is reported through the close/error path below.
+		});
+		child.stdin?.end(request.prompt);
+
+		const handleLine = (line: string) => {
+			if (!line.trim() || attempt.causeOf()) return;
+			let event: ClaudeEvent;
+			try {
+				event = JSON.parse(line) as ClaudeEvent;
+			} catch {
+				throw new Error("Claude emitted invalid stream-json output.");
+			}
+			const topLevel = event.parent_tool_use_id === undefined || event.parent_tool_use_id === null;
+			if (!isAdvisor && topLevel && event.type === "stream_event" && event.event?.type === "content_block_delta") {
+				const delta = event.event.delta;
+				if (delta?.type === "text_delta" && typeof delta.text === "string" && delta.text) {
+					partial += delta.text;
+					onProgress?.({ kind: "text", text: partial });
+				}
+			}
+			if (isAdvisor && topLevel && event.type === "assistant" && Array.isArray(event.message?.content)) {
+				for (const block of event.message.content as Array<{ type?: unknown; name?: unknown; text?: unknown }>) {
+					const label =
+						block?.type === "tool_use" && typeof block.name === "string"
+							? block.name.trim()
+							: block?.type === "text" && typeof block.text === "string"
+								? block.text.split("\n").find((text) => text.trim())?.trim()
+								: undefined;
+					if (label) onProgress?.({ kind: "activity", label, timestamp: Date.now() });
+				}
+			}
+			if (event.type !== "result" || !topLevel) return;
+			if (event.subtype === "success" && event.is_error === false && (event.stop_reason !== "end_turn" || (event.terminal_reason !== undefined && event.terminal_reason !== "completed"))) {
+				terminalError ??= `Claude did not complete the answer (stop reason: ${String(event.stop_reason)}, terminal reason: ${String(event.terminal_reason)}).`;
+				return;
+			}
+			// A result ends a model turn, not necessarily the stream; the first failure is latched and
+			// otherwise the latest successful result wins once the process exits cleanly.
+			if (event.subtype === "success" && event.is_error === false && typeof event.result === "string") {
+				final = event.result;
+			} else {
+				const detail =
+					typeof event.subtype === "string" && event.subtype !== "success"
+						? event.subtype
+						: typeof event.result === "string" && event.result.trim()
+							? event.result.trim()
+							: "turn failed";
+				terminalError ??= `Claude failed: ${detail}`;
+			}
+		};
+
+		child.stdout?.setEncoding("utf8");
+		child.stdout?.on("data", (chunk: string) => {
+			stdoutBuffer += chunk;
+			const parts = stdoutBuffer.split(/\r?\n/);
+			stdoutBuffer = parts.pop() ?? "";
+			if (stdoutBuffer.length > ADVISOR_MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > ADVISOR_MAX_STDOUT_LINE_CHARS)) {
+				protocolError ??= `Claude emitted a stdout line over ${ADVISOR_MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
+				stdoutBuffer = "";
+				attempt.stop("protocol");
+				return;
+			}
+			for (const line of parts) {
+				try {
+					handleLine(line);
+				} catch (error) {
+					protocolError ??= errorMessage(error);
+					attempt.stop("protocol");
+					return;
+				}
+			}
+		});
+
+		const { code, exitSignal } = await attempt.closed;
+		attempt.dispose();
+		if (stdoutBuffer.trim()) {
+			try {
+				handleLine(stdoutBuffer);
+			} catch (error) {
+				protocolError ??= errorMessage(error);
+			}
+		}
+
+		const partialText = partial || undefined;
+		const cause = attempt.causeOf();
+		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", partialText };
+		if (cause === "timeout") {
+			const during = isAdvisor ? "during the advisor consultation" : "while simplifying the response";
+			return { status: "timeout", message: `Claude timed out ${during}. Run \`/bro doctor\` for setup help.`, partialText };
+		}
+		if (protocolError) return { status: "failure", message: withDoctor(protocolError), partialText };
+		if (processError) return { status: "failure", message: processStartMessage(processError as NodeJS.ErrnoException, "Claude") };
+		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Claude"), partialText };
+		if (terminalError) return { status: "failure", message: withDoctor(terminalError), partialText };
+		if (code !== 0) {
+			const detail = stderr.trim();
+			return {
+				status: "failure",
+				message: detail
+					? `Claude could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`
+					: `Claude could not ${action}. Make sure Claude Code is installed and signed in, then run \`/bro doctor\`.`,
+				partialText,
+			};
+		}
+		if (final === undefined) {
+			return { status: "failure", message: withDoctor(`Claude exited without a result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`), partialText };
+		}
+		const text = final.trim();
+		if (!text) return { status: "failure", message: withDoctor("Claude returned no final answer."), partialText };
+		return { status: "success", text };
+	} finally {
+		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
+	}
+}
+
 // Single-attempt executor shared by all four features. Never retries (retries are feature-owned,
 // e.g. advisor's 3-attempt backoff in bro.ts); never spawns a pre-aborted request; on cancellation,
 // host deadline, or a protocol failure, stops the whole POSIX process group (SIGTERM, then SIGKILL
@@ -488,7 +696,7 @@ async function executeAdvisorStdin(
 // callers never override the deadline or kill-escalation delay.
 export async function execute(
 	request: BackendRequest,
-	selection: AgySelection,
+	selection: BackendSelection,
 	signal: AbortSignal,
 	onProgress?: BackendOnProgress,
 	options?: BackendExecuteOptions,
@@ -500,6 +708,15 @@ export async function execute(
 		(request.feature !== "btw" && request.continuation)
 	) return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 	const killEscalationMs = options?.killEscalationMs ?? DEFAULT_KILL_ESCALATION_MS;
+	if (selection.backend === "claude") {
+		if (!backendSupports("claude", request.feature)) {
+			return { status: "failure", message: "Claude does not support /bro btw yet; switch btw back to Agy in `/bro config`." };
+		}
+		if (!selection.model.trim() || (selection.effort !== undefined && !CLAUDE_EFFORTS.includes(selection.effort))) {
+			return { status: "failure", message: "Unsupported Claude selection: check the model and effort (low, medium, high, xhigh or max)." };
+		}
+		return executeClaude(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
+	}
 	if (request.feature === "advisor") {
 		return executeAdvisorStdin(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
 	}
