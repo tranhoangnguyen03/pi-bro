@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 
 // Shared internal execution boundary for all four Bro features (explain, show, btw, advisor).
 // This implements docs/plans/2026-09-22-shared-backend-design.md for Agy (all features) and the
-// Claude Code CLI (explain/show/advisor; no btw yet) and the Grok CLI (advisor only): it owns CLI selection, process invocation, progress/outcome normalization, continuation, and
+// Claude Code CLI (explain/show/advisor; no btw yet) and the Grok CLI (all features): it owns CLI selection, process invocation, progress/outcome normalization, continuation, and
 // single-attempt cleanup. Feature code (bro.ts) keeps retries, UI, source/session capture and
 // settings.
 
@@ -493,12 +493,11 @@ async function executeAdvisorStdin(
 }
 
 
-// Claude Code supports every feature except btw (it has no continuation wiring yet). Grok only
-// runs the workspace-full advisor: the installed CLI has no verified way to disable hooks/plugins,
-// so it can never back a restricted explain/show, and it has no btw continuation wiring.
+// Claude Code supports every feature except btw (it has no continuation wiring yet). Grok supports
+// every feature, but its "restricted" access is a prompt instruction, not enforcement (see
+// GROK_RESTRICTED_PREFIX).
 export function backendSupports(backend: "agy" | "claude" | "grok", feature: BackendFeature): boolean {
-	if (backend === "grok") return feature === "advisor";
-	return backend === "agy" || feature !== "btw";
+	return backend === "agy" || backend === "grok" || feature !== "btw";
 }
 
 type ClaudeEvent = {
@@ -706,14 +705,30 @@ type GrokEvent = {
 	message?: unknown;
 	parent_tool_use_id?: unknown;
 	stop_reason?: unknown;
+	session_id?: unknown;
+	event?: { type?: unknown; delta?: { type?: unknown; text?: unknown } };
 };
 
-// Grok runs only the advisor: fresh (never resumed) in the caller's workspace with tools
-// auto-approved and subagents off. The prompt goes through a private 0600 file in a fresh mkdtemp
-// directory, removed once the attempt ends. Only a top-level terminal `result` with
-// success/is_error false/end_turn is authoritative; the first failure (a failed result or a
-// top-level `error` event, even after a success) is latched. Nested (subagent) frames are ignored,
-// and progress is activity labels only -- partial text and thinking are never reported.
+// Grok's "restricted" access is a request in the prompt, NOT technical enforcement: every Grok run
+// has all tools on (--sandbox off, bypassPermissions, subagents/web/scheduler available), so the
+// model can still read, write or reach out if it ignores this. The parent UI owns telling the user
+// that truthfully.
+export const GROK_RESTRICTED_PREFIX =
+	"Bro restricted mode (a request, not a technical restriction): answer only from the context supplied in this prompt. " +
+	"Do not inspect, read, or write workspace files, run commands, or use web or other external tools unless the user explicitly asks you to in this prompt.";
+
+// Grok runs every feature with all capabilities on (--sandbox off, bypassPermissions, no tool
+// blacklist). explain/show run in a fresh mkdtemp scratch cwd removed afterwards (the Agy pattern);
+// btw (both accesses) runs in the caller's workspace cwd and continues natively with --resume, whose
+// session keeps the cwd it was created in; the advisor runs fresh in the workspace. Restricted
+// requests get GROK_RESTRICTED_PREFIX. The prompt goes through a private 0600 file in its own
+// mkdtemp directory, removed once the attempt ends.
+// Only a top-level terminal `result` with success/is_error false/end_turn is authoritative; the
+// first failure (a failed result or a top-level `error` event, even after a success) is latched.
+// Nested (subagent) frames are ignored. The advisor reports activity labels only; explain/show/btw
+// report top-level text_delta progress, falling back to an assistant message's text blocks only when
+// no delta streamed for it. Thinking is never reported. btw requires init/result session ids to
+// agree (and to equal the resumed id) and returns that id as the continuation.
 async function executeGrok(
 	request: BackendRequest,
 	selection: { model: string; effort?: string },
@@ -722,12 +737,22 @@ async function executeGrok(
 	killEscalationMs: number,
 	deadlineMsOverride: number | undefined,
 ): Promise<BackendOutcome> {
+	const isAdvisor = request.feature === "advisor";
+	const isBtw = request.feature === "btw";
+	const deadlineMs = deadlineMsOverride ?? (isAdvisor || (isBtw && request.access === "workspace-full") ? 610_000 : isBtw ? 130_000 : 125_000);
+	const action = isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
+	const timeoutVerb = isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
+	const emptyTextMessage = isAdvisor ? "Grok returned no advice." : isBtw ? "Grok returned no answer for the side question." : "Grok returned no final explanation.";
+	const prompt = request.access === "restricted" ? `${GROK_RESTRICTED_PREFIX}\n\n${request.prompt}` : request.prompt;
+
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 	const promptDirectory = await mkdtemp(join(tmpdir(), "pi-bro-grok-"));
+	let runDirectory: string | undefined;
 	try {
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const promptFile = join(promptDirectory, "prompt.txt");
-		await writeFile(promptFile, request.prompt, { encoding: "utf8", mode: 0o600 });
+		await writeFile(promptFile, prompt, { encoding: "utf8", mode: 0o600 });
+		if (!isAdvisor && !isBtw) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 
 		const child = spawn(
@@ -737,23 +762,25 @@ async function executeGrok(
 				"off",
 				"--permission-mode",
 				"bypassPermissions",
-				"--no-subagents",
-				"--disallowed-tools",
-				"spawn_subagent,scheduler_create,scheduler_delete,scheduler_list,monitor,workflow",
 				"--output-format",
 				"streaming-messages-json",
 				"--include-partial-messages",
 				"--model", selection.model,
 				...(selection.effort ? ["--reasoning-effort", selection.effort] : []),
+				...(isBtw && request.continuation ? ["--resume", request.continuation.id] : []),
 				"--prompt-file",
 				promptFile,
 			],
-			{ cwd: request.cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" },
+			{ cwd: runDirectory ?? request.cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" },
 		);
 
-		const attempt = beginAttempt(child, signal, deadlineMsOverride ?? 610_000, killEscalationMs);
+		const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
 		let processError: Error | undefined;
 		let stderr = "";
+		let partial = "";
+		let streamedSinceAssistant = false;
+		let initSessionId: string | undefined;
+		let resultSessionId: string | undefined;
 		let final: string | undefined;
 		let terminalError: string | undefined;
 		let protocolError: string | undefined;
@@ -776,15 +803,39 @@ async function executeGrok(
 				throw new Error("Grok emitted invalid streaming-messages-json output.");
 			}
 			if (event.parent_tool_use_id !== undefined && event.parent_tool_use_id !== null) return;
-			if (event.type === "system" && event.subtype === "init" && event.permissionMode !== "bypassPermissions") {
-				throw new Error("Grok did not apply the required bypassPermissions mode; check Grok policy/configuration.");
+			if (event.type === "system" && event.subtype === "init") {
+				if (event.permissionMode !== "bypassPermissions") {
+					throw new Error("Grok did not apply the required bypassPermissions mode; check Grok policy/configuration.");
+				}
+				if (typeof event.session_id === "string") initSessionId = event.session_id;
+			}
+			if (!isAdvisor && event.type === "stream_event" && event.event?.type === "content_block_delta") {
+				const delta = event.event.delta;
+				if (delta?.type === "text_delta" && typeof delta.text === "string" && delta.text) {
+					partial += delta.text;
+					streamedSinceAssistant = true;
+					onProgress?.({ kind: "text", text: partial });
+				}
 			}
 			if (event.type === "error") {
 				terminalError ??= `Grok error: ${typeof event.message === "string" && event.message.trim() ? event.message.trim() : "unknown error"}`;
 				return;
 			}
 			const message = event.message as { content?: unknown } | undefined;
-			if (event.type === "assistant" && Array.isArray(message?.content)) {
+			if (!isAdvisor && event.type === "assistant" && Array.isArray(message?.content)) {
+				// Fallback only: an assistant message whose text already streamed as deltas is not re-appended.
+				if (!streamedSinceAssistant) {
+					const text = (message.content as Array<{ type?: unknown; text?: unknown }>)
+						.map((block) => (block?.type === "text" && typeof block.text === "string" ? block.text : ""))
+						.join("");
+					if (text) {
+						partial += text;
+						onProgress?.({ kind: "text", text: partial });
+					}
+				}
+				streamedSinceAssistant = false;
+			}
+			if (isAdvisor && event.type === "assistant" && Array.isArray(message?.content)) {
 				for (const block of message.content as Array<{ type?: unknown; name?: unknown; text?: unknown }>) {
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
@@ -796,9 +847,10 @@ async function executeGrok(
 				}
 			}
 			if (event.type !== "result") return;
+			if (typeof event.session_id === "string") resultSessionId = event.session_id;
 			if (event.subtype === "success" && event.is_error === false) {
 				if (event.stop_reason !== "end_turn") {
-					terminalError ??= `Grok did not complete the advice (stop reason: ${String(event.stop_reason)}).`;
+					terminalError ??= `Grok did not complete the ${isAdvisor ? "advice" : "answer"} (stop reason: ${String(event.stop_reason)}).`;
 				} else if (typeof event.result === "string") {
 					final = event.result;
 				} else {
@@ -852,31 +904,42 @@ async function executeGrok(
 			}
 		}
 
+		const partialText = partial ? { partialText: partial } : {};
 		const cause = attempt.causeOf();
-		if (cause === "cancelled") return { status: "cancelled", message: "Canceled." };
-		if (cause === "timeout") {
-			return { status: "timeout", message: "Grok timed out during the advisor consultation. Run `/bro doctor` for setup help." };
-		}
-		if (protocolError) return { status: "failure", message: withDoctor(protocolError) };
+		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", ...partialText };
+		if (cause === "timeout") return { status: "timeout", message: `Grok timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, ...partialText };
+		if (protocolError) return { status: "failure", message: withDoctor(protocolError), ...partialText };
 		if (processError) return { status: "failure", message: processStartMessage(processError as NodeJS.ErrnoException, "Grok") };
-		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Grok") };
-		if (terminalError) return { status: "failure", message: withDoctor(terminalError) };
+		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Grok"), ...partialText };
+		if (terminalError) return { status: "failure", message: withDoctor(terminalError), ...partialText };
 		if (code !== 0) {
 			const detail = stderr.trim();
 			return {
 				status: "failure",
 				message: detail
-					? `Grok could not complete the advisor consultation: ${detail}\n\nRun \`/bro doctor\` for setup help.`
-					: "Grok could not complete the advisor consultation. Make sure `grok` is installed and signed in, then run `/bro doctor`.",
+					? `Grok could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`
+					: `Grok could not ${action}. Make sure \`grok\` is installed and signed in, then run \`/bro doctor\`.`,
+				...partialText,
 			};
 		}
 		if (final === undefined) {
-			return { status: "failure", message: withDoctor(`Grok exited without a terminal result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`) };
+			return { status: "failure", message: withDoctor(`Grok exited without a terminal result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`), ...partialText };
 		}
 		const text = final.trim();
-		if (!text) return { status: "failure", message: withDoctor("Grok returned no advice.") };
-		return { status: "success", text };
+		if (!text) return { status: "failure", message: withDoctor(emptyTextMessage), ...partialText };
+		if (!isBtw) return { status: "success", text };
+		// btw continuation: the session id must be reported, consistent, and (on resume) unchanged.
+		const sessionId = resultSessionId ?? initSessionId;
+		if (!sessionId || (initSessionId !== undefined && initSessionId !== sessionId) || (request.continuation && sessionId !== request.continuation.id)) {
+			return {
+				status: "failure",
+				message: withDoctor(`Grok reported an inconsistent session id (expected ${request.continuation?.id ?? "one id"}, init ${initSessionId ?? "none"}, result ${resultSessionId ?? "none"}).`),
+				...partialText,
+			};
+		}
+		return { status: "success", text, continuation: { id: sessionId } };
 	} finally {
+		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 		await rm(promptDirectory, { recursive: true, force: true });
 	}
 }
@@ -906,8 +969,9 @@ export async function execute(
 	}
 	const killEscalationMs = options?.killEscalationMs ?? DEFAULT_KILL_ESCALATION_MS;
 	if (selection.backend === "grok") {
-		if (!backendSupports("grok", request.feature)) {
-			return { status: "failure", message: "Grok only supports the advisor; switch this feature back to Agy or Claude in `/bro config`." };
+		// Grok btw always runs (and resumes) in the caller's workspace, even restricted.
+		if (request.feature === "btw" && !request.cwd?.trim()) {
+			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 		}
 		if (typeof selection.model !== "string" || !selection.model.trim() || (selection.effort !== undefined && !GROK_EFFORTS.includes(selection.effort))) {
 			return { status: "failure", message: "Unsupported Grok selection: check the model and effort (low, medium, high or xhigh)." };

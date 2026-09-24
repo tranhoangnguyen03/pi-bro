@@ -191,7 +191,7 @@ test("unknown schemas cannot be accepted as legacy and overwritten", () => {
 });
 
 
-test("Grok advisor-only support: selection, efforts, models", () => {
+test("Grok all-feature support: selection, efforts, models", () => {
 	assert.deepEqual([...GROK_EFFORTS], ["low", "medium", "high", "xhigh"]);
 	assert.deepEqual(
 		GROK_MODELS.map((model: { id: string }) => model.id).sort(),
@@ -201,9 +201,9 @@ test("Grok advisor-only support: selection, efforts, models", () => {
 	assert.equal(resolveGrokModel("  custom-grok-id  "), "custom-grok-id");
 	assert.throws(() => resolveGrokModel("   "), /Grok model/);
 	assert.equal(supportsBackend("grok", "advisor"), true);
-	assert.equal(supportsBackend("grok", "explain"), false);
-	assert.equal(supportsBackend("grok", "show"), false);
-	assert.equal(supportsBackend("grok", "btw"), false);
+	assert.equal(supportsBackend("grok", "explain"), true);
+	assert.equal(supportsBackend("grok", "show"), true);
+	assert.equal(supportsBackend("grok", "btw"), true);
 });
 
 test("Grok pairs parse, round-trip, and resolve with no Agy family", () => {
@@ -284,5 +284,12 @@ test("Grok custom picker cancels atomically and resets cross-backend effort", as
  openCustom(); modal.handleInput("grok-custom"); modal.handleInput("\u001b"); assert.equal(saved.length,0);
  openCustom(); modal.handleInput("grok-custom"); modal.handleInput("\r"); await new Promise(r=>setTimeout(r,0));
  assert.equal(saved.length,1); assert.equal(saved[0].backend,"grok"); assert.equal(saved[0].model,"grok-custom"); assert.equal(saved[0].effort,"default");
- assert.match(modal.render(120).join("\n"),/unsupported backend/);
+ assert.doesNotMatch(modal.render(120).join("\n"),/unsupported backend/);
+});
+
+
+test("BTW backend changes clear native continuation and transcript, same backend preserves them", () => {
+ const thread = {turns:[{question:"q",answer:"a"}],conversationId:"grok-session",full:false,backend:"grok"};
+ assert.equal(bro.bindBtwBackend(thread,"grok"),false); assert.equal(thread.conversationId,"grok-session");
+ assert.equal(bro.bindBtwBackend(thread,"agy"),true); assert.equal(thread.conversationId,undefined); assert.deepEqual(thread.turns,[]);
 });

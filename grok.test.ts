@@ -76,8 +76,7 @@ async function advise(selection: BackendSelection, onProgress?: (p: BackendProgr
 
 test("grok support predicate and effort list", () => {
 	assert.deepEqual([...GROK_EFFORTS], ["low", "medium", "high", "xhigh"]);
-	assert.equal(backendSupports("grok", "advisor"), true);
-	for (const feature of ["explain", "show", "btw"] as const) assert.equal(backendSupports("grok", feature), false);
+	for (const feature of ["explain", "show", "btw", "advisor"] as const) assert.equal(backendSupports("grok", feature), true);
 });
 
 test("grok advisor: fresh workspace argv, private prompt file cleaned up, activity-only progress without reasoning", async () => {
@@ -108,9 +107,6 @@ test("grok advisor: fresh workspace argv, private prompt file cleaned up, activi
 				"off",
 				"--permission-mode",
 				"bypassPermissions",
-				"--no-subagents",
-				"--disallowed-tools",
-				"spawn_subagent,scheduler_create,scheduler_delete,scheduler_list,monitor,workflow",
 				"--output-format",
 				"streaming-messages-json",
 				"--include-partial-messages",
@@ -122,7 +118,7 @@ test("grok advisor: fresh workspace argv, private prompt file cleaned up, activi
 				promptPath,
 			]);
 			assert.equal((await readFile(join(binDir, "pwd.txt"), "utf8")).trim(), workspace);
-			assert.equal(await readFile(join(binDir, "prompt.txt"), "utf8"), "Advise on 'this' $HOME");
+			assert.equal(await readFile(join(binDir, "prompt.txt"), "utf8"), "Advise on 'this' $HOME", "advisor prompt gets no restricted prefix");
 			assert.equal((await readFile(join(binDir, "prompt-mode.txt"), "utf8")).trim(), "-rw-------");
 			assert.ok(!promptPath.startsWith(workspace), "prompt file must not live in the workspace");
 			assert.equal(existsSync(promptPath), false, "prompt file must be removed");
@@ -141,27 +137,31 @@ test("grok advisor: selected model is explicit and default effort is omitted", a
 	});
 });
 
-test("grok rejects unsupported features, invalid selections and unknown backends before any spawn", async () => {
+test("grok rejects cwd-less btw, invalid selections and unknown backends before any spawn", async () => {
 	await withFakeGrok(`touch "$BIN_DIR/grok-ran"\n${success("no")}`, async (binDir) => {
 		const signal = new AbortController().signal;
-		const restricted: BackendRequest[] = [
-			{ feature: "explain", access: "restricted", prompt: "p" },
-			{ feature: "show", access: "restricted", prompt: "p" },
+		for (const request of [
 			{ feature: "btw", access: "restricted", prompt: "p" },
-			{ feature: "btw", access: "workspace-full", cwd: binDir, prompt: "p" },
-		];
-		for (const request of restricted) {
+			{ feature: "btw", access: "restricted", cwd: "  ", prompt: "p" },
+			{ feature: "btw", access: "workspace-full", prompt: "p" },
+		] as BackendRequest[]) {
 			const outcome = await execute(request, grok(), signal);
 			assert.equal(outcome.status, "failure");
-			assert.match((outcome as { message: string }).message, /Grok only supports the advisor/);
+			assert.match((outcome as { message: string }).message, /workspace cwd/);
 		}
-		const advisor: BackendRequest = { feature: "advisor", access: "workspace-full", cwd: binDir, prompt: "p" };
-		for (const selection of [grok({ effort: "max" as never }), grok({ effort: "minimal" as never }), grok({ model: "  " }), grok({ model: undefined })]) {
-			const outcome = await execute(advisor, selection, signal);
-			assert.equal(outcome.status, "failure");
-			assert.match((outcome as { message: string }).message, /Unsupported Grok selection/);
+		const requests: BackendRequest[] = [
+			{ feature: "advisor", access: "workspace-full", cwd: binDir, prompt: "p" },
+			{ feature: "explain", access: "restricted", prompt: "p" },
+			{ feature: "btw", access: "restricted", cwd: binDir, prompt: "p" },
+		];
+		for (const request of requests) {
+			for (const selection of [grok({ effort: "max" as never }), grok({ effort: "minimal" as never }), grok({ model: "  " }), grok({ model: undefined })]) {
+				const outcome = await execute(request, selection, signal);
+				assert.equal(outcome.status, "failure");
+				assert.match((outcome as { message: string }).message, /Unsupported Grok selection/);
+			}
 		}
-		const unknown = await execute(advisor, { backend: "bogus", model: "m" } as unknown as BackendSelection, signal);
+		const unknown = await execute(requests[0], { backend: "bogus", model: "m" } as unknown as BackendSelection, signal);
 		assert.equal(unknown.status, "failure");
 		assert.match((unknown as { message: string }).message, /Unknown backend/);
 		const unknownExplain = await execute({ feature: "explain", access: "restricted", prompt: "p" }, { backend: "bogus", model: "m" } as unknown as BackendSelection, signal);
@@ -245,4 +245,146 @@ test("grok advisor: missing CLI gives an ENOENT install diagnostic", async () =>
 		process.env.PATH = originalPath;
 		await rm(emptyBin, { recursive: true, force: true });
 	}
+});
+
+const init = (sessionId = "s1") => line({ type: "system", subtype: "init", permissionMode: "bypassPermissions", session_id: sessionId, parent_tool_use_id: null });
+const baseArgv = ["--sandbox", "off", "--permission-mode", "bypassPermissions", "--output-format", "streaming-messages-json", "--include-partial-messages", "--model", "grok-4.7"];
+
+async function run(request: Omit<BackendRequest, "cwd"> & { cwd?: string | "workspace" }, onProgress?: (p: BackendProgress) => void, signal = new AbortController().signal, deadlineMs?: number) {
+	const workspace = await realpath(await mkdtemp(join(tmpdir(), "pi-bro-grok-ws-")));
+	try {
+		const outcome = await execute(
+			{ ...request, cwd: request.cwd === "workspace" ? workspace : request.cwd } as BackendRequest,
+			grok(),
+			signal,
+			onProgress,
+			{ killEscalationMs: 100, ...(deadlineMs ? { deadlineMs } : {}) },
+		);
+		return { outcome, workspace };
+	} finally {
+		await rm(workspace, { recursive: true, force: true });
+	}
+}
+
+const texts = (progress: BackendProgress[]) => progress.map((p) => (p.kind === "text" ? p.text : `activity:${p.label}`));
+
+for (const feature of ["explain", "show"] as const) {
+	test(`grok ${feature}: restricted prompt request, all features on, removed scratch cwd, text progress without reasoning`, async () => {
+		await withFakeGrok(
+			[init(), thinkingDelta, textDelta("Hello "), textDelta("world"), assistant([{ type: "thinking", thinking: "SECRET REASONING" }, { type: "text", text: "Hello world" }]), success("Hello world")].join("\n"),
+			async (binDir) => {
+				const progress: BackendProgress[] = [];
+				const { outcome, workspace } = await run({ feature, access: "restricted", prompt: "Explain 'x' $HOME" }, (p) => progress.push(p));
+				assert.deepEqual(outcome, { status: "success", text: "Hello world" });
+				assert.deepEqual(texts(progress), ["Hello ", "Hello world"], "assistant text must not double-append streamed deltas");
+				assert.doesNotMatch(JSON.stringify(progress), /SECRET/);
+				const argv = await args(binDir);
+				assert.deepEqual(argv, [...baseArgv, "--prompt-file", await readFile(join(binDir, "prompt-path.txt"), "utf8")]);
+				for (const flag of ["--no-subagents", "--disallowed-tools", "--disable-web-search", "--tools", "--resume"]) assert.equal(argv.includes(flag), false, flag);
+				const prompt = await readFile(join(binDir, "prompt.txt"), "utf8");
+				assert.match(prompt, /^Bro restricted mode/);
+				assert.match(prompt, /not a technical restriction/);
+				assert.match(prompt, /Do not inspect, read, or write workspace files/);
+				assert.ok(prompt.endsWith("\n\nExplain 'x' $HOME"));
+				const cwd = (await readFile(join(binDir, "pwd.txt"), "utf8")).trim();
+				assert.notEqual(cwd, workspace);
+				assert.equal(existsSync(cwd), false, "scratch cwd must be removed");
+				assert.ok(!(await readFile(join(binDir, "prompt-path.txt"), "utf8")).startsWith(cwd), "prompt file must not live in the scratch cwd");
+			},
+		);
+	});
+}
+
+test("grok explain: assistant text is the progress fallback when no deltas stream, nested frames ignored", async () => {
+	await withFakeGrok(
+		[
+			init(),
+			assistant([{ type: "text", text: "Part one. " }]),
+			assistant([{ type: "text", text: "NESTED" }], "c1"),
+			line({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "NESTED DELTA" } }, parent_tool_use_id: "c1", session_id: "s1" }),
+			assistant([{ type: "tool_use", name: "read_file" }, { type: "text", text: "Part two." }]),
+			success("Part one. Part two."),
+		].join("\n"),
+		async () => {
+			const progress: BackendProgress[] = [];
+			const { outcome } = await run({ feature: "explain", access: "restricted", prompt: "p" }, (p) => progress.push(p));
+			assert.deepEqual(outcome, { status: "success", text: "Part one. Part two." });
+			assert.deepEqual(texts(progress), ["Part one. ", "Part one. Part two."]);
+		},
+	);
+});
+
+for (const access of ["restricted", "workspace-full"] as const) {
+	test(`grok btw ${access}: fresh turn runs in the workspace cwd and returns the session continuation`, async () => {
+		await withFakeGrok([init("sess-1"), textDelta("Answer"), line({ type: "result", subtype: "success", is_error: false, stop_reason: "end_turn", result: "Answer", session_id: "sess-1" })].join("\n"), async (binDir) => {
+			const progress: BackendProgress[] = [];
+			const { outcome, workspace } = await run({ feature: "btw", access, cwd: "workspace", prompt: "Side q" }, (p) => progress.push(p));
+			assert.deepEqual(outcome, { status: "success", text: "Answer", continuation: { id: "sess-1" } });
+			assert.deepEqual(texts(progress), ["Answer"]);
+			assert.equal((await readFile(join(binDir, "pwd.txt"), "utf8")).trim(), workspace);
+			const argv = await args(binDir);
+			assert.deepEqual(argv, [...baseArgv, "--prompt-file", await readFile(join(binDir, "prompt-path.txt"), "utf8")]);
+			const prompt = await readFile(join(binDir, "prompt.txt"), "utf8");
+			if (access === "restricted") assert.match(prompt, /^Bro restricted mode[\s\S]*\n\nSide q$/);
+			else assert.equal(prompt, "Side q");
+		});
+	});
+}
+
+test("grok btw: resume passes --resume with the continuation id and keeps it", async () => {
+	await withFakeGrok([init("sess-1"), success("again").replace('"s1"', '"sess-1"')].join("\n"), async (binDir) => {
+		const { outcome } = await run({ feature: "btw", access: "restricted", cwd: "workspace", prompt: "Follow up", continuation: { id: "sess-1" } });
+		assert.deepEqual(outcome, { status: "success", text: "again", continuation: { id: "sess-1" } });
+		const argv = await args(binDir);
+		assert.deepEqual(argv.slice(argv.indexOf("--resume"), argv.indexOf("--resume") + 2), ["--resume", "sess-1"]);
+		assert.match(await readFile(join(binDir, "prompt.txt"), "utf8"), /^Bro restricted mode[\s\S]*Follow up$/);
+	});
+});
+
+const sessionFailures: Array<{ name: string; body: string; continuation?: { id: string }; message: RegExp }> = [
+	{ name: "resumed session id mismatch", body: [init("other"), success("x").replace('"s1"', '"other"')].join("\n"), continuation: { id: "sess-1" }, message: /session id/ },
+	{ name: "init/result session id mismatch", body: [init("s1"), success("x").replace('"s1"', '"s2"')].join("\n"), message: /session id/ },
+	{ name: "missing session id", body: line({ type: "result", subtype: "success", is_error: false, stop_reason: "end_turn", result: "x" }), message: /session id/ },
+];
+
+for (const { name, body, continuation, message } of sessionFailures) {
+	test(`grok btw fails on ${name}`, async () => {
+		await withFakeGrok(body, async () => {
+			const { outcome } = await run({ feature: "btw", access: "workspace-full", cwd: "workspace", prompt: "p", ...(continuation ? { continuation } : {}) });
+			assert.equal(outcome.status, "failure", JSON.stringify(outcome));
+			assert.match((outcome as { message: string }).message, message);
+			assert.match((outcome as { message: string }).message, /\/bro doctor/);
+		});
+	});
+}
+
+test("grok btw/explain terminal errors keep partial text and use feature wording", async () => {
+	await withFakeGrok([init(), textDelta("half"), result({ is_error: true, subtype: "error_during_execution", errors: ["rate limited"] })].join("\n"), async () => {
+		const { outcome } = await run({ feature: "btw", access: "restricted", cwd: "workspace", prompt: "p" });
+		assert.equal(outcome.status, "failure");
+		assert.match((outcome as { message: string }).message, /Grok failed: rate limited/);
+		assert.equal((outcome as { partialText?: string }).partialText, "half");
+	});
+	await withFakeGrok(`${textDelta("half")}\necho boom >&2\nexit 2`, async () => {
+		const { outcome } = await run({ feature: "explain", access: "restricted", prompt: "p" });
+		assert.match((outcome as { message: string }).message, /Grok could not simplify the response: boom/);
+	});
+	await withFakeGrok(success("  "), async () => {
+		const { outcome } = await run({ feature: "btw", access: "restricted", cwd: "workspace", prompt: "p" });
+		assert.match((outcome as { message: string }).message, /Grok returned no answer for the side question/);
+	});
+});
+
+test("grok btw: cancellation keeps partial text; explain deadline times out and removes the scratch cwd", async () => {
+	await withFakeGrok(`${textDelta("partial")}\nexec sleep 30`, async () => {
+		const controller = new AbortController();
+		const { outcome } = await run({ feature: "btw", access: "restricted", cwd: "workspace", prompt: "p" }, () => controller.abort(), controller.signal);
+		assert.deepEqual(outcome, { status: "cancelled", message: "Canceled.", partialText: "partial" });
+	});
+	await withFakeGrok("exec sleep 30", async (binDir) => {
+		const { outcome } = await run({ feature: "explain", access: "restricted", prompt: "p" }, undefined, new AbortController().signal, 1_500);
+		assert.equal(outcome.status, "timeout");
+		assert.match((outcome as { message: string }).message, /Grok timed out while simplifying the response/);
+		assert.equal(existsSync((await readFile(join(binDir, "pwd.txt"), "utf8")).trim()), false);
+	});
 });

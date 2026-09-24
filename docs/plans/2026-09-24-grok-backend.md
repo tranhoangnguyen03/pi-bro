@@ -1,5 +1,10 @@
 # Grok backend implementation plan
 
+## Superseding direction (user review of #57)
+
+The initial advisor-only scope below is historical, not the final acceptance criteria. User explicitly requires capability-first behavior: enable Grok explain/show/BTW/advisor; unavailable enforcement becomes prompt guidance with accurate access descriptions. Remove speculative tool blacklists. Native BTW uses stable workspace cwd, backend-bound IDs and fresh resets on backend/access changes. Track Claude follow-up in #58, Grok delivery in #59 and remaining limitations in #60. Existing completion/cancellation/input validation stays intact.
+
+
 **Goal:** Add Grok through the existing execution boundary and per-capability settings, preserving Agy defaults and Claude behavior.
 
 **Architecture:** Reuse backend.ts lifecycle; add a concrete Grok transport and tests, not a backend framework. bro.ts retains feature behavior, retries and atomic settings. Unsupported access/features fail before spawn; never downgrade sandboxing.

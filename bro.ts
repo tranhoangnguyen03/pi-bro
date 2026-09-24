@@ -63,7 +63,7 @@ type BroSource = { text: string; label?: string };
 type BroResult = { source: BroSource; text: string };
 type ModalResult = { source?: BroSource; text: string; htmlPath?: string };
 type BtwTurn = { question: string; answer: string };
-type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean };
+type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean; backend?: BackendName };
 const EFFORTS = ["default", "low", "medium", "high"] as const;
 const BACKENDS = ["agy", "claude", "grok"] as const;
 type BackendName = (typeof BACKENDS)[number];
@@ -127,7 +127,7 @@ const COMMANDS = [
 	{ value: "effort", label: "effort", description: "View or choose the shared default reasoning effort" },
 	{ value: "show", label: "show", description: "Draw what happened in recent session turns as shapes" },
 	{ value: "mode", label: "mode", description: "View or choose explanation mode (brief, balanced, faithful)" },
-	{ value: "btw", label: "btw", description: "Open a side conversation (sandboxed by default; --full edits files)" },
+	{ value: "btw", label: "btw", description: "Open a side conversation (context-only intent; --full invites workspace access)" },
 	{ value: "config", label: "config", description: "Configure shared defaults and per-capability model/effort overrides" },
 	{ value: "advisor", label: "advisor", description: "Check whether the executor's advisor tool is available right now" },
 	{ value: "advisor-steer", label: "advisor-steer", description: "View, edit, save, or clear the advisor's persistent steering brief" },
@@ -1143,7 +1143,7 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 			}
 			if (backend === "grok") {
 				if (!backendSupports("grok", capability)) {
-					fail(label, `\`${capability}\` is not supported on the Grok backend (advisor only). Run \`/bro config\` to give it another backend.`);
+					fail(label, `\`${capability}\` is not supported on the Grok backend for this capability. Run \`/bro config\` to give it another backend.`);
 					continue;
 				}
 				if (!isGrokEffort(pair.effort)) {
@@ -2305,7 +2305,7 @@ export function helpText(settings?: BroSettings, settingsError?: string): string
 	const advisorName = advisorBackend === "claude" ? "Claude" : advisorBackend === "grok" ? "Grok" : "Agy";
 	return `# Bro
 
-Bro explains a dense assistant reply, pasted text, local document, or public webpage in plain language, draws recent session turns as shapes, or opens a sandboxed side conversation with \`/bro btw\` — without adding anything to Pi's conversation.
+Bro explains a dense assistant reply, pasted text, local document, or public webpage in plain language, draws recent session turns as shapes, or opens a separate side conversation with \`/bro btw\` — without adding anything to Pi's conversation.
 
 ## Explain
 
@@ -2329,11 +2329,11 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 - \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
 - \`/bro config\` — open an interactive settings screen for the shared default backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) backend, model, and effort overrides. Changes save immediately; Esc on a picker cancels without changing anything, Esc on the screen closes it and keeps whatever was already saved.
 
-\`/bro model\` and \`/bro effort\` always change the shared default that explain, show, btw, and advisor fall back to when they have no override. Use \`/bro config\` to give one of them its own backend, model, or effort. \`btw\` runs on the Agy backend only (not Claude/Grok).
+\`/bro model\` and \`/bro effort\` always change the shared default that explain, show, btw, and advisor fall back to when they have no override. Use \`/bro config\` to give one of them its own backend, model, or effort. \`btw\` runs on Agy or Grok (Claude continuation is pending).
 
 ## Side conversation
 
-- \`/bro btw [--fresh] [--full] [question]\` — open a side conversation. Sandboxed (read-only) by default; add \`--full\` to let it read and edit the workspace, and \`--fresh\` to start without main-session context. Reopening preserves the thread's access mode (even with \`--fresh\`); use \`--sandbox\` to return to sandbox mode. Changing access mode starts a new thread. Inside the side thread, type questions and press Enter (empty Enter re-asks); exact commands \`/copy\` and \`/copy-all\` copy the latest answer or full thread to the system clipboard; exact commands \`/insert\` and \`/insert-all\` insert into the main editor without submitting (use \`/insert!\` or \`/insert-all!\` to replace an existing draft); \`/retry\` re-asks the last question; \`/clear\` resets the thread. Any other input is sent as a question. Esc closes.
+- \`/bro btw [--fresh] [--full] [question]\` — open a side conversation. Conversation-only intent by default (Agy sandbox controls; Grok prompt request, not enforced); add \`--full\` to let it read and edit the workspace, and \`--fresh\` to start without main-session context. Reopening preserves the thread's access mode (even with \`--fresh\`); use \`--sandbox\` to return to sandbox mode. Changing access mode starts a new thread. Inside the side thread, type questions and press Enter (empty Enter re-asks); exact commands \`/copy\` and \`/copy-all\` copy the latest answer or full thread to the system clipboard; exact commands \`/insert\` and \`/insert-all\` insert into the main editor without submitting (use \`/insert!\` or \`/insert-all!\` to replace an existing draft); \`/retry\` re-asks the last question; \`/clear\` resets the thread. Any other input is sent as a question. Esc closes.
 
 ## Advisor
 
@@ -2373,9 +2373,9 @@ Bro temporarily captures mouse input while the modal is open. Native mouse selec
 - Documents must be inside the current workspace, are limited to 10 MiB and 100,000 extracted characters, and must be \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\`. Scanned PDFs need OCR first.
 - Web input is limited to one public HTML page. Bro cannot sign in, run page JavaScript, bypass paywalls or blocks, follow pagination, or understand images and video.
 - If a webpage fails, copy it into a text file or save it as a PDF, then use \`/bro file\`.
-- Show draws only what already happened in this session — the conversation text of the last few turns, with tool calls, tool results, reasoning, and images always omitted — and cannot read the repository or other files on its own. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
+- Show draws only what already happened in this session — the conversation text of the last few turns, with tool calls, tool results, reasoning, and images always omitted — and is requested not to investigate the repository; Grok retains normal tools, so this is not enforced isolation. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
 - Show reflects what was reported in the conversation, not independent verification against the actual code or system state.
-- Btw threads are memory-only and do not survive reloads or restarts. A turn is capped at 2 minutes in sandbox mode and 10 minutes in full mode; the side conversation resumes through Agy's \`--conversation\` support.
+- Btw threads are memory-only and do not survive reloads or restarts. A turn is capped at 2 minutes in sandbox mode and 10 minutes in full mode; the side conversation resumes through Agy \`--conversation\` or Grok \`--resume\`.
 - Advisor consultations run with real tool access and auto-approved permissions (Grok: \`--sandbox off --permission-mode bypassPermissions\`; Agy/Claude: \`--dangerously-skip-permissions\`) — there is no enforced read-only isolation, only the advisor's own behavioral instructions to advise rather than implement. On invocation failure (not a completed answer), Bro retries with the identical snapshot, steering, and question: once after 5 seconds, once more after 10 seconds, then returns ${advisorName}'s own diagnostic as the failure.
 
 ## Privacy and safety
@@ -2384,7 +2384,7 @@ Bro sends the selected assistant reply, pasted text, locally extracted document 
 
 Bro never adds the explanation to Pi's conversation, session file, or main-agent context. The captured source and latest explanation stay in process memory until you change sessions, reload extensions, or exit Pi.
 
-Bro's explain, show, file, and url commands never modify project files. \`/bro btw\` runs sandboxed (read-only) by default; with \`--full\` it can read and edit the workspace, so use \`--full\` only when you want the side conversation to touch your project.
+Bro asks explain/show backends to use supplied context; Grok retains tool authority, so this is behavioral rather than enforced. \`/bro btw\` uses Agy sandbox controls or Grok conversation-only prompt instructions by default; with \`--full\` it can read and edit the workspace, so use \`--full\` only when you want the side conversation to touch your project.
 For webpages, it connects directly to the site without browser cookies; the site sees your IP address and Bro's user agent. Do not use private or signed URLs.
 
 Usage checks contact Agy and Doctor version checks contact only the selected backends, but none send source text or run a model turn. Pressing **C** sends the explanation to your system clipboard.
@@ -2722,6 +2722,13 @@ export function resolveBtwThread(existing: BtwThread | undefined, parsed: { fres
 	return !existing || startFresh ? { turns: [], full: targetFull } : existing;
 }
 
+export function bindBtwBackend(thread: BtwThread, backend: BackendName): boolean {
+	const changed = thread.backend !== undefined && thread.backend !== backend;
+	if (changed) { thread.turns = []; thread.conversationId = undefined; }
+	thread.backend = backend;
+	return changed;
+}
+
 export function formatBtwTranscript(turns: readonly BtwTurn[]): string {
 	return turns
 		.map((turn) => {
@@ -2771,10 +2778,10 @@ async function runBtwTurn(
 	signal: AbortSignal,
 	onProgress?: (text: string) => void,
 ): Promise<{ text: string; conversationId?: string }> {
-	// Only Agy supports btw (Claude/Grok selections carry no continuation wiring).
-	// Fail before spawning anything so a non-Agy btw selection can never reach a CLI.
-	if ((selection.backend ?? "agy") !== "agy") {
-		const name = selection.backend === "claude" ? "Claude" : "Grok";
+	// Claude continuation is not wired yet; Agy and Grok use native sessions.
+	// Reject Claude explicitly instead of falling back to another backend.
+	if (selection.backend === "claude") {
+		const name = "Claude";
 		throw new Error(`\`btw\` is not supported on the ${name} backend. Run \`/bro config\` to give it an Agy model.`);
 	}
 	let updateTimer: ReturnType<typeof setTimeout> | undefined;
@@ -2798,7 +2805,7 @@ async function runBtwTurn(
 				feature: "btw",
 				prompt,
 				access: options.full ? "workspace-full" : "restricted",
-				cwd: options.full ? options.cwd : undefined,
+				cwd: options.cwd,
 				continuation: options.conversationId ? { id: options.conversationId } : undefined,
 			},
 			selection,
@@ -2822,6 +2829,7 @@ class BtwModal implements Focusable {
 	private bodyHeight = 1;
 	private running = false;
 	private full = false;
+	private backend: BackendName = "agy";
 	private disposed = false;
 
 	get focused(): boolean {
@@ -2861,6 +2869,8 @@ class BtwModal implements Focusable {
 		this.running = running;
 		this.tui.requestRender();
 	}
+
+	setBackend(backend: BackendName): void { this.backend = backend; this.tui.requestRender(); }
 
 	setFull(full: boolean): void {
 		this.full = full;
@@ -2925,7 +2935,7 @@ class BtwModal implements Focusable {
 
 		const mode = this.full
 			? this.theme.fg("accent", this.theme.bold("full · edits repo"))
-			: this.theme.fg("dim", "sandbox");
+			: this.theme.fg("dim", this.backend === "grok" ? "Grok · conversation-only request (not sandboxed)" : "sandbox");
 		const header = this.theme.fg("accent", this.theme.bold("Bro · btw")) + this.theme.fg("dim", ` · ${mode}${scroll}`);
 
 		const composer = this.input.render(innerWidth)[0] ?? "";
@@ -2988,6 +2998,15 @@ async function openBtwModal(
 				modal.setRunning(true);
 				modal.clearComposer();
 
+				let settings: BroSettings;
+				try {
+					settings = await readSettings();
+					const backend = capabilityBackend(settings, "btw");
+					if (bindBtwBackend(thread, backend)) modal.setNotice("Backend changed — started a fresh side thread.");
+					modal.setBackend(backend);
+				} catch (error) {
+					controller = undefined; modal.setRunning(false); modal.setNotice(errorMessage(error)); return;
+				}
 				const first = thread.turns.length === 0;
 				let context: string | undefined;
 				if (first && options.seed) {
@@ -3002,7 +3021,6 @@ async function openBtwModal(
 				modal.setText(transcript());
 
 				try {
-					const settings = await readSettings();
 					const result = await runBtwTurn(
 						buildBtwPrompt(context, question),
 						selectionForCapability(settings, "btw"),
@@ -3103,6 +3121,7 @@ async function openBtwModal(
 			}
 
 			modal.setFull(thread.full);
+			modal.setBackend(thread.backend ?? "agy");
 			modal.setText(transcript());
 
 			if (options.initialQuestion) void runTurn(options.initialQuestion);
@@ -3662,8 +3681,9 @@ export default async function bro(pi: ExtensionAPI) {
 				}
 				try {
 					const btwBackend = capabilityBackend(await readSettings(), "btw");
-					if (btwBackend !== "agy") throw new Error(`${btwBackend === "claude" ? "Claude" : "Grok"} does not support /bro btw yet; choose an Agy override in /bro config.`);
+					if (btwBackend === "claude") throw new Error(`${btwBackend === "claude" ? "Claude" : "Grok"} does not support /bro btw yet; choose an Agy or Grok override in /bro config.`);
 					const thread = resolveBtwThread(btwThread, parsed);
+					if (bindBtwBackend(thread, btwBackend)) ctx.ui.notify("Backend changed — started a fresh side thread.", "info");
 					btwThread = thread;
 					await openBtwModal(ctx, { thread, initialQuestion: parsed.question, seed: !parsed.fresh });
 				} catch (error) {
