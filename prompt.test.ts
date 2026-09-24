@@ -186,6 +186,20 @@ test("btw prompt omits the seed when no context is provided", () => {
 	assert.ok(prompt.includes("hi"));
 });
 
+test("btw prompt states the access mode explicitly and reseeds prior turns as guarded data", () => {
+	const conversationOnly = buildBtwPrompt(undefined, "q", { full: false });
+	assert.match(conversationOnly, /Access mode: conversation-only/);
+	assert.match(conversationOnly, /do not read or edit workspace files or run commands/);
+	const full = buildBtwPrompt("ctx", "q", { full: true, history: "> **You**\n> earlier" });
+	assert.match(full, /Access mode: full permission/);
+	assert.match(full, /may read and edit files in the workspace and run commands/);
+	assert.ok(full.includes(JSON.stringify("ctx")));
+	assert.match(full, /Earlier turns of this side conversation/);
+	assert.ok(full.includes(JSON.stringify("> **You**\n> earlier")));
+	assert.ok(full.indexOf("Earlier turns") < full.indexOf("Question:"));
+	assert.doesNotMatch(buildBtwPrompt(undefined, "q"), /Access mode|Earlier turns/);
+});
+
 test("advisor prompt separates human steering, snapshot, and question into labeled sections", () => {
 	const prompt = buildAdvisorPrompt("Prioritize A and B; everything else minimal.", "## user\nadd a cache", "Is this abstraction justified?");
 
@@ -198,10 +212,18 @@ test("advisor prompt separates human steering, snapshot, and question into label
 	assert.match(prompt, /## Executor's question/);
 	assert.match(prompt, /Is this abstraction justified\?/);
 	assert.match(prompt, /real tool access in this workspace/);
-	assert.match(prompt, /--dangerously-skip-permissions/);
 	assert.match(prompt, /do not edit files or otherwise implement the change yourself/);
 	assert.match(prompt, /Begin with a one-line answer or verdict/);
 	assert.match(prompt, /Omit investigation narration, waiting updates, and progress reports/);
+});
+
+test("advisor prompt is backend-neutral: no backend name or CLI flags, advisory contract intact", () => {
+	const prompt = buildAdvisorPrompt("steer", "## user\nx", "q");
+	assert.doesNotMatch(prompt, /\bagy\b|antigravity|claude|grok/i);
+	assert.doesNotMatch(prompt, /(^|\s)--[a-z]/m);
+	assert.match(prompt, /Investigate before advising/);
+	assert.match(prompt, /strictly advisory/);
+	assert.match(prompt, /grounded in what you verified yourself/);
 });
 
 test("advisor prompt states explicitly when steering or a question were not given, instead of omitting the section", () => {

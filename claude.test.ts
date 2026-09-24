@@ -55,7 +55,7 @@ test("support predicate and effort list", () => {
 	assert.equal(backendSupports("claude", "explain"), true);
 	assert.equal(backendSupports("claude", "show"), true);
 	assert.equal(backendSupports("claude", "advisor"), true);
-	assert.equal(backendSupports("claude", "btw"), false);
+	assert.equal(backendSupports("claude", "btw"), true);
 });
 
 test("claude explain: restricted fresh argv, stdin prompt, scratch cwd, text-only progress without reasoning", async () => {
@@ -234,7 +234,7 @@ test("unsupported claude combinations and pre-abort fail before spawn; missing b
 		const signal = new AbortController().signal;
 		const rejected = [
 			await execute({ feature: "btw", access: "restricted", prompt: "p" }, claude(), signal),
-			await execute({ feature: "btw", access: "workspace-full", prompt: "p", cwd: binDir }, claude(), signal),
+			await execute({ feature: "btw", access: "restricted", prompt: "p", cwd: "  " }, claude(), signal),
 			await execute({ feature: "advisor", access: "restricted", prompt: "p" }, claude(), signal),
 			await execute({ feature: "explain", access: "workspace-full", prompt: "p", cwd: binDir }, claude(), signal),
 			await execute({ feature: "advisor", access: "workspace-full", prompt: "p" }, claude(), signal),
@@ -243,7 +243,7 @@ test("unsupported claude combinations and pre-abort fail before spawn; missing b
 			await execute({ feature: "explain", access: "restricted", prompt: "p" }, { backend: "claude", model: "sonnet", effort: "turbo" as "max" }, signal),
 		];
 		for (const outcome of rejected) assert.equal(outcome.status, "failure");
-		assert.match(rejected[0].status === "failure" ? rejected[0].message : "", /Claude does not support \/bro btw/);
+		assert.match(rejected[0].status === "failure" ? rejected[0].message : "", /Unsupported execution request/);
 
 		const aborted = new AbortController();
 		aborted.abort();
@@ -274,4 +274,67 @@ test("Claude rejects truncated results and ignores nested terminal answers", asy
    assert.equal(outcome.status, "failure");
   });
  }
+});
+
+const init = (sessionId: string) => line({ type: "system", subtype: "init", session_id: sessionId, parent_tool_use_id: null });
+const successIn = (result: string, sessionId: string) =>
+	line({ type: "result", subtype: "success", is_error: false, stop_reason: "end_turn", terminal_reason: "completed", result, session_id: sessionId });
+const btwBase = ["-p", "--safe-mode", "--disable-slash-commands", "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
+const noMcp = ["--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}'];
+
+async function runClaudeBtw(request: { access: "restricted" | "workspace-full"; continuation?: { id: string } }, onProgress?: (p: BackendProgress) => void) {
+	const workspace = await realpath(await mkdtemp(join(tmpdir(), "pi-bro-claude-ws-")));
+	try {
+		const outcome = await execute({ feature: "btw", prompt: "Side q", cwd: workspace, ...request }, claude(), new AbortController().signal, onProgress);
+		return { outcome, workspace };
+	} finally {
+		await rm(workspace, { recursive: true, force: true });
+	}
+}
+
+test("claude btw conversation-only: persisted session, tool-less, workspace cwd, session continuation", async () => {
+	await withFakeClaude([init("sess-1"), textDelta("Ans"), textDelta("wer"), successIn("Answer", "sess-1")].join("\n"), async (binDir) => {
+		const progress: BackendProgress[] = [];
+		const { outcome, workspace } = await runClaudeBtw({ access: "restricted" }, (p) => progress.push(p));
+		assert.deepEqual(outcome, { status: "success", text: "Answer", continuation: { id: "sess-1" } });
+		assert.deepEqual(progress, [{ kind: "text", text: "Ans" }, { kind: "text", text: "Answer" }]);
+		assert.deepEqual(await args(binDir), [...btwBase, "--tools", "", ...noMcp, "--permission-mode", "dontAsk", "--model", "sonnet"]);
+		assert.equal((await readFile(join(binDir, "pwd.txt"), "utf8")).trim(), workspace, "resume needs a stable cwd");
+		assert.equal(await readFile(join(binDir, "stdin.txt"), "utf8"), "Side q");
+		assert.equal(existsSync(join(binDir, "agy-ran")), false);
+	});
+});
+
+test("claude btw full permission resumes the same session with workspace tools", async () => {
+	await withFakeClaude([init("sess-1"), successIn("Edited", "sess-1")].join("\n"), async (binDir) => {
+		const { outcome } = await runClaudeBtw({ access: "workspace-full", continuation: { id: "sess-1" } });
+		assert.deepEqual(outcome, { status: "success", text: "Edited", continuation: { id: "sess-1" } });
+		assert.deepEqual(await args(binDir), [...btwBase, ...noMcp, "--dangerously-skip-permissions", "--resume", "sess-1", "--model", "sonnet"]);
+	});
+});
+
+for (const { name, body, continuation } of [
+	{ name: "resumed session id mismatch", body: [init("other"), successIn("x", "other")].join("\n"), continuation: { id: "sess-1" } },
+	{ name: "init/result session id mismatch", body: [init("s1"), successIn("x", "s2")].join("\n") },
+	{ name: "missing session id", body: success("x") },
+]) {
+	test(`claude btw fails on ${name}`, async () => {
+		await withFakeClaude(body, async () => {
+			const { outcome } = await runClaudeBtw({ access: "restricted", ...(continuation ? { continuation } : {}) });
+			assert.equal(outcome.status, "failure", JSON.stringify(outcome));
+			assert.match((outcome as { message: string }).message, /session id[\s\S]*\/bro doctor/);
+		});
+	});
+}
+
+test("claude btw keeps partial text on a failed terminal result and uses side-conversation wording", async () => {
+	await withFakeClaude([init("sess-1"), textDelta("half"), line({ type: "result", subtype: "error_during_execution", is_error: true, session_id: "sess-1" })].join("\n"), async () => {
+		const { outcome } = await runClaudeBtw({ access: "restricted" });
+		assert.equal(outcome.status, "failure");
+		assert.equal((outcome as { partialText?: string }).partialText, "half");
+	});
+	await withFakeClaude("echo 'not signed in' >&2; exit 3", async () => {
+		const { outcome } = await runClaudeBtw({ access: "workspace-full" });
+		assert.match((outcome as { message: string }).message, /Claude could not answer the side question: not signed in/);
+	});
 });

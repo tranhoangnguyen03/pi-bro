@@ -550,21 +550,31 @@ assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "f
 });
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
 assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
-assert.deepEqual(parseBtwArguments("--fresh --full what now"), { fresh: true, full: true, question: "what now" });
-assert.deepEqual(parseBtwArguments("--sandbox hi"), { fresh: false, full: false, question: "hi" });
-assert.deepEqual(parseBtwArguments("plain question"), { fresh: false, full: undefined, question: "plain question" });
-assert.deepEqual(parseBtwArguments(""), { fresh: false, full: undefined, question: "" });
-assert.deepEqual(parseBtwArguments("--wat"), { fresh: false, full: undefined, question: "", invalid: "Unknown /bro btw flag: --wat" });
+assert.deepEqual(parseBtwArguments("plain question"), { question: "plain question" });
+assert.deepEqual(parseBtwArguments(""), { question: "" });
+assert.deepEqual(parseBtwArguments("--wat"), { question: "", invalid: "Unknown /bro btw flag: --wat" });
+for (const removed of ["--full", "--sandbox"]) {
+	const parsed = parseBtwArguments(`${removed} what now`);
+	assert.equal(parsed.question, "", `${removed} must never become question text`);
+	assert.match(parsed.invalid ?? "", new RegExp(`${removed} was removed`));
+	assert.match(parsed.invalid ?? "", /type \/mode/);
+}
+{
+	const parsed = parseBtwArguments("--fresh what now");
+	assert.equal(parsed.question, "", "--fresh must never become question text");
+	assert.match(parsed.invalid ?? "", /--fresh was removed/);
+	assert.match(parsed.invalid ?? "", /\/clear/);
+}
 assert.deepEqual(parseBtwAgyLine('{"event":"init","conversation_id":"c1"}'), { conversationId: "c1" });
 assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"hi"}}'), { delta: "hi", conversationId: undefined });
 assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"SUCCESS","response":"done","conversation_id":"c1"}}'), { result: "done", conversationId: "c1" });
 assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
 assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "clipboard", all: false });
 assert.deepEqual(parseBtwComposerCommand("/copy-all"), { kind: "clipboard", all: true });
-assert.deepEqual(parseBtwComposerCommand("/insert"), { kind: "insert", all: false, force: false });
-assert.deepEqual(parseBtwComposerCommand("/insert!"), { kind: "insert", all: false, force: true });
-assert.deepEqual(parseBtwComposerCommand("/insert-all"), { kind: "insert", all: true, force: false });
-assert.deepEqual(parseBtwComposerCommand("/insert-all!"), { kind: "insert", all: true, force: true });
+assert.deepEqual(parseBtwComposerCommand("/insert"), { kind: "insert", all: false });
+assert.deepEqual(parseBtwComposerCommand("/insert-all"), { kind: "insert", all: true });
+assert.deepEqual(parseBtwComposerCommand("/insert!"), { kind: "removed", command: "/insert!" });
+assert.deepEqual(parseBtwComposerCommand("/insert-all!"), { kind: "removed", command: "/insert-all!" });
 assert.deepEqual(parseBtwComposerCommand("/clear"), { kind: "clear" });
 assert.deepEqual(parseBtwComposerCommand("/retry"), { kind: "retry" });
 assert.deepEqual(parseBtwComposerCommand(""), { kind: "retry" });
@@ -572,10 +582,11 @@ assert.deepEqual(parseBtwComposerCommand("how do I auth?"), { kind: "question", 
 assert.deepEqual(parseBtwComposerCommand("/send"), { kind: "question", text: "/send" });
 assert.deepEqual(parseBtwComposerCommand("/copy!"), { kind: "question", text: "/copy!" });
 assert.deepEqual(parseBtwComposerCommand("/insert-draft"), { kind: "question", text: "/insert-draft" });
-assert.deepEqual(resolveBtwThread(undefined, { fresh: false }), { turns: [], full: false });
-assert.deepEqual(resolveBtwThread({ turns: [{ question: "q", answer: "a" }], full: true }, { fresh: false }), { turns: [{ question: "q", answer: "a" }], full: true });
-assert.deepEqual(resolveBtwThread({ turns: [], full: true }, { fresh: false, full: false }), { turns: [], full: false });
-assert.deepEqual(resolveBtwThread({ turns: [], full: false }, { fresh: true }), { turns: [], full: false });
+assert.deepEqual(resolveBtwThread(undefined), { turns: [], full: false });
+assert.deepEqual(resolveBtwThread({ turns: [{ question: "q", answer: "a" }], conversationId: "c", full: true }), { turns: [{ question: "q", answer: "a" }], conversationId: "c", full: true });
+assert.deepEqual(parseBtwComposerCommand("/mode"), { kind: "mode" });
+assert.deepEqual(parseBtwComposerCommand("  /mode  "), { kind: "mode" });
+assert.deepEqual(parseBtwComposerCommand("/mode full"), { kind: "question", text: "/mode full" });
 assert.equal(
 	formatBtwTranscript([
 		{ question: "first line\n### question heading", answer: "### Answer heading\nBody" },
@@ -1808,15 +1819,17 @@ output=$(
 		sleep 1
 		printf '%s\n' '{"id":"bro-mode-invalid","type":"prompt","message":"/bro mode unknown"}'
 		sleep 1
+		# Shared model/effort now come from /bro config; a config-written file must survive /bro mode.
+		printf '{"version":2,"default":{"backend":"agy","model":"gemini-test-two","effort":"high"},"mode":"balanced","showTurns":1}\n' > "$settings_file"
 		printf '%s\n' '{"id":"bro-mode","type":"prompt","message":"/bro mode faithful"}'
 		sleep 1
-		printf '%s\n' '{"id":"bro-model-invalid","type":"prompt","message":"/bro model unknown"}'
+		printf '%s\n' '{"id":"bro-model-removed","type":"prompt","message":"/bro model"}'
 		sleep 1
-		printf '%s\n' '{"id":"bro-model","type":"prompt","message":"/bro model gemini-test-two"}'
+		printf '%s\n' '{"id":"bro-model-removed-id","type":"prompt","message":"/bro model gemini-test-one"}'
 		sleep 1
-		printf '%s\n' '{"id":"bro-effort-invalid","type":"prompt","message":"/bro effort extreme"}'
+		printf '%s\n' '{"id":"bro-effort-removed","type":"prompt","message":"/bro effort"}'
 		sleep 1
-		printf '%s\n' '{"id":"bro-effort","type":"prompt","message":"/bro effort high"}'
+		printf '%s\n' '{"id":"bro-effort-removed-level","type":"prompt","message":"/bro EFFORT low"}'
 		sleep 1
 		cp "$settings_file" "$settings_snapshot"
 		printf '{"model":"gemini-test-one","effort":"low"}\n' > "$settings_file"
@@ -1864,6 +1877,13 @@ if ! printf '%s\n' "$output" | grep -q 'Use /bro open.'; then
 	exit 1
 fi
 
+for removed in model effort; do
+	if ! printf '%s\n' "$output" | grep -Fq "/bro $removed was removed. Use /bro config"; then
+		printf 'Removed /bro %s did not point to /bro config:\n%s\n' "$removed" "$output" >&2
+		exit 1
+	fi
+done
+
 expected_args=$(printf 'gemini-3.7-flash\tlow\ngemini-3.7-flash\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow\ngemini-test-one\tlow')
 actual_args=$(cat "$args_file")
 if [ "$actual_args" != "$expected_args" ]; then
@@ -1905,10 +1925,10 @@ assert.deepEqual(JSON.parse(await readFile(process.argv[3], "utf8")), {
 });
 JS
 
-expected_model_calls=$(printf 'models\nmodels\nmodels\nmodels')
+expected_model_calls=$(printf 'models')
 actual_model_calls=$(cat "$model_calls_file")
 if [ "$actual_model_calls" != "$expected_model_calls" ]; then
-	printf 'Expected exactly four Agy model-list calls, got:\n%s\n' "$actual_model_calls" >&2
+	printf 'Expected exactly one (Doctor) Agy model-list call, got:\n%s\n' "$actual_model_calls" >&2
 	exit 1
 fi
 
@@ -1982,6 +2002,10 @@ missing_output=$(
 missing_success_count=$(printf '%s\n' "$missing_output" | grep -c '"success":true' || true)
 if [ "$missing_success_count" -ne 6 ]; then
 	printf 'Bro did not contain a missing-Agy failure:\n%s\n' "$missing_output" >&2
+	exit 1
+fi
+if [ "$(printf '%s\n' "$missing_output" | grep -c 'was removed. Use /bro config' || true)" -ne 2 ]; then
+	printf 'Removed /bro model and /bro effort were not rejected before reaching Agy:\n%s\n' "$missing_output" >&2
 	exit 1
 fi
 if ! printf '%s\n' "$missing_output" | grep -q 'usernames or passwords'; then

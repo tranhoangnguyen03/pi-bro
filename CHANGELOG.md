@@ -2,6 +2,25 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.18.0] - 2026-09-24
+
+### Added
+
+- `/mode` inside `/bro btw` toggles conversation-only / full permission without losing the conversation (#62). Threads start conversation-only, and reopening keeps the current mode. The header shows a simple `conversation-only` / `full permission` badge next to the model and effort.
+- Claude Code BTW with native multi-turn continuation in both modes (#58): turns run in the workspace with session persistence and `--resume`. Conversation-only turns disable tools, and full permission turns bypass permissions.
+- Across a `/mode` switch, Claude and Grok resume the same native session. Agy conversations stay bound to their original workspace, so Agy starts a fresh native session seeded with the main-session context and every earlier turn. The same reseed also covers any thread that has turns but no native session ID.
+
+### Removed
+
+- The `/bro btw --full` and `--sandbox` flags. Both are now rejected with a hint to use `/mode`, and nothing is sent to the model.
+- The `/bro btw --fresh` flag. Every new or cleared thread is seeded with main-session context; reopening still continues the thread natively. `--fresh` is rejected with a `/clear` hint and nothing is sent.
+- The `/insert!` and `/insert-all!` BTW composer commands. `/insert` and `/insert-all` never replace an existing main-editor draft; they ask you to edit or clear it first. The old force strings only show a notice and are never sent as questions.
+- The `/bro model` and `/bro effort` commands. Use `/bro config` for the shared default and per-capability model/effort. Both now show a `/bro config` pointer and never fall through to a text explanation.
+
+### Changed
+
+- Docs: the README is the single backend-neutral user guide (Agy is the default, not a requirement), with one "Backends: access and retention" section. `/bro help` is now a concise reference that points to the README. The advisor prompt no longer names a backend or CLI flags. `docs/DEVELOPMENT.md` replaces `docs/DEV-SNAPSHOT.md`, and `docs/TESTING.md` is the single manual end-to-end checklist.
+
 ## [0.17.0] - 2026-09-24
 
 ### Added

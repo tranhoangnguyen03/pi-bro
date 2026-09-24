@@ -5,22 +5,28 @@ plain-language explanation — or open a separate side conversation with
 `/bro btw` — without adding anything to your main agent's context.
 
 `pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
-It opens explanations in a separate modal and uses the
-[Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`)
-with your selected model. Claude Code is also supported for explain, show and
-advisor; Agy remains the default and is required for BTW.
+It opens explanations in a separate modal and runs them through a CLI backend
+you already have installed and signed in to. Explain, show, BTW, and the
+advisor all work on all three backends:
+
+- [Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`) — the default for new settings
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
+- Grok Build (`grok`)
+
+You only need the backend(s) you select; Agy is the default, not a requirement.
 
 ## Quick start
 
-You need Earendil Pi `>=0.84.2 <1`, Node.js `>=22.19.0`, and `agy >=1.1.15`
-installed and available on your `PATH`. Run `agy` once in your terminal to sign
-in, then install Bro:
+You need Earendil Pi `>=0.84.2 <1`, Node.js `>=22.19.0`, and at least one
+backend CLI on your `PATH`, signed in once from your terminal (`agy >=1.1.15`
+for the default). Then install Bro:
 
 ```sh
 pi install npm:pi-bro
 ```
 
-Restart Pi or run `/reload`, then try:
+Restart Pi or run `/reload`. If you use Claude Code or Grok instead of Agy,
+choose it in `/bro config` (for everything, or per feature). Then try:
 
 ```text
 /bro
@@ -31,13 +37,6 @@ Restart Pi or run `/reload`, then try:
 ```
 
 Run `/bro doctor` after installation or whenever Bro is not working.
-
-Explain, show, BTW and advisor share an internal execution layer; Agy remains
-the default backend. Claude Code can be selected per capability in `/bro config`. Cancellation, host deadlines
-and invalid execution streams terminate the subprocess group on POSIX, escalating
-after a five-second grace period. Windows cleanup targets the direct child only;
-descendant termination is not guaranteed. Unexpected signal exits are reported as
-failures, not timeouts.
 
 To install from GitHub instead, use
 `pi install git:github.com/tranhoangnguyen03/pi-bro`. To try Bro without
@@ -69,12 +68,10 @@ text directly captures a new source the same way.
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
 | `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
-| `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
-| `/bro model [id]` | View or choose the selected backend’s shared default model. |
-| `/bro effort [low\|medium\|high]` | View or choose the shared default reasoning effort. |
+| `/bro doctor` | Check Bro's settings, prompt, and each selected backend, with the effective backend/model/effort per feature. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
-| `/bro config` | Open an interactive settings screen for the shared default model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) model and effort overrides. |
-| `/bro btw [--fresh] [--full] [question]` | Open a side conversation in a modal. Sandboxed (read-only) by default; `--full` lets it read and edit the workspace, `--fresh` skips main-session context. |
+| `/bro config` | Open an interactive settings screen for the shared default backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) overrides. |
+| `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; type `/mode` inside to toggle full permission (read and edit the workspace) without losing the thread. |
 | `/bro advisor` | Quick notice of whether the executor's `bro_advisor` tool is available right now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`. |
 | `/bro advisor-steer` | View, edit, save, or clear the one persistent steering brief the advisor always sees. |
 | `/bro help` | Open the built-in quick reference. |
@@ -117,37 +114,47 @@ Bro temporarily captures mouse input while its modal is open. Native mouse
 selection may be unavailable or visually extend outside the modal depending on
 your terminal mode; press **C** to copy the complete explanation reliably.
 
+
 ## Bro btw (side conversation)
 
 `/bro btw` opens a separate multi-turn conversation in a modal, so you can ask
 a quick side question while the main agent keeps working. It runs through the
-selected Agy or Grok backend and never adds anything to Pi's
-conversation unless you explicitly insert it into the editor.
+selected backend and never adds anything to Pi's conversation unless you
+explicitly insert it into the editor.
 
-- **Conversation-only intent by default**: Agy uses its sandbox controls; Grok
-  receives prompt instructions to stay within supplied context, with normal tools
-  still available. Grok is not sandboxed. Add `--full` to explicitly invite
-  workspace investigation and edits.
 - `/bro btw <question>` asks immediately; `/bro btw` opens an empty thread.
-- `--fresh` starts a thread without seeding the main session's recent
-  conversation text. Reopening without an access flag preserves the existing
-  thread's access mode, including `--full`. Use `--sandbox` to return to conversation-only
-  intent; changing access mode starts a new thread. `--fresh` alone does not reset
-  the access mode.
-- The first turn is seeded with up to the last 8 turns of user/assistant
-  conversation text (40,000 characters max, with a truncation notice); the
-  side agent can also read the repo itself when running in `--full` mode.
+  Reopening keeps the thread and its mode.
+- **Two modes, toggled with `/mode`**: a new thread starts
+  **conversation-only**; type `/mode` in the modal to switch to **full
+  permission** (read and edit the workspace, run commands) and again to switch
+  back. The conversation is kept across switches. How conversation-only is
+  enforced depends on the backend — see
+  [Backends: access and retention](#backends-access-and-retention).
+- Every new or cleared thread is seeded with up to the last 8 turns of
+  main-session user/assistant conversation text (40,000 characters max, with a
+  truncation notice). Later turns continue the backend's native session; in
+  full permission mode the side agent can also read the repo itself.
 - **In the modal**: type a question and press Enter (empty Enter re-asks the
   last question). Composer actions trigger only on these exact commands:
+  - `/mode`: toggles conversation-only / full permission, keeping the thread
   - `/copy`: copies the latest answer to the system clipboard
   - `/copy-all`: copies the full thread to the system clipboard
-  - `/insert`: inserts the latest answer into the main editor without submitting (use `/insert!` to replace an existing editor draft)
-  - `/insert-all`: inserts the full thread into the main editor without submitting (use `/insert-all!` to replace an existing editor draft)
+  - `/insert`: inserts the latest answer into the main editor without submitting
+  - `/insert-all`: inserts the full thread into the main editor without submitting
   - `/retry`: re-asks the last question (empty Enter does the same)
   - `/clear`: resets the thread
-  Any other text or slash-prefixed input (such as `/send` or `/copy!`) is not a composer command and is submitted directly as a question to the side conversation. Esc closes the modal. The header shows the model and reasoning effort the latest turn used (`default` when the model's own effort applies), and a visible `full · edits repo` badge shows whenever `--full` mode is active.
-- The thread lives in memory only — it clears when you switch Pi sessions,
-  reload extensions, or quit Pi.
+
+  `/insert` and `/insert-all` never replace an existing main-editor draft:
+  edit or clear it first. Any other text, including other slash-prefixed input
+  such as `/send`, is sent as a question. Esc closes the modal (or cancels a
+  running turn). The header shows the model and reasoning effort the latest
+  turn used (`default` when the model's own effort applies) and the current
+  mode.
+- A turn is capped at 2 minutes in conversation-only mode and 10 minutes in
+  full permission mode.
+- Bro's thread lives in memory only — it clears when you switch Pi sessions,
+  reload extensions, or quit Pi. Changing the BTW backend starts a fresh
+  thread; native session IDs never cross backends.
 
 ## Bro advisor
 
@@ -162,66 +169,53 @@ depends entirely on this host's own tool restrictions.
 `/bro advisor` is a quick notice of whether `bro_advisor` is available right
 now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`.
 `/bro doctor` has the full diagnostic: whether this host exposes and
-activates `bro_advisor`, its resolved model/effort, steering presence, and
-the Agy compatibility floor — it also checks the installed Agy version and
-gives an `agy update` action when it is too old.
+activates `bro_advisor`, its resolved backend/model/effort, steering
+presence, and backend compatibility (for Agy, a minimum CLI version with an
+`agy update` action when it is too old).
 
 - **Automatic context, no prep needed**: the executor never assembles a
   summary. Bro captures a harness-neutral snapshot — the executor's system
   instructions, its active tools, and the conversation so far including tool
   calls and results — and sends it, along with an optional `question` the
-  executor may pass, to a **fresh, standalone process of the selected backend** for every
-  consultation. Nothing is resumed or reused across calls, including retries.
+  executor may pass, to a **fresh, standalone process of the selected
+  backend** for every consultation. Nothing is resumed or reused across calls,
+  including retries.
 - **Instructed to investigate, not implement**: the advisor process has real
-  tool access in the workspace with permissions auto-approved
-  (`--dangerously-skip-permissions`) — there is no enforced read-only
-  isolation. It is instructed to verify claims itself and return advice,
-  leaving edits to the executor, but that boundary is a behavioral prompt
-  instruction rather than an enforced sandbox constraint, so treat its
-  findings as advice to verify, not a guaranteed hands-off review.
+  tool access in the workspace with permissions auto-approved — there is no
+  enforced read-only isolation. It is instructed to verify claims itself and
+  return advice, leaving edits to the executor, but that boundary is a
+  behavioral prompt instruction rather than an enforced sandbox constraint, so
+  treat its findings as advice to verify, not a guaranteed hands-off review.
 - **Steering**: `/bro advisor-steer` opens an editor for one persistent
   steering brief — e.g. "quick prototype; keep A and B careful, everything
   else minimal" — that the advisor always reads. **Ctrl+S** saves and keeps
   the editor open; **Enter** or **Shift+Enter** inserts a newline; **Ctrl+K**
   clears both the saved brief and draft while staying open; **Ctrl+C** copies
   the entire current draft, including unsaved edits; and **Esc** closes without
-  saving unsaved edits. Actions and clipboard errors are reported inline. The
-  brief is stored as session-only extension data and is **never added to Pi's
-  conversation or sent to the main model** — the advisor is the only thing
-  that reads it.
+  saving unsaved edits. The brief is **never added to Pi's conversation or
+  sent to the main model** — the advisor is the only thing that reads it.
 - **Persistence**: the steering brief persists with the Pi session (not
   globally, not per project) as custom extension data in the session file and
   is restored on resume or reload. Forking a session inherits it; edits made
-  after the fork are independent of the original branch. The advisor tool has
-  no separate activation state persisted or toggled.
+  after the fork are independent of the original branch.
 - **Retries**: on an invocation failure (not a completed answer — "I need
   more evidence" is a normal result, not a failure), Bro retries with the
   identical snapshot, steering, and question: once after 5 seconds, once more
-  after 10 seconds, then returns Agy's own diagnostic — including a
-  context-length error, verbatim — as the failure. Cancelling the tool call
-  aborts immediately and skips any pending retry wait.
-- **Progress and provenance**: while an attempt is running, Bro parses the
-  advisor's own stream for the last thing it actually reported — either a
-  tool name or a user-facing response line (hidden reasoning is never
-  surfaced) — and shows it with how long ago it arrived, e.g. `last reported:
-  Read src/app.ts (2s ago)`. Before Agy reports anything, this reads
-  explicitly as "awaiting first activity from Agy" rather than guessing at
-  what it might be doing. This is what was actually reported, not a live
-  claim about Agy's current tool, and silence is never described as
-  "stalled". Expanding a running consultation shows up to the last 4 reported
-  activity lines. Each retry starts this trail over empty — a failed
-  attempt's activity never carries into the next one. Elapsed running time
-  still ticks once a second regardless of activity; a retry countdown with
-  the last failure is shown the same way as before. The returned answer
-  starts with model, effort, actual attempt count, duration, workspace,
-  steering presence, snapshot size, no-Bro-truncation status, and known
-  omission/compaction notes; the advisor's complete answer follows unchanged.
+  after 10 seconds, then returns the backend's own diagnostic — including a
+  context-length error, verbatim — as the failure. Each attempt is capped at
+  10 minutes. Cancelling the tool call aborts immediately and skips any
+  pending retry wait.
+- **Progress and provenance**: while an attempt is running, Bro shows the last
+  thing the advisor actually reported — a tool name or a user-facing response
+  line, never hidden reasoning — and how long ago it arrived, e.g. `last
+  reported: Read src/app.ts (2s ago)`, or "awaiting first activity" before
+  anything arrives. Expanding a running consultation shows up to the last 4
+  reported activity lines; each retry starts the trail over. The returned
+  answer starts with backend, model, effort, attempt count, duration,
+  workspace, steering presence, snapshot size, and known omission/compaction
+  notes; the advisor's complete answer follows unchanged.
 - **Model/effort**: resolved the same way as explain/show/btw, through
-  `/bro model`/`/bro effort` (shared default) or `/bro config` (per-capability
-  override).
-
-See [docs/plans/2026-09-19-bro-advisor-design.md](docs/plans/2026-09-19-bro-advisor-design.md)
-for the full design.
+  `/bro config` (shared default or per-capability override).
 
 ## Bro show
 
@@ -680,28 +674,39 @@ understand images and video. Pages that depend on those features may fail.
 If Bro cannot read a page, copy its content into a `.txt` or `.md` file, or save
 it as a PDF, then use `/bro file <path>`.
 
+
 ## Check your setup
 
 Run `/bro doctor` when Bro is newly installed or something is not working. It
-checks Bro's settings and prompt, the installed Agy version, account access,
-available models, and the selected reasoning effort. Failed checks explain what
-to fix.
+checks Bro's settings and prompt, then probes only the backends some feature
+actually selects, and reports the effective backend/model/effort for each
+feature. Failed checks explain what to fix.
 
-Doctor contacts Agy for its model catalog and account usage. It does not send an
-assistant response or run a model completion, so it does not consume a model
-turn. A successful check confirms the setup, but cannot guarantee that a later
-provider request will succeed.
+- **Agy**: installed version, model catalog, and account access.
+- **Claude Code**: installed version and configured authentication.
+- **Grok**: installed version only; authentication and connectivity are not
+  verified.
+
+Doctor never sends source text or runs a model completion. A successful check
+confirms the setup but cannot guarantee that a later provider request will
+succeed.
 
 ## Settings
 
-Bro creates this user-editable settings file when the extension loads:
+Use `/bro config` to review or change the shared default backend/model/effort
+and any per-capability (explain/show/btw/advisor) overrides, the explanation
+mode, and the default show turn count. Changes save immediately. Esc inside a
+picker cancels that pick; Esc on the settings screen closes it, keeping
+whatever was already saved. A failed save (for example, a read-only file) is
+shown inline. `/bro mode` changes the mode directly, and `/bro help` shows the
+active settings and file path.
+
+Settings live in this user-editable file, created when the extension loads
+(under `$PI_CODING_AGENT_DIR` instead when that is set):
 
 ```text
 ~/.pi/agent/bro-settings.json
 ```
-
-Existing flat model/effort files remain valid and select Agy. Explicit saves use
-version 2 with backend-tagged selections:
 
 ```json
 {
@@ -711,102 +716,76 @@ version 2 with backend-tagged selections:
   "showTurns": 1,
   "overrides": {
     "explain": { "backend": "claude", "model": "sonnet", "effort": "medium" },
-    "advisor": { "backend": "claude", "model": "opus", "effort": "high" }
+    "advisor": { "backend": "grok", "model": "grok-4.7", "effort": "high" }
   }
 }
 ```
 
-Each override is a complete backend/model/effort selection, never a field-by-field
-merge. Omitted overrides inherit the shared default. Matching an override to the
-default does not unpin it; select Default explicitly to restore inheritance.
+Bro reads the file again before each request, so manual edits apply next time.
 
-### Claude Code
+- Each selection is one atomic backend/model/effort choice. An override pins
+  its own complete selection and ignores the shared default, even when it
+  happens to match it; select **Default** in `/bro config` to inherit again.
+  Omitted overrides inherit `default`.
+- `effort` must be one the backend offers (`default` omits it and lets the
+  model decide). Agy selections are normalized against Agy's installed model
+  catalog. Claude and Grok accept seeded or custom model IDs; a model/effort
+  combination the account does not support fails with the backend's own error
+  instead of silently falling back.
+- `mode` is `brief`, `balanced` (the default), or `faithful`. `showTurns` is
+  the default number of turns `/bro show` draws (default 1); `/bro show
+  <n-turns>` overrides it for one run.
+- `PI_BRO_MODEL` picks the initial Agy model only when Bro creates a missing
+  settings file, for example `PI_BRO_MODEL=gemini-3.7-flash-low pi`.
+- Older flat settings files (root `model`/`effort`) still load and mean Agy.
 
-Install and authenticate `claude` independently (tested with Claude Code 2.1.281).
-Bro uses its CLI account and billing route, not Pi provider credentials. Choose
-Claude in `/bro config`; model aliases such as `sonnet` and `opus`, or explicit
-model IDs, are passed to the CLI. Claude efforts are `default` (omit the flag),
-`low`, `medium`, `high`, `xhigh`, and `max`; the chosen model/account must support
-the requested combination. Runtime rejection is surfaced without fallback.
+## Backends: access and retention
 
-Explain/show use a scratch directory, safe mode, disabled tools, empty strict MCP
-configuration, disabled skills and no session persistence. This is a tool/configuration
-restriction, not an OS sandbox; built-in and managed Claude behavior can remain.
-Advisor uses safe mode and a fresh workspace process with permissions bypassed;
-it can modify files, and instructions to only advise remain behavioral. Running
-that mode as root may be rejected by Claude. Claude BTW continuation is not wired yet (tracked in #58): if a Claude
-shared default makes BTW unsupported, select an explicit Agy or Grok override.
+Bro uses each CLI's own account and billing route, never Pi provider
+credentials, and does not copy credentials or rewrite backend configuration.
+Each backend and your model provider may retain sessions, logs, and request
+data under their own settings and policies.
 
-Doctor distinguishes CLI installation and configured authentication from a live
-request; it does not run a Claude model turn.
+| | Explain / show | BTW conversation-only | BTW full permission | Advisor |
+| --- | --- | --- | --- | --- |
+| **Agy** | Temporary directory, Agy sandbox | Temporary directory, Agy sandbox | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed |
+| **Claude Code** | Scratch directory, tools/MCP/skills disabled, no session persistence | Workspace, tools disabled | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed |
+| **Grok** | Temporary directory, **prompt instruction only** | Workspace, **prompt instruction only** | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed |
 
-### Grok Build
-
-Grok supports **explain, show, BTW (both modes), and advisor**, using the
-separately authenticated `grok` CLI (tested with 1.0.41). Seeded choices are
-`grok-4.7` and `grok-4.7-build-fast`; custom IDs are accepted. Efforts are
-`default` (omit the flag), `low`, `medium`, `high`, and `xhigh`; model-specific
-rejection is surfaced without silently changing your selection.
-
-Grok runs with `--sandbox off --permission-mode bypassPermissions`. For
-explain/show and ordinary BTW, Bro asks it to answer from supplied context
-without investigating or modifying the workspace. **That is a prompt instruction,
-not an enforced access restriction.** Tools, hooks, skills, plugins and MCP may
-remain available. Explain/show start in a temporary directory; BTW uses your
-workspace consistently because native resumed sessions retain their original cwd.
-`--full` invites workspace access rather than imposing conversation-only intent.
-Advisor runs fresh with workspace access. Bro does not blacklist tools merely
-because they are more powerful than the immediate task requires.
-
-BTW resumes using Grok's native session ID. Changing backend or access mode
-starts a fresh Bro thread; IDs are never passed between backends. Bro removes
-its private temporary prompt file, but Grok may retain sessions/logs under its
-own settings. Bro does not copy credentials or change Grok configuration.
-Cancellation targets the managed process group, not independently detached shell
-work or external services. Doctor checks version, not authenticated connectivity.
-
-Use `/bro model`, `/bro effort`, and `/bro mode` to update the shared default
-and mode from Pi, `/bro config` to review or change the shared default and any
-per-capability (explain/show/btw/advisor) overrides interactively, or edit the file
-directly. Bro reads the file again before each explanation, so manual changes
-apply to the next `/bro`. Use a model ID shown by `/bro model`; `effort` must be
-one of the levels shown by `/bro effort`. Models without adjustable effort use
-`default`. `mode` must be `brief`, `balanced`, or `faithful`; existing settings
-without it use `balanced`. `showTurns` is the default number of turns `/bro
-show` draws (default 1); `/bro show <n-turns>` overrides it for a single run. Settings
-written before per-capability overrides existed load unchanged, with no overrides. The choices remain
-active across Pi restarts until you change them. `/bro help` shows the active
-settings, any overrides, and the exact file path.
-
-`/bro config`'s changes save immediately as you make them. Pressing Esc inside
-a model or effort picker cancels that pick without changing anything; pressing
-Esc on the settings screen itself just closes it, keeping whatever was already
-saved. If a save fails (for example, a read-only settings file), the screen
-shows the error inline instead of losing the change silently.
-
-If `PI_CODING_AGENT_DIR` is set, the file lives there instead. `PI_BRO_MODEL`
-chooses the initial model only when Bro creates a missing settings file:
-
-```sh
-PI_BRO_MODEL=gemini-3.7-flash-low pi
-```
+- Grok always runs with its sandbox off and permissions bypassed; its tools,
+  hooks, skills, plugins, and MCP may remain available. "Answer only from the
+  supplied context" is a request, not an enforced restriction.
+- Claude's restrictions are tool/configuration settings (with safe mode), not
+  an OS sandbox; built-in and managed Claude behavior can remain. Running a
+  permission-bypassing mode as root may be rejected by Claude.
+- BTW continues natively: Agy by conversation ID, Claude and Grok by
+  `--resume` of the same session, including across `/mode` switches. An Agy
+  conversation stays bound to the workspace it started in, so after a `/mode`
+  switch — or whenever a thread has turns but no native session ID — Bro starts
+  a fresh native session seeded with the main-session context and every
+  earlier turn.
+- Cancellation, deadlines, and invalid output streams stop the backend's
+  process group on POSIX, escalating after a five-second grace period. On
+  Windows only the direct child is targeted. Detached shell work or external
+  services a backend started are not contained. Bro removes its private
+  temporary prompt files.
 
 ### Configuration precedence
 
-When resolving model and reasoning effort:
-1. **Per-capability override**: If configured under `overrides.<capability>` (`explain`, `show`, `btw`, or `advisor`) in `bro-settings.json`, that capability pins its own complete backend/model/effort selection and ignores the shared default.
-2. **Shared default**: If no override is set for that capability, it inherits `default` in version-2 settings (root model/effort in legacy settings).
-3. **Catalog normalization**: For Agy selections, Bro normalizes the resolved `{ model, effort }` against Agy's installed model catalog (mapping suffixed variant IDs and handling fixed-effort models).
-4. **Initial file creation only**: `PI_BRO_MODEL` selects the initial default model only when Bro creates a missing `bro-settings.json` file. It has no effect once the file exists.
+When resolving backend, model, and reasoning effort:
+1. **Per-capability override**: `overrides.<capability>` (`explain`, `show`, `btw`, or `advisor`) pins that capability's complete selection.
+2. **Shared default**: otherwise the capability inherits `default` (root `model`/`effort` in older flat files).
+3. **Agy catalog normalization**: for Agy selections, Bro maps suffixed variant IDs and handles fixed-effort models.
+4. **Initial file creation only**: `PI_BRO_MODEL` has no effect once the settings file exists.
 
 When resolving turn count for `/bro show`:
-1. **Command argument**: An explicit count like `/bro show 3` or `/bro show 1 query` overrides for that single execution.
-2. **Saved setting**: `showTurns` in `bro-settings.json` (defaults to 1; configurable interactively via `/bro config` or direct file edit).
+1. **Command argument**: an explicit count like `/bro show 3` or `/bro show 1 query` overrides for that run.
+2. **Saved setting**: `showTurns` (defaults to 1).
 
-When resolving explanation prompt (`explain` capability only):
-1. **Custom prompt**: `~/.pi/agent/bro-prompt.md` (or `$PI_CODING_AGENT_DIR/bro-prompt.md`), if present and valid (`{{response}}` exactly once), completely overrides all built-in modes.
-2. **Saved mode**: `mode` in `bro-settings.json` (`brief`, `balanced`, or `faithful`; defaults to `balanced`).
-3. Note: `bro-prompt.md` applies only to `/bro`, `/bro text`, `/bro file`, and `/bro url`; it does not affect `/bro show`, `/bro btw`, or `bro_advisor`.
+When resolving the explanation prompt (`explain` capability only):
+1. **Custom prompt**: a valid `~/.pi/agent/bro-prompt.md` (or `$PI_CODING_AGENT_DIR/bro-prompt.md`) completely overrides all built-in modes.
+2. **Saved mode**: `mode` in `bro-settings.json` (defaults to `balanced`).
+3. `bro-prompt.md` applies only to `/bro`, `/bro text`, `/bro file`, and `/bro url`; it does not affect `/bro show`, `/bro btw`, or `bro_advisor`.
 
 ## Custom prompt
 
@@ -839,33 +818,40 @@ built-in mode again. If the custom prompt is invalid—for example, it has no
 `{{response}}` placeholder or has more than one—Bro blocks the explanation;
 run `/bro doctor` for the exact problem.
 
+
 ## Privacy and safety
 
 - **External requests**: Bro sends the latest completed assistant response,
   pasted text, extracted document text, extracted webpage text, or recent
   session conversation text (tool calls, tool results, reasoning, and images
   omitted) to the selected backend and its configured model provider.
-- **Side conversation requests**: `/bro btw` sends your side questions and, on
-  the first turn, the seeded main-session conversation text to Agy. In `--full`
-  mode the side agent additionally reads the workspace.
-- **Setup checks**: `/bro doctor` checks Agy account and model availability
-  without sending an assistant response or running a model turn.
-- **Context isolation**: Bro does not add explanations to Pi's conversation
-  history, session files, or main-agent context.
-- **Side conversation (`/bro btw`)**: Agy uses sandbox controls by default;
-  Grok uses conversation-only prompt instructions with normal workspace authority.
-  `--full` explicitly invites workspace access. Bro's thread state clears when
-  you switch sessions, reload extensions, or quit Pi; backend-native sessions
-  can persist independently. Prompt instructions are not access enforcement.
-- **Memory cache**: The latest explanation is stored only in process memory for
-  `/bro open`. It clears when you switch Pi sessions, reload extensions, or quit
-  Pi.
+- **Side conversation requests**: `/bro btw` sends your side questions and the
+  seeded main-session conversation text (plus earlier turns when a native
+  session is reseeded) to the selected backend. In full permission mode the
+  side agent can additionally read and edit the workspace.
+- **Advisor requests**: `bro_advisor` sends the executor agent's system
+  instructions, active tool list (excluding `bro_advisor`), ordered
+  conversation history including tool calls and tool results (unlike Show,
+  which omits them), your steering brief, and the executor's optional question
+  to the selected backend. Reasoning and image bodies are omitted with explicit
+  markers (`[reasoning omitted]`, `[image omitted]`). The advisor process runs
+  in your workspace with auto-approved permissions; its instruction to only
+  advise is behavioral, not an enforced boundary.
+- **Access enforcement** differs by backend; see
+  [Backends: access and retention](#backends-access-and-retention). Prompt
+  instructions are not access enforcement.
+- **Context isolation**: Bro does not add explanations, BTW answers, or the
+  steering brief to Pi's conversation history or main-agent context. BTW text
+  reaches the main editor only through `/insert` or `/insert-all`, and advisor
+  results appear as normal tool results in the executor's transcript.
+- **Memory**: the latest explanation (for `/bro open`) and the BTW thread live
+  only in process memory and clear when you switch Pi sessions, reload
+  extensions, or quit Pi. Backend-native sessions can persist independently.
+  The advisor steering brief is stored as session-scoped extension data
+  (`bro-advisor-steering`) in the session file.
 - **File safety**: `/bro file` reads only regular files whose resolved path is
-  inside Pi's current workspace, including after resolving symlinks. Bro's extractor does
-  not modify them. The selected backend then receives extracted text: Agy uses
-  sandbox controls, Claude tool/config restrictions, and Grok prompt instructions
-  in a temporary directory. Grok retains normal tool authority; a request not
-  to modify files is behavioral, not a technical guarantee.
+  inside Pi's current workspace, including after resolving symlinks. Bro's
+  extractor does not modify them.
 - **Web requests**: `/bro url` connects directly to the target website. The site
   sees your IP address and Bro's user agent. Bro sends no browser cookies,
   authorization, or referrer information, and it refuses local, private, and
@@ -873,35 +859,14 @@ run `/bro doctor` for the exact problem.
   URLs whose query string contains secrets.
 - **Web extraction**: Bro parses downloaded HTML locally without executing page
   scripts or loading page subresources. It sends the extracted readable text,
-  including links preserved in that text, to the selected backend; it does not separately send
-  the requested URL or raw page HTML. The URL, captured text, and explanation
-  remain in process memory only and clear with the existing `/bro open` cache.
+  including links preserved in that text, to the selected backend; it does not
+  separately send the requested URL or raw page HTML.
 - **Show diagrams**: When a show reply ends in one self-contained HTML block,
   Bro writes it to `/tmp/pi-bro-<uid>/bro-show-<hash>.html` with a restrictive
   Content-Security-Policy, and opens it in your browser only when you press
   **O**. **C** copies the full reply, including the HTML.
-- **Provider data**: The selected CLI backend and your model provider may retain logs and request data
-  according to their own settings and privacy policies.
-- **Clipboard**: Pressing **C** copies the text to your system clipboard, where
-  your operating system or clipboard manager may retain it.
-- **Advisor requests**: `bro_advisor` sends the executor agent's system
-  instructions, active tool list (excluding `bro_advisor`), ordered
-  conversation history including tool calls and tool results (unlike Show, which
-  omits them), human steering brief, and the executor's optional question to
-  the selected backend and its configured model provider. Reasoning and image bodies are
-  omitted with explicit markers (`[reasoning omitted]`, `[image omitted]`).
-- **Advisor tool execution & safety boundary**: The advisor process runs
-  directly in your workspace (`cwd`) with auto-approved permissions
-  (Agy/Claude permission bypass; Grok `--sandbox off --permission-mode bypassPermissions`). It has real tool access (file reading,
-  search, command execution). The directive to only advise and leave edits to
-  the executor is a **behavioral prompt instruction**, not an enforced sandbox
-  or security boundary. Treat its findings as advice to verify before applying.
-- **Advisor steering persistence**: The steering brief is saved as
-  session-scoped custom extension data (`bro-advisor-steering`) in the session
-  file. It persists across session resume and reload, and is inherited on
-  session fork (post-fork edits on branches remain independent). It is never
-  sent to the main model or added to Pi's conversation. The advisor tool has
-  no separate activation state.
+- **Clipboard**: **C**, `/copy`, and `/copy-all` copy text to your system
+  clipboard, where your operating system or clipboard manager may retain it.
 
 ## Troubleshooting and current limits
 
@@ -910,7 +875,8 @@ extracted, copy its content into a supported text file or save it as a PDF and
 use `/bro file`. If a PDF contains only scanned images, run OCR with another
 tool before giving it to Bro.
 
-- Supports Agy for all capabilities and Claude Code for explain/show/advisor. Claude BTW is not yet supported; unsupported selections fail without fallback.
+- An unsupported model, effort, or missing backend fails with that backend's
+  diagnostic; Bro never falls back to another backend.
 - Document input supports `.md`, `.markdown`, `.txt`, `.pdf`, and `.docx` only;
   it does not perform OCR.
 - Webpage input supports one public HTML page, up to 5 MiB downloaded and
@@ -919,23 +885,16 @@ tool before giving it to Bro.
 - Direct webpage fetching does not currently use `HTTP_PROXY`, `HTTPS_PROXY`,
   or other proxy environment variables.
 - `/bro btw` threads are memory-only and do not survive reloads or restarts.
-  The side conversation uses Agy `--conversation` or Grok `--resume`; conversation-only
-  mode caps a turn at 2 minutes and full mode at 10 minutes.
-- `bro_advisor` requires Agy CLI `>=1.1.15` (for `--input-format stream-json`).
-  Consultations run directly in the workspace with auto-approved permissions
-  without enforced file-modification isolation; an attempt is capped at 10
-  minutes (`--print-timeout 10m`) and retries up to 2 times on invocation
-  failure (5-second, then 10-second backoff).
+- The Agy advisor requires Agy CLI `>=1.1.15`.
 - Show captures only the conversation text of what already happened in the
   current session — the last few turns' user and assistant messages, with
-  tool calls, tool results, reasoning, and images always omitted; it cannot
-  read the repository or other files on its own, and its shapes reflect what
-  was reported in the conversation, not independent verification.
+  tool calls, tool results, reasoning, and images always omitted; its shapes
+  reflect what was reported in the conversation, not independent verification.
 - HTML diagrams open in your default browser; pressing **O** on a remote or
   headless session with no display reports the failure instead of opening
   anything.
-- Keeps only the latest explanation in memory.
-- Does not store history or export directly to files.
+- Keeps only the latest explanation in memory and does not store history or
+  export directly to files.
 - Bro temporarily captures mouse input while its modal is open so mouse-wheel
   and trackpad scrolling work in regular and fullscreen modes. Native mouse
   selection may be unavailable or visually extend outside the Bro window;
@@ -949,17 +908,14 @@ npm test
 pi --tui-mode fullscreen -e ./bro.ts
 ```
 
-The smoke test uses a fake `agy`, and Claude adapter tests use a fake `claude`, so automated tests do not call an external model. It
-verifies command routing, document and URL safety boundaries, HTML
-extraction, show capture (conversation text only, tool calls and results
-absent), and HTML-diagram handling, healthy and broken setup handling,
-settings, custom prompt handling, and context isolation.
+`npm test` uses fake `agy`, `claude`, and `grok` executables and never calls an
+external model. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the code
+map and invariants, [docs/TESTING.md](docs/TESTING.md) for the manual
+end-to-end checklist, and [docs/README.md](docs/README.md) for the docs index.
 
 The prompt benchmark is manual and makes live Agy calls. Read
 [`benchmark/README.md`](benchmark/README.md) before running it; it is never part
-of `npm test`. A separate `--track show` benchmark grades the show prompt
-against serialized-transcript fixtures — one per show-me form — and is also
-manual and never part of `npm test`.
+of `npm test`.
 
 ## License
 
