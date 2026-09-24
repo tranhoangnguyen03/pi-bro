@@ -11,7 +11,7 @@
 - **Btw:** open a separate Agy-backed side conversation for questions without derailing the main agent.
 - **Advisor:** a `bro_advisor` tool the *executor* (not the human) can voluntarily call for a second opinion from a fresh, standalone Agy process with real workspace tool access.
 
-The core promise is **context isolation**. Explain/show results never become Pi messages or main-agent context. Btw remains in memory and reaches the main editor only when the user explicitly inserts it via `/insert` or `/insert-all`; `/copy` and `/copy-all` target only the system clipboard. `--full` is the deliberate exception: it gives the side agent workspace access and edit permission. The advisor's steering brief is session-scoped extension state (never sent to the main model); the advisor's own tool access is real and unsandboxed by design (see "Advisor" below), which is the one deliberate departure from "read-only unless explicitly opted into".
+The core promise is **context isolation**. Explain/show results never become Pi messages or main-agent context. Btw remains in memory and reaches the main editor only when the user explicitly inserts it via `/insert` or `/insert-all`; `/copy` and `/copy-all` target only the system clipboard. Btw full permission mode (toggled with `/mode`) is the deliberate exception: it gives the side agent workspace access and edit permission. The advisor's steering brief is session-scoped extension state (never sent to the main model); the advisor's own tool access is real and unsandboxed by design (see "Advisor" below), which is the one deliberate departure from "read-only unless explicitly opted into".
 
 ## Non-negotiable philosophy
 
@@ -64,7 +64,7 @@ prompt.ts
 | Show HTML | `extractShowHtml`, `writeShowHtml`, `openShowHtml` |
 | Explain process | `runAgyText`, `simplify` |
 | Generic explanation modal | `BroModal`, `showBroModal` |
-| Btw flags/state | `parseBtwArguments`, `resolveBtwThread` |
+| Btw flags/state | `parseBtwArguments`, `resolveBtwThread`, `toggleBtwMode`, `nativeBtwContinuation`, `bindBtwBackend` |
 | Btw composer | `parseBtwComposerCommand` |
 | Btw process | `runBtwTurn` |
 | Btw orchestration | `openBtwModal` |
@@ -113,7 +113,7 @@ The prompt is developer-facing and separate from explanation prompts. It priorit
 
 ### Btw
 
-`/bro btw` starts or resumes an in-memory side thread using Agy `--conversation`. First-turn context seeds up to eight recent conversation-only turns, capped at 40,000 characters, unless `--fresh` is used. Default mode runs Agy sandboxed in an empty temporary directory for two minutes. `--full` runs in the workspace with dangerous permission bypass and a ten-minute timeout. In the composer, `/copy` and `/copy-all` copy the latest answer or full thread to the system clipboard; `/insert` and `/insert-all` write to the main editor without submitting (with force variants `/insert!` and `/insert-all!` replacing a nonempty draft); `/retry` (or empty Enter) re-asks; `/clear` resets the thread. Only these exact commands trigger composer actions; there are no `/send` aliases, and any other slash-prefixed or text input is submitted as a question.
+`/bro btw` starts or resumes an in-memory side thread (Agy `--conversation`, Claude/Grok `--resume`). First-turn context seeds up to eight recent conversation-only turns, capped at 40,000 characters, unless `--fresh` is used; the seed is kept on the thread. A thread starts conversation-only; the exact composer command `/mode` toggles full permission and keeps the transcript (`--full`/`--sandbox` were removed and are rejected with a `/mode` hint). Conversation-only Agy runs sandboxed in an empty temporary directory for two minutes; full permission runs in the workspace with dangerous permission bypass and a ten-minute timeout. Claude/Grok run btw in the workspace for both modes and resume one native session across switches; an Agy conversation stays bound to its original workspace, so `nativeBtwContinuation` drops it on an access change and the next turn reseeds a fresh session with the seed plus the whole transcript (`buildBtwPrompt` `history`). The same reseed applies whenever a thread has turns but no native id. In the composer, `/copy` and `/copy-all` copy the latest answer or full thread to the system clipboard; `/insert` and `/insert-all` write to the main editor without submitting (with force variants `/insert!` and `/insert-all!` replacing a nonempty draft); `/retry` (or empty Enter) re-asks; `/clear` resets the thread. Only these exact commands trigger composer actions; there are no `/send` aliases, and any other slash-prefixed or text input is submitted as a question.
 
 ## Safety and state boundaries
 
@@ -164,7 +164,7 @@ These are superseded and must not be treated as current behavior:
 
 1. `lastResult` remembers only source/text, so `/bro open` cannot restore Show HTML metadata or the Show-specific retry prompt/steering.
 2. `parseShowArguments` treats any whitespace-delimited first token that looks like a number as the requested turn count; README reflects this rule and illustrates passing an explicit turn count (e.g. `/bro show 1 404 handler`) when steering on phrases starting with digits.
-3. Btw relies on Agy returning a conversation ID; without one, displayed local history is not necessarily sent on later turns.
+3. Btw relies on the backend returning a native session ID; without one, the next turn reseeds a fresh session with the full displayed history.
 4. Btw cancellation/retry/clear behavior is mostly helper-tested, not fully exercised through an interactive TUI lifecycle.
 5. HTML extraction is more permissive than the prompt contract: runtime takes the last matching HTML fence rather than validating exactly one final fence.
 6. A per-capability override always pins both model and effort together (an atomic pair), even when the user only meant to change one of them from `/bro config`, and even when the pair happens to equal the shared default at the moment it's set. Once set, that capability stops tracking future shared-default changes until its override is explicitly cleared back to "Default". This is a deliberate simplification, not a bug — see "Config" above.

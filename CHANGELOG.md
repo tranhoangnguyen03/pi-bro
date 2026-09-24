@@ -2,6 +2,18 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.18.0] - 2026-09-24
+
+### Added
+
+- `/mode` inside `/bro btw` toggles conversation-only / full permission without losing the conversation (#62). Threads start conversation-only, and reopening (including `--fresh`) keeps the current mode. The header shows a simple `conversation-only` / `full permission` badge next to the model and effort.
+- Claude Code BTW with native multi-turn continuation in both modes (#58): turns run in the workspace with session persistence and `--resume`. Conversation-only turns disable tools, and full permission turns bypass permissions.
+- Across a `/mode` switch, Claude and Grok resume the same native session. Agy conversations stay bound to their original workspace, so Agy starts a fresh native session seeded with the main-session context and every earlier turn. The same reseed also covers any thread that has turns but no native session ID.
+
+### Removed
+
+- The `/bro btw --full` and `--sandbox` flags. Both are now rejected with a hint to use `/mode`, and nothing is sent to the model. `--fresh` is unchanged.
+
 ## [0.17.0] - 2026-09-24
 
 ### Added

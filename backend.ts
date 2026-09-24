@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 
 // Shared internal execution boundary for all four Bro features (explain, show, btw, advisor).
 // This implements docs/plans/2026-09-22-shared-backend-design.md for Agy (all features) and the
-// Claude Code CLI (explain/show/advisor; no btw yet) and the Grok CLI (all features): it owns CLI selection, process invocation, progress/outcome normalization, continuation, and
+// Claude Code CLI (all features) and the Grok CLI (all features): it owns CLI selection, process invocation, progress/outcome normalization, continuation, and
 // single-attempt cleanup. Feature code (bro.ts) keeps retries, UI, source/session capture and
 // settings.
 
@@ -493,16 +493,16 @@ async function executeAdvisorStdin(
 }
 
 
-// Claude Code supports every feature except btw (it has no continuation wiring yet). Grok supports
-// every feature, but its "restricted" access is a prompt instruction, not enforcement (see
-// GROK_RESTRICTED_PREFIX).
-export function backendSupports(backend: "agy" | "claude" | "grok", feature: BackendFeature): boolean {
-	return backend === "agy" || backend === "grok" || feature !== "btw";
+// Every backend supports every feature. Grok's "restricted" access is a prompt instruction, not
+// enforcement (see GROK_RESTRICTED_PREFIX); Claude's restricted btw runs tool-less.
+export function backendSupports(_backend: "agy" | "claude" | "grok", _feature: BackendFeature): boolean {
+	return true;
 }
 
 type ClaudeEvent = {
 	type?: unknown;
 	subtype?: unknown;
+	session_id?: unknown;
 	is_error?: unknown;
 	result?: unknown;
 	parent_tool_use_id?: unknown;
@@ -512,11 +512,14 @@ type ClaudeEvent = {
 	message?: { content?: unknown };
 };
 
-// Every Claude run is fresh (never resumed, nothing persisted) under --safe-mode, which disables
-// CLAUDE.md, skills, plugins, hooks and MCP servers but keeps the user's auth (--bare would break
-// OAuth). The prompt goes over stdin. explain/show additionally run tool-less in a scratch cwd;
-// advisor runs in the caller's workspace with tools auto-approved. Only the terminal `result`
-// event is authoritative; streamed text_delta events are progress only, and thinking is dropped.
+// Every Claude run uses --safe-mode, which disables CLAUDE.md, skills, plugins, hooks and MCP
+// servers but keeps the user's auth (--bare would break OAuth). The prompt goes over stdin.
+// explain/show run fresh and tool-less in a scratch cwd; advisor runs fresh in the caller's
+// workspace with tools auto-approved. btw persists its session (so `--resume` can continue it) and
+// always runs in the caller's workspace, since Claude stores sessions per cwd: restricted turns are
+// tool-less, full turns auto-approve tools, and one session resumes across both. Only the terminal
+// `result` event is authoritative; streamed text_delta events are progress only, and thinking is
+// dropped. btw requires init/result session ids to agree (and to equal the resumed id).
 async function executeClaude(
 	request: BackendRequest,
 	selection: { model: string; effort?: string },
@@ -526,11 +529,13 @@ async function executeClaude(
 	deadlineMsOverride: number | undefined,
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
-	const deadlineMs = deadlineMsOverride ?? (isAdvisor ? 610_000 : 125_000);
-	const action = isAdvisor ? "complete the advisor consultation" : "simplify the response";
+	const isBtw = request.feature === "btw";
+	const full = request.access === "workspace-full";
+	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
+	const action = isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
-	const runDirectory = isAdvisor ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
+	const runDirectory = isAdvisor || isBtw ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
 	if (signal.aborted) {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 		return { status: "cancelled", message: "Canceled." };
@@ -542,21 +547,22 @@ async function executeClaude(
 			[
 				"-p",
 				"--safe-mode",
-				"--no-session-persistence",
+				...(isBtw ? [] : ["--no-session-persistence"]),
 				"--disable-slash-commands",
 				"--output-format",
 				"stream-json",
 				"--verbose",
 				"--include-partial-messages",
-				...(isAdvisor
+				...(full
 					? ["--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--dangerously-skip-permissions"]
 					: ["--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--permission-mode", "dontAsk"]),
+				...(isBtw && request.continuation ? ["--resume", request.continuation.id] : []),
 				"--model",
 				selection.model,
 				...(selection.effort ? ["--effort", selection.effort] : []),
 			],
 			{
-				cwd: isAdvisor ? request.cwd : runDirectory,
+				cwd: runDirectory ?? request.cwd,
 				stdio: ["pipe", "pipe", "pipe"],
 				windowsHide: true,
 				detached: process.platform !== "win32",
@@ -571,6 +577,8 @@ async function executeClaude(
 		let terminalError: string | undefined;
 		let protocolError: string | undefined;
 		let stdoutBuffer = "";
+		let initSessionId: string | undefined;
+		let resultSessionId: string | undefined;
 
 		child.stderr?.setEncoding("utf8");
 		child.stderr?.on("data", (chunk: string) => {
@@ -593,6 +601,7 @@ async function executeClaude(
 				throw new Error("Claude emitted invalid stream-json output.");
 			}
 			const topLevel = event.parent_tool_use_id === undefined || event.parent_tool_use_id === null;
+			if (topLevel && event.type === "system" && event.subtype === "init" && typeof event.session_id === "string") initSessionId = event.session_id;
 			if (!isAdvisor && topLevel && event.type === "stream_event" && event.event?.type === "content_block_delta") {
 				const delta = event.event.delta;
 				if (delta?.type === "text_delta" && typeof delta.text === "string" && delta.text) {
@@ -612,6 +621,7 @@ async function executeClaude(
 				}
 			}
 			if (event.type !== "result" || !topLevel) return;
+			if (typeof event.session_id === "string") resultSessionId = event.session_id;
 			if (event.subtype === "success" && event.is_error === false && (event.stop_reason !== "end_turn" || (event.terminal_reason !== undefined && event.terminal_reason !== "completed"))) {
 				terminalError ??= `Claude did not complete the answer (stop reason: ${String(event.stop_reason)}, terminal reason: ${String(event.terminal_reason)}).`;
 				return;
@@ -667,7 +677,7 @@ async function executeClaude(
 		const cause = attempt.causeOf();
 		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", partialText };
 		if (cause === "timeout") {
-			const during = isAdvisor ? "during the advisor consultation" : "while simplifying the response";
+			const during = isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
 			return { status: "timeout", message: `Claude timed out ${during}. Run \`/bro doctor\` for setup help.`, partialText };
 		}
 		if (protocolError) return { status: "failure", message: withDoctor(protocolError), partialText };
@@ -688,8 +698,18 @@ async function executeClaude(
 			return { status: "failure", message: withDoctor(`Claude exited without a result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`), partialText };
 		}
 		const text = final.trim();
-		if (!text) return { status: "failure", message: withDoctor("Claude returned no final answer."), partialText };
-		return { status: "success", text };
+		if (!text) return { status: "failure", message: withDoctor(isBtw ? "Claude returned no answer for the side question." : "Claude returned no final answer."), partialText };
+		if (!isBtw) return { status: "success", text };
+		// btw continuation: the session id must be reported, consistent, and (on resume) unchanged.
+		const sessionId = resultSessionId ?? initSessionId;
+		if (!sessionId || (initSessionId !== undefined && initSessionId !== sessionId) || (request.continuation && sessionId !== request.continuation.id)) {
+			return {
+				status: "failure",
+				message: withDoctor(`Claude reported an inconsistent session id (expected ${request.continuation?.id ?? "one id"}, init ${initSessionId ?? "none"}, result ${resultSessionId ?? "none"}).`),
+				partialText,
+			};
+		}
+		return { status: "success", text, continuation: { id: sessionId } };
 	} finally {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 	}
@@ -979,8 +999,9 @@ export async function execute(
 		return executeGrok(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
 	}
 	if (selection.backend === "claude") {
-		if (!backendSupports("claude", request.feature)) {
-			return { status: "failure", message: "Claude does not support /bro btw yet; switch btw back to Agy in `/bro config`." };
+		// Claude btw always runs (and resumes) in the caller's workspace, even restricted.
+		if (request.feature === "btw" && !request.cwd?.trim()) {
+			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 		}
 		if (!selection.model.trim() || (selection.effort !== undefined && !CLAUDE_EFFORTS.includes(selection.effort))) {
 			return { status: "failure", message: "Unsupported Claude selection: check the model and effort (low, medium, high, xhigh or max)." };

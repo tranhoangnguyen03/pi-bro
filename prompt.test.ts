@@ -186,6 +186,20 @@ test("btw prompt omits the seed when no context is provided", () => {
 	assert.ok(prompt.includes("hi"));
 });
 
+test("btw prompt states the access mode explicitly and reseeds prior turns as guarded data", () => {
+	const conversationOnly = buildBtwPrompt(undefined, "q", { full: false });
+	assert.match(conversationOnly, /Access mode: conversation-only/);
+	assert.match(conversationOnly, /do not read or edit workspace files or run commands/);
+	const full = buildBtwPrompt("ctx", "q", { full: true, history: "> **You**\n> earlier" });
+	assert.match(full, /Access mode: full permission/);
+	assert.match(full, /may read and edit files in the workspace and run commands/);
+	assert.ok(full.includes(JSON.stringify("ctx")));
+	assert.match(full, /Earlier turns of this side conversation/);
+	assert.ok(full.includes(JSON.stringify("> **You**\n> earlier")));
+	assert.ok(full.indexOf("Earlier turns") < full.indexOf("Question:"));
+	assert.doesNotMatch(buildBtwPrompt(undefined, "q"), /Access mode|Earlier turns/);
+});
+
 test("advisor prompt separates human steering, snapshot, and question into labeled sections", () => {
 	const prompt = buildAdvisorPrompt("Prioritize A and B; everything else minimal.", "## user\nadd a cache", "Is this abstraction justified?");
 

@@ -296,6 +296,30 @@ test("BTW backend changes clear native continuation and transcript, same backend
  assert.equal(bro.bindBtwBackend(thread,"agy"),true); assert.equal(thread.conversationId,undefined); assert.deepEqual(thread.turns,[]);
 });
 
+test("BTW /mode keeps the transcript; only Agy drops its native session on an access change", () => {
+ const turns=[{question:"q",answer:"a"}];
+ for (const backend of ["claude","grok"]) {
+  const thread={turns:[...turns],conversationId:"sess",full:false,backend,sessionFull:false};
+  bro.toggleBtwMode(thread); assert.equal(thread.full,true); assert.deepEqual(thread.turns,turns);
+  assert.equal(bro.nativeBtwContinuation(thread,backend),"sess",backend);
+ }
+ const agy={turns:[...turns],conversationId:"conv",full:false,backend:"agy",sessionFull:false};
+ assert.equal(bro.nativeBtwContinuation(agy,"agy"),"conv");
+ bro.toggleBtwMode(agy); assert.equal(agy.full,true);
+ assert.equal(bro.nativeBtwContinuation(agy,"agy"),undefined); assert.equal(agy.conversationId,undefined); assert.deepEqual(agy.turns,turns);
+ assert.equal(bro.btwModeLabel(false),"conversation-only"); assert.equal(bro.btwModeLabel(true),"full permission");
+});
+
+test("BTW backend change also clears the saved seed context and session mode", () => {
+ const thread={turns:[{question:"q",answer:"a"}],conversationId:"c",full:true,backend:"agy",context:"ctx",sessionFull:true};
+ assert.equal(bro.bindBtwBackend(thread,"claude"),true);
+ assert.deepEqual(thread,{turns:[],conversationId:undefined,full:true,backend:"claude",context:undefined,sessionFull:undefined});
+});
+
+test("Claude BTW is supported by doctor-facing support checks", () => {
+ assert.equal(supportsBackend("claude", "btw"), true);
+});
+
 test("modal model label shows the resolved per-capability model and effort", () => {
 	const settings = parseBroSettings({
 		version: 2,
