@@ -34,7 +34,7 @@ const fail = (msg) => {
 const readVersion = (rev) => JSON.parse(run("git", ["show", `${rev}:package.json`])).version;
 
 // Files whose change means the published tarball changed.
-const SHIPPED_FILES = ["bro.ts", "prompt.ts", "package.json", "package-lock.json"];
+const SHIPPED_FILES = ["bro.ts", "backend.ts", "prompt.ts", "package.json", "package-lock.json"];
 
 const publishedVersion = () => {
 	try {

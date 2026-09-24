@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
@@ -7,7 +7,6 @@ import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { createInterface } from "node:readline";
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Container, Editor, Input, Markdown, SettingsList, SelectList, Text, matchesKey, truncateToWidth, visibleWidth, type Component, type EditorTheme, type Focusable, type SelectItem, type SettingItem, type TUI } from "@earendil-works/pi-tui";
@@ -18,6 +17,17 @@ import mammoth from "mammoth";
 import { Type } from "typebox";
 import { extractText } from "unpdf";
 import { BRO_MODES, DEFAULT_BRO_MODE, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, parseBroMode, type BroMode } from "./prompt.ts";
+import {
+	agyFailureMessage,
+	agySelection,
+	advisorFlagErrorHint,
+	execute as executeBackend,
+	parseBtwAgyLine,
+	type AgySelection,
+	type BackendProgress,
+} from "./backend.ts";
+
+export { agyFailureMessage, agySelection, advisorFlagErrorHint, parseBtwAgyLine };
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const ENV_MODEL = process.env.PI_BRO_MODEL?.trim();
@@ -73,14 +83,6 @@ type AgyModelFamily = {
 	efforts: AgyEffort[];
 	variants: Array<{ id: string; effort?: AgyEffort }>;
 };
-type AgyEvent = {
-	event?: string;
-	conversation_id?: string;
-	init?: { model?: string; cwd?: string; permission_mode?: string; tools?: unknown };
-	step_update?: { step_type?: string; text_delta?: unknown };
-	result?: { status?: string; response?: unknown; error?: unknown; conversation_id?: string };
-};
-
 export function wheelDelta(data: string): number {
 	const match = /^\x1b\[<(\d+);\d+;\d+[Mm]$/.exec(data);
 	if (!match) return 0;
@@ -484,16 +486,6 @@ export async function extractWebPage(input: string, signal?: AbortSignal): Promi
 	}
 }
 
-export function agyFailureMessage(
-	action: string,
-	result: { code: number; killed: boolean; stderr: string },
-): string {
-	if (result.killed) return `Agy timed out while trying to ${action}. Run \`/bro doctor\` for setup help.`;
-	const detail = result.stderr.trim();
-	if (detail) return `Agy could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`;
-	return `Agy could not ${action}. Make sure Agy is installed and signed in, then run \`/bro doctor\`.`;
-}
-
 function parseModelEffortPair(value: unknown, context: string): ModelEffortPair {
 	if (!isRecord(value) || typeof value.model !== "string" || !value.model.trim() || !EFFORTS.some((effort) => effort === value.effort)) {
 		throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", or "high".`);
@@ -750,15 +742,6 @@ function resolveCatalogSettings(
 
 function preferredEffort(family: AgyModelFamily): BroEffort {
 	return family.efforts.includes("low") ? "low" : (family.efforts[0] ?? "default");
-}
-
-export function agySelection(pair: ModelEffortPair): { model: string; effort?: AgyEffort } {
-	if (pair.effort === "default") return { model: pair.model };
-	const suffix = (["low", "medium", "high"] as const).find((effort) => pair.model.endsWith(`-${effort}`));
-	return {
-		model: suffix ? pair.model.slice(0, -suffix.length - 1) : pair.model,
-		effort: pair.effort,
-	};
 }
 
 async function checkAgyUsage(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
@@ -1075,32 +1058,6 @@ async function promptFor(response: string, mode: BroMode): Promise<{ text: strin
 	return { text: parts.join(JSON.stringify(response)), custom: true };
 }
 
-function parseAgyLine(line: string): { delta?: string; result?: string } {
-	let event: AgyEvent;
-	try {
-		event = JSON.parse(line) as AgyEvent;
-	} catch {
-		throw new Error("Agy returned invalid streaming data.");
-	}
-
-	if (
-		event.event === "step_update" &&
-		event.step_update?.step_type === "agent_response" &&
-		typeof event.step_update.text_delta === "string"
-	) {
-		return { delta: event.step_update.text_delta };
-	}
-
-	if (event.event === "result") {
-		if (event.result?.status !== "SUCCESS" || typeof event.result.response !== "string") {
-			throw new Error("Agy did not complete the explanation successfully.");
-		}
-		return { result: event.result.response };
-	}
-
-	return {};
-}
-
 async function simplify(
 	response: string,
 	signal: AbortSignal,
@@ -1117,114 +1074,40 @@ async function runShowExplanation(
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
 ): Promise<string> {
-	return runAgyText(buildShowPrompt(transcript, steering), agySelection(capabilityPair(settings, "show")), signal, onProgress);
+	return runAgyText(buildShowPrompt(transcript, steering), agySelection(capabilityPair(settings, "show")), signal, onProgress, "show");
 }
 
+// Thin presentation-boundary wrapper around the shared backend: coalesces raw text progress to the
+// existing 75ms cadence (unchanged from before the backend extraction) and translates the backend's
+// tagged outcome back into this function's existing throw-on-failure contract.
 async function runAgyText(
 	prompt: string,
-	selection: ReturnType<typeof agySelection>,
+	selection: AgySelection,
 	signal: AbortSignal,
 	onProgress?: (text: string) => void,
+	feature: "explain" | "show" = "explain",
 ): Promise<string> {
-	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 	let updateTimer: ReturnType<typeof setTimeout> | undefined;
-
-	try {
-		const child = spawn(
-			"agy",
-			[
-				"--sandbox",
-				"--disable-slash-commands",
-				"--output-format",
-				"stream-json",
-				"--model",
-				selection.model,
-				...(selection.effort ? ["--effort", selection.effort] : []),
-				"--print-timeout",
-				"2m",
-				"--print",
-				prompt,
-			],
-			{
-				cwd: runDirectory,
-				signal,
-				timeout: 125_000,
-				stdio: ["ignore", "pipe", "pipe"],
-				windowsHide: true,
-			},
-		);
-
-		let processError: Error | undefined;
-		let stderr = "";
-		let partial = "";
-		let final = "";
-		let parseError: Error | undefined;
-
-		child.stderr.setEncoding("utf8");
-		child.stderr.on("data", (chunk: string) => {
-			stderr += chunk;
-		});
-		child.once("error", (error) => {
-			processError = error;
-		});
-
-		const closed = new Promise<{ code: number | null; exitSignal: NodeJS.Signals | null }>((resolve) => {
-			child.once("close", (code, exitSignal) => resolve({ code, exitSignal }));
-		});
-
-		const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-		try {
-			for await (const line of lines) {
-				if (!line.trim()) continue;
-				try {
-					const event = parseAgyLine(line);
-					if (event.delta) {
-						partial += event.delta;
-						if (onProgress && !updateTimer) {
-							updateTimer = setTimeout(() => {
-								updateTimer = undefined;
-								if (!signal.aborted) onProgress(partial);
-							}, 75);
-						}
-					}
-					if (event.result !== undefined) final = event.result;
-				} catch (error) {
-					parseError = error instanceof Error ? error : new Error(String(error));
-					child.kill();
-					break;
+	let latest: string | undefined;
+	const throttledProgress = onProgress
+		? (progress: BackendProgress) => {
+				if (progress.kind !== "text") return;
+				latest = progress.text;
+				if (!updateTimer) {
+					updateTimer = setTimeout(() => {
+						updateTimer = undefined;
+						if (!signal.aborted && latest !== undefined) onProgress(latest);
+					}, 75);
 				}
 			}
-		} finally {
-			lines.close();
-		}
+		: undefined;
 
-		const { code, exitSignal } = await closed;
-		if (signal.aborted) throw new Error("Canceled.");
-		if (parseError) throw new Error(withDoctor(parseError));
-		if (processError) {
-			const missing = (processError as NodeJS.ErrnoException).code === "ENOENT";
-			throw new Error(
-				missing
-					? "Agy could not start. Make sure Agy is installed and on PATH, then run `/bro doctor`."
-					: `Agy could not start: ${processError.message}\n\nRun \`/bro doctor\` for setup help.`,
-			);
-		}
-		if (exitSignal || code === null) {
-			throw new Error("Agy timed out while simplifying the response. Run `/bro doctor` for setup help.");
-		}
-		if (code !== 0) {
-			throw new Error(agyFailureMessage("simplify the response", { code, killed: false, stderr }));
-		}
-
-		const text = final.trim();
-		if (!text) {
-			throw new Error(withDoctor(stderr.trim() || "Agy returned no final explanation."));
-		}
-
-		return text;
+	try {
+		const outcome = await executeBackend({ feature, prompt, access: "restricted" }, selection, signal, throttledProgress);
+		if (outcome.status === "success") return outcome.text;
+		throw new Error(outcome.message);
 	} finally {
 		if (updateTimer) clearTimeout(updateTimer);
-		await rm(runDirectory, { recursive: true, force: true });
 	}
 }
 
@@ -1354,43 +1237,6 @@ export function buildAdvisorSnapshot(ctx: ExtensionContext, pi: ExtensionAPI): {
 	return { text, hadCompaction };
 }
 
-// Advisor stdin/stream-json transport, confirmed against pi-flow-external's tested agy backend
-// (src/core/agy.ts, test/agy-backend.test.ts): --input-format stream-json reads one NDJSON
-// "user" message from stdin instead of a --print argv value (unbounded snapshot size would
-// otherwise risk ARG_MAX), and --dangerously-skip-permissions gives the advisor real, unprompted
-// tool access. See docs/plans/2026-09-19-bro-advisor-design.md, "Transport".
-type AdvisorAgyEvent = {
-	event?: string;
-	step_update?: { tool_name?: unknown; step_type?: unknown; text_delta?: unknown };
-	result?: { status?: unknown; response?: unknown; error?: unknown };
-};
-
-// Guards only against a single runaway line with no newline (a protocol break, not a real
-// response size) — agy's real NDJSON lines are far smaller than this.
-const ADVISOR_MAX_STDOUT_LINE_CHARS = 2_000_000;
-
-function parseAdvisorLine(line: string): AdvisorAgyEvent {
-	try {
-		return JSON.parse(line) as AdvisorAgyEvent;
-	} catch {
-		throw new Error("Agy emitted invalid stream-json output.");
-	}
-}
-
-// Only a tool_name or a user-facing agent_response/assistant text_delta becomes an activity label
-// -- hidden reasoning/thinking step_types and any other shape stay unreported, never leaked into
-// progress.
-function advisorActivityFromEvent(event: AdvisorAgyEvent): string | undefined {
-	if (event.event !== "step_update" || !event.step_update || typeof event.step_update !== "object") return undefined;
-	const update = event.step_update;
-	if (typeof update.tool_name === "string" && update.tool_name.trim()) return update.tool_name.trim();
-	const isUserFacingText = update.step_type === "agent_response" || update.step_type === "assistant";
-	if (isUserFacingText && typeof update.text_delta === "string" && update.text_delta.trim()) {
-		return update.text_delta.split("\n").find((line) => line.trim())?.trim();
-	}
-	return undefined;
-}
-
 const MAX_ADVISOR_ACTIVITY_LINES = 4;
 const ADVISOR_ACTIVITY_PREVIEW_CHARS = 100;
 
@@ -1398,168 +1244,34 @@ function advisorActivityPreview(label: string): string {
 	return label.length > ADVISOR_ACTIVITY_PREVIEW_CHARS ? `${label.slice(0, ADVISOR_ACTIVITY_PREVIEW_CHARS).trimEnd()}…` : label;
 }
 
-// Older agy CLIs reject --input-format with Go's flag-package usage dump and exit before running
-// the agent at all (no terminal result event). Turn that into an actionable version hint instead
-// of a bare "no terminal result" error.
-export function advisorFlagErrorHint(stderr: string): string | undefined {
-	const match = /flags? provided but not defined: -([a-z0-9-]+)/i.exec(stderr);
-	if (!match) return undefined;
-	return `flag provided but not defined: -${match[1]} (installed Agy CLI is too old; the advisor needs Agy 1.1.15+ for --input-format stream-json — run \`agy update\`, then \`/bro doctor\`)`;
-}
-
 export type AdvisorActivityCallback = (label: string, timestamp: number) => void;
 
+// Thin wrapper around the shared backend: advisor's stdin/stream-json transport, activity parsing,
+// and process lifecycle now live in backend.ts (see docs/plans/2026-09-19-bro-advisor-design.md,
+// "Transport" for why stdin rather than --print). This function keeps its exact existing
+// signature/throw contract -- it is called directly by tests and by runAdvisorWithRetries below,
+// which owns the 3-attempt retry/backoff policy the backend itself never performs.
 export async function runAdvisorConsultation(
 	prompt: string,
-	selection: ReturnType<typeof agySelection>,
+	selection: AgySelection,
 	cwd: string,
 	signal: AbortSignal,
 	killEscalationMs = 5_000,
 	onActivity?: AdvisorActivityCallback,
 ): Promise<string> {
-	const child = spawn(
-		"agy",
-		[
-			"--dangerously-skip-permissions",
-			"--disable-slash-commands",
-			"--output-format", "stream-json",
-			"--input-format", "stream-json",
-			"--model", selection.model,
-			...(selection.effort ? ["--effort", selection.effort] : []),
-			"--print-timeout", "10m",
-		],
-		// detached: true (POSIX only) makes the child its own process-group leader, so a signal to
-		// -child.pid below reaches it AND every grandchild it spawned -- not just the immediate
-		// process. Without this, killing only the immediate child can leave a grandchild holding the
-		// inherited stdio pipes open, and the "close" event this function waits on never fires until
-		// that orphan exits on its own.
-		{ cwd, timeout: 610_000, stdio: ["pipe", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" },
-	);
-
-	let processError: Error | undefined;
-	let stderr = "";
-	let final: string | undefined;
-	let terminalError: string | undefined;
-	let protocolError: string | undefined;
-	let sawTerminal = false;
-	let stdoutBuffer = "";
-
-	// Signal the whole process group when possible so a misbehaving grandchild dies too, not just
-	// the immediate agy process; child.kill() alone only ever reaches the immediate child.
-	const killAdvisorChild = (signalName: NodeJS.Signals) => {
-		if (process.platform !== "win32" && typeof child.pid === "number") {
-			try {
-				process.kill(-child.pid, signalName);
-				return;
-			} catch {
-				// Group may already be gone (e.g. the child already exited) -- fall through.
-			}
-		}
-		child.kill(signalName);
-	};
-
-	// Relying on spawn({signal}) alone only ever sends one SIGTERM and gives up if the child (or a
-	// misbehaving grandchild it spawned) ignores it, hanging this promise forever. Escalate to
-	// SIGKILL -- which cannot be ignored -- if the child hasn't exited shortly after.
-	let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
-	const onAbort = () => {
-		killAdvisorChild("SIGTERM");
-		killEscalationTimer = setTimeout(() => {
-			killAdvisorChild("SIGKILL");
-		}, killEscalationMs);
-	};
-	signal.addEventListener("abort", onAbort, { once: true });
-	if (signal.aborted) onAbort();
-
-	child.stderr.setEncoding("utf8");
-	child.stderr.on("data", (chunk: string) => {
-		stderr += chunk;
-	});
-	child.once("error", (error) => {
-		processError = error;
-	});
-	child.stdin.on("error", () => {
-		// agy exiting before it reads stdin is reported through the close/error path below.
-	});
-	child.stdin.end(`${JSON.stringify({ event: "user", message: { content: prompt } })}\n`);
-
-	const handleLine = (line: string) => {
-		if (!line.trim() || sawTerminal) return;
-		const event = parseAdvisorLine(line);
-		const activity = advisorActivityFromEvent(event);
-		if (activity) onActivity?.(activity, Date.now());
-		if (event.event !== "result") return;
-		sawTerminal = true;
-		const result = event.result;
-		const status = typeof result?.status === "string" ? result.status.trim().toUpperCase() : undefined;
-		if (status === "SUCCESS" && typeof result?.response === "string") {
-			final = result.response;
-		} else {
-			const detail = typeof result?.error === "string" && result.error.trim() ? `: ${result.error.trim()}` : "";
-			terminalError = `Agy failed with status ${status ?? "(missing)"}${detail}`;
-		}
-	};
-
-	child.stdout.setEncoding("utf8");
-	child.stdout.on("data", (chunk: string) => {
-		stdoutBuffer += chunk;
-		const parts = stdoutBuffer.split(/\r?\n/);
-		stdoutBuffer = parts.pop() ?? "";
-		if (stdoutBuffer.length > ADVISOR_MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > ADVISOR_MAX_STDOUT_LINE_CHARS)) {
-			protocolError ??= `Agy emitted a stdout line over ${ADVISOR_MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
-			stdoutBuffer = "";
-			killAdvisorChild("SIGTERM");
-			return;
-		}
-		for (const line of parts) {
-			try {
-				handleLine(line);
-			} catch (error) {
-				protocolError ??= errorMessage(error);
-				killAdvisorChild("SIGTERM");
-				return;
-			}
-		}
-	});
-
-	const { code, exitSignal } = await new Promise<{ code: number | null; exitSignal: NodeJS.Signals | null }>((resolve) => {
-		child.once("close", (code, exitSignal) => {
-			if (stdoutBuffer.trim() && !sawTerminal) {
-				try {
-					handleLine(stdoutBuffer);
-				} catch (error) {
-					protocolError ??= errorMessage(error);
+	const outcome = await executeBackend(
+		{ feature: "advisor", prompt, access: "workspace-full", cwd },
+		selection,
+		signal,
+		onActivity
+			? (progress) => {
+					if (progress.kind === "activity") onActivity(progress.label, progress.timestamp);
 				}
-			}
-			resolve({ code, exitSignal });
-		});
-	});
-	signal.removeEventListener("abort", onAbort);
-	if (killEscalationTimer) clearTimeout(killEscalationTimer);
-
-	if (signal.aborted) throw new Error("Canceled.");
-	if (protocolError) throw new Error(withDoctor(protocolError));
-	if (processError) {
-		const missing = (processError as NodeJS.ErrnoException).code === "ENOENT";
-		throw new Error(
-			missing
-				? "Agy could not start. Make sure Agy is installed and on PATH, then run `/bro doctor`."
-				: `Agy could not start: ${processError.message}\n\nRun \`/bro doctor\` for setup help.`,
-		);
-	}
-	if (exitSignal || code === null) {
-		throw new Error("Agy timed out during the advisor consultation. Run `/bro doctor` for setup help.");
-	}
-	if (!sawTerminal) {
-		const hint = advisorFlagErrorHint(stderr);
-		throw new Error(withDoctor(hint ?? (stderr.trim() ? `Agy exited without a terminal result event: ${stderr.trim()}` : "Agy exited without a terminal result event.")));
-	}
-	if (terminalError) throw new Error(withDoctor(terminalError));
-	if (code !== 0) throw new Error(agyFailureMessage("complete the advisor consultation", { code, killed: false, stderr }));
-
-	const text = final?.trim();
-	if (!text) throw new Error(withDoctor(stderr.trim() || "Agy returned no advice."));
-	return text;
+			: undefined,
+		{ killEscalationMs },
+	);
+	if (outcome.status === "success") return outcome.text;
+	throw new Error(outcome.message);
 }
 
 function advisorDelay(ms: number, signal: AbortSignal, onTick?: (remainingMs: number) => void): Promise<void> {
@@ -1590,7 +1302,7 @@ function advisorDelay(ms: number, signal: AbortSignal, onTick?: (remainingMs: nu
 
 export type AdvisorConsult = (
 	prompt: string,
-	selection: ReturnType<typeof agySelection>,
+	selection: AgySelection,
 	cwd: string,
 	signal: AbortSignal,
 	killEscalationMs?: number,
@@ -1636,7 +1348,7 @@ const ADVISOR_ACTIVITY_THROTTLE_MS = 250;
 // --conversation, even across retries.
 export async function runAdvisorWithRetries(
 	prompt: string,
-	selection: ReturnType<typeof agySelection>,
+	selection: AgySelection,
 	cwd: string,
 	signal: AbortSignal,
 	consult: AdvisorConsult = runAdvisorConsultation,
@@ -2571,27 +2283,6 @@ export function formatBtwTranscript(turns: readonly BtwTurn[]): string {
 		.join("\n\n---\n\n");
 }
 
-export function parseBtwAgyLine(line: string): { delta?: string; result?: string; conversationId?: string; error?: string } {
-	let event: AgyEvent;
-	try {
-		event = JSON.parse(line) as AgyEvent;
-	} catch {
-		throw new Error("Agy returned invalid streaming data.");
-	}
-	const conversationId = event.conversation_id ?? event.result?.conversation_id;
-	if (event.event === "step_update" && event.step_update?.step_type === "agent_response" && typeof event.step_update.text_delta === "string") {
-		return { delta: event.step_update.text_delta, conversationId };
-	}
-	if (event.event === "result") {
-		if (event.result?.status !== "SUCCESS" || typeof event.result.response !== "string") {
-			const detail = typeof event.result?.error === "string" ? event.result.error : "Agy did not complete the turn successfully.";
-			return { error: detail, conversationId };
-		}
-		return { result: event.result.response, conversationId };
-	}
-	return { conversationId };
-}
-
 export type BtwComposerAction =
 	| { kind: "clear" }
 	| { kind: "retry" }
@@ -2617,112 +2308,50 @@ export function parseBtwComposerCommand(value: string): BtwComposerAction {
 	return { kind: "question", text: command };
 }
 
+// Thin presentation-boundary wrapper around the shared backend: coalesces raw text progress to the
+// existing 75ms cadence and translates the backend's tagged outcome back into this function's
+// existing throw-on-failure / { text, conversationId } contract. A conversationId is only ever
+// returned on success (see backend.ts's continuation handling), preserving current behavior on
+// failed turns.
 async function runBtwTurn(
 	prompt: string,
-	selection: ReturnType<typeof agySelection>,
+	selection: AgySelection,
 	options: { full: boolean; cwd: string; conversationId?: string },
 	signal: AbortSignal,
 	onProgress?: (text: string) => void,
 ): Promise<{ text: string; conversationId?: string }> {
-	const runDirectory = options.full ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
 	let updateTimer: ReturnType<typeof setTimeout> | undefined;
-	try {
-		const args = [
-			"--output-format", "stream-json",
-			"--disable-slash-commands",
-			"--model", selection.model,
-			...(selection.effort ? ["--effort", selection.effort] : []),
-			"--print-timeout", options.full ? "10m" : "2m",
-			...(options.conversationId ? ["--conversation", options.conversationId] : []),
-			...(options.full ? ["--dangerously-skip-permissions"] : ["--sandbox"]),
-			"--print", prompt,
-		];
-		const child = spawn("agy", args, {
-			cwd: options.full ? options.cwd : runDirectory,
-			signal,
-			timeout: options.full ? 610_000 : 130_000,
-			stdio: ["ignore", "pipe", "pipe"],
-			windowsHide: true,
-		});
-
-		let processError: Error | undefined;
-		let stderr = "";
-		let partial = "";
-		let final = "";
-		let conversationId = options.conversationId;
-		let parseError: Error | undefined;
-
-		child.stderr.setEncoding("utf8");
-		child.stderr.on("data", (chunk: string) => {
-			stderr += chunk;
-		});
-		child.once("error", (error) => {
-			processError = error;
-		});
-
-		const closed = new Promise<{ code: number | null; exitSignal: NodeJS.Signals | null }>((resolve) => {
-			child.once("close", (code, exitSignal) => resolve({ code, exitSignal }));
-		});
-
-		const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-		try {
-			for await (const line of lines) {
-				if (!line.trim()) continue;
-				try {
-					const event = parseBtwAgyLine(line);
-					if (event.conversationId) conversationId = event.conversationId;
-					if (event.error) {
-						parseError = new Error(event.error);
-						child.kill();
-						break;
-					}
-					if (event.delta) {
-						partial += event.delta;
-						if (onProgress && !updateTimer) {
-							updateTimer = setTimeout(() => {
-								updateTimer = undefined;
-								if (!signal.aborted) onProgress(partial);
-							}, 75);
-						}
-					}
-					if (event.result !== undefined) final = event.result;
-				} catch (error) {
-					parseError = error instanceof Error ? error : new Error(String(error));
-					child.kill();
-					break;
+	let latest: string | undefined;
+	const throttledProgress = onProgress
+		? (progress: BackendProgress) => {
+				if (progress.kind !== "text") return;
+				latest = progress.text;
+				if (!updateTimer) {
+					updateTimer = setTimeout(() => {
+						updateTimer = undefined;
+						if (!signal.aborted && latest !== undefined) onProgress(latest);
+					}, 75);
 				}
 			}
-		} finally {
-			lines.close();
-		}
+		: undefined;
 
-		const { code, exitSignal } = await closed;
-		if (signal.aborted) throw new Error("Canceled.");
-		if (parseError) throw new Error(withDoctor(parseError));
-		if (processError) {
-			const missing = (processError as NodeJS.ErrnoException).code === "ENOENT";
-			throw new Error(
-				missing
-					? "Agy could not start. Make sure Agy is installed and on PATH, then run `/bro doctor`."
-					: `Agy could not start: ${processError.message}\n\nRun \`/bro doctor\` for setup help.`,
-			);
-		}
-		if (exitSignal || code === null) {
-			throw new Error("Agy timed out during the side conversation. Run `/bro doctor` for setup help.");
-		}
-		if (code !== 0) {
-			throw new Error(agyFailureMessage("answer the side question", { code, killed: false, stderr }));
-		}
-
-		const text = final.trim();
-		if (!text) {
-			throw new Error(withDoctor(stderr.trim() || "Agy returned no answer for the side question."));
-		}
-
-		return { text, conversationId };
+	try {
+		const outcome = await executeBackend(
+			{
+				feature: "btw",
+				prompt,
+				access: options.full ? "workspace-full" : "restricted",
+				cwd: options.full ? options.cwd : undefined,
+				continuation: options.conversationId ? { id: options.conversationId } : undefined,
+			},
+			selection,
+			signal,
+			throttledProgress,
+		);
+		if (outcome.status === "success") return { text: outcome.text, conversationId: outcome.continuation?.id };
+		throw new Error(outcome.message);
 	} finally {
 		if (updateTimer) clearTimeout(updateTimer);
-		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 	}
 }
 
