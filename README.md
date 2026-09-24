@@ -735,6 +735,31 @@ shared default makes BTW unsupported, select an explicit Agy override.
 Doctor distinguishes CLI installation and configured authentication from a live
 request; it does not run a Claude model turn. `/bro usage` remains Agy-specific.
 
+### Grok Build
+
+Grok is supported for **advisor only**, using the separately authenticated `grok`
+CLI (tested with 1.0.41). In `/bro config`, select Grok for the advisor override
+and keep Agy or Claude for other capabilities. Seeded model choices are
+`grok-4.7` and `grok-4.7-build-fast`; custom IDs are also accepted. Efforts are
+`default` (omit the flag), `low`, `medium`, `high`, and `xhigh`; the CLI validates
+model-specific support without silently changing the requested effort.
+
+Grok advisor runs fresh in your workspace with `--sandbox off`, permissions
+bypassed, with subagent/scheduler/monitor/workflow tools explicitly disabled. It can read and modify files. Existing Grok
+configuration, hooks, skills, plugins and MCP servers may load; this is **not**
+an isolated or read-only process. The private temporary prompt file is removed
+after execution, but Grok may persist sessions and other data under its own
+settings. Bro does not copy credentials or change your Grok configuration.
+Cancellation terminates the managed process group, not independently detached
+shell work or external services. This is not a process-containment guarantee.
+
+Explain/show and BTW are explicitly unsupported on Grok: disabling built-in
+tools or using a scratch cwd does not establish isolation from inherited
+configuration. A Grok default therefore requires supported overrides for those
+capabilities. No automatic fallback or sandbox downgrade occurs. Doctor checks
+Grok's version, not authentication or model connectivity. `/bro usage` remains
+Agy-specific.
+
 Use `/bro model`, `/bro effort`, and `/bro mode` to update the shared default
 and mode from Pi, `/bro config` to review or change the shared default and any
 per-capability (explain/show/btw/advisor) overrides interactively, or edit the file
@@ -864,7 +889,7 @@ run `/bro doctor` for the exact problem.
   omitted with explicit markers (`[reasoning omitted]`, `[image omitted]`).
 - **Advisor tool execution & safety boundary**: The advisor process runs
   directly in your workspace (`cwd`) with auto-approved permissions
-  (`--dangerously-skip-permissions`). It has real tool access (file reading,
+  (Agy/Claude permission bypass; Grok `--sandbox off --permission-mode bypassPermissions`). It has real tool access (file reading,
   search, command execution). The directive to only advise and leave edits to
   the executor is a **behavioral prompt instruction**, not an enforced sandbox
   or security boundary. Treat its findings as advice to verify before applying.

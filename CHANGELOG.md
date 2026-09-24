@@ -2,6 +2,13 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.17.0] - 2026-09-24
+
+### Added
+
+- Grok Build advisor execution through the shared backend, with atomic per-capability model/effort configuration, custom model IDs, and installation diagnostics. Agy remains the default.
+- Grok advisor uses a private temporary prompt file, fresh workspace execution, explicit full access, authoritative streaming completion checks and bounded cancellation. Grok explain/show/BTW fail explicitly rather than falling back or claiming unverified isolation.
+
 ## [0.16.0] - 2026-09-24
 
 ### Added

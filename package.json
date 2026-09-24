@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "An Earendil Pi extension that explains pasted text, assistant responses, local documents, public webpages, and recent session turns (as shapes) in a context-isolated window, opens a sandboxed side conversation with /bro btw, and provides a second-opinion advisor tool for executor agents.",
   "type": "module",
   "license": "MIT",
@@ -50,7 +50,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && node --test prompt.test.ts backend.test.ts claude.test.ts settings.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
+    "test": "npm run typecheck && node --test prompt.test.ts backend.test.ts claude.test.ts grok.test.ts settings.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
     "benchmark:dry-run": "node benchmark/run.ts dry-run",
     "benchmark:run": "node benchmark/run.ts run",
     "benchmark:report": "node benchmark/run.ts report",
