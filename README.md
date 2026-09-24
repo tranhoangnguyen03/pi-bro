@@ -1,7 +1,7 @@
 # pi-bro
 
 Turn a dense AI reply, pasted text, local document, or public webpage into a
-plain-language explanation — or open a sandboxed side conversation with
+plain-language explanation — or open a separate side conversation with
 `/bro btw` — without adding anything to your main agent's context.
 
 `pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
@@ -70,7 +70,6 @@ text directly captures a new source the same way.
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
 | `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
 | `/bro doctor` | Check Bro's settings, Agy installation, account, model, effort, and mode. |
-| `/bro usage [--provider agy]` | Show current Agy resource limits. |
 | `/bro model [id]` | View or choose the selected backend’s shared default model. |
 | `/bro effort [low\|medium\|high]` | View or choose the shared default reasoning effort. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
@@ -110,6 +109,10 @@ a persistent mode with `/bro mode`:
 - **O**: Open the HTML diagram when a show reply contains one
 - **Esc**: Close the modal, or cancel while Bro is working
 
+The modal header shows the model and reasoning effort the explanation or
+drawing used (`default` when the model's own effort applies); `/bro open`
+keeps the original label.
+
 Bro temporarily captures mouse input while its modal is open. Native mouse
 selection may be unavailable or visually extend outside the modal depending on
 your terminal mode; press **C** to copy the complete explanation reliably.
@@ -117,17 +120,19 @@ your terminal mode; press **C** to copy the complete explanation reliably.
 ## Bro btw (side conversation)
 
 `/bro btw` opens a separate multi-turn conversation in a modal, so you can ask
-a quick side question while the main agent keeps working. It runs through Agy,
-the same backend as the rest of Bro, and never adds anything to Pi's
+a quick side question while the main agent keeps working. It runs through the
+selected Agy or Grok backend and never adds anything to Pi's
 conversation unless you explicitly insert it into the editor.
 
-- **Sandboxed by default**: the side conversation is read-only (no project
-  access). Add `--full` to let it read and edit the workspace.
+- **Conversation-only intent by default**: Agy uses its sandbox controls; Grok
+  receives prompt instructions to stay within supplied context, with normal tools
+  still available. Grok is not sandboxed. Add `--full` to explicitly invite
+  workspace investigation and edits.
 - `/bro btw <question>` asks immediately; `/bro btw` opens an empty thread.
 - `--fresh` starts a thread without seeding the main session's recent
   conversation text. Reopening without an access flag preserves the existing
-  thread's access mode, including `--full`. Use `--sandbox` to return to sandbox
-  mode; changing access mode starts a new thread. `--fresh` alone does not reset
+  thread's access mode, including `--full`. Use `--sandbox` to return to conversation-only
+  intent; changing access mode starts a new thread. `--fresh` alone does not reset
   the access mode.
 - The first turn is seeded with up to the last 8 turns of user/assistant
   conversation text (40,000 characters max, with a truncation notice); the
@@ -140,7 +145,7 @@ conversation unless you explicitly insert it into the editor.
   - `/insert-all`: inserts the full thread into the main editor without submitting (use `/insert-all!` to replace an existing editor draft)
   - `/retry`: re-asks the last question (empty Enter does the same)
   - `/clear`: resets the thread
-  Any other text or slash-prefixed input (such as `/send` or `/copy!`) is not a composer command and is submitted directly as a question to the side conversation. Esc closes the modal. A visible `full · edits repo` badge shows whenever `--full` mode is active.
+  Any other text or slash-prefixed input (such as `/send` or `/copy!`) is not a composer command and is submitted directly as a question to the side conversation. Esc closes the modal. The header shows the model and reasoning effort the latest turn used (`default` when the model's own effort applies), and a visible `full · edits repo` badge shows whenever `--full` mode is active.
 - The thread lives in memory only — it clears when you switch Pi sessions,
   reload extensions, or quit Pi.
 
@@ -225,7 +230,7 @@ changes the form: it draws what you and the assistant said in the last few
 session turns as a shape instead of paragraphs. Capture keeps only user and
 assistant conversation text, including every intermediate assistant message in
 a turn — tool calls, tool results, reasoning, and images never leave the
-session. It runs the same isolated, sandboxed model call and shows the result
+session. It runs the same backend-specific model call and shows the result
 in the same modal, never touching your conversation. `/bro show` uses its own
 draw prompt; the explanation modes and `bro-prompt.md` do not affect it.
 
@@ -729,11 +734,36 @@ configuration, disabled skills and no session persistence. This is a tool/config
 restriction, not an OS sandbox; built-in and managed Claude behavior can remain.
 Advisor uses safe mode and a fresh workspace process with permissions bypassed;
 it can modify files, and instructions to only advise remain behavioral. Running
-that mode as root may be rejected by Claude. BTW remains Agy-only: if a Claude
-shared default makes BTW unsupported, select an explicit Agy override.
+that mode as root may be rejected by Claude. Claude BTW continuation is not wired yet (tracked in #58): if a Claude
+shared default makes BTW unsupported, select an explicit Agy or Grok override.
 
 Doctor distinguishes CLI installation and configured authentication from a live
-request; it does not run a Claude model turn. `/bro usage` remains Agy-specific.
+request; it does not run a Claude model turn.
+
+### Grok Build
+
+Grok supports **explain, show, BTW (both modes), and advisor**, using the
+separately authenticated `grok` CLI (tested with 1.0.41). Seeded choices are
+`grok-4.7` and `grok-4.7-build-fast`; custom IDs are accepted. Efforts are
+`default` (omit the flag), `low`, `medium`, `high`, and `xhigh`; model-specific
+rejection is surfaced without silently changing your selection.
+
+Grok runs with `--sandbox off --permission-mode bypassPermissions`. For
+explain/show and ordinary BTW, Bro asks it to answer from supplied context
+without investigating or modifying the workspace. **That is a prompt instruction,
+not an enforced access restriction.** Tools, hooks, skills, plugins and MCP may
+remain available. Explain/show start in a temporary directory; BTW uses your
+workspace consistently because native resumed sessions retain their original cwd.
+`--full` invites workspace access rather than imposing conversation-only intent.
+Advisor runs fresh with workspace access. Bro does not blacklist tools merely
+because they are more powerful than the immediate task requires.
+
+BTW resumes using Grok's native session ID. Changing backend or access mode
+starts a fresh Bro thread; IDs are never passed between backends. Bro removes
+its private temporary prompt file, but Grok may retain sessions/logs under its
+own settings. Bro does not copy credentials or change Grok configuration.
+Cancellation targets the managed process group, not independently detached shell
+work or external services. Doctor checks version, not authenticated connectivity.
 
 Use `/bro model`, `/bro effort`, and `/bro mode` to update the shared default
 and mode from Pi, `/bro config` to review or change the shared default and any
@@ -818,26 +848,24 @@ run `/bro doctor` for the exact problem.
 - **Side conversation requests**: `/bro btw` sends your side questions and, on
   the first turn, the seeded main-session conversation text to Agy. In `--full`
   mode the side agent additionally reads the workspace.
-- **Usage checks**: `/bro usage` checks your authenticated Agy limits without
-  sending an assistant response or running a model turn.
 - **Setup checks**: `/bro doctor` checks Agy account and model availability
   without sending an assistant response or running a model turn.
 - **Context isolation**: Bro does not add explanations to Pi's conversation
   history, session files, or main-agent context.
-- **Side conversation (`/bro btw`)**: sandboxed by default — the side agent has
-  no project access and runs in a temporary folder. With `--full` it runs in
-  your workspace with auto-approved tools, so it can read and edit files while
-  the main agent is also working; use `--full` only when you want that. The
-  side thread is memory-only and clears when you switch sessions, reload
-  extensions, or quit Pi.
+- **Side conversation (`/bro btw`)**: Agy uses sandbox controls by default;
+  Grok uses conversation-only prompt instructions with normal workspace authority.
+  `--full` explicitly invites workspace access. Bro's thread state clears when
+  you switch sessions, reload extensions, or quit Pi; backend-native sessions
+  can persist independently. Prompt instructions are not access enforcement.
 - **Memory cache**: The latest explanation is stored only in process memory for
   `/bro open`. It clears when you switch Pi sessions, reload extensions, or quit
   Pi.
 - **File safety**: `/bro file` reads only regular files whose resolved path is
-  inside Pi's current workspace, including after resolving symlinks. Bro does
-  not modify them. It runs Agy in sandbox mode inside a temporary empty folder.
-  This reduces project access, but it is not a security boundary. Bro only
-  writes its own user settings file described above.
+  inside Pi's current workspace, including after resolving symlinks. Bro's extractor does
+  not modify them. The selected backend then receives extracted text: Agy uses
+  sandbox controls, Claude tool/config restrictions, and Grok prompt instructions
+  in a temporary directory. Grok retains normal tool authority; a request not
+  to modify files is behavioral, not a technical guarantee.
 - **Web requests**: `/bro url` connects directly to the target website. The site
   sees your IP address and Bro's user agent. Bro sends no browser cookies,
   authorization, or referrer information, and it refuses local, private, and
@@ -864,7 +892,7 @@ run `/bro doctor` for the exact problem.
   omitted with explicit markers (`[reasoning omitted]`, `[image omitted]`).
 - **Advisor tool execution & safety boundary**: The advisor process runs
   directly in your workspace (`cwd`) with auto-approved permissions
-  (`--dangerously-skip-permissions`). It has real tool access (file reading,
+  (Agy/Claude permission bypass; Grok `--sandbox off --permission-mode bypassPermissions`). It has real tool access (file reading,
   search, command execution). The directive to only advise and leave edits to
   the executor is a **behavioral prompt instruction**, not an enforced sandbox
   or security boundary. Treat its findings as advice to verify before applying.
@@ -891,7 +919,7 @@ tool before giving it to Bro.
 - Direct webpage fetching does not currently use `HTTP_PROXY`, `HTTPS_PROXY`,
   or other proxy environment variables.
 - `/bro btw` threads are memory-only and do not survive reloads or restarts.
-  The side conversation needs Agy's `--conversation` resume support; sandbox
+  The side conversation uses Agy `--conversation` or Grok `--resume`; conversation-only
   mode caps a turn at 2 minutes and full mode at 10 minutes.
 - `bro_advisor` requires Agy CLI `>=1.1.15` (for `--input-format stream-json`).
   Consultations run directly in the workspace with auto-approved permissions

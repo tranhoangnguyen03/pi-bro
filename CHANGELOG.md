@@ -2,6 +2,23 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.17.0] - 2026-09-24
+
+### Added
+
+- Grok Build execution for explain, show, native multi-turn BTW (both modes), and advisor, with per-capability model/effort configuration, custom model IDs, and installation diagnostics. Agy remains the default.
+- Capability-first Grok access: conversation-only intent uses prompt instructions when enforcement is unavailable, with truthful UI/docs rather than feature bans or speculative tool blacklists. Native tools remain available.
+- Private temporary prompt files, backend-bound continuation, authoritative terminal completion checks and bounded cancellation. Backend/access changes start a fresh BTW thread instead of reusing incompatible native session IDs.
+- Explain, show, and BTW modal headers show the model and reasoning effort each request used (`default` when the model's own effort applies); `/bro open` keeps the original label.
+
+### Changed
+
+- The BTW header no longer shows a sandbox/conversation-only access label; the `full · edits repo` badge still marks `--full` threads.
+
+### Removed
+
+- `/bro usage` is removed for now. Doctor still checks Agy account access.
+
 ## [0.16.0] - 2026-09-24
 
 ### Added

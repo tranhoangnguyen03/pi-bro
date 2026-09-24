@@ -22,6 +22,7 @@ import {
 	agySelection,
 	advisorFlagErrorHint,
 	CLAUDE_EFFORTS,
+	GROK_EFFORTS,
 	backendSupports,
 	execute as executeBackend,
 	parseBtwAgyLine,
@@ -59,16 +60,18 @@ type TuiLike = {
 };
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
 type BroSource = { text: string; label?: string };
-type BroResult = { source: BroSource; text: string };
-type ModalResult = { source?: BroSource; text: string; htmlPath?: string };
+type BroResult = { source: BroSource; text: string; model?: string };
+type ModalResult = { source?: BroSource; text: string; htmlPath?: string; model?: string };
 type BtwTurn = { question: string; answer: string };
-type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean };
+type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean; backend?: BackendName; model?: string };
 const EFFORTS = ["default", "low", "medium", "high"] as const;
-const BACKENDS = ["agy", "claude"] as const;
+const BACKENDS = ["agy", "claude", "grok"] as const;
 type BackendName = (typeof BACKENDS)[number];
 type BroEffort = "default" | "low" | "medium" | "high" | "xhigh" | "max";
 type AgyEffort = Exclude<BroEffort, "default" | "xhigh" | "max">;
 type ClaudeEffort = (typeof CLAUDE_EFFORTS)[number];
+export { GROK_EFFORTS };
+type GrokEffort = (typeof GROK_EFFORTS)[number];
 // "advisor" is a real capability (command, Agy invocation, Doctor check) like the other three;
 // see docs/plans/2026-09-19-bro-advisor-design.md. All four share one model/effort resolution,
 // override, and Doctor-check path via this single list -- there is no configuration-only tier.
@@ -90,6 +93,11 @@ export const CLAUDE_MODELS = [
 	{ id: "sonnet", label: "Claude Sonnet" },
 	{ id: "opus", label: "Claude Opus" },
 ] as const;
+export const GROK_MODELS = [
+	{ id: "grok-4.7", label: "Grok 4.7" },
+	{ id: "grok-4.7-build-fast", label: "Grok 4.7 Build Fast" },
+] as const;
+export { backendSupports as supportsBackend };
 type AgyModelFamily = {
 	id: string;
 	label: string;
@@ -114,12 +122,11 @@ const COMMANDS = [
 	{ value: "url", label: "url", description: "Explain a public webpage" },
 	{ value: "open", label: "open", description: "Reopen the last explanation" },
 	{ value: "doctor", label: "doctor", description: "Check whether Bro is ready" },
-	{ value: "usage", label: "usage", description: "Show current Agy usage" },
-	{ value: "model", label: "model", description: "View or choose the shared default Agy model" },
+	{ value: "model", label: "model", description: "View or choose the shared default model" },
 	{ value: "effort", label: "effort", description: "View or choose the shared default reasoning effort" },
 	{ value: "show", label: "show", description: "Draw what happened in recent session turns as shapes" },
 	{ value: "mode", label: "mode", description: "View or choose explanation mode (brief, balanced, faithful)" },
-	{ value: "btw", label: "btw", description: "Open a side conversation (sandboxed by default; --full edits files)" },
+	{ value: "btw", label: "btw", description: "Open a side conversation (context-only intent; --full invites workspace access)" },
 	{ value: "config", label: "config", description: "Configure shared defaults and per-capability model/effort overrides" },
 	{ value: "advisor", label: "advisor", description: "Check whether the executor's advisor tool is available right now" },
 	{ value: "advisor-steer", label: "advisor-steer", description: "View, edit, save, or clear the advisor's persistent steering brief" },
@@ -501,7 +508,7 @@ export async function extractWebPage(input: string, signal?: AbortSignal): Promi
 
 function parseBackend(value: unknown, context: string): BackendName {
 	if (typeof value !== "string" || !BACKENDS.some((backend) => backend === value)) {
-		throw new Error(`${context} backend must be "agy" or "claude".`);
+		throw new Error(`${context} backend must be "agy", "claude", or "grok".`);
 	}
 	return value as BackendName;
 }
@@ -514,6 +521,10 @@ function isClaudeEffort(effort: unknown): effort is ClaudeEffort | "default" {
 	return effort === "default" || CLAUDE_EFFORTS.some((item) => item === effort);
 }
 
+function isGrokEffort(effort: unknown): effort is GrokEffort | "default" {
+	return effort === "default" || GROK_EFFORTS.some((item) => item === effort);
+}
+
 function parseModelEffortPair(value: unknown, context: string): ModelEffortPair {
 	if (!isRecord(value) || typeof value.model !== "string" || !value.model.trim()) {
 		throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", or "high".`);
@@ -522,6 +533,12 @@ function parseModelEffortPair(value: unknown, context: string): ModelEffortPair 
 	if (backend === "claude") {
 		if (!isClaudeEffort(value.effort)) {
 			throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", "high", "xhigh", or "max".`);
+		}
+		return { backend, model: value.model.trim(), effort: value.effort };
+	}
+	if (backend === "grok") {
+		if (!isGrokEffort(value.effort)) {
+			throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", "high", or "xhigh".`);
 		}
 		return { backend, model: value.model.trim(), effort: value.effort };
 	}
@@ -573,12 +590,14 @@ export function parseBroSettings(value: unknown): BroSettings {
 		throw new Error('Settings must contain a model and effort set to "default", "low", "medium", or "high".');
 	}
 	const backend = value.backend === undefined ? undefined : parseBackend(value.backend, "Settings");
-	const effortOk = backend === "claude" ? isClaudeEffort(value.effort) : isAgyEffort(value.effort);
+	const effortOk = backend === "claude" ? isClaudeEffort(value.effort) : backend === "grok" ? isGrokEffort(value.effort) : isAgyEffort(value.effort);
 	if (!effortOk) {
 		throw new Error(
 			backend === "claude"
 				? 'Settings must contain a model and effort set to "default", "low", "medium", "high", "xhigh", or "max".'
-				: 'Settings must contain a model and effort set to "default", "low", "medium", or "high".',
+				: backend === "grok"
+					? 'Settings must contain a model and effort set to "default", "low", "medium", "high", or "xhigh".'
+					: 'Settings must contain a model and effort set to "default", "low", "medium", or "high".',
 		);
 	}
 	const mode = value.mode === undefined ? DEFAULT_BRO_MODE : parseBroMode(value.mode);
@@ -630,8 +649,8 @@ export function resolveModelEffort(
 	pair: ModelEffortPair,
 	families: AgyModelFamily[],
 ): { pair: ModelEffortPair; family?: AgyModelFamily } {
-	// Claude selections never resolve through the Agy catalog; they pass through untouched.
-	if (pair.backend === "claude") return { pair };
+	// Claude/Grok selections never resolve through the Agy catalog; they pass through untouched.
+	if (pair.backend === "claude" || pair.backend === "grok") return { pair };
 	const family = families.find((item) => item.id === pair.model || item.variants.some((variant) => variant.id === pair.model));
 	if (!family) return { pair };
 	const variant = family.variants.find((item) => item.id === pair.model);
@@ -661,24 +680,42 @@ export function resolveClaudeModel(input: string): string {
 	return alias ? alias.id : trimmed;
 }
 
+// Grok seeds resolve to themselves; any other non-empty string passes through
+// untouched as an explicit user-entered model ID (installed `grok models` confirms).
+export function resolveGrokModel(input: string): string {
+	const trimmed = input.trim();
+	if (!trimmed) throw new Error("Grok model must be a non-empty model ID (grok-4.7, grok-4.7-build-fast, or an explicit model ID).");
+	return trimmed;
+}
+
 // Routes one capability's whole pair to its backend execution selection. Agy keeps the
-// existing model/effort split; Claude carries the model plus an optional effort
+// existing model/effort split; Claude/Grok carry the model plus an optional effort
 // ("default" means the CLI's own default and is omitted). Throws for an effort the
 // resolved backend does not support instead of silently sending a mismatched pair.
 export function selectionForCapability(settings: BroSettings, capability: Capability): BackendSelection {
 	const pair = capabilityPair(settings, capability);
-	if (capabilityBackend(settings, capability) === "claude") {
-		if (!isClaudeEffort(pair.effort)) {
-			throw new Error(`\`${pair.effort}\` is not supported on the Claude backend. Run \`/bro config\` to fix this.`);
+	const backend = capabilityBackend(settings, capability);
+	if (backend === "claude" || backend === "grok") {
+		const valid = backend === "claude" ? isClaudeEffort(pair.effort) : isGrokEffort(pair.effort);
+		if (!valid) {
+			throw new Error(`\`${pair.effort}\` is not supported on the ${backend === "claude" ? "Claude" : "Grok"} backend. Run \`/bro config\` to fix this.`);
 		}
-		return pair.effort === "default"
-			? { backend: "claude", model: pair.model }
-			: { backend: "claude", model: pair.model, effort: pair.effort };
+		return (
+			pair.effort === "default"
+				? { backend, model: pair.model }
+				: { backend, model: pair.model, effort: pair.effort }
+		) as BackendSelection;
 	}
 	if (!isAgyEffort(pair.effort)) {
 		throw new Error(`\`${pair.effort}\` is not supported on the Agy backend. Run \`/bro config\` to fix this.`);
 	}
 	return agySelection({ model: pair.model, effort: pair.effort });
+}
+
+// The modal label for the exact selection a request runs with: model plus effort, where an
+// omitted effort (the model's own default) reads simply "default".
+export function selectionLabel(selection: BackendSelection): string {
+	return `${selection.model} · ${selection.effort ?? "default"}`;
 }
 
 function resolveCapabilitySettings(
@@ -912,6 +949,27 @@ async function checkClaudeAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<s
 	}
 }
 
+async function checkGrokVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+	try {
+		const result = await pi.exec("grok", ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
+		if (signal.aborted) throw new Error("Canceled.");
+		if (result.killed || result.code !== 0) {
+			const detail = result.stderr.trim() || result.stdout.trim();
+			throw new Error(
+				detail
+					? `Grok could not start: ${detail}\n\nRun \`/bro doctor\` for setup help.`
+					: "Grok could not start. Make sure Grok is installed and on PATH, then run `/bro doctor`.",
+			);
+		}
+		const version = result.stdout.trim() || result.stderr.trim();
+		if (!version) throw new Error("Grok returned no version information. Update Grok, then run `/bro doctor` again.");
+		return version;
+	} finally {
+		await rm(runDirectory, { recursive: true, force: true });
+	}
+}
+
 async function checkAgyUsage(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
 	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 	try {
@@ -958,10 +1016,11 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 		fail("Prompt", error);
 	}
 
-	// Probe only the backends some feature actually selects: a Claude-only setup never
+	// Probe only the backends some feature actually selects: a Claude/Grok-only setup never
 	// requires Agy to be installed, and vice versa.
 	const agyInUse = !settings || capabilityBackend(settings, "explain") === "agy" || capabilityBackend(settings, "show") === "agy" || capabilityBackend(settings, "btw") === "agy" || capabilityBackend(settings, "advisor") === "agy" || (settings.backend ?? "agy") === "agy";
 	const claudeInUse = !!settings && (capabilityBackend(settings, "explain") === "claude" || capabilityBackend(settings, "show") === "claude" || capabilityBackend(settings, "btw") === "claude" || capabilityBackend(settings, "advisor") === "claude" || settings.backend === "claude");
+	const grokInUse = !!settings && (capabilityBackend(settings, "explain") === "grok" || capabilityBackend(settings, "show") === "grok" || capabilityBackend(settings, "btw") === "grok" || capabilityBackend(settings, "advisor") === "grok" || settings.backend === "grok");
 
 	let agyStarted = false;
 	if (agyInUse) {
@@ -1014,11 +1073,34 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 		pass("Claude", "not probed — no feature selects the Claude backend");
 	}
 
+	// Version only, never a model request. No Grok auth probe exists, so a passing
+	// version says the CLI starts — it says nothing about auth or connectivity.
+	if (grokInUse) {
+		try {
+			pass("Grok", await checkGrokVersion(pi, signal));
+		} catch (error) {
+			if (signal.aborted) throw error;
+			fail("Grok", error);
+		}
+		pass("Grok auth", "unverified — no auth probe exists (version does not imply auth or connectivity)");
+	} else {
+		pass("Grok", "not probed — no feature selects the Grok backend");
+	}
+
 	if (settings) {
 		const defaultBackend = settings.backend ?? "agy";
 		if (defaultBackend === "claude") {
 			pass("Selected model", `claude \`${settings.model}\``);
 			if (!isClaudeEffort(settings.effort)) {
+				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro effort\` to choose another.`);
+			} else if (settings.effort === "default") {
+				pass("Reasoning effort", "built into the selected model");
+			} else {
+				pass("Reasoning effort", settings.effort);
+			}
+		} else if (defaultBackend === "grok") {
+			pass("Selected model", `grok \`${settings.model}\``);
+			if (!isGrokEffort(settings.effort)) {
 				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro effort\` to choose another.`);
 			} else if (settings.effort === "default") {
 				pass("Reasoning effort", "built into the selected model");
@@ -1064,6 +1146,23 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 				);
 				continue;
 			}
+			if (backend === "grok") {
+				if (!backendSupports("grok", capability)) {
+					fail(label, `\`${capability}\` is not supported on the Grok backend for this capability. Run \`/bro config\` to give it another backend.`);
+					continue;
+				}
+				if (!isGrokEffort(pair.effort)) {
+					fail(label, `\`${pair.effort}\` is unsupported for grok \`${pair.model}\`. Run \`/bro config\` to fix this.`);
+					continue;
+				}
+				pass(
+					label,
+					override
+						? `override grok \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
+						: `grok \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
+				);
+				continue;
+			}
 			if (!models) continue;
 			const resolved = resolveCapabilitySettings(settings, capability, models);
 			if (!resolved.family) {
@@ -1096,13 +1195,15 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 	pass("Advisor steering", resolveAdvisorState(ctx.sessionManager.getBranch()).steering.trim() ? "present" : "none");
 	if (settings && capabilityBackend(settings, "advisor") === "claude") {
 		pass("Advisor compatibility", "Claude backend — no Agy version floor applies");
+	} else if (settings && capabilityBackend(settings, "advisor") === "grok") {
+		pass("Advisor compatibility", "Grok backend — no Agy version floor applies; auth/connectivity unverified (no probe)");
 	} else if (agyVersion && advisorAgyCompatible(agyVersion)) pass("Advisor compatibility", ADVISOR_COMPATIBILITY);
 	else if (agyVersion) fail("Advisor compatibility", `installed \`${agyVersion}\`; requires Agy >=1.1.15. Run \`agy update\`.`);
 
 	return `# Bro doctor\n\n${lines.join("\n")}\n\n**${failed ? "Bro needs attention." : "Bro is ready."}**\n\n${
 		failed
 			? "Fix the failed items, then press **R** to check again."
-			: "No assistant response was sent and no model turn was run. Claude version/auth status does not imply connectivity."
+			: "No assistant response was sent and no model turn was run. Version/auth checks do not imply connectivity (Grok auth is unverified — no probe exists)."
 	}`;
 }
 
@@ -1295,8 +1396,9 @@ async function simplify(
 	signal: AbortSignal,
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
-): Promise<string> {
-	return runAgyText((await promptFor(response, settings.mode)).text, selectionForCapability(settings, "explain"), signal, onProgress);
+): Promise<{ text: string; model: string }> {
+	const selection = selectionForCapability(settings, "explain");
+	return { text: await runAgyText((await promptFor(response, settings.mode)).text, selection, signal, onProgress), model: selectionLabel(selection) };
 }
 
 async function runShowExplanation(
@@ -1305,8 +1407,9 @@ async function runShowExplanation(
 	signal: AbortSignal,
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
-): Promise<string> {
-	return runAgyText(buildShowPrompt(transcript, steering), selectionForCapability(settings, "show"), signal, onProgress, "show");
+): Promise<{ text: string; model: string }> {
+	const selection = selectionForCapability(settings, "show");
+	return { text: await runAgyText(buildShowPrompt(transcript, steering), selection, signal, onProgress, "show"), model: selectionLabel(selection) };
 }
 
 // Thin presentation-boundary wrapper around the shared backend: coalesces raw text progress to the
@@ -1688,7 +1791,7 @@ export function advisorAttemptLabel(details: AdvisorToolDetails): string {
 		return `Bro advisor · ${details.model ?? "unknown model"} · ${details.attempt} attempt${details.attempt === 1 ? "" : "s"} · ${Math.ceil((details.durationMs ?? details.elapsedMs) / 1_000)}s`;
 	}
 	const latest = details.activity?.at(-1);
-	const backendLabel = details.backend === "claude" ? "Claude" : "Agy";
+	const backendLabel = details.backend === "claude" ? "Claude" : details.backend === "grok" ? "Grok" : "Agy";
 	// "last reported" + freshness, never a claim about what the backend is doing right now and never
 	// "stalled" -- silence since lastActivityAt is not itself evidence of a stuck run.
 	const activityLabel = latest
@@ -1708,9 +1811,10 @@ function showTurnsValues(current: number): string[] {
 // falsely healthy for an unavailable model), and flags a stored effort that isn't one of the
 // resolved family's supported efforts instead of silently showing it as if it were valid.
 function effortDisplay(resolved: { pair: ModelEffortPair; family?: AgyModelFamily }, backend: BackendName): string {
-	// Claude selections never touch the Agy catalog: the stored effort is valid exactly
-	// when it is one of the Claude levels (or "default" for the CLI's own default).
+	// Claude/Grok selections never touch the Agy catalog: the stored effort is valid exactly
+	// when it is one of that backend's levels (or "default" for the CLI's own default).
 	if (backend === "claude") return isClaudeEffort(resolved.pair.effort) ? resolved.pair.effort : `${resolved.pair.effort} (unsupported)`;
+	if (backend === "grok") return isGrokEffort(resolved.pair.effort) ? resolved.pair.effort : `${resolved.pair.effort} (unsupported)`;
 	if (!resolved.family) return "unavailable";
 	const fixed = !resolved.family.efforts.length;
 	const valid = fixed ? resolved.pair.effort === "default" : resolved.family.efforts.includes(resolved.pair.effort as AgyEffort);
@@ -1718,7 +1822,7 @@ function effortDisplay(resolved: { pair: ModelEffortPair; family?: AgyModelFamil
 	return fixed ? "fixed" : resolved.pair.effort;
 }
 
-// Model-picker values that switch to the Claude backend carry a "claude:" prefix so one
+// Model-picker values that switch backend carry a "claude:"/"grok:" prefix so one
 // atomic picker commit changes backend+model together -- cancelling the picker (Esc)
 // leaves both unchanged via the existing submenu-cancel path.
 const CLAUDE_OPTION_PREFIX = "claude:";
@@ -1726,6 +1830,19 @@ function parseClaudeOption(value: string): string | undefined {
 	return value.startsWith(CLAUDE_OPTION_PREFIX) && value.length > CLAUDE_OPTION_PREFIX.length
 		? value.slice(CLAUDE_OPTION_PREFIX.length)
 		: undefined;
+}
+const GROK_OPTION_PREFIX = "grok:";
+function parseGrokOption(value: string): string | undefined {
+	return value.startsWith(GROK_OPTION_PREFIX) && value.length > GROK_OPTION_PREFIX.length
+		? value.slice(GROK_OPTION_PREFIX.length)
+		: undefined;
+}
+function parseBackendOption(value: string): { backend: "claude" | "grok"; id: string } | undefined {
+	const claudeId = parseClaudeOption(value);
+	if (claudeId !== undefined) return { backend: "claude", id: claudeId };
+	const grokId = parseGrokOption(value);
+	if (grokId !== undefined) return { backend: "grok", id: grokId };
+	return undefined;
 }
 
 // Testable core: takes settings/catalog/persist as plain arguments so smoke tests can drive
@@ -1764,30 +1881,38 @@ export function createConfigModal(
 					value: family.id,
 					label: `${family.label}${family.efforts.length ? "" : " · fixed effort"}`,
 				})),
-				// Claude entries stay last so existing Agy keyboard navigation is unaffected.
+				// Claude/Grok entries stay last so existing Agy keyboard navigation is unaffected.
 				...CLAUDE_MODELS.map((model) => ({
 					value: `${CLAUDE_OPTION_PREFIX}${model.id}`,
 					label: `${model.label} · claude`,
 				})),
+				...GROK_MODELS.map((model) => ({
+					value: `${GROK_OPTION_PREFIX}${model.id}`,
+					label: `${model.label} · grok`,
+				})),
 			];
 			options.push({ value: "__claude_custom__", label: "Claude · custom model ID…" });
+			options.push({ value: "__grok_custom__", label: "Grok · custom model ID…" });
 			const input = new Input();
-			let enteringModel = false;
-			input.onSubmit = (value) => { if (value.trim()) pickerDone(`${CLAUDE_OPTION_PREFIX}${value.trim()}`); };
+			let enteringBackend: "claude" | "grok" | undefined;
+			input.onSubmit = (value) => {
+				if (value.trim() && enteringBackend) pickerDone(`${enteringBackend === "claude" ? CLAUDE_OPTION_PREFIX : GROK_OPTION_PREFIX}${value.trim()}`);
+			};
 			const picker = new SelectList(options, Math.min(options.length, 8), getSelectListTheme());
 			const selectedIndex = capability && current === "Default" ? 0 : options.findIndex((option) => option.value === current);
 			picker.setSelectedIndex(Math.max(0, selectedIndex));
 			picker.onSelect = (item) => {
-				if (item.value === "__claude_custom__") { enteringModel = true; tui.requestRender(); }
+				if (item.value === "__claude_custom__") { enteringBackend = "claude"; tui.requestRender(); }
+				else if (item.value === "__grok_custom__") { enteringBackend = "grok"; tui.requestRender(); }
 				else pickerDone(item.value);
 			};
 			picker.onCancel = () => pickerDone();
 			return {
-				render: (width: number) => enteringModel ? ["Claude model ID (Enter saves, Esc cancels)", ...input.render(width)] : picker.render(width),
+				render: (width: number) => enteringBackend ? [`${enteringBackend === "claude" ? "Claude" : "Grok"} model ID (Enter saves, Esc cancels)`, ...input.render(width)] : picker.render(width),
 				invalidate: () => { picker.invalidate(); input.invalidate(); },
 				handleInput: (data: string) => {
-					if (enteringModel && matchesKey(data, "escape")) pickerDone();
-					else if (enteringModel) input.handleInput(data);
+					if (enteringBackend && matchesKey(data, "escape")) pickerDone();
+					else if (enteringBackend) input.handleInput(data);
 					else picker.handleInput(data);
 				},
 			};
@@ -1823,10 +1948,10 @@ export function createConfigModal(
 
 		function refresh(): void {
 			const defaultBackend = settings.backend ?? "agy";
-			const def = resolveModelEffort({ model: settings.model, effort: settings.effort }, families);
-			modelItem.currentValue = defaultBackend === "claude" ? `${CLAUDE_OPTION_PREFIX}${settings.model}` : (def.family?.id ?? settings.model);
+			const def = resolveModelEffort({ backend: settings.backend, model: settings.model, effort: settings.effort }, families);
+			modelItem.currentValue = defaultBackend === "claude" ? `${CLAUDE_OPTION_PREFIX}${settings.model}` : defaultBackend === "grok" ? `${GROK_OPTION_PREFIX}${settings.model}` : (def.family?.id ?? settings.model);
 			effortItem.currentValue = effortDisplay(def, defaultBackend);
-			effortItem.values = defaultBackend === "claude" ? ["default", ...CLAUDE_EFFORTS] : def.family?.efforts.length ? [...def.family.efforts] : undefined;
+			effortItem.values = defaultBackend === "claude" ? ["default", ...CLAUDE_EFFORTS] : defaultBackend === "grok" ? ["default", ...GROK_EFFORTS] : def.family?.efforts.length ? [...def.family.efforts] : undefined;
 			modeItem.currentValue = settings.mode;
 			showTurnsItem.currentValue = String(settings.showTurns);
 			showTurnsItem.values = showTurnsValues(settings.showTurns);
@@ -1840,9 +1965,11 @@ export function createConfigModal(
 					? "Default"
 					: backend === "claude"
 						? `${CLAUDE_OPTION_PREFIX}${override.model}`
-						: (resolved.family?.id ?? override.model);
+						: backend === "grok"
+							? `${GROK_OPTION_PREFIX}${override.model}`
+							: (resolved.family?.id ?? override.model);
 				rows.effort.currentValue = backendSupports(backend, capability) ? effortDisplay(resolved, backend) : "unsupported backend";
-				rows.effort.values = backend === "claude" ? ["default", ...CLAUDE_EFFORTS] : resolved.family?.efforts.length ? [...resolved.family.efforts] : undefined;
+				rows.effort.values = backend === "claude" ? ["default", ...CLAUDE_EFFORTS] : backend === "grok" ? ["default", ...GROK_EFFORTS] : resolved.family?.efforts.length ? [...resolved.family.efforts] : undefined;
 			}
 		}
 		refresh();
@@ -1897,14 +2024,19 @@ export function createConfigModal(
 
 		const onChange = (id: string, newValue: string) => {
 			if (id === "model") {
-				const claudeId = parseClaudeOption(newValue);
-				if (claudeId !== undefined) {
-					const effort = settings.backend === "claude" && isClaudeEffort(settings.effort) ? settings.effort : "default";
-					settings = { ...settings, backend: "claude", model: resolveClaudeModel(claudeId), effort };
+				const switched = parseBackendOption(newValue);
+				if (switched !== undefined) {
+					if (switched.backend === "claude") {
+						const effort = settings.backend === "claude" && isClaudeEffort(settings.effort) ? settings.effort : "default";
+						settings = { ...settings, backend: "claude", model: resolveClaudeModel(switched.id), effort };
+					} else {
+						const effort = settings.backend === "grok" && isGrokEffort(settings.effort) ? settings.effort : "default";
+						settings = { ...settings, backend: "grok", model: resolveGrokModel(switched.id), effort };
+					}
 				} else {
 					const family = findFamily(newValue);
 					if (!family) return;
-					const keepCurrent = settings.backend !== "claude" && (settings.effort === "default" ? !family.efforts.length : family.efforts.includes(settings.effort as AgyEffort));
+					const keepCurrent = (settings.backend ?? "agy") === "agy" && (settings.effort === "default" ? !family.efforts.length : family.efforts.includes(settings.effort as AgyEffort));
 					// Backend-less internal pairs mean Agy; disk saves still tag them explicitly.
 					const { backend: _dropped, ...rest } = settings;
 					settings = { ...rest, model: family.id, effort: keepCurrent ? settings.effort : preferredEffort(family) };
@@ -1912,6 +2044,9 @@ export function createConfigModal(
 			} else if (id === "effort") {
 				if ((settings.backend ?? "agy") === "claude") {
 					if (!isClaudeEffort(newValue)) return;
+					settings = { ...settings, effort: newValue };
+				} else if ((settings.backend ?? "agy") === "grok") {
+					if (!isGrokEffort(newValue)) return;
 					settings = { ...settings, effort: newValue };
 				} else {
 					// Effort-only edit: pin the resolved family's canonical id, same reasoning as the
@@ -1936,14 +2071,22 @@ export function createConfigModal(
 					if (newValue === "__default__") {
 						settings = withCapabilityOverride(settings, capability, undefined);
 					} else {
-						const claudeId = parseClaudeOption(newValue);
-						if (claudeId !== undefined) {
+						const switched = parseBackendOption(newValue);
+						if (switched !== undefined) {
 							const currentEffort = capabilityPair(settings, capability).effort;
-							settings = withCapabilityOverride(settings, capability, {
-								backend: "claude",
-								model: resolveClaudeModel(claudeId),
-								effort: capabilityBackend(settings, capability) === "claude" && isClaudeEffort(currentEffort) ? currentEffort : "default",
-							});
+							if (switched.backend === "claude") {
+								settings = withCapabilityOverride(settings, capability, {
+									backend: "claude",
+									model: resolveClaudeModel(switched.id),
+									effort: capabilityBackend(settings, capability) === "claude" && isClaudeEffort(currentEffort) ? currentEffort : "default",
+								});
+							} else {
+								settings = withCapabilityOverride(settings, capability, {
+									backend: "grok",
+									model: resolveGrokModel(switched.id),
+									effort: capabilityBackend(settings, capability) === "grok" && isGrokEffort(currentEffort) ? currentEffort : "default",
+								});
+							}
 						} else {
 							const family = findFamily(newValue);
 							if (!family) return;
@@ -1960,6 +2103,11 @@ export function createConfigModal(
 					const existing = capabilityOverride(settings, capability);
 					const model = existing?.model ?? settings.model;
 					settings = withCapabilityOverride(settings, capability, { backend: "claude", model, effort: newValue });
+				} else if (capabilityBackend(settings, capability) === "grok") {
+					if (!isGrokEffort(newValue)) return;
+					const existing = capabilityOverride(settings, capability);
+					const model = existing?.model ?? settings.model;
+					settings = withCapabilityOverride(settings, capability, { backend: "grok", model, effort: newValue });
 				} else {
 					// Effort-only edit: pin the resolved family's canonical id, never whatever raw
 					// string happens to sit in settings.model/override.model (which — for a shared
@@ -2023,14 +2171,13 @@ export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: Exten
 		ctx.ui.notify(withDoctor(error), "error");
 		return;
 	}
-	// A Claude-only setup (shared default and every override on Claude) opens without the
-	// Agy catalog; anything still on Agy keeps the previous hard requirement.
+	// Keep configuration repair accessible even when the Agy catalog is unavailable.
 	let families: AgyModelFamily[];
 	try {
 		families = await listAgyModels(pi);
 	} catch (error) {
 		families = [];
-		ctx.ui.notify("Agy model catalog unavailable — showing Claude settings without Agy choices.", "warning");
+		ctx.ui.notify("Agy model catalog unavailable — showing Claude/Grok settings without Agy choices.", "warning");
 	}
 	await ctx.ui.custom<void>(createConfigModal(settings, families, writeSettings), {
 		overlay: true,
@@ -2161,10 +2308,11 @@ export function helpText(settings?: BroSettings, settingsError?: string): string
 		? `- **Backend:** ${settings.backend ?? "agy"}\n- **Model:** \`${settings.model}\`\n- **Reasoning effort:** ${settings.effort === "default" ? "built into the selected model" : settings.effort}\n- **Mode:** ${settings.mode}\n- **Show turns:** ${settings.showTurns}${overrideLines.length ? `\n${overrideLines.join("\n")}` : ""}`
 		: `Bro could not read its settings: ${settingsError}\n\nRun \`/bro doctor\` for setup help.`;
 	const advisorBackend = settings ? capabilityBackend(settings, "advisor") : "agy";
-	const advisorProcess = advisorBackend === "claude" ? "Claude process" : "Agy process";
+	const advisorProcess = advisorBackend === "claude" ? "Claude process" : advisorBackend === "grok" ? "Grok process" : "Agy process";
+	const advisorName = advisorBackend === "claude" ? "Claude" : advisorBackend === "grok" ? "Grok" : "Agy";
 	return `# Bro
 
-Bro explains a dense assistant reply, pasted text, local document, or public webpage in plain language, draws recent session turns as shapes, or opens a sandboxed side conversation with \`/bro btw\` — without adding anything to Pi's conversation.
+Bro explains a dense assistant reply, pasted text, local document, or public webpage in plain language, draws recent session turns as shapes, or opens a separate side conversation with \`/bro btw\` — without adding anything to Pi's conversation.
 
 ## Explain
 
@@ -2182,24 +2330,23 @@ Press **R** to simplify the captured source again. Run a new \`/bro text\`, \`/b
 ## Check and configure
 
 - \`/bro doctor\` — check settings, backends, account, model, effort, and mode (per-feature backend/model/effort)
-- \`/bro usage [--provider agy]\` — show current Agy limits
-- \`/bro model [id]\` — view or choose the shared default model (Agy catalog, or sonnet/opus/explicit IDs on the Claude backend)
-- \`/bro effort [low|medium|high|xhigh|max]\` — view or choose the shared default reasoning effort (xhigh/max are Claude-only)
+- \`/bro model [id]\` — view or choose the shared default model (Agy catalog, sonnet/opus/explicit IDs on Claude, grok-4.7/grok-4.7-build-fast/explicit IDs on Grok)
+- \`/bro effort [low|medium|high|xhigh|max]\` — view or choose the shared default reasoning effort (xhigh on Claude/Grok, max on Claude only)
 - \`/bro mode [brief|balanced|faithful]\` — view or choose explanation mode
 - \`/bro config\` — open an interactive settings screen for the shared default backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) backend, model, and effort overrides. Changes save immediately; Esc on a picker cancels without changing anything, Esc on the screen closes it and keeps whatever was already saved.
 
-\`/bro model\` and \`/bro effort\` always change the shared default that explain, show, btw, and advisor fall back to when they have no override. Use \`/bro config\` to give one of them its own backend, model, or effort. \`btw\` is not supported on the Claude backend.
+\`/bro model\` and \`/bro effort\` always change the shared default that explain, show, btw, and advisor fall back to when they have no override. Use \`/bro config\` to give one of them its own backend, model, or effort. \`btw\` runs on Agy or Grok (Claude continuation is pending).
 
 ## Side conversation
 
-- \`/bro btw [--fresh] [--full] [question]\` — open a side conversation. Sandboxed (read-only) by default; add \`--full\` to let it read and edit the workspace, and \`--fresh\` to start without main-session context. Reopening preserves the thread's access mode (even with \`--fresh\`); use \`--sandbox\` to return to sandbox mode. Changing access mode starts a new thread. Inside the side thread, type questions and press Enter (empty Enter re-asks); exact commands \`/copy\` and \`/copy-all\` copy the latest answer or full thread to the system clipboard; exact commands \`/insert\` and \`/insert-all\` insert into the main editor without submitting (use \`/insert!\` or \`/insert-all!\` to replace an existing draft); \`/retry\` re-asks the last question; \`/clear\` resets the thread. Any other input is sent as a question. Esc closes.
+- \`/bro btw [--fresh] [--full] [question]\` — open a side conversation. Conversation-only intent by default (Agy sandbox controls; Grok prompt request, not enforced); add \`--full\` to let it read and edit the workspace, and \`--fresh\` to start without main-session context. Reopening preserves the thread's access mode (even with \`--fresh\`); use \`--sandbox\` to return to sandbox mode. Changing access mode starts a new thread. Inside the side thread, type questions and press Enter (empty Enter re-asks); exact commands \`/copy\` and \`/copy-all\` copy the latest answer or full thread to the system clipboard; exact commands \`/insert\` and \`/insert-all\` insert into the main editor without submitting (use \`/insert!\` or \`/insert-all!\` to replace an existing draft); \`/retry\` re-asks the last question; \`/clear\` resets the thread. Any other input is sent as a question. Esc closes.
 
 ## Advisor
 
 - \`bro_advisor\` — a tool the executor agent can voluntarily call mid-task for a second opinion from a fresh ${advisorProcess} before or after a non-trivial decision. It is registered like any other tool and has no on/off switch of its own; whether the executor can actually call it depends entirely on this host's own tool restrictions
 - \`/bro advisor\` — a quick notice of whether \`bro_advisor\` is available right now, pointing at \`/bro config\`, \`/bro advisor-steer\`, and \`/bro doctor\`
 - \`/bro advisor-steer\` — open an editor for one persistent steering brief the advisor always sees. **Ctrl+S** saves, **Enter**/**Shift+Enter** insert newlines, **Ctrl+K** clears the saved brief and draft, **Ctrl+C** copies the full draft, and **Esc** closes without saving unsaved edits
-- \`/bro doctor\` — the full advisor diagnostic: whether this host exposes and activates \`bro_advisor\`, its resolved model/effort, steering presence, and the Agy compatibility floor
+- \`/bro doctor\` — the full advisor diagnostic: whether this host exposes and activates \`bro_advisor\`, its resolved model/effort, steering presence, and backend compatibility
 
 Each consultation is a fresh, standalone ${advisorProcess} — never resumed, never looping, never automatically triggered. Bro captures the context snapshot (system instructions, active tools, and the conversation so far including tool calls and results) automatically; the executor never has to assemble one. The advisor has real tool access in the workspace, running with permissions auto-approved, so it can verify claims itself; it is instructed to only return advice and leave edits to the executor, but that instruction is behavioral rather than an enforced sandbox constraint. The steering brief persists in the session (not sent to the model) and is restored on resume or reload; forking a session inherits it, and edits after the fork are independent of the original branch.
 
@@ -2232,10 +2379,10 @@ Bro temporarily captures mouse input while the modal is open. Native mouse selec
 - Documents must be inside the current workspace, are limited to 10 MiB and 100,000 extracted characters, and must be \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\`. Scanned PDFs need OCR first.
 - Web input is limited to one public HTML page. Bro cannot sign in, run page JavaScript, bypass paywalls or blocks, follow pagination, or understand images and video.
 - If a webpage fails, copy it into a text file or save it as a PDF, then use \`/bro file\`.
-- Show draws only what already happened in this session — the conversation text of the last few turns, with tool calls, tool results, reasoning, and images always omitted — and cannot read the repository or other files on its own. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
+- Show draws only what already happened in this session — the conversation text of the last few turns, with tool calls, tool results, reasoning, and images always omitted — and is requested not to investigate the repository; Grok retains normal tools, so this is not enforced isolation. On a remote or headless session with no display, pressing **O** reports a failure instead of opening the diagram.
 - Show reflects what was reported in the conversation, not independent verification against the actual code or system state.
-- Btw threads are memory-only and do not survive reloads or restarts. A turn is capped at 2 minutes in sandbox mode and 10 minutes in full mode; the side conversation resumes through Agy's \`--conversation\` support.
-- Advisor consultations run with real tool access and auto-approved permissions (\`--dangerously-skip-permissions\`) — there is no enforced read-only isolation, only the advisor's own behavioral instructions to advise rather than implement. On invocation failure (not a completed answer), Bro retries with the identical snapshot, steering, and question: once after 5 seconds, once more after 10 seconds, then returns ${advisorBackend === "claude" ? "Claude" : "Agy"}'s own diagnostic as the failure.
+- Btw threads are memory-only and do not survive reloads or restarts. A turn is capped at 2 minutes in sandbox mode and 10 minutes in full mode; the side conversation resumes through Agy \`--conversation\` or Grok \`--resume\`.
+- Advisor consultations run with real tool access and auto-approved permissions (Grok: \`--sandbox off --permission-mode bypassPermissions\`; Agy/Claude: \`--dangerously-skip-permissions\`) — there is no enforced read-only isolation, only the advisor's own behavioral instructions to advise rather than implement. On invocation failure (not a completed answer), Bro retries with the identical snapshot, steering, and question: once after 5 seconds, once more after 10 seconds, then returns ${advisorName}'s own diagnostic as the failure.
 
 ## Privacy and safety
 
@@ -2243,10 +2390,10 @@ Bro sends the selected assistant reply, pasted text, locally extracted document 
 
 Bro never adds the explanation to Pi's conversation, session file, or main-agent context. The captured source and latest explanation stay in process memory until you change sessions, reload extensions, or exit Pi.
 
-Bro's explain, show, file, and url commands never modify project files. \`/bro btw\` runs sandboxed (read-only) by default; with \`--full\` it can read and edit the workspace, so use \`--full\` only when you want the side conversation to touch your project.
+Bro asks explain/show backends to use supplied context; Grok retains tool authority, so this is behavioral rather than enforced. \`/bro btw\` uses Agy sandbox controls or Grok conversation-only prompt instructions by default; with \`--full\` it can read and edit the workspace, so use \`--full\` only when you want the side conversation to touch your project.
 For webpages, it connects directly to the site without browser cookies; the site sees your IP address and Bro's user agent. Do not use private or signed URLs.
 
-Usage and Doctor checks contact Agy but do not send source text or run a model turn. Pressing **C** sends the explanation to your system clipboard.
+Doctor checks contact only the selected backends, but never send source text or run a model turn. Pressing **C** sends the explanation to your system clipboard.
 
 Each advisor consultation sends the executor's system instructions, active tool list, ordered conversation (including tool calls and results, since the advisor needs to verify claims), your steering brief, and the executor's optional question to the selected backend and its model provider; the advisor process itself can read and edit the workspace with no permission prompts. The steering brief is stored as session-only extension data — never added to the main conversation Pi or the model sees; the advisor tool has no separate activation state.
 
@@ -2264,6 +2411,7 @@ class BroModal implements Focusable {
 	private kind: ModalKind = "loading";
 	private rawText = "";
 	private sourceLabel = "";
+	private modelLabel = "";
 	private notice = "";
 	private offset = 0;
 	private maxOffset = 0;
@@ -2292,8 +2440,8 @@ class BroModal implements Focusable {
 		this.setContent("streaming", text, "", false, false);
 	}
 
-	setResult(text: string, retryable: boolean, notice = "", sourceLabel = "", rawText = text): void {
-		this.setContent("result", text, rawText, true, retryable, notice, sourceLabel);
+	setResult(text: string, retryable: boolean, notice = "", sourceLabel = "", rawText = text, modelLabel = ""): void {
+		this.setContent("result", text, rawText, true, retryable, notice, sourceLabel, modelLabel);
 	}
 
 	setHtmlPath(path: string): void {
@@ -2317,6 +2465,7 @@ class BroModal implements Focusable {
 		retryable: boolean,
 		notice = "",
 		sourceLabel = "",
+		modelLabel = "",
 	): void {
 		this.kind = kind;
 		if (kind !== "result") this.htmlPath = "";
@@ -2328,6 +2477,7 @@ class BroModal implements Focusable {
 			.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
 			.replace(/\s+/g, " ")
 			.trim();
+		this.modelLabel = modelLabel;
 		if (kind !== "streaming") this.offset = 0;
 		this.markdown.setText(text);
 		this.tui.requestRender();
@@ -2377,7 +2527,11 @@ class BroModal implements Focusable {
 
 		const lines = [
 			this.borderLine(innerWidth, "top"),
-			this.frameLine(this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}${scroll}`)), innerWidth),
+			this.frameLine(
+				this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}`)) +
+					this.theme.fg("dim", `${this.modelLabel ? ` · ${this.modelLabel}` : ""}${scroll}`),
+				innerWidth,
+			),
 			this.ruleLine(innerWidth),
 		];
 
@@ -2518,7 +2672,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 						current = result;
 						options.onResult?.(result);
 						const display = result.htmlPath ? stripShowHtmlFence(result.text) : result.text;
-						modal.setResult(display, options.retryable ?? true, "", result.source?.label, result.text);
+						modal.setResult(display, options.retryable ?? true, "", result.source?.label, result.text, result.model);
 						if (result.htmlPath) modal.setHtmlPath(result.htmlPath);
 					})
 					.catch((error) => {
@@ -2526,7 +2680,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 						const message = error instanceof Error ? error.message : String(error);
 						if (previous) {
 							current = previous;
-							modal.setResult(previous.text, options.retryable ?? true, `Retry failed: ${message}`, previous.source?.label);
+							modal.setResult(previous.text, options.retryable ?? true, `Retry failed: ${message}`, previous.source?.label, previous.text, previous.model);
 						} else {
 							modal.setError(message);
 						}
@@ -2539,7 +2693,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 			if (options.text !== undefined) {
 				modal.setStatic(options.kind ?? "help", options.text, options.copyable ?? false);
 			} else if (current) {
-				modal.setResult(current.text, options.retryable ?? Boolean(options.run), "", current.source?.label);
+				modal.setResult(current.text, options.retryable ?? Boolean(options.run), "", current.source?.label, current.text, current.model);
 			} else {
 				execute();
 			}
@@ -2579,6 +2733,13 @@ export function resolveBtwThread(existing: BtwThread | undefined, parsed: { fres
 	const targetFull = parsed.full ?? existing?.full ?? false;
 	const startFresh = parsed.fresh || (parsed.full !== undefined && existing !== undefined && existing.full !== parsed.full);
 	return !existing || startFresh ? { turns: [], full: targetFull } : existing;
+}
+
+export function bindBtwBackend(thread: BtwThread, backend: BackendName): boolean {
+	const changed = thread.backend !== undefined && thread.backend !== backend;
+	if (changed) { thread.turns = []; thread.conversationId = undefined; }
+	thread.backend = backend;
+	return changed;
 }
 
 export function formatBtwTranscript(turns: readonly BtwTurn[]): string {
@@ -2630,11 +2791,11 @@ async function runBtwTurn(
 	signal: AbortSignal,
 	onProgress?: (text: string) => void,
 ): Promise<{ text: string; conversationId?: string }> {
-	// Claude supports explain/show (restricted, fresh) and advisor (workspace-full, fresh);
-	// btw is rejected. Fail before spawning anything so a Claude btw selection can never
-	// reach the Agy CLI.
+	// Claude continuation is not wired yet; Agy and Grok use native sessions.
+	// Reject Claude explicitly instead of falling back to another backend.
 	if (selection.backend === "claude") {
-		throw new Error("`btw` is not supported on the Claude backend. Run `/bro config` to give it an Agy model.");
+		const name = "Claude";
+		throw new Error(`\`btw\` is not supported on the ${name} backend. Run \`/bro config\` to give it an Agy model.`);
 	}
 	let updateTimer: ReturnType<typeof setTimeout> | undefined;
 	let latest: string | undefined;
@@ -2657,7 +2818,7 @@ async function runBtwTurn(
 				feature: "btw",
 				prompt,
 				access: options.full ? "workspace-full" : "restricted",
-				cwd: options.full ? options.cwd : undefined,
+				cwd: options.cwd,
 				continuation: options.conversationId ? { id: options.conversationId } : undefined,
 			},
 			selection,
@@ -2681,6 +2842,7 @@ class BtwModal implements Focusable {
 	private bodyHeight = 1;
 	private running = false;
 	private full = false;
+	private model = "";
 	private disposed = false;
 
 	get focused(): boolean {
@@ -2718,6 +2880,11 @@ class BtwModal implements Focusable {
 
 	setRunning(running: boolean): void {
 		this.running = running;
+		this.tui.requestRender();
+	}
+
+	setModel(model: string): void {
+		this.model = model;
 		this.tui.requestRender();
 	}
 
@@ -2782,10 +2949,9 @@ class BtwModal implements Focusable {
 		const hiddenBelow = Math.max(0, this.maxOffset - this.offset);
 		const scroll = this.maxOffset > 0 ? ` · ↑${this.offset} ↓${hiddenBelow}` : "";
 
-		const mode = this.full
-			? this.theme.fg("accent", this.theme.bold("full · edits repo"))
-			: this.theme.fg("dim", "sandbox");
-		const header = this.theme.fg("accent", this.theme.bold("Bro · btw")) + this.theme.fg("dim", ` · ${mode}${scroll}`);
+		const model = this.model ? this.theme.fg("dim", ` · ${this.model}`) : "";
+		const mode = this.full ? this.theme.fg("dim", " · ") + this.theme.fg("accent", this.theme.bold("full · edits repo")) : "";
+		const header = this.theme.fg("accent", this.theme.bold("Bro · btw")) + model + mode + this.theme.fg("dim", scroll);
 
 		const composer = this.input.render(innerWidth)[0] ?? "";
 
@@ -2847,6 +3013,14 @@ async function openBtwModal(
 				modal.setRunning(true);
 				modal.clearComposer();
 
+				let settings: BroSettings;
+				try {
+					settings = await readSettings();
+					const backend = capabilityBackend(settings, "btw");
+					if (bindBtwBackend(thread, backend)) modal.setNotice("Backend changed — started a fresh side thread.");
+				} catch (error) {
+					controller = undefined; modal.setRunning(false); modal.setNotice(errorMessage(error)); return;
+				}
 				const first = thread.turns.length === 0;
 				let context: string | undefined;
 				if (first && options.seed) {
@@ -2861,10 +3035,12 @@ async function openBtwModal(
 				modal.setText(transcript());
 
 				try {
-					const settings = await readSettings();
+					const selection = selectionForCapability(settings, "btw");
+					thread.model = selectionLabel(selection);
+					modal.setModel(thread.model);
 					const result = await runBtwTurn(
 						buildBtwPrompt(context, question),
-						selectionForCapability(settings, "btw"),
+						selection,
 						{ full: thread.full, cwd: ctx.cwd, conversationId: thread.conversationId },
 						turnController.signal,
 						(partial) => {
@@ -2962,6 +3138,7 @@ async function openBtwModal(
 			}
 
 			modal.setFull(thread.full);
+			modal.setModel(thread.model ?? "");
 			modal.setText(transcript());
 
 			if (options.initialQuestion) void runTurn(options.initialQuestion);
@@ -2985,7 +3162,7 @@ export default async function bro(pi: ExtensionAPI) {
 	let lastResult: BroResult | undefined;
 	let btwThread: BtwThread | undefined;
 	const remember = (result: ModalResult) => {
-		if (result.source) lastResult = { source: result.source, text: result.text };
+		if (result.source) lastResult = { source: result.source, text: result.text, model: result.model };
 	};
 
 	pi.on("session_start", async (_event, _ctx) => {
@@ -3061,8 +3238,8 @@ export default async function bro(pi: ExtensionAPI) {
 					// the activity throttle window.
 					activityCount: run.activityCount,
 				};
-				// The backend qualifier appears only for Claude, keeping the Agy header byte-identical.
-				const header = `Bro advisor · ${backend === "claude" ? "backend: claude · " : ""}model: ${selection.model} · effort: ${effort} · ${run.attempts} attempt${run.attempts === 1 ? "" : "s"} · ${Math.ceil(run.durationMs / 1_000)}s`;
+				// The backend qualifier appears only off Agy, keeping the Agy header byte-identical.
+				const header = `Bro advisor · ${backend === "agy" ? "" : `backend: ${backend} · `}model: ${selection.model} · effort: ${effort} · ${run.attempts} attempt${run.attempts === 1 ? "" : "s"} · ${Math.ceil(run.durationMs / 1_000)}s`;
 				const context = `Context · cwd: ${JSON.stringify(ctx.cwd)} · steering: ${details.steeringIncluded ? "included" : "none"} · snapshot: ${snapshot.text.length} chars · Bro truncation: none · omissions: ${omissions}`;
 				return { content: [{ type: "text", text: `${header}\n${context}\n\n${run.advice}` }], details };
 			} finally {
@@ -3142,13 +3319,14 @@ export default async function bro(pi: ExtensionAPI) {
 						return { text: "**Nothing to show yet**\n\nThis session has no conversation turns to draw. Run something first, then press **R**." };
 					}
 					let text: string;
+					let model: string;
 					try {
-						text = await runShowExplanation(captured.text, steering, signal, await readSettings(), onProgress);
+						({ text, model } = await runShowExplanation(captured.text, steering, signal, await readSettings(), onProgress));
 					} catch (error) {
 						throw new Error(withDoctor(error));
 					}
 					const html = extractShowHtml(text);
-					return { source: captured, text, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
+					return { source: captured, text, model, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
 				};
 				try {
 					await showBroModal(ctx, {
@@ -3179,7 +3357,7 @@ export default async function bro(pi: ExtensionAPI) {
 					try {
 						return {
 							source: target,
-							text: await simplify(target.text, signal, await readSettings(), onProgress),
+							...(await simplify(target.text, signal, await readSettings(), onProgress)),
 						};
 					} catch (error) {
 						throw new Error(withDoctor(error));
@@ -3211,24 +3389,6 @@ export default async function bro(pi: ExtensionAPI) {
 					});
 				} catch (error) {
 					ctx.ui.notify(errorMessage(error), "error");
-				}
-				return;
-			}
-
-			if (action === "usage") {
-				const valid = parts.length === 1 || (parts.length === 3 && parts[1] === "--provider" && parts[2] === "agy");
-				if (!valid) {
-					ctx.ui.notify("Use /bro usage or /bro usage --provider agy.", "warning");
-					return;
-				}
-				try {
-					await showBroModal(ctx, {
-						loadingText: "Checking Agy usage…",
-						retryable: false,
-						run: async (signal) => ({ text: await checkAgyUsage(pi, signal) }),
-					});
-				} catch (error) {
-					ctx.ui.notify(withDoctor(error), "error");
 				}
 				return;
 			}
@@ -3270,7 +3430,44 @@ export default async function bro(pi: ExtensionAPI) {
 				try {
 					const settings = await readSettings();
 					// /bro model operates on the effective shared backend: no Agy catalog
-					// when the shared default is Claude.
+					// when the shared default is Claude/Grok.
+					if ((settings.backend ?? "agy") === "grok") {
+						const requested = value.trim();
+						let model: string | undefined;
+						if (requested) {
+							try {
+								model = resolveGrokModel(requested);
+							} catch {
+								ctx.ui.notify("Use /bro model or /bro model <grok-4.7|grok-4.7-build-fast|model-id>.", "warning");
+								return;
+							}
+						} else {
+							if (ctx.mode !== "tui") {
+								ctx.ui.notify("Use /bro model <grok-4.7|grok-4.7-build-fast|model-id> outside Pi's interactive UI.", "warning");
+								return;
+							}
+							const choices = [
+								...GROK_MODELS.map(
+									(entry) => `${entry.id} — ${entry.label}${entry.id === settings.model ? " (current)" : ""}`,
+								),
+								"Custom — enter a model ID…",
+							];
+							const choice = await ctx.ui.select(`Grok model (current: ${settings.model})`, choices);
+							if (!choice) return;
+							if (choice.startsWith("Custom")) {
+								const input = await ctx.ui.input("Grok model", "grok-4.7, grok-4.7-build-fast, or an explicit model ID");
+								if (!input?.trim()) return;
+								model = resolveGrokModel(input);
+							} else {
+								model = GROK_MODELS[choices.indexOf(choice)]?.id;
+							}
+						}
+						if (!model) return;
+						const effort = settings.backend === "grok" && isGrokEffort(settings.effort) ? settings.effort : "default";
+						await writeSettings({ ...settings, backend: "grok", model, effort });
+						ctx.ui.notify(`Bro model: grok ${model}${effort === "default" ? "" : ` (${effort})`}`, "info");
+						return;
+					}
 					if ((settings.backend ?? "agy") === "claude") {
 						const requested = value.trim();
 						let model: string | undefined;
@@ -3363,7 +3560,7 @@ export default async function bro(pi: ExtensionAPI) {
 
 			if (action === "effort") {
 				const requested = parts[1];
-				// Claude levels pass this gate; each backend branch below validates strictly
+				// Claude/Grok levels pass this gate; each backend branch below validates strictly
 				// (the Agy branch still rejects xhigh/max with its supports-list warning).
 				if (parts.length > 2 || (requested && !isClaudeEffort(requested) && !EFFORTS.some((effort) => effort === requested))) {
 					ctx.ui.notify("Use /bro effort, or choose low, medium, or high.", "warning");
@@ -3372,7 +3569,35 @@ export default async function bro(pi: ExtensionAPI) {
 				try {
 					const settings = await readSettings();
 					// /bro effort operates on the effective shared backend: no Agy catalog
-					// when the shared default is Claude.
+					// when the shared default is Claude/Grok.
+					if ((settings.backend ?? "agy") === "grok") {
+						const allowed = ["default", ...GROK_EFFORTS] as const;
+						if (requested && !allowed.some((effort) => effort === requested)) {
+							ctx.ui.notify("Use /bro effort, or choose default, low, medium, high, or xhigh.", "warning");
+							return;
+						}
+						let selected = requested as BroEffort | undefined;
+						if (!selected) {
+							if (ctx.mode !== "tui") {
+								ctx.ui.notify("Use /bro effort <default|low|medium|high|xhigh> outside Pi's interactive UI.", "warning");
+								return;
+							}
+							const efforts = [...allowed].sort(
+								(a, b) => Number(b === settings.effort) - Number(a === settings.effort),
+							);
+							const choices = efforts.map((effort) => `${effort}${effort === settings.effort ? " (current)" : ""}`);
+							const choice = await ctx.ui.select(`Grok reasoning effort (current: ${settings.effort})`, choices);
+							if (!choice) return;
+							selected = efforts[choices.indexOf(choice)];
+						}
+						if (!selected || !isGrokEffort(selected)) return;
+						await writeSettings({ ...settings, backend: "grok", model: settings.model, effort: selected });
+						ctx.ui.notify(
+							selected === "default" ? "Bro reasoning effort: built into the selected model" : `Bro reasoning effort: ${selected}`,
+							"info",
+						);
+						return;
+					}
 					if ((settings.backend ?? "agy") === "claude") {
 						const allowed = ["default", ...CLAUDE_EFFORTS] as const;
 						if (requested && !allowed.some((effort) => effort === requested)) {
@@ -3455,8 +3680,10 @@ export default async function bro(pi: ExtensionAPI) {
 					return;
 				}
 				try {
-					if (capabilityBackend(await readSettings(), "btw") === "claude") throw new Error("Claude does not support /bro btw yet; choose an Agy override in /bro config.");
+					const btwBackend = capabilityBackend(await readSettings(), "btw");
+					if (btwBackend === "claude") throw new Error(`${btwBackend === "claude" ? "Claude" : "Grok"} does not support /bro btw yet; choose an Agy or Grok override in /bro config.`);
 					const thread = resolveBtwThread(btwThread, parsed);
+					if (bindBtwBackend(thread, btwBackend)) ctx.ui.notify("Backend changed — started a fresh side thread.", "info");
 					btwThread = thread;
 					await openBtwModal(ctx, { thread, initialQuestion: parsed.question, seed: !parsed.fresh });
 				} catch (error) {
@@ -3535,7 +3762,7 @@ export default async function bro(pi: ExtensionAPI) {
 					const settings = await readSettings();
 					return {
 						source: target,
-						text: await simplify(target.text, signal, settings, onProgress),
+						...(await simplify(target.text, signal, settings, onProgress)),
 					};
 				} catch (error) {
 					throw new Error(withDoctor(error));

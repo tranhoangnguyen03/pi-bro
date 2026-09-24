@@ -43,12 +43,18 @@ const backend = await import(pathToFileURL(join(buildDir, "backend.js")).href);
 const { CLAUDE_EFFORTS } = backend;
 const {
 	CLAUDE_MODELS,
+	GROK_EFFORTS,
+	GROK_MODELS,
 	capabilityBackend,
 	parseBroSettings,
 	resolveClaudeModel,
+	resolveGrokModel,
 	resolveModelEffort,
+	helpText,
 	selectionForCapability,
+	selectionLabel,
 	settingsPayload,
+	supportsBackend,
 	withCapabilityOverride,
 } = bro;
 
@@ -187,6 +193,73 @@ test("unknown schemas cannot be accepted as legacy and overwritten", () => {
 });
 
 
+test("Grok all-feature support: selection, efforts, models", () => {
+	assert.deepEqual([...GROK_EFFORTS], ["low", "medium", "high", "xhigh"]);
+	assert.deepEqual(
+		GROK_MODELS.map((model: { id: string }) => model.id).sort(),
+		["grok-4.7", "grok-4.7-build-fast"],
+	);
+	assert.equal(resolveGrokModel("grok-4.7"), "grok-4.7");
+	assert.equal(resolveGrokModel("  custom-grok-id  "), "custom-grok-id");
+	assert.throws(() => resolveGrokModel("   "), /Grok model/);
+	assert.equal(supportsBackend("grok", "advisor"), true);
+	assert.equal(supportsBackend("grok", "explain"), true);
+	assert.equal(supportsBackend("grok", "show"), true);
+	assert.equal(supportsBackend("grok", "btw"), true);
+});
+
+test("Grok pairs parse, round-trip, and resolve with no Agy family", () => {
+	const settings = parseBroSettings({
+		version: 2,
+		default: { backend: "grok", model: "grok-4.7", effort: "xhigh" },
+		mode: "balanced",
+		showTurns: 1,
+		overrides: { advisor: { backend: "grok", model: "grok-4.7-build-fast", effort: "medium" } },
+	});
+	assert.equal(capabilityBackend(settings, "advisor"), "grok");
+	assert.equal(capabilityBackend(settings, "explain"), "grok");
+	assert.deepEqual(selectionForCapability(settings, "advisor"), {
+		backend: "grok",
+		model: "grok-4.7-build-fast",
+		effort: "medium",
+	});
+	assert.deepEqual(resolveModelEffort({ backend: "grok", model: "grok-4.7", effort: "medium" }, []), {
+		pair: { backend: "grok", model: "grok-4.7", effort: "medium" },
+	});
+	const payload = settingsPayload(settings);
+	assert.deepEqual(payload.default, { backend: "grok", model: "grok-4.7", effort: "xhigh" });
+	assert.deepEqual(parseBroSettings(payload), settings);
+});
+
+test("Grok default effort omits effort; max rejected, backend-less override stays Agy", () => {
+	const settings = parseBroSettings({
+		version: 2,
+		default: { backend: "grok", model: "grok-4.7", effort: "default" },
+	});
+	assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: "grok", model: "grok-4.7" });
+	assert.throws(
+		() =>
+			parseBroSettings({
+				version: 2,
+				default: { backend: "grok", model: "grok-4.7", effort: "max" },
+			}),
+		/must contain a model and effort/,
+	);
+	const mixed = parseBroSettings({
+		version: 2,
+		default: { backend: "grok", model: "grok-4.7", effort: "low" },
+		overrides: { show: { model: "gemini-a", effort: "low" } },
+	});
+	assert.equal(capabilityBackend(mixed, "show"), "agy");
+	assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
+	const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
+		backend: "grok",
+		model: "grok-4.7",
+		effort: "high",
+	});
+	assert.deepEqual(pinned.overrides.advisor, { backend: "grok", model: "grok-4.7", effort: "high" });
+});
+
 test("config custom Claude model selection is atomic and cancel preserves settings", async () => {
  const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
  const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
@@ -194,12 +267,55 @@ test("config custom Claude model selection is atomic and cancel preserves settin
  const saved: any[] = [];
  const component = createConfigModal(parseBroSettings({model:"m",effort:"low"}), [], async (s: unknown) => { saved.push(s); })({requestRender(){}}, theme, {}, () => {});
  component.handleInput("\r");
- component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\r");
+ component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\r");
  component.handleInput("custom-claude-model"); component.handleInput("\u001b");
  assert.equal(saved.length,0);
- component.handleInput("\r"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\r");
+ component.handleInput("\r"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\r");
  component.handleInput("custom-claude-model"); component.handleInput("\r");
  await new Promise(resolve => setTimeout(resolve,0));
  assert.equal(saved.length,1);
  assert.equal(saved[0].backend,"claude"); assert.equal(saved[0].model,"custom-claude-model"); assert.equal(saved[0].effort,"default");
+});
+
+
+test("Grok custom picker cancels atomically and resets cross-backend effort", async () => {
+ const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
+ const saved: any[] = [];
+ const modal = bro.createConfigModal(parseBroSettings({version:2,default:{backend:"claude",model:"sonnet",effort:"high"}}), [], async (s: unknown) => {saved.push(s);})({requestRender(){}},{fg: (_: string,s: string)=>s,bold:(s:string)=>s},{},()=>{});
+ const openCustom = () => {modal.handleInput("\r"); for(let i=0;i<5;i++) modal.handleInput("\u001b[B"); modal.handleInput("\r");};
+ openCustom(); modal.handleInput("grok-custom"); modal.handleInput("\u001b"); assert.equal(saved.length,0);
+ openCustom(); modal.handleInput("grok-custom"); modal.handleInput("\r"); await new Promise(r=>setTimeout(r,0));
+ assert.equal(saved.length,1); assert.equal(saved[0].backend,"grok"); assert.equal(saved[0].model,"grok-custom"); assert.equal(saved[0].effort,"default");
+ assert.doesNotMatch(modal.render(120).join("\n"),/unsupported backend/);
+});
+
+
+test("BTW backend changes clear native continuation and transcript, same backend preserves them", () => {
+ const thread = {turns:[{question:"q",answer:"a"}],conversationId:"grok-session",full:false,backend:"grok"};
+ assert.equal(bro.bindBtwBackend(thread,"grok"),false); assert.equal(thread.conversationId,"grok-session");
+ assert.equal(bro.bindBtwBackend(thread,"agy"),true); assert.equal(thread.conversationId,undefined); assert.deepEqual(thread.turns,[]);
+});
+
+test("modal model label shows the resolved per-capability model and effort", () => {
+	const settings = parseBroSettings({
+		version: 2,
+		default: { backend: "agy", model: "gemini-a", effort: "default" },
+		overrides: {
+			explain: { backend: "claude", model: "opus", effort: "max" },
+			show: { backend: "grok", model: "grok-4.7", effort: "default" },
+			btw: { backend: "grok", model: "grok-4.7-build-fast", effort: "xhigh" },
+		},
+	});
+	assert.equal(selectionLabel(selectionForCapability(settings, "explain")), "opus · max");
+	assert.equal(selectionLabel(selectionForCapability(settings, "show")), "grok-4.7 · default");
+	assert.equal(selectionLabel(selectionForCapability(settings, "btw")), "grok-4.7-build-fast · xhigh");
+	assert.equal(selectionLabel(selectionForCapability(settings, "advisor")), "gemini-a · default");
+	assert.equal(selectionLabel(selectionForCapability(parseBroSettings({ model: "gemini-b-low", effort: "low" }), "explain")), "gemini-b · low");
+});
+
+test("help no longer lists /bro usage or the conversation-only access label", () => {
+	const text = helpText(parseBroSettings({ model: "m", effort: "low" }));
+	assert.doesNotMatch(text, /\/bro usage/);
+	assert.doesNotMatch(text, /not sandboxed/i);
+	assert.doesNotMatch(text, /Usage checks/);
 });
