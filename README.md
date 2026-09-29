@@ -7,11 +7,13 @@ plain-language explanation — or open a separate side conversation with
 `pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
 It opens explanations in a separate modal and runs them through a CLI backend
 you already have installed and signed in to. Explain, show, BTW, and the
-advisor all work on all three backends:
+advisor all work across five backends:
 
 - [Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`) — the default for new settings
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
 - Grok Build (`grok`)
+- [Codex CLI](https://github.com/openai/codex) (`codex`)
+- [Muse Code](https://github.com/meta/muse) (`muse`)
 
 You only need the backend(s) you select; Agy is the default, not a requirement.
 
@@ -25,7 +27,7 @@ for the default). Then install Bro:
 pi install npm:pi-bro
 ```
 
-Restart Pi or run `/reload`. If you use Claude Code or Grok instead of Agy,
+Restart Pi or run `/reload`. If you use Claude Code, Grok, Codex, or Muse instead of Agy,
 choose it in `/bro config` (for everything, or per feature). Then try:
 
 ```text
@@ -686,6 +688,9 @@ feature. Failed checks explain what to fix.
 - **Claude Code**: installed version and configured authentication.
 - **Grok**: installed version only; authentication and connectivity are not
   verified.
+- **Codex**: installed version and configured authentication.
+- **Muse**: installed version only; authentication and connectivity are not
+  verified.
 
 Doctor never sends source text or runs a model completion. A successful check
 confirms the setup but cannot guarantee that a later provider request will
@@ -751,6 +756,8 @@ data under their own settings and policies.
 | **Agy** | Temporary directory, Agy sandbox | Temporary directory, Agy sandbox | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed |
 | **Claude Code** | Scratch directory, tools/MCP/skills disabled, no session persistence | Workspace, tools disabled | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed |
 | **Grok** | Temporary directory, **prompt instruction only** | Workspace, **prompt instruction only** | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed |
+| **Codex** | Scratch directory, read-only sandbox, ephemeral session | Workspace, read-only sandbox | Workspace, approvals and sandbox bypassed | Fresh workspace process, approvals and sandbox bypassed |
+| **Muse** | Scratch directory, approval/write/shell disabled, no session log | Workspace, approval/write/shell disabled | Workspace, permissions bypassed (`--yolo`) | Fresh workspace process, permissions bypassed (`--yolo`) |
 
 - Grok always runs with its sandbox off and permissions bypassed; its tools,
   hooks, skills, plugins, and MCP may remain available. "Answer only from the
@@ -759,11 +766,11 @@ data under their own settings and policies.
   an OS sandbox; built-in and managed Claude behavior can remain. Running a
   permission-bypassing mode as root may be rejected by Claude.
 - BTW continues natively: Agy by conversation ID, Claude and Grok by
-  `--resume` of the same session, including across `/mode` switches. An Agy
-  conversation stays bound to the workspace it started in, so after a `/mode`
-  switch — or whenever a thread has turns but no native session ID — Bro starts
-  a fresh native session seeded with the main-session context and every
-  earlier turn.
+  `--resume`, Codex by `resume`, and Muse by `--session-id` of the same session,
+  including across `/mode` switches. An Agy conversation stays bound to the
+  workspace it started in, so after a `/mode` switch — or whenever a thread
+  has turns but no native session ID — Bro starts a fresh native session
+  seeded with the main-session context and every earlier turn.
 - Cancellation, deadlines, and invalid output streams stop the backend's
   process group on POSIX, escalating after a five-second grace period. On
   Windows only the direct child is targeted. Detached shell work or external

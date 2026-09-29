@@ -2,6 +2,15 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.19.0] - 2026-09-25
+
+### Added
+
+- Support for OpenAI Codex CLI (`codex`) across all features: explain, show, BTW, and advisor. Explain and show run under a read-only sandbox with ephemeral session handling; BTW continues natively via `resume` across both conversation-only and full-permission modes; advisor runs in the workspace with sandbox bypassed. Supports seeded models `gpt-5.5` and `gpt-5.4` plus custom model IDs, and reasoning efforts `low`, `medium`, `high`, `xhigh`.
+- Support for Meta Muse Code (`muse`) across all features: explain, show, BTW, and advisor. Explain and show run in a scratch directory with approval, non-shell write, and shell disabled; BTW continues natively via `--session-id` across `/mode` switches; advisor runs in the workspace with `--yolo`. Supports seeded models `muse-spark-1.3-contributor` and `muse-spark-1.3` plus custom model IDs, and reasoning efforts `minimal`, `low`, `medium`, `high`, `xhigh`, `max` (omitted for model default).
+- Configuration modal support in `/bro config` for Codex and Muse, including atomic model selection, custom model ID inputs, and dynamic reasoning effort dropdowns.
+- Doctor diagnostic checks for Codex (version and `codex login status` authentication probe) and Muse (version probe).
+
 ## [0.18.0] - 2026-09-24
 
 ### Added

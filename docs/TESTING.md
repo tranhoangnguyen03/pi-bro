@@ -17,7 +17,7 @@ cd "$TEST"
 pi --no-extensions -e "$BRO/bro.ts" --no-skills --no-prompt-templates --no-context-files --session "$TEST/session.jsonl"
 ```
 
-Run the shared steps once per backend (Agy, Claude Code, Grok), selecting it
+Run the shared steps once per backend (Agy, Claude Code, Grok, Codex, Muse), selecting it
 in `/bro config` as the shared default or as the capability under test.
 
 ## Shared steps
@@ -80,5 +80,16 @@ in `/bro config` as the shared default or as the capability under test.
   across `/mode`. Custom model IDs work; efforts are
   default/low/medium/high/xhigh, and a model-specific rejection surfaces
   without clamping.
+- **Codex**: conversation-only BTW turns run under a read-only sandbox; full
+  permission turns bypass approvals and sandbox. One native thread resumes
+  across `/mode`. Custom model IDs work; efforts are
+  default/low/medium/high/xhigh passed via `-c model_reasoning_effort`.
+  Doctor probes version and authentication via `codex login status`.
+- **Muse**: conversation-only BTW turns disable approvals, writes, and shell;
+  full permission turns use `--yolo`. One native session resumes across
+  `/mode`. Custom model IDs work; efforts are
+  default/minimal/low/medium/high/xhigh/max passed via `--reasoning-effort`.
+  `none` and `off` are rejected by `--provider meta`. Doctor probes version;
+  auth is unverified (no probe exists).
 
 Restore the settings backup afterwards if desired.

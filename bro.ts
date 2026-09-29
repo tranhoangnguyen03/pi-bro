@@ -23,6 +23,8 @@ import {
 	advisorFlagErrorHint,
 	CLAUDE_EFFORTS,
 	GROK_EFFORTS,
+	CODEX_EFFORTS,
+	MUSE_EFFORTS,
 	backendSupports,
 	execute as executeBackend,
 	parseBtwAgyLine,
@@ -67,13 +69,15 @@ type BtwTurn = { question: string; answer: string };
 // thread; `sessionFull` is the access mode the native session last ran in.
 type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean; backend?: BackendName; model?: string; context?: string; sessionFull?: boolean };
 const EFFORTS = ["default", "low", "medium", "high"] as const;
-const BACKENDS = ["agy", "claude", "grok"] as const;
+const BACKENDS = ["agy", "claude", "grok", "codex", "muse"] as const;
 type BackendName = (typeof BACKENDS)[number];
-type BroEffort = "default" | "low" | "medium" | "high" | "xhigh" | "max";
-type AgyEffort = Exclude<BroEffort, "default" | "xhigh" | "max">;
+type BroEffort = "default" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+type AgyEffort = Exclude<BroEffort, "default" | "minimal" | "xhigh" | "max">;
 type ClaudeEffort = (typeof CLAUDE_EFFORTS)[number];
-export { GROK_EFFORTS };
+export { GROK_EFFORTS, CODEX_EFFORTS, MUSE_EFFORTS };
 type GrokEffort = (typeof GROK_EFFORTS)[number];
+type CodexEffort = (typeof CODEX_EFFORTS)[number];
+type MuseEffort = (typeof MUSE_EFFORTS)[number];
 // "advisor" is a real capability (command, Agy invocation, Doctor check) like the other three;
 // see docs/plans/2026-09-19-bro-advisor-design.md. All four share one model/effort resolution,
 // override, and Doctor-check path via this single list -- there is no configuration-only tier.
@@ -98,6 +102,14 @@ export const CLAUDE_MODELS = [
 export const GROK_MODELS = [
 	{ id: "grok-4.7", label: "Grok 4.7" },
 	{ id: "grok-4.7-build-fast", label: "Grok 4.7 Build Fast" },
+] as const;
+export const CODEX_MODELS = [
+	{ id: "gpt-5.5", label: "GPT-5.5" },
+	{ id: "gpt-5.4", label: "GPT-5.4" },
+] as const;
+export const MUSE_MODELS = [
+	{ id: "muse-spark-1.3-contributor", label: "Muse Spark 1.3 Contributor" },
+	{ id: "muse-spark-1.3", label: "Muse Spark 1.3" },
 ] as const;
 export { backendSupports as supportsBackend };
 type AgyModelFamily = {
@@ -508,7 +520,7 @@ export async function extractWebPage(input: string, signal?: AbortSignal): Promi
 
 function parseBackend(value: unknown, context: string): BackendName {
 	if (typeof value !== "string" || !BACKENDS.some((backend) => backend === value)) {
-		throw new Error(`${context} backend must be "agy", "claude", or "grok".`);
+		throw new Error(`${context} backend must be "agy", "claude", "grok", "codex", or "muse".`);
 	}
 	return value as BackendName;
 }
@@ -525,6 +537,14 @@ function isGrokEffort(effort: unknown): effort is GrokEffort | "default" {
 	return effort === "default" || GROK_EFFORTS.some((item) => item === effort);
 }
 
+function isCodexEffort(effort: unknown): effort is CodexEffort | "default" {
+	return effort === "default" || CODEX_EFFORTS.some((item) => item === effort);
+}
+
+function isMuseEffort(effort: unknown): effort is MuseEffort | "default" {
+	return effort === "default" || MUSE_EFFORTS.some((item) => item === effort);
+}
+
 function parseModelEffortPair(value: unknown, context: string): ModelEffortPair {
 	if (!isRecord(value) || typeof value.model !== "string" || !value.model.trim()) {
 		throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", or "high".`);
@@ -539,6 +559,18 @@ function parseModelEffortPair(value: unknown, context: string): ModelEffortPair 
 	if (backend === "grok") {
 		if (!isGrokEffort(value.effort)) {
 			throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", "high", or "xhigh".`);
+		}
+		return { backend, model: value.model.trim(), effort: value.effort };
+	}
+	if (backend === "codex") {
+		if (!isCodexEffort(value.effort)) {
+			throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", "high", or "xhigh".`);
+		}
+		return { backend, model: value.model.trim(), effort: value.effort };
+	}
+	if (backend === "muse") {
+		if (!isMuseEffort(value.effort)) {
+			throw new Error(`${context} must contain a model and effort set to "default", "minimal", "low", "medium", "high", "xhigh", or "max".`);
 		}
 		return { backend, model: value.model.trim(), effort: value.effort };
 	}
@@ -590,14 +622,25 @@ export function parseBroSettings(value: unknown): BroSettings {
 		throw new Error('Settings must contain a model and effort set to "default", "low", "medium", or "high".');
 	}
 	const backend = value.backend === undefined ? undefined : parseBackend(value.backend, "Settings");
-	const effortOk = backend === "claude" ? isClaudeEffort(value.effort) : backend === "grok" ? isGrokEffort(value.effort) : isAgyEffort(value.effort);
+	const effortOk =
+		backend === "claude"
+			? isClaudeEffort(value.effort)
+			: backend === "grok"
+				? isGrokEffort(value.effort)
+				: backend === "codex"
+					? isCodexEffort(value.effort)
+					: backend === "muse"
+						? isMuseEffort(value.effort)
+						: isAgyEffort(value.effort);
 	if (!effortOk) {
 		throw new Error(
 			backend === "claude"
 				? 'Settings must contain a model and effort set to "default", "low", "medium", "high", "xhigh", or "max".'
-				: backend === "grok"
+				: backend === "grok" || backend === "codex"
 					? 'Settings must contain a model and effort set to "default", "low", "medium", "high", or "xhigh".'
-					: 'Settings must contain a model and effort set to "default", "low", "medium", or "high".',
+					: backend === "muse"
+						? 'Settings must contain a model and effort set to "default", "minimal", "low", "medium", "high", "xhigh", or "max".'
+						: 'Settings must contain a model and effort set to "default", "low", "medium", or "high".',
 		);
 	}
 	const mode = value.mode === undefined ? DEFAULT_BRO_MODE : parseBroMode(value.mode);
@@ -649,8 +692,8 @@ export function resolveModelEffort(
 	pair: ModelEffortPair,
 	families: AgyModelFamily[],
 ): { pair: ModelEffortPair; family?: AgyModelFamily } {
-	// Claude/Grok selections never resolve through the Agy catalog; they pass through untouched.
-	if (pair.backend === "claude" || pair.backend === "grok") return { pair };
+	// Claude/Grok/Codex/Muse selections never resolve through the Agy catalog; they pass through untouched.
+	if (pair.backend === "claude" || pair.backend === "grok" || pair.backend === "codex" || pair.backend === "muse") return { pair };
 	const family = families.find((item) => item.id === pair.model || item.variants.some((variant) => variant.id === pair.model));
 	if (!family) return { pair };
 	const variant = family.variants.find((item) => item.id === pair.model);
@@ -688,17 +731,41 @@ export function resolveGrokModel(input: string): string {
 	return trimmed;
 }
 
+// Codex seeds resolve to themselves; any other non-empty string passes through
+// untouched as an explicit user-entered model ID.
+export function resolveCodexModel(input: string): string {
+	const trimmed = input.trim();
+	if (!trimmed) throw new Error("Codex model must be a non-empty model ID (gpt-5.5, gpt-5.4, or an explicit model ID).");
+	return trimmed;
+}
+
+// Muse seeds resolve to themselves; any other non-empty string passes through
+// untouched as an explicit user-entered model ID.
+export function resolveMuseModel(input: string): string {
+	const trimmed = input.trim();
+	if (!trimmed) throw new Error("Muse model must be a non-empty model ID (muse-spark-1.3-contributor, muse-spark-1.3, or an explicit model ID).");
+	return trimmed;
+}
+
 // Routes one capability's whole pair to its backend execution selection. Agy keeps the
-// existing model/effort split; Claude/Grok carry the model plus an optional effort
+// existing model/effort split; Claude/Grok/Codex/Muse carry the model plus an optional effort
 // ("default" means the CLI's own default and is omitted). Throws for an effort the
 // resolved backend does not support instead of silently sending a mismatched pair.
 export function selectionForCapability(settings: BroSettings, capability: Capability): BackendSelection {
 	const pair = capabilityPair(settings, capability);
 	const backend = capabilityBackend(settings, capability);
-	if (backend === "claude" || backend === "grok") {
-		const valid = backend === "claude" ? isClaudeEffort(pair.effort) : isGrokEffort(pair.effort);
+	if (backend === "claude" || backend === "grok" || backend === "codex" || backend === "muse") {
+		const valid =
+			backend === "claude"
+				? isClaudeEffort(pair.effort)
+				: backend === "grok"
+					? isGrokEffort(pair.effort)
+					: backend === "codex"
+						? isCodexEffort(pair.effort)
+						: isMuseEffort(pair.effort);
 		if (!valid) {
-			throw new Error(`\`${pair.effort}\` is not supported on the ${backend === "claude" ? "Claude" : "Grok"} backend. Run \`/bro config\` to fix this.`);
+			const label = backend === "claude" ? "Claude" : backend === "grok" ? "Grok" : backend === "codex" ? "Codex" : "Muse";
+			throw new Error(`\`${pair.effort}\` is not supported on the ${label} backend. Run \`/bro config\` to fix this.`);
 		}
 		return (
 			pair.effort === "default"
@@ -970,6 +1037,67 @@ async function checkGrokVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<
 	}
 }
 
+async function checkCodexVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+	try {
+		const result = await pi.exec("codex", ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
+		if (signal.aborted) throw new Error("Canceled.");
+		if (result.killed || result.code !== 0) {
+			const detail = result.stderr.trim() || result.stdout.trim();
+			throw new Error(
+				detail
+					? `Codex could not start: ${detail}\n\nRun \`/bro doctor\` for setup help.`
+					: "Codex could not start. Make sure Codex is installed and on PATH, then run `/bro doctor`.",
+			);
+		}
+		const version = result.stdout.trim() || result.stderr.trim();
+		if (!version) throw new Error("Codex returned no version information. Update Codex, then run `/bro doctor` again.");
+		return version;
+	} finally {
+		await rm(runDirectory, { recursive: true, force: true });
+	}
+}
+
+// Auth status only: a version/auth answer without a model request. A passing answer here
+// says the CLI starts and reports signed-in state -- it does not imply connectivity.
+async function checkCodexAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+	try {
+		const result = await pi.exec("codex", ["login", "status"], { cwd: runDirectory, signal, timeout: 15_000 });
+		if (signal.aborted) throw new Error("Canceled.");
+		if (result.killed || result.code !== 0) {
+			const detail = result.stderr.trim() || result.stdout.trim();
+			throw new Error(detail ? `Codex auth status: ${detail}` : "Codex is not logged in. Run `codex login`.");
+		}
+		const status = result.stdout.trim() || result.stderr.trim();
+		if (!status || !/logged in/i.test(status)) throw new Error("Codex is not logged in. Run `codex login`.");
+		return "authentication configured (not a connectivity test)";
+	} finally {
+		await rm(runDirectory, { recursive: true, force: true });
+	}
+}
+
+async function checkMuseVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+	try {
+		const result = await pi.exec("muse", ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
+		if (signal.aborted) throw new Error("Canceled.");
+		if (result.killed || result.code !== 0) {
+			const detail = result.stderr.trim() || result.stdout.trim();
+			throw new Error(
+				detail
+					? `Muse could not start: ${detail}\n\nRun \`/bro doctor\` for setup help.`
+					: "Muse could not start. Make sure Muse is installed and on PATH, then run `/bro doctor`.",
+			);
+		}
+		const version = result.stdout.trim() || result.stderr.trim();
+		if (!version) throw new Error("Muse returned no version information. Update Muse, then run `/bro doctor` again.");
+		return version;
+	} finally {
+		await rm(runDirectory, { recursive: true, force: true });
+	}
+}
+
 async function checkAgyUsage(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
 	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 	try {
@@ -1016,11 +1144,13 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 		fail("Prompt", error);
 	}
 
-	// Probe only the backends some feature actually selects: a Claude/Grok-only setup never
+	// Probe only the backends some feature actually selects: a Claude/Grok/Codex/Muse-only setup never
 	// requires Agy to be installed, and vice versa.
 	const agyInUse = !settings || capabilityBackend(settings, "explain") === "agy" || capabilityBackend(settings, "show") === "agy" || capabilityBackend(settings, "btw") === "agy" || capabilityBackend(settings, "advisor") === "agy" || (settings.backend ?? "agy") === "agy";
 	const claudeInUse = !!settings && (capabilityBackend(settings, "explain") === "claude" || capabilityBackend(settings, "show") === "claude" || capabilityBackend(settings, "btw") === "claude" || capabilityBackend(settings, "advisor") === "claude" || settings.backend === "claude");
 	const grokInUse = !!settings && (capabilityBackend(settings, "explain") === "grok" || capabilityBackend(settings, "show") === "grok" || capabilityBackend(settings, "btw") === "grok" || capabilityBackend(settings, "advisor") === "grok" || settings.backend === "grok");
+	const codexInUse = !!settings && (capabilityBackend(settings, "explain") === "codex" || capabilityBackend(settings, "show") === "codex" || capabilityBackend(settings, "btw") === "codex" || capabilityBackend(settings, "advisor") === "codex" || settings.backend === "codex");
+	const museInUse = !!settings && (capabilityBackend(settings, "explain") === "muse" || capabilityBackend(settings, "show") === "muse" || capabilityBackend(settings, "btw") === "muse" || capabilityBackend(settings, "advisor") === "muse" || settings.backend === "muse");
 
 	let agyStarted = false;
 	if (agyInUse) {
@@ -1087,6 +1217,38 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 		pass("Grok", "not probed — no feature selects the Grok backend");
 	}
 
+	// Version and auth status only, never a model request.
+	if (codexInUse) {
+		try {
+			pass("Codex", await checkCodexVersion(pi, signal));
+		} catch (error) {
+			if (signal.aborted) throw error;
+			fail("Codex", error);
+		}
+		try {
+			pass("Codex auth", await checkCodexAuth(pi, signal));
+		} catch (error) {
+			if (signal.aborted) throw error;
+			fail("Codex auth", error);
+		}
+	} else {
+		pass("Codex", "not probed — no feature selects the Codex backend");
+	}
+
+	// Version only, never a model request. No Muse auth probe exists, so a passing
+	// version says the CLI starts — it says nothing about auth or connectivity.
+	if (museInUse) {
+		try {
+			pass("Muse", await checkMuseVersion(pi, signal));
+		} catch (error) {
+			if (signal.aborted) throw error;
+			fail("Muse", error);
+		}
+		pass("Muse auth", "unverified — no auth probe exists (version does not imply auth or connectivity)");
+	} else {
+		pass("Muse", "not probed — no feature selects the Muse backend");
+	}
+
 	if (settings) {
 		const defaultBackend = settings.backend ?? "agy";
 		if (defaultBackend === "claude") {
@@ -1101,6 +1263,24 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 		} else if (defaultBackend === "grok") {
 			pass("Selected model", `grok \`${settings.model}\``);
 			if (!isGrokEffort(settings.effort)) {
+				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
+			} else if (settings.effort === "default") {
+				pass("Reasoning effort", "built into the selected model");
+			} else {
+				pass("Reasoning effort", settings.effort);
+			}
+		} else if (defaultBackend === "codex") {
+			pass("Selected model", `codex \`${settings.model}\``);
+			if (!isCodexEffort(settings.effort)) {
+				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
+			} else if (settings.effort === "default") {
+				pass("Reasoning effort", "built into the selected model");
+			} else {
+				pass("Reasoning effort", settings.effort);
+			}
+		} else if (defaultBackend === "muse") {
+			pass("Selected model", `muse \`${settings.model}\``);
+			if (!isMuseEffort(settings.effort)) {
 				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
 			} else if (settings.effort === "default") {
 				pass("Reasoning effort", "built into the selected model");
@@ -1159,6 +1339,40 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 				);
 				continue;
 			}
+			if (backend === "codex") {
+				if (!backendSupports("codex", capability)) {
+					fail(label, `\`${capability}\` is not supported on the Codex backend for this capability. Run \`/bro config\` to give it another backend.`);
+					continue;
+				}
+				if (!isCodexEffort(pair.effort)) {
+					fail(label, `\`${pair.effort}\` is unsupported for codex \`${pair.model}\`. Run \`/bro config\` to fix this.`);
+					continue;
+				}
+				pass(
+					label,
+					override
+						? `override codex \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
+						: `codex \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
+				);
+				continue;
+			}
+			if (backend === "muse") {
+				if (!backendSupports("muse", capability)) {
+					fail(label, `\`${capability}\` is not supported on the Muse backend for this capability. Run \`/bro config\` to give it another backend.`);
+					continue;
+				}
+				if (!isMuseEffort(pair.effort)) {
+					fail(label, `\`${pair.effort}\` is unsupported for muse \`${pair.model}\`. Run \`/bro config\` to fix this.`);
+					continue;
+				}
+				pass(
+					label,
+					override
+						? `override muse \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
+						: `muse \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
+				);
+				continue;
+			}
 			if (!models) continue;
 			const resolved = resolveCapabilitySettings(settings, capability, models);
 			if (!resolved.family) {
@@ -1193,13 +1407,17 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 		pass("Advisor compatibility", "Claude backend — no Agy version floor applies");
 	} else if (settings && capabilityBackend(settings, "advisor") === "grok") {
 		pass("Advisor compatibility", "Grok backend — no Agy version floor applies; auth/connectivity unverified (no probe)");
+	} else if (settings && capabilityBackend(settings, "advisor") === "codex") {
+		pass("Advisor compatibility", "Codex backend — no Agy version floor applies");
+	} else if (settings && capabilityBackend(settings, "advisor") === "muse") {
+		pass("Advisor compatibility", "Muse backend — no Agy version floor applies; auth/connectivity unverified (no probe)");
 	} else if (agyVersion && advisorAgyCompatible(agyVersion)) pass("Advisor compatibility", ADVISOR_COMPATIBILITY);
 	else if (agyVersion) fail("Advisor compatibility", `installed \`${agyVersion}\`; requires Agy >=1.1.15. Run \`agy update\`.`);
 
 	return `# Bro doctor\n\n${lines.join("\n")}\n\n**${failed ? "Bro needs attention." : "Bro is ready."}**\n\n${
 		failed
 			? "Fix the failed items, then press **R** to check again."
-			: "No assistant response was sent and no model turn was run. Version/auth checks do not imply connectivity (Grok auth is unverified — no probe exists)."
+			: "No assistant response was sent and no model turn was run. Version/auth checks do not imply connectivity (Grok and Muse auth are unverified — no probe exists)."
 	}`;
 }
 
@@ -1787,7 +2005,7 @@ export function advisorAttemptLabel(details: AdvisorToolDetails): string {
 		return `Bro advisor · ${details.model ?? "unknown model"} · ${details.attempt} attempt${details.attempt === 1 ? "" : "s"} · ${Math.ceil((details.durationMs ?? details.elapsedMs) / 1_000)}s`;
 	}
 	const latest = details.activity?.at(-1);
-	const backendLabel = details.backend === "claude" ? "Claude" : details.backend === "grok" ? "Grok" : "Agy";
+	const backendLabel = details.backend === "claude" ? "Claude" : details.backend === "grok" ? "Grok" : details.backend === "codex" ? "Codex" : details.backend === "muse" ? "Muse" : "Agy";
 	// "last reported" + freshness, never a claim about what the backend is doing right now and never
 	// "stalled" -- silence since lastActivityAt is not itself evidence of a stuck run.
 	const activityLabel = latest
@@ -1807,10 +2025,12 @@ function showTurnsValues(current: number): string[] {
 // falsely healthy for an unavailable model), and flags a stored effort that isn't one of the
 // resolved family's supported efforts instead of silently showing it as if it were valid.
 function effortDisplay(resolved: { pair: ModelEffortPair; family?: AgyModelFamily }, backend: BackendName): string {
-	// Claude/Grok selections never touch the Agy catalog: the stored effort is valid exactly
+	// Claude/Grok/Codex/Muse selections never touch the Agy catalog: the stored effort is valid exactly
 	// when it is one of that backend's levels (or "default" for the CLI's own default).
 	if (backend === "claude") return isClaudeEffort(resolved.pair.effort) ? resolved.pair.effort : `${resolved.pair.effort} (unsupported)`;
 	if (backend === "grok") return isGrokEffort(resolved.pair.effort) ? resolved.pair.effort : `${resolved.pair.effort} (unsupported)`;
+	if (backend === "codex") return isCodexEffort(resolved.pair.effort) ? resolved.pair.effort : `${resolved.pair.effort} (unsupported)`;
+	if (backend === "muse") return isMuseEffort(resolved.pair.effort) ? resolved.pair.effort : `${resolved.pair.effort} (unsupported)`;
 	if (!resolved.family) return "unavailable";
 	const fixed = !resolved.family.efforts.length;
 	const valid = fixed ? resolved.pair.effort === "default" : resolved.family.efforts.includes(resolved.pair.effort as AgyEffort);
@@ -1818,7 +2038,7 @@ function effortDisplay(resolved: { pair: ModelEffortPair; family?: AgyModelFamil
 	return fixed ? "fixed" : resolved.pair.effort;
 }
 
-// Model-picker values that switch backend carry a "claude:"/"grok:" prefix so one
+// Model-picker values that switch backend carry a "claude:"/"grok:"/"codex:"/"muse:" prefix so one
 // atomic picker commit changes backend+model together -- cancelling the picker (Esc)
 // leaves both unchanged via the existing submenu-cancel path.
 const CLAUDE_OPTION_PREFIX = "claude:";
@@ -1833,11 +2053,27 @@ function parseGrokOption(value: string): string | undefined {
 		? value.slice(GROK_OPTION_PREFIX.length)
 		: undefined;
 }
-function parseBackendOption(value: string): { backend: "claude" | "grok"; id: string } | undefined {
+const CODEX_OPTION_PREFIX = "codex:";
+function parseCodexOption(value: string): string | undefined {
+	return value.startsWith(CODEX_OPTION_PREFIX) && value.length > CODEX_OPTION_PREFIX.length
+		? value.slice(CODEX_OPTION_PREFIX.length)
+		: undefined;
+}
+const MUSE_OPTION_PREFIX = "muse:";
+function parseMuseOption(value: string): string | undefined {
+	return value.startsWith(MUSE_OPTION_PREFIX) && value.length > MUSE_OPTION_PREFIX.length
+		? value.slice(MUSE_OPTION_PREFIX.length)
+		: undefined;
+}
+function parseBackendOption(value: string): { backend: "claude" | "grok" | "codex" | "muse"; id: string } | undefined {
 	const claudeId = parseClaudeOption(value);
 	if (claudeId !== undefined) return { backend: "claude", id: claudeId };
 	const grokId = parseGrokOption(value);
 	if (grokId !== undefined) return { backend: "grok", id: grokId };
+	const codexId = parseCodexOption(value);
+	if (codexId !== undefined) return { backend: "codex", id: codexId };
+	const museId = parseMuseOption(value);
+	if (museId !== undefined) return { backend: "muse", id: museId };
 	return undefined;
 }
 
@@ -1877,7 +2113,7 @@ export function createConfigModal(
 					value: family.id,
 					label: `${family.label}${family.efforts.length ? "" : " · fixed effort"}`,
 				})),
-				// Claude/Grok entries stay last so existing Agy keyboard navigation is unaffected.
+				// Alternative CLI entries stay last so existing Agy keyboard navigation is unaffected.
 				...CLAUDE_MODELS.map((model) => ({
 					value: `${CLAUDE_OPTION_PREFIX}${model.id}`,
 					label: `${model.label} · claude`,
@@ -1886,13 +2122,33 @@ export function createConfigModal(
 					value: `${GROK_OPTION_PREFIX}${model.id}`,
 					label: `${model.label} · grok`,
 				})),
+				...CODEX_MODELS.map((model) => ({
+					value: `${CODEX_OPTION_PREFIX}${model.id}`,
+					label: `${model.label} · codex`,
+				})),
+				...MUSE_MODELS.map((model) => ({
+					value: `${MUSE_OPTION_PREFIX}${model.id}`,
+					label: `${model.label} · muse`,
+				})),
 			];
 			options.push({ value: "__claude_custom__", label: "Claude · custom model ID…" });
 			options.push({ value: "__grok_custom__", label: "Grok · custom model ID…" });
+			options.push({ value: "__codex_custom__", label: "Codex · custom model ID…" });
+			options.push({ value: "__muse_custom__", label: "Muse · custom model ID…" });
 			const input = new Input();
-			let enteringBackend: "claude" | "grok" | undefined;
+			let enteringBackend: "claude" | "grok" | "codex" | "muse" | undefined;
 			input.onSubmit = (value) => {
-				if (value.trim() && enteringBackend) pickerDone(`${enteringBackend === "claude" ? CLAUDE_OPTION_PREFIX : GROK_OPTION_PREFIX}${value.trim()}`);
+				if (value.trim() && enteringBackend) {
+					const prefix =
+						enteringBackend === "claude"
+							? CLAUDE_OPTION_PREFIX
+							: enteringBackend === "grok"
+								? GROK_OPTION_PREFIX
+								: enteringBackend === "codex"
+									? CODEX_OPTION_PREFIX
+									: MUSE_OPTION_PREFIX;
+					pickerDone(`${prefix}${value.trim()}`);
+				}
 			};
 			const picker = new SelectList(options, Math.min(options.length, 8), getSelectListTheme());
 			const selectedIndex = capability && current === "Default" ? 0 : options.findIndex((option) => option.value === current);
@@ -1900,11 +2156,14 @@ export function createConfigModal(
 			picker.onSelect = (item) => {
 				if (item.value === "__claude_custom__") { enteringBackend = "claude"; tui.requestRender(); }
 				else if (item.value === "__grok_custom__") { enteringBackend = "grok"; tui.requestRender(); }
+				else if (item.value === "__codex_custom__") { enteringBackend = "codex"; tui.requestRender(); }
+				else if (item.value === "__muse_custom__") { enteringBackend = "muse"; tui.requestRender(); }
 				else pickerDone(item.value);
 			};
 			picker.onCancel = () => pickerDone();
+			const customLabel = () => enteringBackend === "claude" ? "Claude" : enteringBackend === "grok" ? "Grok" : enteringBackend === "codex" ? "Codex" : "Muse";
 			return {
-				render: (width: number) => enteringBackend ? [`${enteringBackend === "claude" ? "Claude" : "Grok"} model ID (Enter saves, Esc cancels)`, ...input.render(width)] : picker.render(width),
+				render: (width: number) => enteringBackend ? [`${customLabel()} model ID (Enter saves, Esc cancels)`, ...input.render(width)] : picker.render(width),
 				invalidate: () => { picker.invalidate(); input.invalidate(); },
 				handleInput: (data: string) => {
 					if (enteringBackend && matchesKey(data, "escape")) pickerDone();
@@ -1945,9 +2204,29 @@ export function createConfigModal(
 		function refresh(): void {
 			const defaultBackend = settings.backend ?? "agy";
 			const def = resolveModelEffort({ backend: settings.backend, model: settings.model, effort: settings.effort }, families);
-			modelItem.currentValue = defaultBackend === "claude" ? `${CLAUDE_OPTION_PREFIX}${settings.model}` : defaultBackend === "grok" ? `${GROK_OPTION_PREFIX}${settings.model}` : (def.family?.id ?? settings.model);
+			modelItem.currentValue =
+				defaultBackend === "claude"
+					? `${CLAUDE_OPTION_PREFIX}${settings.model}`
+					: defaultBackend === "grok"
+						? `${GROK_OPTION_PREFIX}${settings.model}`
+						: defaultBackend === "codex"
+							? `${CODEX_OPTION_PREFIX}${settings.model}`
+							: defaultBackend === "muse"
+								? `${MUSE_OPTION_PREFIX}${settings.model}`
+								: (def.family?.id ?? settings.model);
 			effortItem.currentValue = effortDisplay(def, defaultBackend);
-			effortItem.values = defaultBackend === "claude" ? ["default", ...CLAUDE_EFFORTS] : defaultBackend === "grok" ? ["default", ...GROK_EFFORTS] : def.family?.efforts.length ? [...def.family.efforts] : undefined;
+			effortItem.values =
+				defaultBackend === "claude"
+					? ["default", ...CLAUDE_EFFORTS]
+					: defaultBackend === "grok"
+						? ["default", ...GROK_EFFORTS]
+						: defaultBackend === "codex"
+							? ["default", ...CODEX_EFFORTS]
+							: defaultBackend === "muse"
+								? ["default", ...MUSE_EFFORTS]
+								: def.family?.efforts.length
+									? [...def.family.efforts]
+									: undefined;
 			modeItem.currentValue = settings.mode;
 			showTurnsItem.currentValue = String(settings.showTurns);
 			showTurnsItem.values = showTurnsValues(settings.showTurns);
@@ -1963,9 +2242,24 @@ export function createConfigModal(
 						? `${CLAUDE_OPTION_PREFIX}${override.model}`
 						: backend === "grok"
 							? `${GROK_OPTION_PREFIX}${override.model}`
-							: (resolved.family?.id ?? override.model);
+							: backend === "codex"
+								? `${CODEX_OPTION_PREFIX}${override.model}`
+								: backend === "muse"
+									? `${MUSE_OPTION_PREFIX}${override.model}`
+									: (resolved.family?.id ?? override.model);
 				rows.effort.currentValue = backendSupports(backend, capability) ? effortDisplay(resolved, backend) : "unsupported backend";
-				rows.effort.values = backend === "claude" ? ["default", ...CLAUDE_EFFORTS] : backend === "grok" ? ["default", ...GROK_EFFORTS] : resolved.family?.efforts.length ? [...resolved.family.efforts] : undefined;
+				rows.effort.values =
+					backend === "claude"
+						? ["default", ...CLAUDE_EFFORTS]
+						: backend === "grok"
+							? ["default", ...GROK_EFFORTS]
+							: backend === "codex"
+								? ["default", ...CODEX_EFFORTS]
+								: backend === "muse"
+									? ["default", ...MUSE_EFFORTS]
+									: resolved.family?.efforts.length
+										? [...resolved.family.efforts]
+										: undefined;
 			}
 		}
 		refresh();
@@ -2025,9 +2319,15 @@ export function createConfigModal(
 					if (switched.backend === "claude") {
 						const effort = settings.backend === "claude" && isClaudeEffort(settings.effort) ? settings.effort : "default";
 						settings = { ...settings, backend: "claude", model: resolveClaudeModel(switched.id), effort };
-					} else {
+					} else if (switched.backend === "grok") {
 						const effort = settings.backend === "grok" && isGrokEffort(settings.effort) ? settings.effort : "default";
 						settings = { ...settings, backend: "grok", model: resolveGrokModel(switched.id), effort };
+					} else if (switched.backend === "codex") {
+						const effort = settings.backend === "codex" && isCodexEffort(settings.effort) ? settings.effort : "default";
+						settings = { ...settings, backend: "codex", model: resolveCodexModel(switched.id), effort };
+					} else {
+						const effort = settings.backend === "muse" && isMuseEffort(settings.effort) ? settings.effort : "default";
+						settings = { ...settings, backend: "muse", model: resolveMuseModel(switched.id), effort };
 					}
 				} else {
 					const family = findFamily(newValue);
@@ -2043,6 +2343,12 @@ export function createConfigModal(
 					settings = { ...settings, effort: newValue };
 				} else if ((settings.backend ?? "agy") === "grok") {
 					if (!isGrokEffort(newValue)) return;
+					settings = { ...settings, effort: newValue };
+				} else if ((settings.backend ?? "agy") === "codex") {
+					if (!isCodexEffort(newValue)) return;
+					settings = { ...settings, effort: newValue };
+				} else if ((settings.backend ?? "agy") === "muse") {
+					if (!isMuseEffort(newValue)) return;
 					settings = { ...settings, effort: newValue };
 				} else {
 					// Effort-only edit: pin the resolved family's canonical id, same reasoning as the
@@ -2076,11 +2382,23 @@ export function createConfigModal(
 									model: resolveClaudeModel(switched.id),
 									effort: capabilityBackend(settings, capability) === "claude" && isClaudeEffort(currentEffort) ? currentEffort : "default",
 								});
-							} else {
+							} else if (switched.backend === "grok") {
 								settings = withCapabilityOverride(settings, capability, {
 									backend: "grok",
 									model: resolveGrokModel(switched.id),
 									effort: capabilityBackend(settings, capability) === "grok" && isGrokEffort(currentEffort) ? currentEffort : "default",
+								});
+							} else if (switched.backend === "codex") {
+								settings = withCapabilityOverride(settings, capability, {
+									backend: "codex",
+									model: resolveCodexModel(switched.id),
+									effort: capabilityBackend(settings, capability) === "codex" && isCodexEffort(currentEffort) ? currentEffort : "default",
+								});
+							} else {
+								settings = withCapabilityOverride(settings, capability, {
+									backend: "muse",
+									model: resolveMuseModel(switched.id),
+									effort: capabilityBackend(settings, capability) === "muse" && isMuseEffort(currentEffort) ? currentEffort : "default",
 								});
 							}
 						} else {
@@ -2104,6 +2422,16 @@ export function createConfigModal(
 					const existing = capabilityOverride(settings, capability);
 					const model = existing?.model ?? settings.model;
 					settings = withCapabilityOverride(settings, capability, { backend: "grok", model, effort: newValue });
+				} else if (capabilityBackend(settings, capability) === "codex") {
+					if (!isCodexEffort(newValue)) return;
+					const existing = capabilityOverride(settings, capability);
+					const model = existing?.model ?? settings.model;
+					settings = withCapabilityOverride(settings, capability, { backend: "codex", model, effort: newValue });
+				} else if (capabilityBackend(settings, capability) === "muse") {
+					if (!isMuseEffort(newValue)) return;
+					const existing = capabilityOverride(settings, capability);
+					const model = existing?.model ?? settings.model;
+					settings = withCapabilityOverride(settings, capability, { backend: "muse", model, effort: newValue });
 				} else {
 					// Effort-only edit: pin the resolved family's canonical id, never whatever raw
 					// string happens to sit in settings.model/override.model (which — for a shared
