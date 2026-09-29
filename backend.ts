@@ -1317,7 +1317,7 @@ async function executeMuse(
 				return;
 			}
 			const runStream = payload?.run_stream;
-			const isRoot = !rootRunId || (runStream?.kind === "run" && runStream.id === rootRunId);
+			const isRoot = rootRunId !== undefined && runStream?.kind === "run" && runStream.id === rootRunId;
 
 			if (isAdvisor) {
 				if (envelope.payload_type === "tool.result") {

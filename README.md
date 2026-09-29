@@ -13,7 +13,7 @@ advisor all work across five backends:
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
 - Grok Build (`grok`)
 - [Codex CLI](https://github.com/openai/codex) (`codex`)
-- [Muse Code](https://github.com/meta/muse) (`muse`)
+- Meta Muse Code (`muse`)
 
 You only need the backend(s) you select; Agy is the default, not a requirement.
 
@@ -734,7 +734,7 @@ Bro reads the file again before each request, so manual edits apply next time.
   Omitted overrides inherit `default`.
 - `effort` must be one the backend offers (`default` omits it and lets the
   model decide). Agy selections are normalized against Agy's installed model
-  catalog. Claude and Grok accept seeded or custom model IDs; a model/effort
+  catalog. Claude, Grok, Codex, and Muse accept seeded or custom model IDs; a model/effort
   combination the account does not support fails with the backend's own error
   instead of silently falling back.
 - `mode` is `brief`, `balanced` (the default), or `faithful`. `showTurns` is
@@ -762,6 +762,9 @@ data under their own settings and policies.
 - Grok always runs with its sandbox off and permissions bypassed; its tools,
   hooks, skills, plugins, and MCP may remain available. "Answer only from the
   supplied context" is a request, not an enforced restriction.
+- Muse's restricted mode disables write and shell tools and approval prompts,
+  not all tools: workspace reads and web tools remain available without approval.
+  It is not a tool-free or network-isolated mode.
 - Claude's restrictions are tool/configuration settings (with safe mode), not
   an OS sandbox; built-in and managed Claude behavior can remain. Running a
   permission-bypassing mode as root may be rejected by Claude.

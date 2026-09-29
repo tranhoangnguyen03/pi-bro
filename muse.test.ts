@@ -216,6 +216,8 @@ test("muse root vs nested run isolation: ignores nested task lifecycle and outpu
 	await withFakeMuse(
 		[
 			cmdAccepted("c-root", "s-root"),
+			outputDelta("NESTED BEFORE LINK", "r-nested"),
+			termCompleted("NESTED BEFORE LINK", "r-nested"),
 			runLinked("c-root", "r-root", "s-root"),
 			// Nested task / subagent run
 			line({
@@ -379,9 +381,10 @@ test("muse btw fails on missing session id", async () => {
 	await withFakeMuse(
 		[
 			line({
-				payload_type: "run.terminal.completed",
-				payload: { terminal: "completed", text: "Answer with no session stream" },
+				payload_type: "session.run.linked",
+				payload: { run_stream: { kind: "run", id: "r-no-session" } },
 			}),
+			termCompleted("Answer with no session stream", "r-no-session"),
 		].join("\n"),
 		async () => {
 			const workspace = await realpath(await mkdtemp(join(tmpdir(), "pi-bro-muse-ws-")));
