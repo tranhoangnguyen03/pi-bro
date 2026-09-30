@@ -15,10 +15,14 @@ export type BackendAccess = "restricted" | "workspace-full";
 export type AgySelection = { model: string; effort?: "low" | "medium" | "high" };
 export const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export const GROK_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
+export const CODEX_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
+export const MUSE_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type BackendSelection =
 	| ({ backend?: "agy" } & AgySelection)
 	| { backend: "claude"; model: string; effort?: (typeof CLAUDE_EFFORTS)[number] }
-	| { backend: "grok"; model: string; effort?: (typeof GROK_EFFORTS)[number] };
+	| { backend: "grok"; model: string; effort?: (typeof GROK_EFFORTS)[number] }
+	| { backend: "codex"; model: string; effort?: (typeof CODEX_EFFORTS)[number] }
+	| { backend: "muse"; model: string; effort?: (typeof MUSE_EFFORTS)[number] };
 export type BackendContinuation = { id: string };
 export type BackendProgress = { kind: "text"; text: string } | { kind: "activity"; label: string; timestamp: number };
 export type BackendOnProgress = (progress: BackendProgress) => void;
@@ -73,7 +77,11 @@ function processStartMessage(processError: NodeJS.ErrnoException, cli = "Agy"): 
 			? "Agy could not start. Make sure Agy is installed and on PATH, then run `/bro doctor`."
 			: cli === "Grok"
 				? "Grok could not start. Make sure `grok` is installed and on PATH, then run `/bro doctor`."
-				: "Claude Code could not start. Make sure `claude` is installed and on PATH, then run `/bro doctor`.";
+				: cli === "Codex"
+					? "Codex could not start. Make sure `codex` is installed and on PATH, then run `/bro doctor`."
+					: cli === "Muse"
+						? "Muse could not start. Make sure `muse` is installed and on PATH, then run `/bro doctor`."
+						: "Claude Code could not start. Make sure `claude` is installed and on PATH, then run `/bro doctor`.";
 	}
 	return `${cli} could not start: ${processError.message}\n\nRun \`/bro doctor\` for setup help.`;
 }
@@ -495,7 +503,7 @@ async function executeAdvisorStdin(
 
 // Every backend supports every feature. Grok's "restricted" access is a prompt instruction, not
 // enforcement (see GROK_RESTRICTED_PREFIX); Claude's restricted btw runs tool-less.
-export function backendSupports(_backend: "agy" | "claude" | "grok", _feature: BackendFeature): boolean {
+export function backendSupports(_backend: "agy" | "claude" | "grok" | "codex" | "muse", _feature: BackendFeature): boolean {
 	return true;
 }
 
@@ -964,6 +972,458 @@ async function executeGrok(
 	}
 }
 
+type CodexEvent = {
+	type?: unknown;
+	thread_id?: unknown;
+	item?: {
+		id?: unknown;
+		type?: unknown;
+		text?: unknown;
+		message?: unknown;
+		content?: unknown;
+		command?: unknown;
+		cmd?: unknown;
+		path?: unknown;
+		pattern?: unknown;
+		query?: unknown;
+	};
+	error?: { message?: unknown };
+	message?: unknown;
+};
+
+function extractCodexItemText(item: CodexEvent["item"]): string | undefined {
+	if (!item) return undefined;
+	if (typeof item.text === "string") return item.text;
+	if (typeof item.message === "string") return item.message;
+	if (typeof item.content === "string") return item.content;
+	return undefined;
+}
+
+function codexActivityFromEvent(event: CodexEvent): string | undefined {
+	const item = event.item;
+	if (!item || item.type === "reasoning") return undefined;
+	if (event.type === "item.started" || event.type === "item.completed") {
+		if (item.type !== "agent_message") {
+			const itemType = typeof item.type === "string" ? item.type : "item";
+			const candidate = [item.command, item.cmd, item.path, item.pattern, item.query]
+				.find((v) => typeof v === "string" && v.trim());
+			const preview = typeof candidate === "string" ? candidate.replace(/\s+/g, " ").trim() : "";
+			return `${itemType}${preview ? ` ${preview}` : ""}`;
+		}
+		if (item.type === "agent_message") {
+			const text = extractCodexItemText(item);
+			return text?.split("\n").find((line) => line.trim())?.trim();
+		}
+	}
+	return undefined;
+}
+
+async function executeCodex(
+	request: BackendRequest,
+	selection: { model: string; effort?: string },
+	signal: AbortSignal,
+	onProgress: BackendOnProgress | undefined,
+	killEscalationMs: number,
+	deadlineMsOverride: number | undefined,
+): Promise<BackendOutcome> {
+	const isAdvisor = request.feature === "advisor";
+	const isBtw = request.feature === "btw";
+	const full = request.access === "workspace-full";
+	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
+	const action = isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
+	const timeoutVerb = isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
+	const emptyTextMessage = isAdvisor ? "Codex returned no advice." : isBtw ? "Codex returned no answer for the side question." : "Codex returned no final explanation.";
+
+	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+	const runDirectory = isAdvisor || isBtw ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
+	if (signal.aborted) {
+		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
+		return { status: "cancelled", message: "Canceled." };
+	}
+
+	try {
+		const permissionArgs = full ? ["--dangerously-bypass-approvals-and-sandbox"] : ["--sandbox", "read-only"];
+		const resume = isBtw && request.continuation;
+		const args = [
+			"exec",
+			...permissionArgs,
+			...(resume ? ["resume"] : []),
+			"--json",
+			"--skip-git-repo-check",
+			...(!isBtw ? ["--ephemeral"] : []),
+			"--model",
+			selection.model,
+			...(selection.effort ? ["-c", `model_reasoning_effort="${selection.effort}"`] : []),
+			...(resume ? [request.continuation!.id, "-"] : ["--", "-"]),
+		];
+
+		const child = spawn("codex", args, {
+			cwd: runDirectory ?? request.cwd,
+			stdio: ["pipe", "pipe", "pipe"],
+			windowsHide: true,
+			detached: process.platform !== "win32",
+		});
+
+		const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
+		let processError: Error | undefined;
+		let stderr = "";
+		let partial = "";
+		let threadId: string | undefined;
+		let final: string | undefined;
+		let sawTerminal = false;
+		let terminalError: string | undefined;
+		let protocolError: string | undefined;
+		let stdoutBuffer = "";
+
+		child.stderr?.setEncoding("utf8");
+		child.stderr?.on("data", (chunk: string) => {
+			stderr += chunk;
+		});
+		child.once("error", (error) => {
+			processError = error;
+		});
+		child.stdin?.on("error", () => {
+			// codex exiting before reading stdin is reported through the close/error path.
+		});
+		child.stdin?.end(request.prompt);
+
+		const handleLine = (line: string) => {
+			if (!line.trim() || attempt.causeOf()) return;
+			let event: CodexEvent;
+			try {
+				event = JSON.parse(line) as CodexEvent;
+			} catch {
+				throw new Error("Codex emitted invalid JSON output.");
+			}
+			if (event.type === "thread.started" && typeof event.thread_id === "string") {
+				threadId = event.thread_id;
+			}
+			if (event.type === "error") {
+				terminalError ??= `Codex error: ${typeof event.message === "string" && event.message.trim() ? event.message.trim() : "unknown error"}`;
+				return;
+			}
+			if (event.type === "turn.failed") {
+				sawTerminal = true;
+				const err = event.error as { message?: unknown } | undefined;
+				terminalError ??= `Codex failed: ${typeof err?.message === "string" && err.message.trim() ? err.message.trim() : "turn failed"}`;
+				return;
+			}
+			if (event.type === "turn.completed") {
+				sawTerminal = true;
+				return;
+			}
+			const item = event.item;
+			if (isAdvisor && (event.type === "item.started" || event.type === "item.completed")) {
+				const activity = codexActivityFromEvent(event);
+				if (activity) onProgress?.({ kind: "activity", label: activity, timestamp: Date.now() });
+			}
+			if (event.type === "item.completed" && item?.type === "agent_message") {
+				const text = extractCodexItemText(item);
+				if (text !== undefined) {
+					final = text;
+					if (!isAdvisor) {
+						partial += `${partial ? "\n\n" : ""}${text}`;
+						onProgress?.({ kind: "text", text: partial });
+					}
+				}
+			}
+		};
+
+		child.stdout?.setEncoding("utf8");
+		child.stdout?.on("data", (chunk: string) => {
+			stdoutBuffer += chunk;
+			const parts = stdoutBuffer.split(/\r?\n/);
+			stdoutBuffer = parts.pop() ?? "";
+			if (stdoutBuffer.length > ADVISOR_MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > ADVISOR_MAX_STDOUT_LINE_CHARS)) {
+				protocolError ??= `Codex emitted a stdout line over ${ADVISOR_MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
+				stdoutBuffer = "";
+				attempt.stop("protocol");
+				return;
+			}
+			for (const line of parts) {
+				try {
+					handleLine(line);
+				} catch (error) {
+					protocolError ??= errorMessage(error);
+					attempt.stop("protocol");
+					return;
+				}
+			}
+		});
+
+		const { code, exitSignal } = await attempt.closed;
+		attempt.dispose();
+		if (stdoutBuffer.trim()) {
+			try {
+				handleLine(stdoutBuffer);
+			} catch (error) {
+				protocolError ??= errorMessage(error);
+			}
+		}
+
+		const partialText = partial ? { partialText: partial } : {};
+		const cause = attempt.causeOf();
+		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", ...partialText };
+		if (cause === "timeout") return { status: "timeout", message: `Codex timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, ...partialText };
+		if (protocolError) return { status: "failure", message: withDoctor(protocolError), ...partialText };
+		if (processError) return { status: "failure", message: processStartMessage(processError as NodeJS.ErrnoException, "Codex") };
+		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Codex"), ...partialText };
+		if (terminalError) return { status: "failure", message: withDoctor(terminalError), ...partialText };
+		if (code !== 0) {
+			const detail = stderr.trim();
+			return {
+				status: "failure",
+				message: detail
+					? `Codex could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`
+					: `Codex could not ${action}. Make sure \`codex\` is installed and signed in, then run \`/bro doctor\`.`,
+				...partialText,
+			};
+		}
+		if (!sawTerminal) {
+			return { status: "failure", message: withDoctor(`Codex exited without a terminal result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`), ...partialText };
+		}
+		const text = final?.trim();
+		if (!text) return { status: "failure", message: withDoctor(emptyTextMessage), ...partialText };
+		if (!isBtw) return { status: "success", text };
+		if (!threadId || (request.continuation && threadId !== request.continuation.id)) {
+			return {
+				status: "failure",
+				message: withDoctor(`Codex reported an inconsistent session id (expected ${request.continuation?.id ?? "one id"}, got ${threadId ?? "none"}).`),
+				...partialText,
+			};
+		}
+		return { status: "success", text, continuation: { id: threadId } };
+	} finally {
+		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
+	}
+}
+
+type MuseEnvelope = {
+	schema_version?: unknown;
+	payload_type?: unknown;
+	stream?: { kind?: unknown; id?: unknown };
+	payload?: {
+		kind?: unknown;
+		command_id?: unknown;
+		run_stream?: { kind?: unknown; id?: unknown };
+		text?: unknown;
+		reason?: unknown;
+		correlation_facts?: { tool_name?: unknown };
+		event?: { message?: unknown };
+		command?: unknown;
+		path?: unknown;
+		file_path?: unknown;
+		query?: unknown;
+	};
+};
+
+async function executeMuse(
+	request: BackendRequest,
+	selection: { model: string; effort?: string },
+	signal: AbortSignal,
+	onProgress: BackendOnProgress | undefined,
+	killEscalationMs: number,
+	deadlineMsOverride: number | undefined,
+): Promise<BackendOutcome> {
+	const isAdvisor = request.feature === "advisor";
+	const isBtw = request.feature === "btw";
+	const full = request.access === "workspace-full";
+	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
+	const action = isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
+	const timeoutVerb = isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
+	const emptyTextMessage = isAdvisor ? "Muse returned no advice." : isBtw ? "Muse returned no answer for the side question." : "Muse returned no final explanation.";
+
+	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+	const promptDirectory = await mkdtemp(join(tmpdir(), "pi-bro-muse-"));
+	let runDirectory: string | undefined;
+
+	try {
+		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+		const promptFile = join(promptDirectory, "prompt.txt");
+		await writeFile(promptFile, request.prompt, { encoding: "utf8", mode: 0o600 });
+		if (!isAdvisor && !isBtw) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+		const workspace = runDirectory ?? request.cwd!;
+
+		const args = [
+			"exec",
+			"--json",
+			"--provider", "meta",
+			"--workspace", workspace,
+			...(!isBtw ? ["--no-session-log"] : []),
+			...(full ? ["--yolo"] : ["--disable-approval", "--disable-write", "--disable-shell"]),
+			...(isBtw && request.continuation ? ["--session-id", request.continuation.id] : []),
+			"--model", selection.model,
+			...(selection.effort ? ["--reasoning-effort", selection.effort] : []),
+			"--prompt-file", promptFile,
+		];
+
+		const child = spawn("muse", args, {
+			cwd: workspace,
+			stdio: ["ignore", "pipe", "pipe"],
+			windowsHide: true,
+			detached: process.platform !== "win32",
+		});
+
+		const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
+		let processError: Error | undefined;
+		let stderr = "";
+		let partial = "";
+		let rootCommandId: string | undefined;
+		let rootRunId: string | undefined;
+		let sessionId: string | undefined;
+		let final: string | undefined;
+		let sawTerminal = false;
+		let terminalError: string | undefined;
+		let protocolError: string | undefined;
+		let stdoutBuffer = "";
+
+		child.stderr?.setEncoding("utf8");
+		child.stderr?.on("data", (chunk: string) => {
+			stderr += chunk;
+		});
+		child.once("error", (error) => {
+			processError = error;
+		});
+
+		const handleLine = (line: string) => {
+			if (!line.trim() || attempt.causeOf()) return;
+			let envelope: MuseEnvelope;
+			try {
+				envelope = JSON.parse(line) as MuseEnvelope;
+			} catch {
+				throw new Error("Muse emitted invalid JSON output.");
+			}
+			const payload = envelope.payload;
+			if (envelope.stream?.kind === "session" && typeof envelope.stream.id === "string") {
+				if (!sessionId) sessionId = envelope.stream.id;
+			}
+			if (envelope.payload_type === "runtime.command.accepted") {
+				if (!rootCommandId && typeof payload?.command_id === "string") {
+					rootCommandId = payload.command_id;
+				}
+				return;
+			}
+			if (!rootRunId && (envelope.payload_type === "session.run.linked" || envelope.payload_type === "run.lifecycle.started")) {
+				const runStream = payload?.run_stream;
+				if (runStream?.kind === "run" && typeof runStream.id === "string") {
+					if (rootCommandId === undefined || payload?.command_id === rootCommandId) {
+						rootRunId = runStream.id;
+						if (envelope.stream?.kind === "session" && typeof envelope.stream.id === "string") {
+							sessionId = envelope.stream.id;
+						}
+					}
+				}
+				return;
+			}
+			const runStream = payload?.run_stream;
+			const isRoot = rootRunId !== undefined && runStream?.kind === "run" && runStream.id === rootRunId;
+
+			if (isAdvisor) {
+				if (envelope.payload_type === "tool.result") {
+					const facts = payload?.correlation_facts as { tool_name?: unknown } | undefined;
+					const toolName = typeof facts?.tool_name === "string" && facts.tool_name ? facts.tool_name : "tool";
+					const candidate = [payload?.text, payload?.command, payload?.path, payload?.file_path, payload?.query]
+						.find((v) => typeof v === "string" && v.trim());
+					const preview = typeof candidate === "string" ? candidate.replace(/\s+/g, " ").trim() : "";
+					const label = `${toolName}${preview ? ` ${preview}` : ""}`;
+					onProgress?.({ kind: "activity", label, timestamp: Date.now() });
+				} else if (envelope.payload_type === "task.lifecycle.status") {
+					const event = payload?.event as { message?: unknown } | undefined;
+					if (typeof event?.message === "string" && event.message.trim()) {
+						onProgress?.({ kind: "activity", label: event.message.trim(), timestamp: Date.now() });
+					}
+				}
+			} else if (isRoot && envelope.payload_type === "run.output.delta") {
+				if (typeof payload?.text === "string" && payload.text) {
+					partial += payload.text;
+					onProgress?.({ kind: "text", text: partial });
+				}
+			}
+
+			if (!isRoot) return;
+			if (envelope.payload_type === "run.terminal.completed") {
+				sawTerminal = true;
+				if (typeof payload?.text === "string") {
+					final = payload.text;
+				}
+			} else if (envelope.payload_type === "run.terminal.failed") {
+				sawTerminal = true;
+				const reason = typeof payload?.reason === "string" && payload.reason.trim() ? payload.reason.trim() : "run did not complete";
+				terminalError ??= `Muse failed: ${reason}`;
+			}
+		};
+
+		child.stdout?.setEncoding("utf8");
+		child.stdout?.on("data", (chunk: string) => {
+			stdoutBuffer += chunk;
+			const parts = stdoutBuffer.split(/\r?\n/);
+			stdoutBuffer = parts.pop() ?? "";
+			if (stdoutBuffer.length > ADVISOR_MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > ADVISOR_MAX_STDOUT_LINE_CHARS)) {
+				protocolError ??= `Muse emitted a stdout line over ${ADVISOR_MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
+				stdoutBuffer = "";
+				attempt.stop("protocol");
+				return;
+			}
+			for (const line of parts) {
+				try {
+					handleLine(line);
+				} catch (error) {
+					protocolError ??= errorMessage(error);
+					attempt.stop("protocol");
+					return;
+				}
+			}
+		});
+
+		const { code, exitSignal } = await attempt.closed;
+		attempt.dispose();
+		if (stdoutBuffer.trim()) {
+			try {
+				handleLine(stdoutBuffer);
+			} catch (error) {
+				protocolError ??= errorMessage(error);
+			}
+		}
+
+		const partialText = partial ? { partialText: partial } : {};
+		const cause = attempt.causeOf();
+		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", ...partialText };
+		if (cause === "timeout") return { status: "timeout", message: `Muse timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, ...partialText };
+		if (protocolError) return { status: "failure", message: withDoctor(protocolError), ...partialText };
+		if (processError) return { status: "failure", message: processStartMessage(processError as NodeJS.ErrnoException, "Muse") };
+		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Muse"), ...partialText };
+		if (terminalError) return { status: "failure", message: withDoctor(terminalError), ...partialText };
+		if (code !== 0) {
+			const detail = stderr.trim();
+			return {
+				status: "failure",
+				message: detail
+					? `Muse could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`
+					: `Muse could not ${action}. Make sure \`muse\` is installed and signed in, then run \`/bro doctor\`.`,
+				...partialText,
+			};
+		}
+		if (!sawTerminal) {
+			return { status: "failure", message: withDoctor(`Muse exited without a terminal result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`), ...partialText };
+		}
+		const text = final?.trim();
+		if (!text) return { status: "failure", message: withDoctor(emptyTextMessage), ...partialText };
+		if (!isBtw) return { status: "success", text };
+		if (!sessionId || (request.continuation && sessionId !== request.continuation.id)) {
+			return {
+				status: "failure",
+				message: withDoctor(`Muse reported an inconsistent session id (expected ${request.continuation?.id ?? "one id"}, got ${sessionId ?? "none"}).`),
+				...partialText,
+			};
+		}
+		return { status: "success", text, continuation: { id: sessionId } };
+	} finally {
+		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
+		await rm(promptDirectory, { recursive: true, force: true });
+	}
+}
+
 // Single-attempt executor shared by all four features. Never retries (retries are feature-owned,
 // e.g. advisor's 3-attempt backoff in bro.ts); never spawns a pre-aborted request; on cancellation,
 // host deadline, or a protocol failure, stops the whole POSIX process group (SIGTERM, then SIGKILL
@@ -984,10 +1444,30 @@ export async function execute(
 	) return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 	const backend = (selection as { backend?: unknown }).backend;
 	// An explicit tag guard: a stale or corrupt runtime tag must fail, never fall through to Agy.
-	if (backend !== undefined && backend !== "agy" && backend !== "claude" && backend !== "grok") {
-		return { status: "failure", message: `Unknown backend ${JSON.stringify(backend)}: pick Agy, Claude or Grok in \`/bro config\`.` };
+	if (backend !== undefined && backend !== "agy" && backend !== "claude" && backend !== "grok" && backend !== "codex" && backend !== "muse") {
+		return { status: "failure", message: `Unknown backend ${JSON.stringify(backend)}: pick Agy, Claude, Grok, Codex or Muse in \`/bro config\`.` };
 	}
 	const killEscalationMs = options?.killEscalationMs ?? DEFAULT_KILL_ESCALATION_MS;
+	if (selection.backend === "codex") {
+		// Codex btw always runs (and resumes) in the caller's workspace, even restricted.
+		if (request.feature === "btw" && !request.cwd?.trim()) {
+			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
+		}
+		if (typeof selection.model !== "string" || !selection.model.trim() || (selection.effort !== undefined && !CODEX_EFFORTS.includes(selection.effort))) {
+			return { status: "failure", message: "Unsupported Codex selection: check the model and effort (low, medium, high or xhigh)." };
+		}
+		return executeCodex(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
+	}
+	if (selection.backend === "muse") {
+		// Muse btw always runs (and resumes) in the caller's workspace, even restricted.
+		if (request.feature === "btw" && !request.cwd?.trim()) {
+			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
+		}
+		if (typeof selection.model !== "string" || !selection.model.trim() || (selection.effort !== undefined && !MUSE_EFFORTS.includes(selection.effort))) {
+			return { status: "failure", message: "Unsupported Muse selection: check the model and effort (minimal, low, medium, high, xhigh or max)." };
+		}
+		return executeMuse(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
+	}
 	if (selection.backend === "grok") {
 		// Grok btw always runs (and resumes) in the caller's workspace, even restricted.
 		if (request.feature === "btw" && !request.cwd?.trim()) {

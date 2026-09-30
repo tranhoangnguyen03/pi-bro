@@ -45,10 +45,16 @@ const {
 	CLAUDE_MODELS,
 	GROK_EFFORTS,
 	GROK_MODELS,
+	CODEX_EFFORTS,
+	CODEX_MODELS,
+	MUSE_EFFORTS,
+	MUSE_MODELS,
 	capabilityBackend,
 	parseBroSettings,
 	resolveClaudeModel,
 	resolveGrokModel,
+	resolveCodexModel,
+	resolveMuseModel,
 	resolveModelEffort,
 	helpText,
 	selectionForCapability,
@@ -276,10 +282,10 @@ test("config custom Claude model selection is atomic and cancel preserves settin
  const saved: any[] = [];
  const component = createConfigModal(parseBroSettings({model:"m",effort:"low"}), [], async (s: unknown) => { saved.push(s); })({requestRender(){}}, theme, {}, () => {});
  component.handleInput("\r");
- component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\r");
+ for (let i = 0; i < 8; i++) component.handleInput("\u001b[B"); component.handleInput("\r");
  component.handleInput("custom-claude-model"); component.handleInput("\u001b");
  assert.equal(saved.length,0);
- component.handleInput("\r"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\u001b[B"); component.handleInput("\r");
+ component.handleInput("\r"); for (let i = 0; i < 8; i++) component.handleInput("\u001b[B"); component.handleInput("\r");
  component.handleInput("custom-claude-model"); component.handleInput("\r");
  await new Promise(resolve => setTimeout(resolve,0));
  assert.equal(saved.length,1);
@@ -291,11 +297,188 @@ test("Grok custom picker cancels atomically and resets cross-backend effort", as
  const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
  const saved: any[] = [];
  const modal = bro.createConfigModal(parseBroSettings({version:2,default:{backend:"claude",model:"sonnet",effort:"high"}}), [], async (s: unknown) => {saved.push(s);})({requestRender(){}},{fg: (_: string,s: string)=>s,bold:(s:string)=>s},{},()=>{});
- const openCustom = () => {modal.handleInput("\r"); for(let i=0;i<5;i++) modal.handleInput("\u001b[B"); modal.handleInput("\r");};
+ const openCustom = () => {modal.handleInput("\r"); for(let i=0;i<9;i++) modal.handleInput("\u001b[B"); modal.handleInput("\r");};
  openCustom(); modal.handleInput("grok-custom"); modal.handleInput("\u001b"); assert.equal(saved.length,0);
  openCustom(); modal.handleInput("grok-custom"); modal.handleInput("\r"); await new Promise(r=>setTimeout(r,0));
  assert.equal(saved.length,1); assert.equal(saved[0].backend,"grok"); assert.equal(saved[0].model,"grok-custom"); assert.equal(saved[0].effort,"default");
  assert.doesNotMatch(modal.render(120).join("\n"),/unsupported backend/);
+});
+
+test("Codex all-feature support: selection, efforts, models", () => {
+	assert.deepEqual([...CODEX_EFFORTS], ["low", "medium", "high", "xhigh"]);
+	assert.deepEqual(
+		CODEX_MODELS.map((model: { id: string }) => model.id).sort(),
+		["gpt-5.4", "gpt-5.5"],
+	);
+	assert.equal(resolveCodexModel("gpt-5.5"), "gpt-5.5");
+	assert.equal(resolveCodexModel("  custom-codex-id  "), "custom-codex-id");
+	assert.throws(() => resolveCodexModel("   "), /Codex model/);
+	assert.equal(supportsBackend("codex", "advisor"), true);
+	assert.equal(supportsBackend("codex", "explain"), true);
+	assert.equal(supportsBackend("codex", "show"), true);
+	assert.equal(supportsBackend("codex", "btw"), true);
+});
+
+test("Codex pairs parse, round-trip, and resolve with no Agy family", () => {
+	const settings = parseBroSettings({
+		version: 2,
+		default: { backend: "codex", model: "gpt-5.5", effort: "xhigh" },
+		mode: "balanced",
+		showTurns: 1,
+		overrides: { advisor: { backend: "codex", model: "gpt-5.4", effort: "medium" } },
+	});
+	assert.equal(capabilityBackend(settings, "advisor"), "codex");
+	assert.equal(capabilityBackend(settings, "explain"), "codex");
+	assert.deepEqual(selectionForCapability(settings, "advisor"), {
+		backend: "codex",
+		model: "gpt-5.4",
+		effort: "medium",
+	});
+	assert.deepEqual(resolveModelEffort({ backend: "codex", model: "gpt-5.5", effort: "medium" }, []), {
+		pair: { backend: "codex", model: "gpt-5.5", effort: "medium" },
+	});
+	const payload = settingsPayload(settings);
+	assert.deepEqual(payload.default, { backend: "codex", model: "gpt-5.5", effort: "xhigh" });
+	assert.deepEqual(parseBroSettings(payload), settings);
+});
+
+test("Codex default effort omits effort; max rejected, backend-less override stays Agy", () => {
+	const settings = parseBroSettings({
+		version: 2,
+		default: { backend: "codex", model: "gpt-5.5", effort: "default" },
+	});
+	assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: "codex", model: "gpt-5.5" });
+	assert.throws(
+		() =>
+			parseBroSettings({
+				version: 2,
+				default: { backend: "codex", model: "gpt-5.5", effort: "max" },
+			}),
+		/must contain a model and effort/,
+	);
+	const mixed = parseBroSettings({
+		version: 2,
+		default: { backend: "codex", model: "gpt-5.5", effort: "low" },
+		overrides: { show: { model: "gemini-a", effort: "low" } },
+	});
+	assert.equal(capabilityBackend(mixed, "show"), "agy");
+	assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
+	const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
+		backend: "codex",
+		model: "gpt-5.5",
+		effort: "high",
+	});
+	assert.deepEqual(pinned.overrides.advisor, { backend: "codex", model: "gpt-5.5", effort: "high" });
+});
+
+test("Codex custom picker cancels atomically and resets cross-backend effort", async () => {
+	const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
+	const saved: any[] = [];
+	const modal = bro.createConfigModal(parseBroSettings({version:2,default:{backend:"claude",model:"sonnet",effort:"high"}}), [], async (s: unknown) => {saved.push(s);})({requestRender(){}},{fg: (_: string,s: string)=>s,bold:(s:string)=>s},{},()=>{});
+	const openCustom = () => {modal.handleInput("\r"); for(let i=0;i<10;i++) modal.handleInput("\u001b[B"); modal.handleInput("\r");};
+	openCustom(); modal.handleInput("codex-custom"); modal.handleInput("\u001b"); assert.equal(saved.length,0);
+	openCustom(); modal.handleInput("codex-custom"); modal.handleInput("\r"); await new Promise(r=>setTimeout(r,0));
+	assert.equal(saved.length,1); assert.equal(saved[0].backend,"codex"); assert.equal(saved[0].model,"codex-custom"); assert.equal(saved[0].effort,"default");
+	assert.doesNotMatch(modal.render(120).join("\n"),/unsupported backend/);
+});
+
+test("Muse all-feature support: selection, efforts, models", () => {
+	assert.deepEqual([...MUSE_EFFORTS], ["minimal", "low", "medium", "high", "xhigh", "max"]);
+	assert.deepEqual(
+		MUSE_MODELS.map((model: { id: string }) => model.id).sort(),
+		["muse-spark-1.3", "muse-spark-1.3-contributor"],
+	);
+	assert.equal(resolveMuseModel("muse-spark-1.3"), "muse-spark-1.3");
+	assert.equal(resolveMuseModel("  custom-muse-id  "), "custom-muse-id");
+	assert.throws(() => resolveMuseModel("   "), /Muse model/);
+	assert.equal(supportsBackend("muse", "advisor"), true);
+	assert.equal(supportsBackend("muse", "explain"), true);
+	assert.equal(supportsBackend("muse", "show"), true);
+	assert.equal(supportsBackend("muse", "btw"), true);
+});
+
+test("Muse pairs parse, round-trip, and resolve with no Agy family", () => {
+	const settings = parseBroSettings({
+		version: 2,
+		default: { backend: "muse", model: "muse-spark-1.3", effort: "minimal" },
+		mode: "balanced",
+		showTurns: 1,
+		overrides: { advisor: { backend: "muse", model: "muse-spark-1.3-contributor", effort: "max" } },
+	});
+	assert.equal(capabilityBackend(settings, "advisor"), "muse");
+	assert.equal(capabilityBackend(settings, "explain"), "muse");
+	assert.deepEqual(selectionForCapability(settings, "advisor"), {
+		backend: "muse",
+		model: "muse-spark-1.3-contributor",
+		effort: "max",
+	});
+	assert.deepEqual(resolveModelEffort({ backend: "muse", model: "muse-spark-1.3", effort: "minimal" }, []), {
+		pair: { backend: "muse", model: "muse-spark-1.3", effort: "minimal" },
+	});
+	const payload = settingsPayload(settings);
+	assert.deepEqual(payload.default, { backend: "muse", model: "muse-spark-1.3", effort: "minimal" });
+	assert.deepEqual(parseBroSettings(payload), settings);
+});
+
+test("Muse default effort omits effort; none/off rejected, backend-less override stays Agy", () => {
+	const settings = parseBroSettings({
+		version: 2,
+		default: { backend: "muse", model: "muse-spark-1.3", effort: "default" },
+	});
+	assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: "muse", model: "muse-spark-1.3" });
+	assert.throws(
+		() =>
+			parseBroSettings({
+				version: 2,
+				default: { backend: "muse", model: "muse-spark-1.3", effort: "none" },
+			}),
+		/must contain a model and effort/,
+	);
+	const mixed = parseBroSettings({
+		version: 2,
+		default: { backend: "muse", model: "muse-spark-1.3", effort: "low" },
+		overrides: { show: { model: "gemini-a", effort: "low" } },
+	});
+	assert.equal(capabilityBackend(mixed, "show"), "agy");
+	assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
+	const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
+		backend: "muse",
+		model: "muse-spark-1.3",
+		effort: "high",
+	});
+	assert.deepEqual(pinned.overrides.advisor, { backend: "muse", model: "muse-spark-1.3", effort: "high" });
+});
+
+test("Muse custom picker cancels atomically and resets cross-backend effort", async () => {
+	const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
+	const saved: any[] = [];
+	const modal = bro.createConfigModal(parseBroSettings({version:2,default:{backend:"claude",model:"sonnet",effort:"high"}}), [], async (s: unknown) => {saved.push(s);})({requestRender(){}},{fg: (_: string,s: string)=>s,bold:(s:string)=>s},{},()=>{});
+	const openCustom = () => {modal.handleInput("\r"); for(let i=0;i<11;i++) modal.handleInput("\u001b[B"); modal.handleInput("\r");};
+	openCustom(); modal.handleInput("muse-custom"); modal.handleInput("\u001b"); assert.equal(saved.length,0);
+	openCustom(); modal.handleInput("muse-custom"); modal.handleInput("\r"); await new Promise(r=>setTimeout(r,0));
+	assert.equal(saved.length,1); assert.equal(saved[0].backend,"muse"); assert.equal(saved[0].model,"muse-custom"); assert.equal(saved[0].effort,"default");
+	assert.doesNotMatch(modal.render(120).join("\n"),/unsupported backend/);
+});
+
+test("BTW backend changes clear native continuation for Codex and Muse, same backend preserves them", () => {
+	for (const backend of ["codex", "muse"] as const) {
+		const thread = { turns: [{ question: "q", answer: "a" }], conversationId: `${backend}-session`, full: false, backend };
+		assert.equal(bro.bindBtwBackend(thread, backend), false);
+		assert.equal(thread.conversationId, `${backend}-session`);
+		assert.equal(bro.bindBtwBackend(thread, "agy"), true);
+		assert.equal(thread.conversationId, undefined);
+		assert.deepEqual(thread.turns, []);
+	}
+});
+
+test("BTW /mode keeps the transcript and native session for Codex and Muse", () => {
+	for (const backend of ["codex", "muse"] as const) {
+		const thread = { turns: [{ question: "q", answer: "a" }], conversationId: `${backend}-session`, full: false, sessionFull: false, backend };
+		bro.toggleBtwMode(thread);
+		assert.equal(thread.full, true);
+		assert.equal(bro.nativeBtwContinuation(thread, backend), `${backend}-session`);
+		assert.deepEqual(thread.turns, [{ question: "q", answer: "a" }]);
+	}
 });
 
 

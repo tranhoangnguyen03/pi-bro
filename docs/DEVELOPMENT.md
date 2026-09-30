@@ -15,7 +15,7 @@ Production is published as TypeScript source (no build step):
   thread and composer, the `bro_advisor` tool (snapshot, retries, progress),
   and advisor steering state.
 - **`backend.ts`** — the shared execution layer. `execute()` runs one request
-  on Agy, Claude Code, or Grok: argv/stdin construction per backend and
+  on Agy, Claude Code, Grok, Codex, or Muse: argv/stdin construction per backend and
   feature, private temp prompt files, streaming parse, native continuation
   IDs, deadlines, cancellation, and process-group cleanup. Feature behavior
   (retries, UI, settings) stays out of it.
@@ -37,8 +37,8 @@ Agy; reads never rewrite the file.
 BTW keeps one in-memory thread bound to a backend and an access mode
 (conversation-only / full permission, toggled by `/mode`).
 
-- Claude and Grok resume the same native session with `--resume`, across
-  `/mode` switches (both run in the workspace).
+- Claude, Grok, Codex, and Muse resume the same native session across
+  `/mode` switches (all run in the workspace).
 - Agy conversation-only runs in a temporary directory and full permission in
   the workspace, so an access change drops the Agy conversation ID. The next
   turn starts a fresh native session reseeded with the main-session context
@@ -68,8 +68,8 @@ node .github/scripts/release-utils.mjs selftest
 npm run benchmark:dry-run                  # manual live benchmark: see benchmark/README.md
 ```
 
-`npm test` never calls a real model: `backend.test.ts`, `claude.test.ts`, and
-`grok.test.ts` run fake CLIs; `settings.test.ts` and `prompt.test.ts` cover
+`npm test` never calls a real model: `backend.test.ts`, `claude.test.ts`,
+`grok.test.ts`, `codex.test.ts`, and `muse.test.ts` run fake CLIs; `settings.test.ts` and `prompt.test.ts` cover
 pure helpers; `smoke-test.sh` drives Pi offline over RPC with a fake `agy`.
 Config interactions are also exercised with a fake TUI/persistence harness;
 that is not live terminal verification. Use [TESTING.md](TESTING.md) for real
