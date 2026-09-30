@@ -74,8 +74,12 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  verify-pig:
+    if: github.event_name != 'workflow_dispatch' || inputs.verify_only != true
+    uses: ./.github/workflows/pig.yml
+
   release:
-    needs: verify
+    needs: [verify, verify-pig]
     runs-on: ubuntu-latest
     permissions:
       contents: write

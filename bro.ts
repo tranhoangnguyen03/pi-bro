@@ -5,12 +5,12 @@ import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Container, Editor, Input, Markdown, SettingsList, SelectList, Text, matchesKey, truncateToWidth, visibleWidth, type Component, type EditorTheme, type Focusable, type SelectItem, type SettingItem, type TUI } from "@earendil-works/pi-tui";
-import { convertToLlm, copyToClipboard, getMarkdownTheme, getSelectListTheme, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { convertToLlm, copyToClipboard, getAgentDir, getMarkdownTheme, getSelectListTheme, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Defuddle } from "defuddle/node";
 import { parseHTML } from "linkedom";
 import mammoth from "mammoth";
@@ -35,7 +35,7 @@ import {
 
 export { agyFailureMessage, agySelection, advisorFlagErrorHint, parseBtwAgyLine };
 
-const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+const AGENT_DIR = getAgentDir();
 const ENV_MODEL = process.env.PI_BRO_MODEL?.trim();
 const DEFAULT_MODEL = ENV_MODEL || "gemini-3.7-flash";
 const PROMPT_FILE = join(AGENT_DIR, "bro-prompt.md");
@@ -57,7 +57,7 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 type Theme = ExtensionCommandContext["ui"]["theme"];
 type TuiLike = {
 	readonly mode: "regular" | "fullscreen";
-	readonly terminal?: { write?: (data: string) => void };
+	readonly terminal?: { rows?: number; write?: (data: string) => void };
 	requestRender(): void;
 };
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
@@ -2798,7 +2798,7 @@ class BroModal implements Focusable {
 	render(width: number): string[] {
 		const dialogWidth = Math.max(24, width);
 		const innerWidth = Math.max(22, dialogWidth - 2);
-		const terminalRows = process.stdout.rows ?? 30;
+		const terminalRows = this.tui.terminal?.rows ?? process.stdout.rows ?? 30;
 		const dialogHeight = Math.min(32, Math.max(7, Math.floor(terminalRows * 0.78)));
 		this.bodyHeight = Math.max(1, dialogHeight - 6);
 
@@ -3231,7 +3231,7 @@ class BtwModal implements Focusable {
 	render(width: number): string[] {
 		const dialogWidth = Math.max(24, width);
 		const innerWidth = Math.max(22, dialogWidth - 2);
-		const terminalRows = process.stdout.rows ?? 30;
+		const terminalRows = this.tui.terminal?.rows ?? process.stdout.rows ?? 30;
 		const dialogHeight = Math.min(34, Math.max(8, Math.floor(terminalRows * 0.82)));
 		this.bodyHeight = Math.max(1, dialogHeight - 7);
 
