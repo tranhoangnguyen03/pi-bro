@@ -31,5 +31,5 @@ export async function insertBroDesktopText(ctx: UiContext, text: string): Promis
   } catch { return "unavailable"; }
 }
 
-/** Desktop's synchronous getEditorText is not the live editor. Until atomic insert exists, refuse. */
+/** Only terminal mode uses synchronous insertion; Desktop uses insertBroDesktopText instead. */
 export function canBroInsertIntoEditor(ctx: UiContext): boolean { return ctx.mode === "tui"; }
