@@ -2173,11 +2173,19 @@ advisor_excluded_output=$(
 		sleep 1
 	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$advisor_config" "$pi_bin" --offline --mode rpc --session "$advisor_excluded_session" --exclude-tools bro_advisor --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
-if printf '%s\n' "$advisor_excluded_output" | grep -Fq 'Bro advisor is available'; then
+if [ "${BRO_PIG_RPC_EXCLUSION_XFAIL:-}" = "0.3.0" ]; then
+	# PiG 0.3.0 RPC still exposes excluded tools to the provider. Do not hide this
+	# by changing Bro's availability logic. An upstream fix must remove this xfail.
+	if ! printf '%s\n' "$advisor_excluded_output" | grep -Fq 'Bro advisor is available'; then
+		printf 'PiG RPC exclusion behavior changed: remove/review the 0.3.0 expected failure.\n%s\n' "$advisor_excluded_output" >&2
+		exit 1
+	fi
+	printf 'KNOWN FAILURE: PiG 0.3.0 RPC ignores --exclude-tools; use --tools allowlists (see docs/pig-compatibility.md).\n'
+elif printf '%s\n' "$advisor_excluded_output" | grep -Fq 'Bro advisor is available'; then
 	printf 'Host-excluded advisor falsely reported availability:\n%s\n' "$advisor_excluded_output" >&2
 	exit 1
 fi
-if ! printf '%s\n' "$advisor_excluded_output" | grep -Fq 'Bro advisor is unavailable in this runtime.'; then
+if [ "${BRO_PIG_RPC_EXCLUSION_XFAIL:-}" != "0.3.0" ] && ! printf '%s\n' "$advisor_excluded_output" | grep -Fq 'Bro advisor is unavailable in this runtime.'; then
 	printf 'Host-excluded advisor did not report unavailability:\n%s\n' "$advisor_excluded_output" >&2
 	exit 1
 fi

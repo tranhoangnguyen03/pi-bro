@@ -5,6 +5,7 @@ plain-language explanation — or open a separate side conversation with
 `/bro btw` — without adding anything to your main agent's context.
 
 `pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
+Experimental [PiG 0.3.0 compatibility](docs/pig-compatibility.md) uses the same npm package and requires Node.js. See the compatibility notes for verified coverage and the PiG RPC tool-exclusion limitation.
 It opens explanations in a separate modal and runs them through a CLI backend
 you already have installed and signed in to. Explain, show, BTW, and the
 advisor all work across five backends:

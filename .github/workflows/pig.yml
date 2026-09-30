@@ -1,0 +1,27 @@
+name: PiG compatibility
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  pig:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install pinned PiG release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/pig-release"
+          gh release download v0.3.0 --repo MichaelKinsy/PiG --pattern pig-0.3.0-linux-amd64.tar.gz --pattern SHA256SUMS --dir "$RUNNER_TEMP/pig-release"
+          cd "$RUNNER_TEMP/pig-release"
+          grep ' pig-0.3.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
+          tar -xzf pig-0.3.0-linux-amd64.tar.gz
+          echo "PIG_BIN=$RUNNER_TEMP/pig-release/pig-0.3.0-linux-amd64/pig" >> "$GITHUB_ENV"
+      - run: sh pig-test.sh

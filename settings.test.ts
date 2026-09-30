@@ -38,6 +38,7 @@ execFileSync(
 );
 symlinkSync(join(repoDir, "node_modules"), join(buildDir, "node_modules"));
 
+process.env.PI_CODING_AGENT_DIR = join(buildDir, "agent");
 const bro = await import(pathToFileURL(join(buildDir, "bro.js")).href);
 const backend = await import(pathToFileURL(join(buildDir, "backend.js")).href);
 const { CLAUDE_EFFORTS } = backend;
@@ -554,4 +555,21 @@ test("help is a concise reference: no removed BTW flags, /mode documented, READM
 		assert.match(text, /brief —/);
 		assert.ok(text.length < 6000, `help is ${text.length} chars`);
 	}
+});
+
+
+test("modals use live host terminal rows, not extension stdout", async () => {
+ const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
+ let command: any;
+ await bro.default({on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command=def; }});
+ const tui = {mode: "regular", terminal: {rows: 20}, requestRender() {}};
+ const theme = {fg: (_color: string, text: string) => text, bold: (text: string) => text};
+ for (const action of ["help", "btw"]) {
+  let modal: any;
+  await command.handler(action, {mode:"tui", hasUI:true, cwd:process.cwd(), sessionManager:{getBranch:()=>[]}, ui:{notify() {}, custom:async (factory: any)=>{modal=factory(tui,theme,{},()=>{});}}});
+  tui.terminal.rows=20; const short=modal.render(80).length;
+  tui.terminal.rows=45; const tall=modal.render(80).length;
+  assert.ok(tall > short, `${action}: host resize must change modal height (${short} -> ${tall})`);
+  modal.dispose?.();
+ }
 });

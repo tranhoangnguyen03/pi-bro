@@ -42,7 +42,8 @@
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "docs/pig-compatibility.md"
   ],
   "publishConfig": {
     "access": "public"

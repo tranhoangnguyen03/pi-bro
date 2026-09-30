@@ -9,6 +9,8 @@ permissions:
   contents: read
 
 jobs:
+  pig:
+    uses: ./.github/workflows/pig.yml
   test:
     runs-on: ubuntu-latest
     steps:
