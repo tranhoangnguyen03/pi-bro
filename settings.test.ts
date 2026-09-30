@@ -3,14 +3,14 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, symlinkSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test, { after } from "node:test";
 
 // bro.ts is not importable under node --test directly: it uses TypeScript
 // parameter properties, which strip-only mode rejects. The repo's smoke-test.sh
 // handles this by compiling with tsc first; this suite does the same into a
 // scratch directory so `node --test settings.test.ts` stays self-contained.
-const repoDir = dirname(new URL(import.meta.url).pathname);
+const repoDir = dirname(fileURLToPath(import.meta.url));
 const buildDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-test-"));
 after(() => rmSync(buildDir, { recursive: true, force: true }));
 const tscBin = join(repoDir, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc");

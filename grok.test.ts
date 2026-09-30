@@ -1,3 +1,4 @@
+import "./test-cli-guard.ts";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync } from "node:fs";
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";

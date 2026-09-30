@@ -71,6 +71,13 @@ npm run benchmark:dry-run                  # manual live benchmark: see benchmar
 `npm test` never calls a real model: `backend.test.ts`, `claude.test.ts`,
 `grok.test.ts`, `codex.test.ts`, and `muse.test.ts` run fake CLIs; `settings.test.ts` and `prompt.test.ts` cover
 pure helpers; `smoke-test.sh` drives Pi offline over RPC with a fake `agy`.
+The smoke suite isolates its temporary root, including generated diagrams. Backend tests
+put fail-closed CLI stubs behind their explicit fakes so validation regressions cannot
+reach installed model CLIs. `smoke-rpc.mjs` queues settings writes/copies alongside RPC
+requests and applies them only after earlier requests are acknowledged; scenario ordering
+does not depend on sleeps. `smoke-rpc.test.ts` checks this with a delayed fake host, and
+`show-html.test.ts` checks generated HTML's restrictive content policy.
+
 Config interactions are also exercised with a fake TUI/persistence harness;
 that is not live terminal verification. Use [TESTING.md](TESTING.md) for real
 modal interaction, including the BTW composer.

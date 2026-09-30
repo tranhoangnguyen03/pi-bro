@@ -1,3 +1,4 @@
+import "./test-cli-guard.ts";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync } from "node:fs";
@@ -491,6 +492,7 @@ esac
 
 
 test("invalid feature/access/continuation combinations fail before invocation", async () => {
+ await withFakeAgy('#!/bin/sh\ntouch "$(dirname "$0")/spawned"\nexit 1\n', async (binDir) => {
  for (const request of [
   { feature: "advisor", access: "restricted", cwd: process.cwd() },
   { feature: "advisor", access: "workspace-full" },
@@ -501,6 +503,8 @@ test("invalid feature/access/continuation combinations fail before invocation", 
   assert.equal(outcome.status, "failure");
   assert.match(outcome.message, /Unsupported execution request/);
  }
+ assert.equal(existsSync(join(binDir, "spawned")), false);
+ });
 });
 
 

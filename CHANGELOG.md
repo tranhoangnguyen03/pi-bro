@@ -2,6 +2,13 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.19.1] - 2026-09-30
+
+### Fixed
+
+- Always enforce Bro's restrictive content policy on generated HTML, including when model output contains a permissive policy or CSP-looking comment (#69).
+- Isolate smoke-test temporary artifacts and block real backend CLIs during offline tests. Order settings mutations by RPC acknowledgements instead of fixed sleeps, and support spaces in settings-test checkout paths (#70).
+
 ## [0.19.0] - 2026-09-25
 
 ### Added
