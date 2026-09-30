@@ -65,6 +65,29 @@ const {
 	withCapabilityOverride,
 } = bro;
 
+test("bounded transcripts keep newest turns and valid quoted tails", () => {
+ const message = (role: string, content: string) => ({type:'message', message:{role,content}});
+ const ctx = {sessionManager:{getBranch:()=>[
+  message('user','OLD_QUESTION'),message('assistant','x'.repeat(50000)),
+  message('user','LATEST_QUESTION'),message('assistant','LATEST_ANSWER'),
+ ]}};
+ const recent=bro.captureShowTranscript(ctx,8,40000).text;
+ assert.match(recent,/LATEST_QUESTION/); assert.match(recent,/LATEST_ANSWER/); assert.doesNotMatch(recent,/OLD_QUESTION/);
+ ctx.sessionManager.getBranch=()=>[message('user','question'),message('assistant','x'.repeat(110000)+'LATEST_END')];
+ const oversized=bro.captureShowTranscript(ctx,1,40000).text;
+ assert.ok(oversized.length<=40000);
+ assert.ok(JSON.parse(oversized.slice(oversized.indexOf('\n')+1)).endsWith('LATEST_END'));
+ assert.match(oversized,/truncated/);
+ for (const content of ['x'.repeat(390)+'END', '\\"\n'.repeat(300)+'END', '😀'.repeat(300)+'END']) {
+  ctx.sessionManager.getBranch=()=>[message('user','old'.repeat(300)),message('assistant',content)];
+  const text=bro.captureShowTranscript(ctx,1,400).text;
+  assert.ok(text.length<=400);
+  const entry=text.slice(text.indexOf('## assistant\n'));
+  assert.ok(JSON.parse(entry.slice(entry.indexOf('\n')+1)).endsWith('END'));
+ }
+ assert.throws(()=>bro.captureShowTranscript(ctx,1,0),/at least 128/);
+});
+
 test("host-provided packages are wildcard peers, not runtime dependencies", () => {
 	const manifest = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8"));
 	for (const name of ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"]) {

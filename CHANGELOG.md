@@ -2,6 +2,13 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.19.3] - 2026-09-30
+
+### Fixed
+
+- Send large Agy explain, Show, and BTW prompts over stdin instead of exceeding argument-size limits. Older Agy versions report an upgrade hint rather than silently falling back (#73).
+- Retain newest turns and message tails when bounding Show and BTW context, preserving JSON message framing (#73).
+
 ## [0.19.2] - 2026-09-30
 
 ### Fixed

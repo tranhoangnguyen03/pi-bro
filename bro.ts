@@ -1475,7 +1475,8 @@ function serializeShowTurns(turns: readonly ShowTurn[]): string {
 	return turns.flatMap((turn) => turn.entries).join("\n\n");
 }
 
-export function captureShowTranscript(ctx: ExtensionCommandContext, turnsRequested: number): BroSource | undefined {
+export function captureShowTranscript(ctx: ExtensionCommandContext, turnsRequested: number, maxLength = MAX_TEXT_LENGTH): BroSource | undefined {
+	if (!Number.isSafeInteger(maxLength) || maxLength < 128) throw new Error("Transcript limit must be an integer of at least 128 characters.");
 	const turns: ShowTurn[] = [];
 	for (const entry of ctx.sessionManager.getBranch()) {
 		if (entry.type !== "message") continue;
@@ -1503,7 +1504,7 @@ export function captureShowTranscript(ctx: ExtensionCommandContext, turnsRequest
 	if (seen === 0) return undefined;
 
 	let text = serializeShowTurns(turns.slice(start));
-	while (text.length > MAX_TEXT_LENGTH && start < turns.length - 1) {
+	while (text.length > maxLength && start < turns.length - 1) {
 		let next = turns.length;
 		for (let index = start + 1; index < turns.length; index += 1) {
 			if (turns[index]!.startsTurn) {
@@ -1515,7 +1516,22 @@ export function captureShowTranscript(ctx: ExtensionCommandContext, turnsRequest
 		start = next;
 		text = serializeShowTurns(turns.slice(start));
 	}
-	if (text.length > MAX_TEXT_LENGTH) text = `${text.slice(0, MAX_TEXT_LENGTH)}\n[… transcript truncated …]`;
+	if (text.length > maxLength) {
+		// Prefer the newest complete messages even within an oversized single turn.
+		const entries = turns.slice(start).flatMap(turn => turn.entries);
+		const notice = "[… earlier messages truncated …]\n";
+		while (entries.length > 1 && entries.join("\n\n").length + notice.length > maxLength) entries.shift();
+		text = entries.join("\n\n");
+		if (text.length + notice.length > maxLength) {
+			const newline = text.indexOf("\n");
+			const header = text.slice(0, newline);
+			const content = JSON.parse(text.slice(newline + 1)) as string;
+			const marker = "[… earlier text truncated …] ";
+			let tail = content.slice(-(maxLength - header.length - marker.length - 8));
+			while (`${header}\n${JSON.stringify(marker + tail)}`.length > maxLength) tail = tail.slice(Math.max(1, Math.floor(tail.length / 10)));
+			text = `${header}\n${JSON.stringify(marker + tail)}`;
+		} else text = notice + text;
+	}
 	const kept = turns.slice(start).filter((turn) => turn.startsTurn).length;
 	return { text: text.trim(), label: `last ${Math.max(1, kept)} turn${kept > 1 ? "s" : ""} · conversation only` };
 }
@@ -3322,10 +3338,7 @@ async function openBtwModal(
 				}
 				if (thread.turns.length === 0) {
 					thread.conversationId = undefined;
-					let context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS)?.text;
-					if (context && context.length > BTW_CONTEXT_MAX) {
-						context = `${context.slice(0, BTW_CONTEXT_MAX)}\n[… context truncated …]`;
-					}
+					const context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS, BTW_CONTEXT_MAX)?.text;
 					thread.context = context;
 				}
 				// Resume natively when possible; otherwise seed the fresh native session with the main-session
