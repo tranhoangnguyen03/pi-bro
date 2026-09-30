@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { hasBroCustomUi, broModalRows, canBroInsertIntoEditor, insertBroDesktopText } from "./ui-capabilities.ts";
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
@@ -9,7 +10,7 @@ import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { Container, Editor, Input, Markdown, SettingsList, SelectList, Text, matchesKey, truncateToWidth, visibleWidth, type Component, type EditorTheme, type Focusable, type SelectItem, type SettingItem, type TUI } from "@earendil-works/pi-tui";
+import { Container, Editor, Input, Markdown, SettingsList, SelectList, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type EditorTheme, type Focusable, type SelectItem, type SettingItem, type TUI } from "@earendil-works/pi-tui";
 import { convertToLlm, copyToClipboard, getAgentDir, getMarkdownTheme, getSelectListTheme, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Defuddle } from "defuddle/node";
 import { parseHTML } from "linkedom";
@@ -131,6 +132,7 @@ export function setRegularMouseReporting(tui: Pick<TuiLike, "mode" | "terminal">
 }
 
 const COMMANDS = [
+	{ value: "simplify", label: "simplify", description: "Explain the latest completed assistant reply (same as /bro)" },
 	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
 	{ value: "file", label: "file", description: "Explain a local document" },
 	{ value: "url", label: "url", description: "Explain a public webpage" },
@@ -2502,7 +2504,7 @@ export function createConfigModal(
 }
 
 export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
-	if (ctx.mode !== "tui") {
+	if (!hasBroCustomUi(ctx)) {
 		ctx.ui.notify("Use /bro config in Pi's interactive UI.", "warning");
 		return;
 	}
@@ -2619,7 +2621,7 @@ export function createAdvisorSteerModal(
 }
 
 export async function showAdvisorSteerModal(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
-	if (ctx.mode !== "tui") {
+	if (!hasBroCustomUi(ctx)) {
 		ctx.ui.notify("Use /bro advisor-steer in Pi's interactive UI.", "warning");
 		return;
 	}
@@ -2655,7 +2657,7 @@ Quick reference. The README is the full user guide: https://github.com/tranhoang
 
 ## Explain and show
 
-- \`/bro\` — explain the latest completed assistant reply
+- \`/bro\` or \`/bro simplify\` — explain the latest completed assistant reply
 - \`/bro text [text]\` — explain pasted text, or the latest reply when text is omitted
 - \`/bro file <path>\` — explain a workspace \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\` file
 - \`/bro url <url>\` — explain one public webpage
@@ -2816,7 +2818,7 @@ class BroModal implements Focusable {
 	render(width: number): string[] {
 		const dialogWidth = Math.max(24, width);
 		const innerWidth = Math.max(22, dialogWidth - 2);
-		const terminalRows = this.tui.terminal?.rows ?? process.stdout.rows ?? 30;
+		const terminalRows = broModalRows(this.tui, process.stdout.rows);
 		const dialogHeight = Math.min(32, Math.max(7, Math.floor(terminalRows * 0.78)));
 		this.bodyHeight = Math.max(1, dialogHeight - 6);
 
@@ -2924,7 +2926,7 @@ interface BroModalOptions {
 }
 
 async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptions): Promise<void> {
-	if (ctx.mode !== "tui") {
+	if (!hasBroCustomUi(ctx)) {
 		if (options.run && !options.result && options.text === undefined) {
 			const result = await options.run(new AbortController().signal);
 			options.onResult?.(result);
@@ -3189,6 +3191,7 @@ class BtwModal implements Focusable {
 	}
 
 	setNotice(notice: string): void {
+		if (this.disposed) return;
 		this.notice = notice;
 		this.tui.requestRender();
 	}
@@ -3253,9 +3256,16 @@ class BtwModal implements Focusable {
 	render(width: number): string[] {
 		const dialogWidth = Math.max(24, width);
 		const innerWidth = Math.max(22, dialogWidth - 2);
-		const terminalRows = this.tui.terminal?.rows ?? process.stdout.rows ?? 30;
+		const terminalRows = broModalRows(this.tui, process.stdout.rows);
 		const dialogHeight = Math.min(34, Math.max(8, Math.floor(terminalRows * 0.82)));
-		this.bodyHeight = Math.max(1, dialogHeight - 7);
+		const footer = [
+			...wrapTextWithAnsi(this.theme.fg("accent", this.theme.bold("Your message to Bro")), innerWidth),
+			this.input.render(innerWidth)[0] ?? "",
+			...wrapTextWithAnsi(this.running ? "Bro is thinking… · Esc: cancel response" : "Enter: send message · Esc: close panel", innerWidth),
+			...wrapTextWithAnsi("Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", innerWidth),
+			...(this.notice ? wrapTextWithAnsi(this.theme.fg("accent", this.notice), innerWidth) : []),
+		];
+		this.bodyHeight = Math.max(1, dialogHeight - 5 - footer.length);
 
 		const rendered = this.markdown.render(innerWidth);
 		this.maxOffset = Math.max(0, rendered.length - this.bodyHeight);
@@ -3268,12 +3278,6 @@ class BtwModal implements Focusable {
 		const mode = this.theme.fg("dim", " · ") + (this.full ? this.theme.fg("accent", this.theme.bold(btwModeLabel(true))) : this.theme.fg("dim", btwModeLabel(false)));
 		const header = this.theme.fg("accent", this.theme.bold("Bro · btw")) + model + mode + this.theme.fg("dim", scroll);
 
-		const composer = this.input.render(innerWidth)[0] ?? "";
-
-		const controls = this.running
-			? this.theme.fg("dim", "Thinking… · Esc cancel")
-			: this.theme.fg("dim", "Enter ask · Esc close · /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry");
-
 		const lines = [
 			this.borderLine(innerWidth, "top"),
 			this.frameLine(header, innerWidth),
@@ -3282,8 +3286,7 @@ class BtwModal implements Focusable {
 		for (const line of visible) lines.push(this.frameLine(line, innerWidth));
 		for (let i = visible.length; i < this.bodyHeight; i++) lines.push(this.frameLine("", innerWidth));
 		lines.push(this.ruleLine(innerWidth));
-		lines.push(this.frameLine(composer, innerWidth));
-		lines.push(this.frameLine(this.notice ? this.theme.fg("accent", this.notice) : controls, innerWidth));
+		for (const line of footer) lines.push(this.frameLine(line, innerWidth));
 		lines.push(this.borderLine(innerWidth, "bottom"));
 		return lines;
 	}
@@ -3425,10 +3428,15 @@ async function openBtwModal(
 				}
 			};
 
-			const insert = (all: boolean) => {
+			const insert = async (all: boolean) => {
 				const text = all ? transcript() : (thread.turns.at(-1)?.answer ?? "");
 				if (!text.trim()) {
 					modal.setNotice("Nothing to insert yet.");
+					return;
+				}
+				if (!canBroInsertIntoEditor(ctx)) {
+					const result = await insertBroDesktopText(ctx, text);
+					modal.setNotice(result === "inserted" ? "Inserted into the main editor. Review it before sending." : result === "not_empty" ? "Main editor has a draft or attachment. Clear it first, then insert again." : "Could not confirm insertion. Check the main editor before trying again.");
 					return;
 				}
 				if (ctx.ui.getEditorText().trim()) {
@@ -3629,6 +3637,11 @@ export default async function bro(pi: ExtensionAPI) {
 			let action = parts[0] ?? "";
 			let value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
 
+			if (action === "simplify") {
+				if (value) { ctx.ui.notify("Use /bro simplify for the latest reply, or /bro text <text> for pasted text.", "warning"); return; }
+				action = "";
+			}
+
 			// Removed commands must never fall through to a paid text explanation.
 			if (action === "model" || action === "effort") {
 				ctx.ui.notify(`/bro ${action} was removed. Use /bro config to choose the shared default and per-capability ${action}; use /bro text <text> to explain text.`, "warning");
@@ -3750,7 +3763,7 @@ export default async function bro(pi: ExtensionAPI) {
 					const settings = await readSettings();
 					let selected = parseBroMode(requested);
 					if (!selected) {
-						if (ctx.mode !== "tui") {
+						if (!hasBroCustomUi(ctx)) {
 							ctx.ui.notify("Use /bro mode <brief|balanced|faithful> outside Pi's interactive UI.", "warning");
 							return;
 						}
@@ -3770,7 +3783,7 @@ export default async function bro(pi: ExtensionAPI) {
 			}
 
 			if (action === "btw") {
-				if (ctx.mode !== "tui") {
+				if (!hasBroCustomUi(ctx)) {
 					ctx.ui.notify("Use /bro btw in Pi's interactive UI.", "warning");
 					return;
 				}

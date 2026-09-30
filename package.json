@@ -37,6 +37,7 @@
   ],
   "files": [
     "bro.ts",
+    "ui-capabilities.ts",
     "backend.ts",
     "prompt.ts",
     "README.md",
@@ -53,7 +54,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && node --test prompt.test.ts backend.test.ts claude.test.ts grok.test.ts codex.test.ts muse.test.ts settings.test.ts show-html.test.ts smoke-rpc.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
+    "test": "npm run typecheck && node --test prompt.test.ts backend.test.ts claude.test.ts grok.test.ts codex.test.ts muse.test.ts settings.test.ts show-html.test.ts smoke-rpc.test.ts ui-capabilities.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
     "benchmark:dry-run": "node benchmark/run.ts dry-run",
     "benchmark:run": "node benchmark/run.ts run",
     "benchmark:report": "node benchmark/run.ts report",

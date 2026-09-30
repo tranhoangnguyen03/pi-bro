@@ -40,6 +40,18 @@ symlinkSync(join(repoDir, "node_modules"), join(buildDir, "node_modules"));
 
 process.env.PI_CODING_AGENT_DIR = join(buildDir, "agent");
 const bro = await import(pathToFileURL(join(buildDir, "bro.js")).href);
+test('simplify is discoverable and follows bare Bro without treating the alias as source text', async () => {
+ let command: any;
+ await bro.default({on() {},registerTool() {},registerCommand(_name: string,def: any){command=def;}});
+ assert.ok(command.getArgumentCompletions('simpl').some((item: any)=>item.value==='simplify'));
+ for (const args of ['', 'simplify']) {
+  let idle=0;const notices: string[]=[];
+  await command.handler(args,{mode:'rpc',waitForIdle:async()=>{idle++;},sessionManager:{getBranch:()=>[]},ui:{notify:(message:string)=>notices.push(message)}});
+  assert.equal(idle,1);assert.ok(notices.some(message=>message.includes('No completed assistant response')));
+ }
+ const notices: string[]=[];await command.handler('simplify pasted',{ui:{notify:(message:string)=>notices.push(message)}});assert.match(notices[0],/bro text/);
+});
+
 const backend = await import(pathToFileURL(join(buildDir, "backend.js")).href);
 const { CLAUDE_EFFORTS } = backend;
 const {
