@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, symlinkSync, rmSync } from "node:fs";
+import { mkdtempSync, symlinkSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -57,6 +57,15 @@ const {
 	supportsBackend,
 	withCapabilityOverride,
 } = bro;
+
+test("host-provided packages are wildcard peers, not runtime dependencies", () => {
+	const manifest = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8"));
+	for (const name of ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"]) {
+		assert.equal(manifest.dependencies[name], undefined, name);
+		assert.equal(manifest.peerDependencies[name], "*", name);
+		assert.ok(manifest.devDependencies[name], `${name} remains available for development`);
+	}
+});
 
 // v2 settings disk shape: { version: 2, default: { backend, model, effort }, overrides, mode, showTurns }.
 // Legacy flat files ({ model, effort, ... }) keep parsing into backend-less (Agy) settings.

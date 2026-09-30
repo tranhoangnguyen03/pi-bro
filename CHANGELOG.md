@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.18.1] - 2026-09-30
+
+### Fixed
+
+- Declare host-provided `typebox` and Pi packages as wildcard peer dependencies, keeping pinned copies only for development. This removes the host-dependency warning added in Pi 0.99.0 and avoids installing a separate runtime TypeBox copy.
+
 ## [0.18.0] - 2026-09-24
 
 ### Added

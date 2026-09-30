@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "description": "An Earendil Pi extension that explains pasted text, assistant responses, local documents, public webpages, and recent session turns (as shapes) in a context-isolated window, opens a sandboxed side conversation with /bro btw, and provides a second-opinion advisor tool for executor agents.",
   "type": "module",
   "license": "MIT",
@@ -62,20 +62,21 @@
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.84.2 <1",
-    "@earendil-works/pi-tui": ">=0.84.2 <1"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@earendil-works/pi-tui": "0.84.2",
     "@types/node": "^24.0.0",
+    "typebox": "1.3.7",
     "typescript": "6.0.2"
   },
   "dependencies": {
     "defuddle": "0.19.2",
     "linkedom": "0.18.13",
     "mammoth": "^1.12.1",
-    "typebox": "1.3.7",
     "unpdf": "^1.8.1"
   }
 }
