@@ -1,3 +1,4 @@
+import "./test-cli-guard.ts";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync } from "node:fs";
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -543,6 +544,7 @@ test("muse missing binary reports an install hint", async () => {
 });
 
 test("unsupported muse combinations and pre-abort fail before spawn", async () => {
+ await withFakeMuse('exit 1', async (binDir) => {
 	const aborted = new AbortController();
 	aborted.abort();
 	assert.deepEqual(
@@ -573,4 +575,6 @@ test("unsupported muse combinations and pre-abort fail before spawn", async () =
 		),
 		{ status: "failure", message: "Unsupported Muse selection: check the model and effort (minimal, low, medium, high, xhigh or max)." },
 	);
+ assert.equal(existsSync(join(binDir, "args.txt")), false);
+ });
 });

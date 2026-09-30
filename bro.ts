@@ -1561,10 +1561,12 @@ export function showHtmlDirectory(): string {
 
 function withShowCsp(html: string): string {
 	// Defense in depth: the prompt forbids external resources and scripts;
-	// a meta CSP blocks them anyway if the model slips.
+	// a meta CSP blocks them anyway if the model slips. Always inserted: multiple
+	// policies are enforced together, so a model-supplied CSP can only tighten it.
+	// Skip only simple leading comments: browsers accept comment terminators that
+	// a general regex misses. Ambiguous markup gets the policy prepended instead.
 	const meta = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:;">';
-	if (/http-equiv=["']?Content-Security-Policy/i.test(html)) return html;
-	return html.replace(/^(\s*(?:<!doctype[^>]*>\s*)?)/i, `$1\n${meta}\n`);
+	return html.replace(/^(\s*(?:<!--[^<>]*-->\s*)*(?:<!doctype[^>]*>\s*)?)/i, `$1\n${meta}\n`);
 }
 
 export async function writeShowHtml(html: string): Promise<string> {

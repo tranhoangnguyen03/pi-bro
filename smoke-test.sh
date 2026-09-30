@@ -4,6 +4,15 @@ set -eu
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 pi_bin=${PI_BIN:-"$repo_dir/node_modules/.bin/pi"}
 test_dir=$(mktemp -d)
+# All Node tmpdir() consumers, including diagram cleanup, stay inside this run.
+export TMPDIR="$test_dir"
+# Block every real backend even if routing regresses outside an explicit fake.
+mkdir "$test_dir/guard-bin"
+for cli in agy claude grok codex muse; do
+	printf '#!/bin/sh\necho "Unexpected backend invocation blocked by smoke tests" >&2\nexit 97\n' > "$test_dir/guard-bin/$cli"
+	chmod +x "$test_dir/guard-bin/$cli"
+done
+export PATH="$test_dir/guard-bin:$PATH"
 session_file="$test_dir/session.jsonl"
 config_dir="$test_dir/config"
 prompt_file="$config_dir/bro-prompt.md"
@@ -30,39 +39,10 @@ fi
 # Serialize RPC requests by their acknowledgements, not machine-speed-dependent sleeps.
 # Keep stdin open until the final response; Pi exits on EOF even with work in flight.
 export BRO_SMOKE_PI_BIN="$pi_bin"
+export BRO_SMOKE_RPC="$repo_dir/smoke-rpc.mjs"
 cat > "$test_dir/pi-rpc" <<'RPC'
-#!/usr/bin/env node
-const { spawn } = require('node:child_process');
-const { createInterface } = require('node:readline');
-const child = spawn(process.env.BRO_SMOKE_PI_BIN, process.argv.slice(2), { stdio: ['pipe', 'pipe', 'inherit'] });
-const queue = [];
-let active, ended = false, timer;
-function next() {
-  if (active !== undefined) return;
-  const line = queue.shift();
-  if (line === undefined) { if (ended) child.stdin.end(); return; }
-  active = JSON.parse(line).id;
-  child.stdin.write(line + '\n');
-  timer = setTimeout(() => { console.error('RPC smoke request timed out:', active); child.kill('SIGKILL'); process.exitCode = 1; }, 30000);
-}
-const input = createInterface({ input: process.stdin });
-input.on('line', line => { if (line.trim()) queue.push(line); next(); });
-input.on('close', () => { ended = true; next(); });
-createInterface({ input: child.stdout }).on('line', line => {
-  console.log(line);
-  let event;
-  try { event = JSON.parse(line); } catch { return; }
-  if (event.type === 'response' && event.id === active) {
-    clearTimeout(timer); active = undefined; next();
-  }
-});
-child.on('error', error => { console.error(error); process.exitCode = 1; });
-child.on('close', code => {
-  clearTimeout(timer);
-  if (active !== undefined || queue.length) process.exitCode = 1;
-  else process.exitCode = code ?? 1;
-  input.close(); process.stdin.destroy();
-});
+#!/bin/sh
+exec node "$BRO_SMOKE_RPC" "$@"
 RPC
 chmod +x "$test_dir/pi-rpc"
 pi_bin="$test_dir/pi-rpc"
@@ -1800,59 +1780,34 @@ touch "$calls_file" "$args_file" "$usage_calls_file" "$model_calls_file" "$versi
 output=$(
 	{
 		printf '%s\n' '{"id":"bro-open-empty","type":"prompt","message":"/bro open"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-help","type":"prompt","message":"/bro help"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-doctor","type":"prompt","message":"/bro doctor"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-default","type":"prompt","message":"/bro"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-open-first","type":"prompt","message":"/bro open"}'
-		sleep 1
 		printf '{"id":"bro-file","type":"prompt","message":"/bro file %s"}\n' "$document_file"
-		sleep 1
 		printf '%s\n' '{"id":"bro-open-file","type":"prompt","message":"/bro open"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-url-missing","type":"prompt","message":"/bro url"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-open-extra","type":"prompt","message":"/bro open the door please"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-mode-invalid","type":"prompt","message":"/bro mode unknown"}'
-		sleep 1
 		# Shared model/effort now come from /bro config; a config-written file must survive /bro mode.
-		printf '{"version":2,"default":{"backend":"agy","model":"gemini-test-two","effort":"high"},"mode":"balanced","showTurns":1}\n' > "$settings_file"
+		node -e 'console.log(JSON.stringify({type:"smoke-write",path:process.argv[1],text:JSON.stringify({version:2,default:{backend:"agy",model:"gemini-test-two",effort:"high"},mode:"balanced",showTurns:1})}))' "$settings_file"
 		printf '%s\n' '{"id":"bro-mode","type":"prompt","message":"/bro mode faithful"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-model-removed","type":"prompt","message":"/bro model"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-model-removed-id","type":"prompt","message":"/bro model gemini-test-one"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-effort-removed","type":"prompt","message":"/bro effort"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-effort-removed-level","type":"prompt","message":"/bro EFFORT low"}'
-		sleep 1
-		cp "$settings_file" "$settings_snapshot"
-		printf '{"model":"gemini-test-one","effort":"low"}\n' > "$settings_file"
+		node -e 'console.log(JSON.stringify({type:"smoke-copy",from:process.argv[1],to:process.argv[2]})); console.log(JSON.stringify({type:"smoke-write",path:process.argv[1],text:JSON.stringify({model:"gemini-test-one",effort:"low"})}))' "$settings_file" "$settings_snapshot"
 		printf '%s\n' '{"id":"bro-text","type":"prompt","message":"/bro text PASTED_TEXT_ONLY_CANARY"}'
-		sleep 1
 		printf '{"id":"bro-route-file","type":"prompt","message":"/bro %s"}\n' "$document_file"
-		sleep 1
 		cat <<-EOF
 		{"id":"bro-route-quoted","type":"prompt","message":"/bro \"$spaced_file\""}
 		EOF
-		sleep 1
 		printf '%s\n' '{"id":"bro-route-text","type":"prompt","message":"/bro ROUTED_WHOLE_RAW_CANARY trailing words"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-show","type":"prompt","message":"/bro show"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-show-count-and-query","type":"prompt","message":"/bro show 2 Trace The Login Flow"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-show-query-only","type":"prompt","message":"/bro show Explain The Auth Redirect"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-show-invalid","type":"prompt","message":"/bro show 0"}'
-		sleep 1
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
-		sleep 1
 	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_SHOW_PROMPTS="$show_prompts_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
@@ -1985,17 +1940,11 @@ cp "$session_file" "$missing_session"
 missing_output=$(
 	{
 		printf '%s\n' '{"id":"missing-doctor","type":"prompt","message":"/bro doctor"}'
-		sleep 1
 		printf '%s\n' '{"id":"missing-model","type":"prompt","message":"/bro model gemini-3.7-flash"}'
-		sleep 1
 		printf '%s\n' '{"id":"missing-effort","type":"prompt","message":"/bro effort low"}'
-		sleep 1
 		printf '%s\n' '{"id":"missing-route-url","type":"prompt","message":"/bro https://user:secret@example.com/doc"}'
-		sleep 1
 		printf '%s\n' '{"id":"missing-latest","type":"prompt","message":"/bro"}'
-		sleep 1
 		printf '%s\n' '{"id":"missing-help","type":"prompt","message":"/bro help"}'
-		sleep 1
 	} | PATH="$test_dir:$PATH" BRO_AGY_FAILURE=1 PI_CODING_AGENT_DIR="$missing_config" "$pi_bin" --offline --mode rpc --session "$missing_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
@@ -2032,15 +1981,10 @@ cp "$session_file" "$broken_session"
 broken_output=$(
 	{
 		printf '%s\n' '{"id":"broken-help","type":"prompt","message":"/bro help"}'
-		sleep 1
 		printf '%s\n' '{"id":"broken-settings-doctor","type":"prompt","message":"/bro doctor"}'
-		sleep 1
-		printf '{"model":"gemini-3.7-flash","effort":"low"}\n' > "$broken_settings"
-		printf 'This prompt has no placeholder.\n' > "$broken_prompt"
+		node -e 'console.log(JSON.stringify({type:"smoke-write",path:process.argv[1],text:JSON.stringify({model:"gemini-3.7-flash",effort:"low"})})); console.log(JSON.stringify({type:"smoke-write",path:process.argv[2],text:"This prompt has no placeholder.\n"}))' "$broken_settings" "$broken_prompt"
 		printf '%s\n' '{"id":"broken-prompt-doctor","type":"prompt","message":"/bro doctor"}'
-		sleep 1
 		printf '%s\n' '{"id":"broken-prompt-latest","type":"prompt","message":"/bro"}'
-		sleep 1
 	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$broken_config" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$broken_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts" 2>&1
 )
 
@@ -2106,9 +2050,7 @@ touch "$override_args_file"
 override_output=$(
 	{
 		printf '%s\n' '{"id":"override-explain","type":"prompt","message":"/bro"}'
-		sleep 1
 		printf '%s\n' '{"id":"override-show","type":"prompt","message":"/bro show"}'
-		sleep 1
 	} | PATH="$test_dir/override-bin:$PATH" PI_CODING_AGENT_DIR="$override_config" OVERRIDE_ARGS="$override_args_file" "$pi_bin" --offline --mode rpc --session "$override_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
@@ -2142,11 +2084,8 @@ printf '{"type":"session","version":3,"id":"00000000-0000-7000-8000-000000000001
 advisor_output_1=$(
 	{
 		printf '%s\n' '{"id":"advisor-old-on","type":"prompt","message":"/bro advisor on"}'
-		sleep 1
 		printf '%s\n' '{"id":"advisor-old-status","type":"prompt","message":"/bro advisor status"}'
-		sleep 1
 		printf '%s\n' '{"id":"advisor-bare","type":"prompt","message":"/bro advisor"}'
-		sleep 1
 	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$advisor_config" "$pi_bin" --offline --mode rpc --session "$advisor_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 
@@ -2170,7 +2109,6 @@ cp "$session_file" "$advisor_excluded_session"
 advisor_excluded_output=$(
 	{
 		printf '%s\n' '{"id":"advisor-excluded-bare","type":"prompt","message":"/bro advisor"}'
-		sleep 1
 	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$advisor_config" "$pi_bin" --offline --mode rpc --session "$advisor_excluded_session" --exclude-tools bro_advisor --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
 )
 if [ "${BRO_PIG_RPC_EXCLUSION_XFAIL:-}" = "0.3.0" ]; then

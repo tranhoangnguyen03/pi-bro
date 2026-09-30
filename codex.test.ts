@@ -1,3 +1,4 @@
+import "./test-cli-guard.ts";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync } from "node:fs";
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -462,6 +463,7 @@ test("codex missing binary reports an install hint", async () => {
 });
 
 test("unsupported codex combinations and pre-abort fail before spawn", async () => {
+ await withFakeCodex('exit 1', async (binDir) => {
 	const aborted = new AbortController();
 	aborted.abort();
 	assert.deepEqual(
@@ -482,4 +484,6 @@ test("unsupported codex combinations and pre-abort fail before spawn", async () 
 		),
 		{ status: "failure", message: "Unsupported Codex selection: check the model and effort (low, medium, high or xhigh)." },
 	);
+ assert.equal(existsSync(join(binDir, "args.txt")), false);
+ });
 });
