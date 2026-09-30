@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.19.2] - 2026-09-30
+
+### Fixed
+
+- Preserve Show's diagram controls, captured source, and steering when reopening and rerunning a result. Recreate missing temporary diagrams without a model call and retain the previous diagram after a failed rerun (#71).
+
 ## [0.19.1] - 2026-09-30
 
 ### Fixed
