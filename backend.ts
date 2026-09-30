@@ -1001,11 +1001,11 @@ function extractCodexItemText(item: CodexEvent["item"]): string | undefined {
 
 function codexActivityFromEvent(event: CodexEvent): string | undefined {
 	const item = event.item;
-	if (!item) return undefined;
+	if (!item || item.type === "reasoning") return undefined;
 	if (event.type === "item.started" || event.type === "item.completed") {
 		if (item.type !== "agent_message") {
 			const itemType = typeof item.type === "string" ? item.type : "item";
-			const candidate = [item.command, item.cmd, item.path, item.pattern, item.query, item.text]
+			const candidate = [item.command, item.cmd, item.path, item.pattern, item.query]
 				.find((v) => typeof v === "string" && v.trim());
 			const preview = typeof candidate === "string" ? candidate.replace(/\s+/g, " ").trim() : "";
 			return `${itemType}${preview ? ` ${preview}` : ""}`;
@@ -1122,7 +1122,7 @@ async function executeCodex(
 				if (text !== undefined) {
 					final = text;
 					if (!isAdvisor) {
-						partial += text;
+						partial += `${partial ? "\n\n" : ""}${text}`;
 						onProgress?.({ kind: "text", text: partial });
 					}
 				}

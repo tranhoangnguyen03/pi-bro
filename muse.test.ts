@@ -292,7 +292,8 @@ test("muse btw restricted: fresh turn runs in workspace cwd and returns continua
 	);
 });
 
-test("muse btw workspace-full: resume passes --session-id with continuation id", async () => {
+for (const access of ["restricted", "workspace-full"] as const) {
+test(`muse btw ${access}: resume preserves permissions and continuation`, async () => {
 	await withFakeMuse(
 		[
 			cmdAccepted("c-btw-2", "s-btw-1"),
@@ -306,7 +307,7 @@ test("muse btw workspace-full: resume passes --session-id with continuation id",
 				const outcome = await execute(
 					{
 						feature: "btw",
-						access: "workspace-full",
+						access,
 						cwd: workspace,
 						prompt: "Turn 2",
 						continuation: { id: "s-btw-1" },
@@ -328,7 +329,7 @@ test("muse btw workspace-full: resume passes --session-id with continuation id",
 					"meta",
 					"--workspace",
 					workspace,
-					"--yolo",
+					...(access === "restricted" ? ["--disable-approval", "--disable-write", "--disable-shell"] : ["--yolo"]),
 					"--session-id",
 					"s-btw-1",
 					"--model",
@@ -346,6 +347,8 @@ test("muse btw workspace-full: resume passes --session-id with continuation id",
 		},
 	);
 });
+
+}
 
 test("muse btw fails on resumed session id mismatch", async () => {
 	await withFakeMuse(

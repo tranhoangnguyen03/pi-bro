@@ -2501,7 +2501,7 @@ export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: Exten
 		families = await listAgyModels(pi);
 	} catch (error) {
 		families = [];
-		ctx.ui.notify("Agy model catalog unavailable — showing Claude/Grok settings without Agy choices.", "warning");
+		ctx.ui.notify("Agy model catalog unavailable — showing other backend settings without Agy choices.", "warning");
 	}
 	await ctx.ui.custom<void>(createConfigModal(settings, families, writeSettings), {
 		overlay: true,
@@ -3033,7 +3033,7 @@ export function toggleBtwMode(thread: BtwThread): void {
 	thread.full = !thread.full;
 }
 
-// Claude and Grok run btw in the workspace for both modes and resume one native session across
+// Claude, Grok, Codex, and Muse run btw in the workspace for both modes and resume one native session across
 // /mode switches. An Agy conversation stays bound to the workspace it started in (a sandbox scratch
 // dir vs. the repo), so an access change drops it; the next turn reseeds a fresh native session
 // with the main-session context and the whole thread.

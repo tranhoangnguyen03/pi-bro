@@ -762,6 +762,9 @@ data under their own settings and policies.
 - Grok always runs with its sandbox off and permissions bypassed; its tools,
   hooks, skills, plugins, and MCP may remain available. "Answer only from the
   supplied context" is a request, not an enforced restriction.
+- Codex's read-only sandbox is not a tool-free mode: workspace reads and
+  sandboxed commands remain available. Bro does not disable configured MCP
+  servers or web search; their access is governed by Codex configuration.
 - Muse's restricted mode disables write and shell tools and approval prompts,
   not all tools: workspace reads and web tools remain available without approval.
   It is not a tool-free or network-isolated mode.

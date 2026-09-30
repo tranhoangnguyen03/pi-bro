@@ -117,6 +117,7 @@ test("codex advisor: workspace-full fresh argv in workspace cwd, activity-only p
 			turnStarted,
 			line({ type: "item.started", item: { id: "item_1", type: "command_execution", command: "git status" } }),
 			line({ type: "item.completed", item: { id: "item_1", type: "command_execution", command: "git status", exit_code: 0 } }),
+			line({ type: "item.completed", item: { type: "reasoning", text: "Private reasoning" } }),
 			line({ type: "item.completed", item: { id: "item_2", type: "agent_message", text: "I looked at git status." } }),
 			line({ type: "item.started", item: { id: "item_3", type: "file_search", query: "auth" } }),
 			line({ type: "item.completed", item: { id: "item_3", type: "file_search", query: "auth" } }),
@@ -208,7 +209,8 @@ test("codex btw restricted: fresh turn runs in workspace cwd and returns continu
 	);
 });
 
-test("codex btw workspace-full: resume passes resume before --json with continuation id", async () => {
+for (const access of ["restricted", "workspace-full"] as const) {
+test(`codex btw ${access}: resume preserves permissions and continuation`, async () => {
 	await withFakeCodex(
 		[
 			threadStarted("th-btw-1"),
@@ -222,7 +224,7 @@ test("codex btw workspace-full: resume passes resume before --json with continua
 				const outcome = await execute(
 					{
 						feature: "btw",
-						access: "workspace-full",
+						access,
 						cwd: workspace,
 						prompt: "Turn 2 question",
 						continuation: { id: "th-btw-1" },
@@ -238,7 +240,7 @@ test("codex btw workspace-full: resume passes resume before --json with continua
 				const argv = await args(binDir);
 				assert.deepEqual(argv, [
 					"exec",
-					"--dangerously-bypass-approvals-and-sandbox",
+					...(access === "restricted" ? ["--sandbox", "read-only"] : ["--dangerously-bypass-approvals-and-sandbox"]),
 					"resume",
 					"--json",
 					"--skip-git-repo-check",
@@ -257,6 +259,8 @@ test("codex btw workspace-full: resume passes resume before --json with continua
 		},
 	);
 });
+
+}
 
 test("codex btw fails on resumed session id mismatch", async () => {
 	await withFakeCodex(
