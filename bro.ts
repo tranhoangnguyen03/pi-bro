@@ -132,6 +132,7 @@ export function setRegularMouseReporting(tui: Pick<TuiLike, "mode" | "terminal">
 }
 
 const COMMANDS = [
+	{ value: "simplify", label: "simplify", description: "Explain the latest completed assistant reply (same as /bro)" },
 	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
 	{ value: "file", label: "file", description: "Explain a local document" },
 	{ value: "url", label: "url", description: "Explain a public webpage" },
@@ -2640,7 +2641,7 @@ Quick reference. The README is the full user guide: https://github.com/tranhoang
 
 ## Explain and show
 
-- \`/bro\` — explain the latest completed assistant reply
+- \`/bro\` or \`/bro simplify\` — explain the latest completed assistant reply
 - \`/bro text [text]\` — explain pasted text, or the latest reply when text is omitted
 - \`/bro file <path>\` — explain a workspace \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\` file
 - \`/bro url <url>\` — explain one public webpage
@@ -3614,6 +3615,11 @@ export default async function bro(pi: ExtensionAPI) {
 			const parts = normalized ? normalized.split(/\s+/) : [];
 			let action = parts[0] ?? "";
 			let value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
+
+			if (action === "simplify") {
+				if (value) { ctx.ui.notify("Use /bro simplify for the latest reply, or /bro text <text> for pasted text.", "warning"); return; }
+				action = "";
+			}
 
 			// Removed commands must never fall through to a paid text explanation.
 			if (action === "model" || action === "effort") {
