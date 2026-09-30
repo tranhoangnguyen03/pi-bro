@@ -2942,6 +2942,12 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 				options.retryLabel ?? "simplify again",
 			);
 
+			const present = (result: ModalResult, notice = "") => {
+				const display = result.htmlPath ? stripShowHtmlFence(result.text) : result.text;
+				modal.setResult(display, options.retryable ?? Boolean(options.run), notice, result.source?.label, result.text, result.model);
+				modal.setHtmlPath(result.htmlPath ?? "");
+			};
+
 			execute = (source?: BroSource) => {
 				if (!options.run || controller || closed) return;
 				const previous = current;
@@ -2958,16 +2964,14 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 						if (closed || nextController.signal.aborted) return;
 						current = result;
 						options.onResult?.(result);
-						const display = result.htmlPath ? stripShowHtmlFence(result.text) : result.text;
-						modal.setResult(display, options.retryable ?? true, "", result.source?.label, result.text, result.model);
-						if (result.htmlPath) modal.setHtmlPath(result.htmlPath);
+						present(result);
 					})
 					.catch((error) => {
 						if (closed || nextController.signal.aborted) return;
 						const message = error instanceof Error ? error.message : String(error);
 						if (previous) {
 							current = previous;
-							modal.setResult(previous.text, options.retryable ?? true, `Retry failed: ${message}`, previous.source?.label, previous.text, previous.model);
+							present(previous, `Retry failed: ${message}`);
 						} else {
 							modal.setError(message);
 						}
@@ -2980,7 +2984,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 			if (options.text !== undefined) {
 				modal.setStatic(options.kind ?? "help", options.text, options.copyable ?? false);
 			} else if (current) {
-				modal.setResult(current.text, options.retryable ?? Boolean(options.run), "", current.source?.label, current.text, current.model);
+				present(current);
 			} else {
 				execute();
 			}
@@ -3479,10 +3483,14 @@ async function openBtwModal(
 }
 
 export default async function bro(pi: ExtensionAPI) {
-	let lastResult: BroResult | undefined;
+	let lastResult: ModalResult | undefined;
+	let lastShowSteering: string | undefined;
 	let btwThread: BtwThread | undefined;
-	const remember = (result: ModalResult) => {
-		if (result.source) lastResult = { source: result.source, text: result.text, model: result.model };
+	const remember = (result: ModalResult, showSteering?: string) => {
+		if (result.source) {
+			lastResult = result;
+			lastShowSteering = showSteering;
+		}
 	};
 
 	pi.on("session_start", async (_event, _ctx) => {
@@ -3659,7 +3667,7 @@ export default async function bro(pi: ExtensionAPI) {
 						loadingText: "Drawing what happened…",
 						retryLabel: "show again",
 						run: runShow,
-						onResult: remember,
+						onResult: (result) => remember(result, steering),
 					});
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");
@@ -3860,10 +3868,29 @@ export default async function bro(pi: ExtensionAPI) {
 					return;
 				}
 
+				const steering = lastShowSteering;
+				if (steering !== undefined) {
+					const html = extractShowHtml(lastResult.text);
+					// Temp files may have been cleaned by the OS or another Bro session.
+					if (html && ctx.mode === "tui") {
+						try { lastResult.htmlPath = await writeShowHtml(html); }
+						catch (error) {
+							lastResult.htmlPath = undefined;
+							ctx.ui.notify(`Diagram file unavailable: ${errorMessage(error)}`, "warning");
+						}
+					}
+				}
 				await showBroModal(ctx, {
 					result: lastResult,
-					run,
-					onResult: remember,
+					loadingText: steering !== undefined ? "Drawing what happened…" : undefined,
+					retryLabel: steering !== undefined ? "show again" : undefined,
+					run: steering === undefined ? run : async (signal, source, onProgress) => {
+						if (!source) throw new Error("No captured Show source.");
+						const result = await runShowExplanation(source.text, steering, signal, await readSettings(), onProgress);
+						const html = extractShowHtml(result.text);
+						return { source, ...result, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
+					},
+					onResult: (result) => remember(result, steering),
 				});
 				return;
 			}
