@@ -211,8 +211,8 @@ export function parseBtwAgyLine(line: string): { delta?: string; result?: string
 	return { conversationId };
 }
 
-// explain/show and btw all print the prompt as a single --print argv value and read a stream-json
-// result off stdout; only sandbox flag, cwd, timeout, and (btw only) --conversation differ.
+// Explain/show and BTW use argv for small prompts and stdin NDJSON for large
+// prompts; sandbox, cwd, timeout, and continuation semantics stay unchanged.
 async function executeArgvPrint(
 	request: BackendRequest,
 	selection: AgySelection,
@@ -221,6 +221,9 @@ async function executeArgvPrint(
 	killEscalationMs: number,
 	deadlineMsOverride: number | undefined,
 ): Promise<BackendOutcome> {
+	// Keep legacy CLI compatibility for small prompts; large inputs use the advisor's
+	// stdin protocol rather than risking Linux's per-argument byte limit.
+	const stdinPrompt = Buffer.byteLength(request.prompt, "utf8") >= 120_000;
 	const isBtw = request.feature === "btw";
 	const full = isBtw && request.access === "workspace-full";
 	const deadlineMs = deadlineMsOverride ?? (isBtw ? (full ? 610_000 : 130_000) : 125_000);
@@ -251,12 +254,11 @@ async function executeArgvPrint(
 				"--print-timeout",
 				printTimeout,
 				...(request.continuation ? ["--conversation", request.continuation.id] : []),
-				"--print",
-				request.prompt,
+				...(stdinPrompt ? ["--input-format", "stream-json"] : ["--print", request.prompt]),
 			],
 			{
 				cwd: full ? request.cwd : runDirectory,
-				stdio: ["ignore", "pipe", "pipe"],
+				stdio: [stdinPrompt ? "pipe" : "ignore", "pipe", "pipe"],
 				windowsHide: true,
 				detached: process.platform !== "win32",
 			},
@@ -277,6 +279,11 @@ async function executeArgvPrint(
 		child.once("error", (error) => {
 			processError = error;
 		});
+
+		if (stdinPrompt) {
+			child.stdin?.on("error", () => { /* Report early exits through the close/error path. */ });
+			child.stdin?.end(`${JSON.stringify({ event: "user", message: { content: request.prompt } })}\n`);
+		}
 
 		const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
 		try {
@@ -327,7 +334,9 @@ async function executeArgvPrint(
 		if (exitSignal || code === null) {
 			return { status: "failure", message: unexpectedSignalMessage(exitSignal), partialText: partial || undefined };
 		}
-		if (code !== 0) return { status: "failure", message: agyFailureMessage(action, { code, killed: false, stderr }) };
+		if (code !== 0) return { status: "failure", message: stdinPrompt && advisorFlagErrorHint(stderr)
+			? withDoctor("Large prompts require Agy 1.1.15+ with stdin support. Run `agy update`. " + stderr.trim())
+			: agyFailureMessage(action, { code, killed: false, stderr }) };
 
 		const text = final.trim();
 		if (!text) return { status: "failure", message: withDoctor(stderr.trim() || emptyTextMessage) };

@@ -32,6 +32,15 @@ selection, never merges fields, and stays pinned until reset to Default.
 Legacy flat files (root `model`/`effort`, no backend) still parse and mean
 Agy; reads never rewrite the file.
 
+## Prompt size and recent context
+
+Agy explain, Show, and BTW retain argv transport below 120,000 UTF-8 bytes.
+Larger prompts use stdin NDJSON (Agy 1.1.15+), avoiding Linux's single-argument
+limit; an unsupported CLI reports an upgrade hint without retrying another transport.
+Show and BTW context budgets retain newest complete turns first, then newest
+messages, then a JSON-quoted tail of an oversized final message. Truncation is
+marked explicitly when messages or message text are removed within a turn.
+
 ## BTW continuation
 
 BTW keeps one in-memory thread bound to a backend and an access mode

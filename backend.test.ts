@@ -31,6 +31,33 @@ async function withFakeAgy(script: string, run: (binDir: string) => Promise<void
 	}
 }
 
+test("large multibyte Agy prompts use stdin for explain, show and BTW reseeding", async () => {
+ await withFakeAgy(`#!/usr/bin/env node
+const fs=require('node:fs');
+const args=process.argv.slice(2);
+const envelope=JSON.parse(fs.readFileSync(0,'utf8'));
+if(!args.includes('--input-format') || args.includes('--print') || envelope.message.content !== 'ế'.repeat(100000)) process.exit(2);
+console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'ok',conversation_id:'continued'}}));
+`, async binDir => {
+  for (const feature of ['explain','show','btw'] as const) {
+   const outcome=await execute({feature,access:'restricted',prompt:'ế'.repeat(100000),cwd:binDir}, {model:'test'},new AbortController().signal);
+   assert.equal(outcome.status,'success',JSON.stringify(outcome));
+   if(feature==='btw' && outcome.status==='success') assert.equal(outcome.continuation?.id,'continued');
+  }
+ });
+});
+
+test("large prompts on old Agy return an upgrade hint without fallback", async () => {
+ await withFakeAgy(`#!/bin/sh
+echo 'flag provided but not defined: -input-format' >&2
+exit 2
+`, async () => {
+  const outcome=await execute({feature:'explain',access:'restricted',prompt:'x'.repeat(120000)}, {model:'test'},new AbortController().signal);
+  assert.equal(outcome.status,'failure');
+  assert.match(outcome.message,/Large prompts require Agy 1.1.15/);
+ });
+});
+
 test("backend exports public execute and selection helpers", () => {
 	assert.equal(typeof execute, "function", "backend must export public execute function");
 	assert.equal(typeof agySelection, "function", "backend must export agySelection");
