@@ -1,3 +1,4 @@
+import { beginAttempt } from "../backend.ts";
 import { spawn } from "node:child_process";
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
@@ -115,13 +116,12 @@ async function runMatrix(approval: string | undefined, track: Track = DEFAULT_TR
 	const directory = workDirectory(track);
 	await mkdir(directory, { recursive: true });
 	await writeAtomic(join(directory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-	console.log(await usagePreflight());
-	console.log(`Approved ${manifest.rows.length} calls on ${MODEL} (${EFFORT}).`);
-
 	const controller = new AbortController();
 	const onSigint = () => controller.abort();
-	process.once("SIGINT", onSigint);
+	process.on("SIGINT", onSigint);
 	try {
+		console.log(await usagePreflight("agy", 1_000, 35_000, controller.signal));
+		console.log(`Approved ${manifest.rows.length} calls on ${MODEL} (${EFFORT}).`);
 		for (const [index, row] of manifest.rows.entries()) {
 			const saved = await readResult(row.callId, track);
 			if (saved) {
@@ -175,37 +175,22 @@ async function executeCall(
 		"--effort", row.effort,
 		"--print-timeout", "2m",
 		"--print", prompt,
-	], { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+	], { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
 
 	let stderr = "";
 	let final = "";
 	let stopReason: string | null = null;
 	let parseError: string | undefined;
 	let processError: string | undefined;
-	let timedOut = false;
-	let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
-	const terminate = () => {
-		child.kill("SIGTERM");
-		forceKillTimer ??= setTimeout(() => {
-			if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-		}, killGraceMs);
-	};
-	const timeout = setTimeout(() => {
-		timedOut = true;
-		terminate();
-	}, row.timeoutMs);
-	const abort = () => terminate();
-	signal.addEventListener("abort", abort, { once: true });
+	const attempt = beginAttempt(child, signal, row.timeoutMs, killGraceMs);
 	child.stderr.setEncoding("utf8");
 	child.stderr.on("data", (chunk: string) => { stderr += chunk; });
 	child.once("error", (error) => { processError = error.message; });
-	const closed = new Promise<{ code: number | null; exitSignal: NodeJS.Signals | null }>((done) => {
-		child.once("close", (code, exitSignal) => done({ code, exitSignal }));
-	});
 	const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+	void attempt.closed.then(() => lines.close());
 	try {
 		for await (const line of lines) {
-			if (!line.trim()) continue;
+			if (!line.trim() || attempt.causeOf()) continue;
 			try {
 				const event = JSON.parse(line) as StreamEvent;
 				if (event.event === "result") {
@@ -214,20 +199,18 @@ async function executeCall(
 				}
 			} catch {
 				parseError = "Agy returned malformed stream JSON.";
-				terminate();
+				attempt.stop("protocol");
 				break;
 			}
 		}
 	} finally {
 		lines.close();
 	}
-	const closedResult = await closed;
-	clearTimeout(timeout);
-	if (forceKillTimer) clearTimeout(forceKillTimer);
-	signal.removeEventListener("abort", abort);
+	const closedResult = await attempt.closed;
+	attempt.dispose();
 	const elapsedMs = Date.now() - startedAt;
-	if (timedOut) return baseResult(row, elapsedMs, "timeout", stopReason, final, stderr.trim() || "Agy timed out.");
-	if (signal.aborted) return baseResult(row, elapsedMs, "cancelled", stopReason, final, "Cancelled.");
+	if (attempt.causeOf() === "timeout") return baseResult(row, elapsedMs, "timeout", stopReason, final, stderr.trim() || "Agy timed out.");
+	if (attempt.causeOf() === "cancelled") return baseResult(row, elapsedMs, "cancelled", stopReason, final, "Cancelled.");
 	if (parseError) return baseResult(row, elapsedMs, "error", stopReason, final, parseError);
 	if (processError) return baseResult(row, elapsedMs, "error", stopReason, final, processError);
 	if (closedResult.code !== 0) return baseResult(row, elapsedMs, "error", stopReason, final, stderr.trim() || `Agy exited ${closedResult.code}.`);
@@ -257,35 +240,29 @@ function baseResult(
 	};
 }
 
-export async function usagePreflight(command = "agy", killGraceMs = 1_000): Promise<string> {
+export async function usagePreflight(command = "agy", killGraceMs = 1_000, deadlineMs = 35_000, signal = new AbortController().signal): Promise<string> {
+	if (signal.aborted) throw new Error("Agy usage preflight cancelled.");
 	const cwd = await mkdtemp(join(tmpdir(), "pi-bro-benchmark-usage-"));
 	try {
 		const child = spawn(command, ["-p", "/usage", "--output-format", "json", "--print-timeout", "30s", "--sandbox"], {
 			cwd,
 			stdio: ["ignore", "pipe", "pipe"],
 			windowsHide: true,
+			detached: process.platform !== "win32",
 		});
 		let stdout = "";
 		let stderr = "";
 		let processError: string | undefined;
-		let timedOut = false;
-		let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
-		const timeout = setTimeout(() => {
-			timedOut = true;
-			child.kill("SIGTERM");
-			forceKillTimer = setTimeout(() => {
-				if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-			}, killGraceMs);
-		}, 35_000);
+		const attempt = beginAttempt(child, signal, deadlineMs, killGraceMs);
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => { stdout += chunk; });
 		child.stderr.on("data", (chunk: string) => { stderr += chunk; });
 		child.once("error", (error) => { processError = error.message; });
-		const code = await new Promise<number | null>((done) => child.once("close", done));
-		clearTimeout(timeout);
-		if (forceKillTimer) clearTimeout(forceKillTimer);
-		if (timedOut) throw new Error("Agy usage preflight timed out.");
+		const { code } = await attempt.closed;
+		attempt.dispose();
+		if (attempt.causeOf() === "cancelled") throw new Error("Agy usage preflight cancelled.");
+		if (attempt.causeOf() === "timeout") throw new Error("Agy usage preflight timed out.");
 		if (processError) throw new Error(`Agy usage preflight could not start: ${processError}`);
 		if (code !== 0) throw new Error(stderr.trim() || "Agy usage preflight failed.");
 		return `Agy usage preflight:\n${stdout.trim()}`;

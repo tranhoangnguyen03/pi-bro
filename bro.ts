@@ -1820,6 +1820,14 @@ export type AdvisorActivityCallback = (label: string, timestamp: number) => void
 // "Transport" for why stdin rather than --print). This function keeps its exact existing
 // signature/throw contract -- it is called directly by tests and by runAdvisorWithRetries below,
 // which owns the 3-attempt retry/backoff policy the backend itself never performs.
+export class TerminalConsultError extends Error {
+	readonly status: "failure" | "cancelled" | "timeout";
+	constructor(status: "failure" | "cancelled" | "timeout", message: string) {
+		super(message);
+		this.status = status;
+	}
+}
+
 export async function runAdvisorConsultation(
 	prompt: string,
 	selection: BackendSelection,
@@ -1827,6 +1835,7 @@ export async function runAdvisorConsultation(
 	signal: AbortSignal,
 	killEscalationMs = 5_000,
 	onActivity?: AdvisorActivityCallback,
+	deadlineMs?: number,
 ): Promise<string> {
 	const outcome = await executeBackend(
 		{ feature: "advisor", prompt, access: "workspace-full", cwd },
@@ -1837,10 +1846,10 @@ export async function runAdvisorConsultation(
 					if (progress.kind === "activity") onActivity(progress.label, progress.timestamp);
 				}
 			: undefined,
-		{ killEscalationMs },
+		{ killEscalationMs, deadlineMs },
 	);
 	if (outcome.status === "success") return outcome.text;
-	throw new Error(outcome.message);
+	throw new TerminalConsultError(outcome.status, outcome.message);
 }
 
 function advisorDelay(ms: number, signal: AbortSignal, onTick?: (remainingMs: number) => void): Promise<void> {
@@ -1994,7 +2003,8 @@ export async function runAdvisorWithRetries(
 		} catch (error) {
 			if (progressTimer) clearInterval(progressTimer);
 			stopActivityThrottle();
-			if (signal.aborted || errorMessage(error) === "Canceled.") throw error;
+			if (signal.aborted || errorMessage(error) === "Canceled." ||
+				(error instanceof TerminalConsultError && error.status !== "failure")) throw error;
 			lastError = error;
 			if (attempt === delays.length) break;
 			const delay = delays[attempt]!;

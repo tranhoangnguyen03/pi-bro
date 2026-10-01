@@ -72,6 +72,7 @@ const {
 	advisorFlagErrorHint,
 	runAdvisorConsultation,
 	runAdvisorWithRetries,
+	TerminalConsultError,
 	helpText,
 	agyFailureMessage,
 	agySelection,
@@ -1012,6 +1013,56 @@ try {
 	assert.equal(calls, 1, "cancellation during the backoff wait stops further attempts");
 }
 {
+	// #72: a host deadline is TERMINAL, exactly like cancellation -- it must not be retried with
+	// 5s/10s backoffs, and its diagnostic must survive the wrapper's classification verbatim.
+	// Only ordinary invocation failures keep the retry policy.
+	let calls = 0;
+	const delays = [];
+	let caught;
+	try {
+		await runAdvisorWithRetries(
+			"prompt", { model: "m" }, "/cwd", new AbortController().signal,
+			async () => { calls += 1; throw new TerminalConsultError("timeout", "Agy timed out during the advisor consultation. Run `/bro doctor` for setup help."); },
+			async (ms) => { delays.push(ms); },
+		);
+	} catch (error) { caught = error; }
+	assert.match(caught?.message ?? "", /timed out during the advisor consultation/, "the timeout diagnostic survives the wrapper");
+	assert.equal(caught?.status, "timeout", "the stop cause survives the wrapper");
+	assert.equal(calls, 1, "a deadline is terminal: exactly one attempt, no retry");
+	assert.deepEqual(delays, [], "a deadline must not schedule any backoff wait");
+}
+{
+	// A cancelled outcome is terminal too -- and a plain failure in the same wrapper still retries,
+	// proving the policy distinguishes the stop cause rather than disabling retries wholesale.
+	let calls = 0;
+	const delays = [];
+	await assert.rejects(
+		runAdvisorWithRetries(
+			"prompt", { model: "m" }, "/cwd", new AbortController().signal,
+			async () => { calls += 1; throw new TerminalConsultError("cancelled", "Canceled."); },
+			async (ms) => { delays.push(ms); },
+		),
+		/Canceled\./,
+	);
+	assert.equal(calls, 1, "a cancelled outcome is terminal");
+	assert.deepEqual(delays, []);
+}
+{
+	let calls = 0;
+	const delays = [];
+	const result = await runAdvisorWithRetries(
+		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
+		async () => {
+			calls += 1;
+			if (calls < 3) throw new TerminalConsultError("failure", `attempt ${calls} failed`);
+			return "advice after two retries";
+		},
+		async (ms) => { delays.push(ms); },
+	);
+	assert.equal(result.attempts, 3);
+	assert.deepEqual(delays, [5000, 10000], "non-terminal failures keep the documented backoff");
+}
+{
 	// Running progress timers stop after cancellation; no stale updates leak into a later UI.
 	const controller = new AbortController();
 	const progress = [];
@@ -1252,6 +1303,21 @@ try {
 			await rm(binDir, { recursive: true, force: true });
 		}
 	}
+
+	await withFakeAgy(
+		"#!/bin/sh\ncat >/dev/null\nsleep 30\n",
+		async (binDir) => {
+			let calls = 0;
+			const delays = [];
+			await assert.rejects(runAdvisorWithRetries(
+				"prompt", { model: "m" }, binDir, new AbortController().signal,
+				(...args) => { calls++; return runAdvisorConsultation(...args.slice(0, 4), 20, args[5], 100); },
+				async (ms) => { delays.push(ms); },
+			), (error) => error.status === "timeout" && /timed out/.test(error.message));
+			assert.equal(calls, 1, "real wrapper preserves the backend's timeout classification");
+			assert.deepEqual(delays, []);
+		},
+	);
 
 	await withFakeAgy(
 		"#!/bin/sh\ncat > \"$AGY_STDIN_FILE\"\nprintf '%s\\n' \"$*\" > \"$AGY_ARGS_FILE\"\n" +
