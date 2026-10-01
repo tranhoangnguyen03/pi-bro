@@ -5,7 +5,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { type BackendProgress, type BackendRequest, type BackendSelection, GROK_EFFORTS, backendSupports, execute } from "./backend.ts";
+import { type BackendProgress, type BackendRequest, type BackendSelection, GROK_EFFORTS, execute } from "./backend.ts";
 
 const originalPath = process.env.PATH;
 
@@ -75,9 +75,8 @@ async function advise(selection: BackendSelection, onProgress?: (p: BackendProgr
 	}
 }
 
-test("grok support predicate and effort list", () => {
+test("grok effort list", () => {
 	assert.deepEqual([...GROK_EFFORTS], ["low", "medium", "high", "xhigh"]);
-	for (const feature of ["explain", "show", "btw", "advisor"] as const) assert.equal(backendSupports("grok", feature), true);
 });
 
 test("grok advisor: fresh workspace argv, private prompt file cleaned up, activity-only progress without reasoning", async () => {

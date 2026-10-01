@@ -10,7 +10,7 @@ root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
 export PIG_HOME="$root/home" PIG_USE_PI_DIRS=0
 # Reuse each smoke scenario's fresh directory, while deliberately poisoning
-# the other host's path. Node-only unit blocks retain their Pi environment.
+# the other host's path. Pure helpers run separately under npm test, not here.
 cat > "$root/pig-wrapper" <<'WRAPPER'
 #!/bin/sh
 export PIG_CODING_AGENT_DIR="$PI_CODING_AGENT_DIR"

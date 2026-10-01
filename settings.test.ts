@@ -1,45 +1,12 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, symlinkSync, rmSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import test, { after } from "node:test";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
 
-// bro.ts is not importable under node --test directly: it uses TypeScript
-// parameter properties, which strip-only mode rejects. The repo's smoke-test.sh
-// handles this by compiling with tsc first; this suite does the same into a
-// scratch directory so `node --test settings.test.ts` stays self-contained.
 const repoDir = dirname(fileURLToPath(import.meta.url));
-const buildDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-test-"));
-after(() => rmSync(buildDir, { recursive: true, force: true }));
-const tscBin = join(repoDir, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc");
-execFileSync(
-	tscBin,
-	[
-		"--ignoreConfig",
-		join(repoDir, "bro.ts"),
-		"--target",
-		"ES2022",
-		"--module",
-		"NodeNext",
-		"--moduleResolution",
-		"NodeNext",
-		"--strict",
-		"--allowImportingTsExtensions",
-		"--rewriteRelativeImportExtensions",
-		"--skipLibCheck",
-		"--types",
-		"node",
-		"--outDir",
-		buildDir,
-	],
-	{ stdio: "pipe" },
-);
-symlinkSync(join(repoDir, "node_modules"), join(buildDir, "node_modules"));
-
-process.env.PI_CODING_AGENT_DIR = join(buildDir, "agent");
-const bro = await import(pathToFileURL(join(buildDir, "bro.js")).href);
+// @ts-ignore Shared JavaScript test harness; compiled Bro intentionally exposes dynamic test types.
+import { bro, backend } from "./test-build.mjs";
 test('simplify is discoverable and follows bare Bro without treating the alias as source text', async () => {
  let command: any;
  await bro.default({on() {},registerTool() {},registerCommand(_name: string,def: any){command=def;}});
@@ -52,7 +19,6 @@ test('simplify is discoverable and follows bare Bro without treating the alias a
  const notices: string[]=[];await command.handler('simplify pasted',{ui:{notify:(message:string)=>notices.push(message)}});assert.match(notices[0],/bro text/);
 });
 
-const backend = await import(pathToFileURL(join(buildDir, "backend.js")).href);
 const { CLAUDE_EFFORTS } = backend;
 const {
 	CLAUDE_MODELS,
@@ -73,7 +39,6 @@ const {
 	selectionForCapability,
 	selectionLabel,
 	settingsPayload,
-	supportsBackend,
 	withCapabilityOverride,
 } = bro;
 
@@ -98,6 +63,14 @@ test("bounded transcripts keep newest turns and valid quoted tails", () => {
   assert.ok(JSON.parse(entry.slice(entry.indexOf('\n')+1)).endsWith('END'));
  }
  assert.throws(()=>bro.captureShowTranscript(ctx,1,0),/at least 128/);
+});
+
+test("published manifest includes release and runtime documentation", () => {
+ const manifest = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8"));
+ for (const file of ["README.md", "CHANGELOG.md"]) {
+  assert.ok(manifest.files.includes(file), `${file} must ship`);
+  assert.ok(readFileSync(join(repoDir, file), "utf8").trim());
+ }
 });
 
 test("host-provided packages are wildcard peers, not runtime dependencies", () => {
@@ -253,10 +226,10 @@ test("Grok all-feature support: selection, efforts, models", () => {
 	assert.equal(resolveGrokModel("grok-4.7"), "grok-4.7");
 	assert.equal(resolveGrokModel("  custom-grok-id  "), "custom-grok-id");
 	assert.throws(() => resolveGrokModel("   "), /Grok model/);
-	assert.equal(supportsBackend("grok", "advisor"), true);
-	assert.equal(supportsBackend("grok", "explain"), true);
-	assert.equal(supportsBackend("grok", "show"), true);
-	assert.equal(supportsBackend("grok", "btw"), true);
+
+
+
+
 });
 
 test("Grok pairs parse, round-trip, and resolve with no Agy family", () => {
@@ -349,10 +322,10 @@ test("Codex all-feature support: selection, efforts, models", () => {
 	assert.equal(resolveCodexModel("gpt-5.5"), "gpt-5.5");
 	assert.equal(resolveCodexModel("  custom-codex-id  "), "custom-codex-id");
 	assert.throws(() => resolveCodexModel("   "), /Codex model/);
-	assert.equal(supportsBackend("codex", "advisor"), true);
-	assert.equal(supportsBackend("codex", "explain"), true);
-	assert.equal(supportsBackend("codex", "show"), true);
-	assert.equal(supportsBackend("codex", "btw"), true);
+
+
+
+
 });
 
 test("Codex pairs parse, round-trip, and resolve with no Agy family", () => {
@@ -427,10 +400,10 @@ test("Muse all-feature support: selection, efforts, models", () => {
 	assert.equal(resolveMuseModel("muse-spark-1.3"), "muse-spark-1.3");
 	assert.equal(resolveMuseModel("  custom-muse-id  "), "custom-muse-id");
 	assert.throws(() => resolveMuseModel("   "), /Muse model/);
-	assert.equal(supportsBackend("muse", "advisor"), true);
-	assert.equal(supportsBackend("muse", "explain"), true);
-	assert.equal(supportsBackend("muse", "show"), true);
-	assert.equal(supportsBackend("muse", "btw"), true);
+
+
+
+
 });
 
 test("Muse pairs parse, round-trip, and resolve with no Agy family", () => {
@@ -496,37 +469,20 @@ test("Muse custom picker cancels atomically and resets cross-backend effort", as
 	assert.doesNotMatch(modal.render(120).join("\n"),/unsupported backend/);
 });
 
-test("BTW backend changes clear native continuation for Codex and Muse, same backend preserves them", () => {
-	for (const backend of ["codex", "muse"] as const) {
+test("BTW backend changes clear native continuation for every backend, same backend preserves them", () => {
+	for (const backend of ["agy", "claude", "grok", "codex", "muse"] as const) {
 		const thread = { turns: [{ question: "q", answer: "a" }], conversationId: `${backend}-session`, full: false, backend };
 		assert.equal(bro.bindBtwBackend(thread, backend), false);
 		assert.equal(thread.conversationId, `${backend}-session`);
-		assert.equal(bro.bindBtwBackend(thread, "agy"), true);
+		assert.equal(bro.bindBtwBackend(thread, backend === "agy" ? "claude" : "agy"), true);
 		assert.equal(thread.conversationId, undefined);
 		assert.deepEqual(thread.turns, []);
 	}
 });
 
-test("BTW /mode keeps the transcript and native session for Codex and Muse", () => {
-	for (const backend of ["codex", "muse"] as const) {
-		const thread = { turns: [{ question: "q", answer: "a" }], conversationId: `${backend}-session`, full: false, sessionFull: false, backend };
-		bro.toggleBtwMode(thread);
-		assert.equal(thread.full, true);
-		assert.equal(bro.nativeBtwContinuation(thread, backend), `${backend}-session`);
-		assert.deepEqual(thread.turns, [{ question: "q", answer: "a" }]);
-	}
-});
-
-
-test("BTW backend changes clear native continuation and transcript, same backend preserves them", () => {
- const thread = {turns:[{question:"q",answer:"a"}],conversationId:"grok-session",full:false,backend:"grok"};
- assert.equal(bro.bindBtwBackend(thread,"grok"),false); assert.equal(thread.conversationId,"grok-session");
- assert.equal(bro.bindBtwBackend(thread,"agy"),true); assert.equal(thread.conversationId,undefined); assert.deepEqual(thread.turns,[]);
-});
-
 test("BTW /mode keeps the transcript; only Agy drops its native session on an access change", () => {
  const turns=[{question:"q",answer:"a"}];
- for (const backend of ["claude","grok"]) {
+ for (const backend of ["claude","grok","codex","muse"]) {
   const thread={turns:[...turns],conversationId:"sess",full:false,backend,sessionFull:false};
   bro.toggleBtwMode(thread); assert.equal(thread.full,true); assert.deepEqual(thread.turns,turns);
   assert.equal(bro.nativeBtwContinuation(thread,backend),"sess",backend);
@@ -544,9 +500,6 @@ test("BTW backend change also clears the saved seed context and session mode", (
  assert.deepEqual(thread,{turns:[],conversationId:undefined,full:true,backend:"claude",context:undefined,sessionFull:undefined});
 });
 
-test("Claude BTW is supported by doctor-facing support checks", () => {
- assert.equal(supportsBackend("claude", "btw"), true);
-});
 
 test("modal model label shows the resolved per-capability model and effort", () => {
 	const settings = parseBroSettings({

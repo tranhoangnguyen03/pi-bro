@@ -1,5 +1,10 @@
 # Decomposition validation set
 
+**Historical archive:** the seven pre-0.12 session captures are retained unchanged
+as semantic grading examples, not current capture-format regression fixtures.
+Their manifest and rubric describe the historical inputs; do not silently rewrite
+those inputs or use their tool sections as evidence of current Show behavior.
+
 A manual, non-`npm test` grading set for `/bro show`'s decomposition semantics
 (subject-first shape selection), scored against `rubric.json`. See the
 [0.11.0 CHANGELOG entry](../../../CHANGELOG.md) for how this set was built.

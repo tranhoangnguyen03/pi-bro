@@ -9,7 +9,6 @@ import {
 	type BackendProgress,
 	type BackendSelection,
 	MUSE_EFFORTS,
-	backendSupports,
 	execute,
 } from "./backend.ts";
 
@@ -90,9 +89,8 @@ async function args(binDir: string): Promise<string[]> {
 	return (await readFile(join(binDir, "args.txt"), "utf8")).split("\n").slice(0, -1);
 }
 
-test("muse support predicate and effort list", () => {
+test("muse effort list", () => {
 	assert.deepEqual([...MUSE_EFFORTS], ["minimal", "low", "medium", "high", "xhigh", "max"]);
-	for (const feature of ["explain", "show", "btw", "advisor"] as const) assert.equal(backendSupports("muse", feature), true);
 });
 
 test("muse explain: restricted fresh argv, prompt file mode 0600, scratch cwd, text-only progress", async () => {

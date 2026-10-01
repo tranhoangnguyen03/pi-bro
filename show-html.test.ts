@@ -1,53 +1,11 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync, readdirSync, existsSync, mkdtempSync, symlinkSync, rmSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import test, { after } from "node:test";
+import { mkdirSync, writeFileSync, readdirSync, existsSync, rmSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
 
-// Compiles bro.ts into a scratch directory the same way settings.test.ts does
-// (strip-only mode rejects its TypeScript parameter properties).
-const repoDir = dirname(fileURLToPath(import.meta.url));
-const buildDir = mkdtempSync(join(tmpdir(), "pi-bro-show-html-test-"));
-const tscBin = join(repoDir, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc");
-execFileSync(
-	tscBin,
-	[
-		"--ignoreConfig",
-		join(repoDir, "bro.ts"),
-		"--target",
-		"ES2022",
-		"--module",
-		"NodeNext",
-		"--moduleResolution",
-		"NodeNext",
-		"--strict",
-		"--allowImportingTsExtensions",
-		"--rewriteRelativeImportExtensions",
-		"--skipLibCheck",
-		"--types",
-		"node",
-		"--outDir",
-		buildDir,
-	],
-	{ stdio: "pipe" },
-);
-symlinkSync(join(repoDir, "node_modules"), join(buildDir, "node_modules"));
-
-process.env.PI_CODING_AGENT_DIR = join(buildDir, "agent");
-const { default: registerBro, showHtmlDirectory, writeShowHtml } = await import(pathToFileURL(join(buildDir, "bro.js")).href);
-
-// showHtmlDirectory() derives from os.tmpdir(), which reads TMPDIR on each
-// call; point it at the scratch directory so writes never touch the real /tmp.
-const originalTmpdir = process.env.TMPDIR;
-process.env.TMPDIR = join(buildDir, "tmp");
-mkdirSync(process.env.TMPDIR);
-after(() => {
-	if (originalTmpdir === undefined) delete process.env.TMPDIR;
-	else process.env.TMPDIR = originalTmpdir;
-	rmSync(buildDir, { recursive: true, force: true });
-});
+// @ts-ignore Shared JavaScript test harness.
+import { bro, buildDir } from "./test-build.mjs";
+const { default: registerBro, showHtmlDirectory, writeShowHtml } = bro;
 
 test("Show reopen restores diagrams and retries Show; Explain still retries Explain", async () => {
 	const { initTheme } = await import("@earendil-works/pi-coding-agent");

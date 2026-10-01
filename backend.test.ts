@@ -58,9 +58,7 @@ exit 2
  });
 });
 
-test("backend exports public execute and selection helpers", () => {
-	assert.equal(typeof execute, "function", "backend must export public execute function");
-	assert.equal(typeof agySelection, "function", "backend must export agySelection");
+test("Agy selection normalizes default and suffixed effort", () => {
 
 	assert.deepEqual(agySelection({ model: "gemini-2.5-flash", effort: "default" }), {
 		model: "gemini-2.5-flash",

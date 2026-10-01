@@ -5,7 +5,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { type BackendProgress, type BackendSelection, CLAUDE_EFFORTS, backendSupports, execute } from "./backend.ts";
+import { type BackendProgress, type BackendSelection, CLAUDE_EFFORTS, execute } from "./backend.ts";
 
 const originalPath = process.env.PATH;
 
@@ -50,13 +50,8 @@ async function args(binDir: string): Promise<string[]> {
 	return (await readFile(join(binDir, "args.txt"), "utf8")).split("\n").slice(0, -1);
 }
 
-test("support predicate and effort list", () => {
+test("effort list", () => {
 	assert.deepEqual([...CLAUDE_EFFORTS], ["low", "medium", "high", "xhigh", "max"]);
-	for (const feature of ["explain", "show", "btw", "advisor"] as const) assert.equal(backendSupports("agy", feature), true);
-	assert.equal(backendSupports("claude", "explain"), true);
-	assert.equal(backendSupports("claude", "show"), true);
-	assert.equal(backendSupports("claude", "advisor"), true);
-	assert.equal(backendSupports("claude", "btw"), true);
 });
 
 test("claude explain: restricted fresh argv, stdin prompt, scratch cwd, text-only progress without reasoning", async () => {

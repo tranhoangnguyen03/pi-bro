@@ -2,6 +2,22 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.19.5] - 2026-10-01
+
+### Changed
+
+- Remove the always-true backend-support predicate and unreachable doctor/config branches; retain backend-specific effort and permission validation (#74).
+- Move helper, modal, advisor, and Pi SDK regression checks into named Node tests with shared isolated compilation, leaving shell smoke tests focused on host RPC integration and avoiding duplicate helper execution in PiG (#74).
+- Consolidate redundant support, prompt, and BTW assertions; replace prose greps with package-documentation checks and document surviving coverage (#74).
+
+### Fixed
+
+- Make the advisor throttle cancellation test actually queue an emission and advance controlled time beyond its deadline; verified by removing cleanup and observing failure (#74).
+
+### Documentation
+
+- Explicitly archive the seven pre-conversation-only decomposition captures as historical semantic examples and record before/after test organization and timings (#74).
+
 ## [0.19.4] - 2026-10-01
 
 ### Fixed
