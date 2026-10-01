@@ -511,12 +511,6 @@ async function executeAdvisorStdin(
 }
 
 
-// Every backend supports every feature. Grok's "restricted" access is a prompt instruction, not
-// enforcement (see GROK_RESTRICTED_PREFIX); Claude's restricted btw runs tool-less.
-export function backendSupports(_backend: "agy" | "claude" | "grok" | "codex" | "muse", _feature: BackendFeature): boolean {
-	return true;
-}
-
 type ClaudeEvent = {
 	type?: unknown;
 	subtype?: unknown;

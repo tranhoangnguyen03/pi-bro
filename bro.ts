@@ -26,7 +26,6 @@ import {
 	GROK_EFFORTS,
 	CODEX_EFFORTS,
 	MUSE_EFFORTS,
-	backendSupports,
 	execute as executeBackend,
 	parseBtwAgyLine,
 	type AgySelection,
@@ -112,7 +111,6 @@ export const MUSE_MODELS = [
 	{ id: "muse-spark-1.3-contributor", label: "Muse Spark 1.3 Contributor" },
 	{ id: "muse-spark-1.3", label: "Muse Spark 1.3" },
 ] as const;
-export { backendSupports as supportsBackend };
 type AgyModelFamily = {
 	id: string;
 	label: string;
@@ -1325,10 +1323,6 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 				continue;
 			}
 			if (backend === "grok") {
-				if (!backendSupports("grok", capability)) {
-					fail(label, `\`${capability}\` is not supported on the Grok backend for this capability. Run \`/bro config\` to give it another backend.`);
-					continue;
-				}
 				if (!isGrokEffort(pair.effort)) {
 					fail(label, `\`${pair.effort}\` is unsupported for grok \`${pair.model}\`. Run \`/bro config\` to fix this.`);
 					continue;
@@ -1342,10 +1336,6 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 				continue;
 			}
 			if (backend === "codex") {
-				if (!backendSupports("codex", capability)) {
-					fail(label, `\`${capability}\` is not supported on the Codex backend for this capability. Run \`/bro config\` to give it another backend.`);
-					continue;
-				}
 				if (!isCodexEffort(pair.effort)) {
 					fail(label, `\`${pair.effort}\` is unsupported for codex \`${pair.model}\`. Run \`/bro config\` to fix this.`);
 					continue;
@@ -1359,10 +1349,6 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 				continue;
 			}
 			if (backend === "muse") {
-				if (!backendSupports("muse", capability)) {
-					fail(label, `\`${capability}\` is not supported on the Muse backend for this capability. Run \`/bro config\` to give it another backend.`);
-					continue;
-				}
 				if (!isMuseEffort(pair.effort)) {
 					fail(label, `\`${pair.effort}\` is unsupported for muse \`${pair.model}\`. Run \`/bro config\` to fix this.`);
 					continue;
@@ -2277,7 +2263,7 @@ export function createConfigModal(
 								: backend === "muse"
 									? `${MUSE_OPTION_PREFIX}${override.model}`
 									: (resolved.family?.id ?? override.model);
-				rows.effort.currentValue = backendSupports(backend, capability) ? effortDisplay(resolved, backend) : "unsupported backend";
+				rows.effort.currentValue = effortDisplay(resolved, backend);
 				rows.effort.values =
 					backend === "claude"
 						? ["default", ...CLAUDE_EFFORTS]

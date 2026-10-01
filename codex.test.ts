@@ -10,7 +10,6 @@ import {
 	type BackendRequest,
 	type BackendSelection,
 	CODEX_EFFORTS,
-	backendSupports,
 	execute,
 } from "./backend.ts";
 
@@ -60,9 +59,8 @@ async function args(binDir: string): Promise<string[]> {
 	return (await readFile(join(binDir, "args.txt"), "utf8")).split("\n").slice(0, -1);
 }
 
-test("codex support predicate and effort list", () => {
+test("codex effort list", () => {
 	assert.deepEqual([...CODEX_EFFORTS], ["low", "medium", "high", "xhigh"]);
-	for (const feature of ["explain", "show", "btw", "advisor"] as const) assert.equal(backendSupports("codex", feature), true);
 });
 
 test("codex explain: restricted fresh argv, stdin prompt, scratch cwd, text-only progress", async () => {
