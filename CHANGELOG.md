@@ -2,6 +2,17 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.19.4] - 2026-10-01
+
+### Fixed
+
+- Preserve advisor timeout and cancellation status through the consultation wrapper. Host deadlines and cancellation stop after one attempt without backoff; ordinary invocation failures retain the existing three-attempt policy (#72).
+- Bound benchmark call and usage-preflight cleanup when descendants retain output pipes, reusing backend process-group termination and escalation. Ignore late output after a stop without adding benchmark retries (#72).
+
+### Documentation
+
+- Distinguish host deadlines from CLI-reported failures and document unverified shutdown/reload cancellation, POSIX process-group cleanup, and Windows direct-child limits (#72).
+
 ## [0.19.3] - 2026-09-30
 
 ### Fixed

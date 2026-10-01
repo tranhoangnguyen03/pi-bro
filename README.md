@@ -205,9 +205,12 @@ presence, and backend compatibility (for Agy, a minimum CLI version with an
   more evidence" is a normal result, not a failure), Bro retries with the
   identical snapshot, steering, and question: once after 5 seconds, once more
   after 10 seconds, then returns the backend's own diagnostic — including a
-  context-length error, verbatim — as the failure. Each attempt is capped at
-  10 minutes. Cancelling the tool call aborts immediately and skips any
-  pending retry wait.
+  context-length error, verbatim — as the failure. Host-imposed deadlines and
+  cancellation are terminal: neither starts another attempt or a backoff wait.
+  The advisor CLI is asked to stop at 10 minutes; Bro's host deadline is 610
+  seconds plus bounded process cleanup. A CLI-reported error before that host
+  deadline remains an invocation failure and can be retried.
+  Cancelling the tool call skips any pending retry wait.
 - **Progress and provenance**: while an attempt is running, Bro shows the last
   thing the advisor actually reported — a tool name or a user-facing response
   line, never hidden reasoning — and how long ago it arrived, e.g. `last

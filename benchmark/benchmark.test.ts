@@ -107,6 +107,35 @@ test("runs each call in a fresh directory and contains process failures", async 
 	}
 });
 
+test("a descendant holding the stdout pipe cannot defeat the benchmark deadline", { timeout: 10_000 }, async () => {
+	const root = await mkdtemp(join(tmpdir(), "bro-benchmark-pipe-test-"));
+	// The immediate child spawns a grandchild that inherits stdout, ignores SIGTERM, and lives on
+	// after its parent dies -- so the inherited pipe alone must not keep the close-wait alive.
+	const keeper = join(root, "keeper.mjs");
+	await writeFile(keeper, `#!/usr/bin/env node\nprocess.on("SIGTERM", () => {});\nsetTimeout(() => process.exit(0), 3500);\n`);
+	await chmod(keeper, 0o755);
+	const parent = join(root, "parent.mjs");
+	await writeFile(parent, `#!/usr/bin/env node\nimport { spawn } from "node:child_process";\nspawn(process.execPath, [${JSON.stringify(keeper)}], { stdio: "inherit", detached: true });\nprocess.on("SIGTERM", () => {});\nsetInterval(() => {}, 1000);\n`);
+	await chmod(parent, 0o755);
+	try {
+		const row = buildManifest().rows[0];
+		assert.ok(row);
+		const startedAt = Date.now();
+		const result = await executeIsolatedCall({ ...row, timeoutMs: 1000 }, "prompt", new AbortController().signal, parent, 60);
+		const elapsedMs = Date.now() - startedAt;
+		assert.equal(result.outcome, "timeout", "the reported outcome is still the deadline");
+		assert.ok(elapsedMs < 3000, `deadline must stay bounded while a descendant holds the pipe (took ${elapsedMs}ms)`);
+		await assert.rejects(usagePreflight(parent, 60, 1000), /preflight timed out/);
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), 1000);
+		try {
+			await assert.rejects(usagePreflight(parent, 60, 5000, controller.signal), /preflight cancelled/);
+		} finally { clearTimeout(timer); }
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("call IDs include every paid-call identity input", () => {
 	const base: CallIdentity = {
 		fixture: "fixture",

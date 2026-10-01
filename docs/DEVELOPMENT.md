@@ -65,8 +65,25 @@ BTW keeps one in-memory thread bound to a backend and an access mode
   backend's own error.
 - Describe access truthfully per backend. A prompt instruction (Grok) is not
   enforcement, and the advisor's "advise, don't edit" is behavioral.
-- Cancellation or a deadline never produces a late success or a retry.
+- Cancellation or a host deadline never produces a late success or a retry.
+  CLI-reported errors remain retryable invocation failures; they are not inferred
+  to be host timeouts by matching diagnostic text.
 - Explain modes and Show are separate; `bro-prompt.md` affects explain only.
+
+## Lifecycle limits
+
+Benchmark calls and usage preflight reuse the backend's bounded process lifecycle:
+SIGTERM to the POSIX process group, SIGKILL after the grace period, then pipe
+closure and bounded close-wait completion. Windows only guarantees direct-child
+termination. Benchmark identity, reporting fields, and no-retry policy are unchanged.
+
+Shutdown/reload with an active detached backend remains **unverified** across Pi
+and PiG (#64). Cleanup currently depends on the host aborting the supplied signal;
+Bro has no global shutdown registry. Headless command execution without a supplied
+signal is bounded by its deadline, not a verified shutdown hook. An abrupt host
+exit can leave descendants running; do not treat the offline cancellation tests
+as shutdown/reload qualification. A follow-up host test should reload/shut down
+during a fake in-flight consultation and assert no delayed child activity.
 
 ## Tests
 

@@ -123,7 +123,7 @@ const DEFAULT_KILL_ESCALATION_MS = 5_000;
 // protocol failure it signals the whole POSIX process group (SIGTERM, then SIGKILL after
 // `killEscalationMs` if the child or a misbehaving grandchild ignores it). Windows only ever
 // reaches the immediate child directly -- there is no process-tree guarantee there.
-function beginAttempt(child: ChildProcess, signal: AbortSignal, deadlineMs: number, killEscalationMs: number): Attempt {
+export function beginAttempt(child: ChildProcess, signal: AbortSignal, deadlineMs: number, killEscalationMs: number): Attempt {
 	let cause: StopCause | undefined;
 	let killTimer: ReturnType<typeof setTimeout> | undefined;
 	let finishClose: (value: { code: number | null; exitSignal: NodeJS.Signals | null }) => void;
@@ -286,6 +286,7 @@ async function executeArgvPrint(
 		}
 
 		const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
+		void attempt.closed.then(() => lines.close());
 		try {
 			for await (const line of lines) {
 				if (!line.trim() || attempt.causeOf()) continue;
