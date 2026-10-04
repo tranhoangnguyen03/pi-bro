@@ -334,3 +334,65 @@ test("claude btw keeps partial text on a failed terminal result and uses side-co
 		assert.match((outcome as { message: string }).message, /Claude could not answer the side question: not signed in/);
 	});
 });
+
+test("claude framing: split chunks, CRLF, final record without newline, and oversized line", async () => {
+	await withFakeClaude(`case "$(cat "$BIN_DIR/stdin.txt")" in
+  *oversized*)
+    node -e 'process.stdout.write("x".repeat(2000001) + "\\n")'
+    ;;
+  *)
+    node -e '
+      process.stdout.write("{\\"type\\":\\"stream_event\\",\\"event\\":{\\"type\\":\\"content_block_delta\\",\\"delta\\":{\\"type\\":\\"text_delta\\",\\"text\\":\\"part-");
+      setTimeout(() => {
+        process.stdout.write("one\\"}},\\"parent_tool_use_id\\":null}\\r\\n");
+        process.stdout.write("{\\"type\\":\\"result\\",\\"subtype\\":\\"success\\",\\"is_error\\":false,\\"stop_reason\\":\\"end_turn\\",\\"terminal_reason\\":\\"completed\\",\\"result\\":\\"final answer\\"}");
+      }, 20);
+    '
+    ;;
+esac
+`, async (binDir) => {
+		// 1. Split event + CRLF + final result without newline
+		let progressText = "";
+		const outcome = await execute(
+			{ feature: "explain", access: "restricted", prompt: "normal", cwd: binDir },
+			claude(),
+			new AbortController().signal,
+			(p) => { if (p.kind === "text") progressText = p.text; },
+		);
+		assert.equal(outcome.status, "success", JSON.stringify(outcome));
+		assert.equal(outcome.text, "final answer");
+		assert.equal(progressText, "part-one");
+
+		// 2. Oversized line (> 2MB)
+		const overOutcome = await execute(
+			{ feature: "explain", access: "restricted", prompt: "oversized", cwd: binDir },
+			claude(),
+			new AbortController().signal,
+		);
+		assert.equal(overOutcome.status, "failure");
+		assert.match(overOutcome.message, /over 2000000 characters/);
+
+		// 3. Multi-block assistant event stops on cancellation
+		const controller = new AbortController();
+		const receivedLabels: string[] = [];
+		await withFakeClaude([
+			init("s1"),
+			assistant([{ type: "tool_use", name: "tool1" }, { type: "tool_use", name: "tool2" }]),
+			"exec sleep 30",
+		].join("\n"), async (subBinDir) => {
+			const cancelOutcome = await execute(
+				{ feature: "advisor", access: "workspace-full", prompt: "cancel", cwd: subBinDir },
+				claude(),
+				controller.signal,
+				(p) => {
+					if (p.kind === "activity") {
+						receivedLabels.push(p.label);
+						controller.abort();
+					}
+				},
+			);
+			assert.equal(cancelOutcome.status, "cancelled");
+			assert.deepEqual(receivedLabels, ["tool1"]);
+		});
+	});
+});

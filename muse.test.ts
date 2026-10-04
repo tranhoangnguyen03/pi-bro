@@ -576,3 +576,44 @@ test("unsupported muse combinations and pre-abort fail before spawn", async () =
  assert.equal(existsSync(join(binDir, "args.txt")), false);
  });
 });
+
+test("muse framing: split chunks, CRLF, final record without newline, and oversized line", async () => {
+	await withFakeMuse(`case "$(cat "$BIN_DIR/prompt.txt")" in
+  *oversized*)
+    node -e 'process.stdout.write("x".repeat(2000001) + "\\n")'
+    ;;
+  *)
+    node -e '
+      process.stdout.write("{\\"payload_type\\":\\"runtime.command.accepted\\",\\"stream\\":{\\"kind\\":\\"session\\",\\"id\\":\\"s1\\"},\\"payload\\":{\\"command_id\\":\\"c1\\"}}" + "\\r\\n");
+      process.stdout.write("{\\"payload_type\\":\\"session.run.linked\\",\\"stream\\":{\\"kind\\":\\"session\\",\\"id\\":\\"s1\\"},\\"payload\\":{\\"command_id\\":\\"c1\\",\\"run_stream\\":{\\"kind\\":\\"run\\",\\"id\\":\\"r1\\"}}}");
+      setTimeout(() => {
+        process.stdout.write("\\r\\n{\\"payload_type\\":\\"run.output.delta\\",\\"payload\\":{\\"text\\":\\"muse-");
+        process.stdout.write("part\\",\\"run_stream\\":{\\"kind\\":\\"run\\",\\"id\\":\\"r1\\"}}}\\r\\n");
+        process.stdout.write("{\\"payload_type\\":\\"run.terminal.completed\\",\\"payload\\":{\\"terminal\\":\\"completed\\",\\"text\\":\\"muse final\\",\\"run_stream\\":{\\"kind\\":\\"run\\",\\"id\\":\\"r1\\"}}}");
+      }, 20);
+    '
+    ;;
+esac
+`, async (binDir) => {
+		// 1. Split event + CRLF + final result without newline
+		let progressText = "";
+		const outcome = await execute(
+			{ feature: "explain", access: "restricted", prompt: "normal", cwd: binDir },
+			muse(),
+			new AbortController().signal,
+			(p) => { if (p.kind === "text") progressText = p.text; },
+		);
+		assert.equal(outcome.status, "success", JSON.stringify(outcome));
+		assert.equal(outcome.text, "muse final");
+		assert.equal(progressText, "muse-part");
+
+		// 2. Oversized line (> 2MB)
+		const overOutcome = await execute(
+			{ feature: "explain", access: "restricted", prompt: "oversized", cwd: binDir },
+			muse(),
+			new AbortController().signal,
+		);
+		assert.equal(overOutcome.status, "failure");
+		assert.match(overOutcome.message, /over 2000000 characters/);
+	});
+});

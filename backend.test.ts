@@ -6,13 +6,17 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { PassThrough } from "node:stream";
 import {
 	type AgySelection,
 	type BackendOnProgress,
 	type BackendProgress,
 	type BackendRequest,
+	MAX_STDOUT_LINE_CHARS,
 	agySelection,
+	beginAttempt,
 	execute,
+	frameStdoutLines,
 } from "./backend.ts";
 
 const originalPath = process.env.PATH;
@@ -544,4 +548,187 @@ setInterval(() => {}, 1000);
    assert.equal(outcome.status, "timeout");
   }
  });
+});
+
+test("frameStdoutLines: split records, UTF-8 boundaries, CRLF, limits, and final flush", async () => {
+	const stream = new PassThrough();
+	let stopCause: string | undefined;
+	const mockAttempt = {
+		causeOf: () => stopCause as any,
+		stop: (cause: any) => { stopCause ??= cause; },
+		closed: Promise.resolve({ code: 0, exitSignal: null }),
+		dispose: () => {},
+	};
+	const received: string[] = [];
+	const finish = frameStdoutLines(
+		{ stdout: stream } as any,
+		mockAttempt,
+		"TestBackend",
+		(line) => received.push(line),
+	);
+
+	// 1. Split JSON record across chunks
+	stream.write('{"type":"step');
+	stream.write('_update","delta":"he');
+	stream.write('llo"}\n');
+	assert.equal(received.length, 1);
+	assert.equal(received[0], '{"type":"step_update","delta":"hello"}');
+
+	// 2. Multibyte UTF-8 split across byte chunks ('ế' is 0xE1 0xBA 0xBF)
+	stream.write(Buffer.from([0xe1, 0xba]));
+	stream.write(Buffer.from([0xbf, 0x0a])); // followed by \n
+	assert.equal(received.length, 2);
+	assert.equal(received[1], "ế");
+
+	// 3. CRLF split across chunks (\r at end of chunk 1, \n at start of chunk 2)
+	stream.write('{"line":"crlf"}\r');
+	stream.write('\n{"line":"next"}\r\n');
+	assert.equal(received.length, 4);
+	assert.equal(received[2], '{"line":"crlf"}');
+	assert.equal(received[3], '{"line":"next"}');
+
+	// 4. Exact limit boundary
+	const exactPayload = "x".repeat(MAX_STDOUT_LINE_CHARS);
+	stream.write(exactPayload + "\r");
+	stream.write("\n");
+	assert.equal(received.length, 5);
+	assert.equal(received[4], exactPayload);
+
+	// 5. Final record without trailing newline
+	stream.write('{"final":"record"}');
+	stream.end();
+
+	const protocolError = finish();
+	assert.equal(protocolError, undefined);
+	assert.equal(received.length, 6);
+	assert.equal(received[5], '{"final":"record"}');
+});
+
+test("frameStdoutLines: oversized line fails closed immediately and stops attempt", async () => {
+	const stream = new PassThrough();
+	let stopCause: string | undefined;
+	const mockAttempt = {
+		causeOf: () => stopCause as any,
+		stop: (cause: any) => { stopCause ??= cause; },
+		closed: Promise.resolve({ code: 0, exitSignal: null }),
+		dispose: () => {},
+	};
+	const received: string[] = [];
+	const finish = frameStdoutLines(
+		{ stdout: stream } as any,
+		mockAttempt,
+		"TestBackend",
+		(line) => received.push(line),
+	);
+
+	stream.write("a".repeat(MAX_STDOUT_LINE_CHARS + 1) + "\n");
+	assert.equal(stopCause, "protocol");
+	const error = finish();
+	assert.match(error ?? "", /TestBackend emitted a stdout line over 2000000 characters/);
+	assert.equal(received.length, 0);
+});
+
+test("frameStdoutLines: stream error triggers protocol failure", async () => {
+	const stream = new PassThrough();
+	let stopCause: string | undefined;
+	const mockAttempt = {
+		causeOf: () => stopCause as any,
+		stop: (cause: any) => { stopCause ??= cause; },
+		closed: Promise.resolve({ code: 0, exitSignal: null }),
+		dispose: () => {},
+	};
+	const finish = frameStdoutLines(
+		{ stdout: stream } as any,
+		mockAttempt,
+		"TestBackend",
+		() => {},
+	);
+
+	stream.emit("error", new Error("Simulated pipe failure"));
+	assert.equal(stopCause, "protocol");
+	const error = finish();
+	assert.match(error ?? "", /TestBackend stdout error: Simulated pipe failure/);
+});
+
+test("beginAttempt: stop after close latches cause without process signaling", async () => {
+	const { EventEmitter } = await import("node:events");
+	const fakeChild = new EventEmitter() as any;
+	fakeChild.pid = 999999;
+	const controller = new AbortController();
+	const attempt = beginAttempt(fakeChild, controller.signal, 10_000, 5_000);
+
+	// Simulate normal close
+	fakeChild.emit("close", 0, null);
+	const res = await attempt.closed;
+	assert.equal(res.code, 0);
+
+	// Calling stop after close should latch cause without throwing or signaling
+	attempt.stop("protocol");
+	assert.equal(attempt.causeOf(), "protocol");
+	attempt.dispose();
+});
+
+test("production Agy framing: split chunks, CRLF, final record without newline, and oversized line for explain and advisor", async () => {
+	await withFakeAgy(`#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const mode = process.env.TEST_MODE || 'split';
+
+if (mode === 'split') {
+	process.stdout.write('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"half ');
+	setTimeout(() => {
+		process.stdout.write('way"}}\\r\\n');
+		process.stdout.write('{"event":"result","result":{"status":"SUCCESS","response":"finished answer"}}');
+		// no trailing newline on final record
+	}, 20);
+} else if (mode === 'split_advisor') {
+	process.stdout.write('{"event":"step_update","step_update":{"tool_name":"grep');
+	setTimeout(() => {
+		process.stdout.write('_search"}}\\r\\n');
+		process.stdout.write('{"event":"result","result":{"status":"SUCCESS","response":"advisor answer"}}');
+	}, 20);
+} else if (mode === 'oversized') {
+	process.stdout.write('x'.repeat(2000001) + '\\n');
+}
+`, async (binDir) => {
+		try {
+			// 1. Split chunks + CRLF + final record without newline (explain)
+			process.env.TEST_MODE = "split";
+			let progressText = "";
+			const outcome = await execute(
+				{ feature: "explain", access: "restricted", prompt: "split test", cwd: binDir },
+				{ model: "gemini-2.5-flash" },
+				new AbortController().signal,
+				(prog) => { if (prog.kind === "text") progressText = prog.text; },
+			);
+			assert.equal(outcome.status, "success", JSON.stringify(outcome));
+			assert.equal(outcome.text, "finished answer");
+			assert.equal(progressText, "half way");
+
+			// 2. Split chunks + CRLF + final record without newline (advisor)
+			process.env.TEST_MODE = "split_advisor";
+			let activityLabel = "";
+			const advisorOutcome = await execute(
+				{ feature: "advisor", access: "workspace-full", prompt: "advisor test", cwd: binDir },
+				{ model: "gemini-2.5-flash" },
+				new AbortController().signal,
+				(prog) => { if (prog.kind === "activity") activityLabel = prog.label; },
+			);
+			assert.equal(advisorOutcome.status, "success", JSON.stringify(advisorOutcome));
+			assert.equal(advisorOutcome.text, "advisor answer");
+			assert.equal(activityLabel, "grep_search");
+
+			// 3. Oversized line (> 2MB) fails closed
+			process.env.TEST_MODE = "oversized";
+			const overOutcome = await execute(
+				{ feature: "explain", access: "restricted", prompt: "oversized test", cwd: binDir },
+				{ model: "gemini-2.5-flash" },
+				new AbortController().signal,
+			);
+			assert.equal(overOutcome.status, "failure");
+			assert.match(overOutcome.message, /over 2000000 characters/);
+		} finally {
+			delete process.env.TEST_MODE;
+		}
+	});
 });
