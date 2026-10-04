@@ -1601,13 +1601,14 @@ function openShowHtml(path: string): boolean {
 	return result.status === 0;
 }
 
-// Raw file text for the editor: never rejects for length, so an oversize file can be opened and trimmed.
-export async function readPreferencesRaw(): Promise<string> {
+// Raw file text for the editor, undefined when there is no file: never rejects for length, so an
+// oversize file can be opened and trimmed.
+export async function readPreferencesRaw(): Promise<string | undefined> {
 	let size: number;
 	try {
 		size = (await stat(PREFERENCES_FILE)).size;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 		throw new Error(`Cannot read ${PREFERENCES_FILE}: ${errorMessage(error)}`);
 	}
 	if (size > MAX_PREFERENCES_FILE_BYTES) throw new Error(`${PREFERENCES_FILE} is larger than 64 KB. Edit or delete it directly.`);
@@ -1621,7 +1622,7 @@ export async function readPreferencesRaw(): Promise<string> {
 // Preferences for prompts: "" when absent or blank. Re-read on every request. An oversize file stops
 // the request before any backend call instead of being silently truncated.
 export async function readPreferences(): Promise<string> {
-	const text = (await readPreferencesRaw()).trim();
+	const text = ((await readPreferencesRaw()) ?? "").trim();
 	if (text.length > MAX_PREFERENCES_CHARS) {
 		throw new Error(`${PREFERENCES_FILE} is ${text.length.toLocaleString("en-US")} characters; keep it under ${MAX_PREFERENCES_CHARS.toLocaleString("en-US")} (it's sent with every request). Use /bro preferences to trim it.`);
 	}
@@ -2717,6 +2718,15 @@ export function createPreferencesModal(
 	});
 }
 
+// Saves and deletes run one at a time, even across a closed and reopened editor, so a slow delete
+// from an earlier editor can never remove a file saved by a later one.
+let preferencesWrites: Promise<void> = Promise.resolve();
+export function queuePreferencesWrite(write: () => Promise<void>): Promise<void> {
+	const next = preferencesWrites.then(write);
+	preferencesWrites = next.catch(() => {});
+	return next;
+}
+
 export async function showPreferencesModal(ctx: ExtensionCommandContext): Promise<void> {
 	if (!hasBroCustomUi(ctx)) {
 		ctx.ui.notify(`Edit ${PREFERENCES_FILE} directly.`, "warning");
@@ -2725,15 +2735,15 @@ export async function showPreferencesModal(ctx: ExtensionCommandContext): Promis
 	let loaded: { text?: string; error?: string };
 	try {
 		const text = await readPreferencesRaw();
-		loaded = text.trim() ? { text } : {};
+		loaded = text === undefined ? {} : { text };
 	} catch (error) {
 		loaded = { error: `${errorMessage(error)} Ctrl+K deletes it.` };
 	}
 	await ctx.ui.custom<void>(
 		createPreferencesModal(loaded, {
 			// ponytail: last writer wins against external edits while the editor is open, like writeSettings.
-			save: (text) => writeFile(PREFERENCES_FILE, `${text.trim()}\n`, "utf8"),
-			clear: () => rm(PREFERENCES_FILE, { force: true }),
+			save: (text) => queuePreferencesWrite(() => writeFile(PREFERENCES_FILE, `${text.trim()}\n`, "utf8")),
+			clear: () => queuePreferencesWrite(() => rm(PREFERENCES_FILE, { force: true })),
 		}),
 		{
 			overlay: true,
@@ -3505,7 +3515,8 @@ async function openBtwModal(
 				controller?.abort();
 			});
 
-			const runTurn = async (question: string) => {
+			// `replaced` is the turn /retry removed; it is put back if the turn never starts.
+			const runTurn = async (question: string, replaced?: BtwTurn) => {
 				if (controller) return;
 				const turnController = new AbortController();
 				controller = turnController;
@@ -3517,11 +3528,19 @@ async function openBtwModal(
 				try {
 					settings = await readSettings();
 					preferences = await readPreferences();
-					const backend = capabilityBackend(settings, "btw");
-					if (bindBtwBackend(thread, backend)) modal.setNotice("Backend changed — started a fresh side thread.");
 				} catch (error) {
-					controller = undefined; modal.setRunning(false); modal.setNotice(errorMessage(error)); return;
+					if (replaced) thread.turns.push(replaced);
+					if (controller === turnController) controller = undefined;
+					if (!closed) { modal.setRunning(false); modal.setNotice(errorMessage(error)); }
+					return;
 				}
+				// Closing (or reopening) during the reads above must not touch the shared thread.
+				if (closed || turnController.signal.aborted) {
+					if (replaced) thread.turns.push(replaced);
+					if (controller === turnController) controller = undefined;
+					return;
+				}
+				if (bindBtwBackend(thread, capabilityBackend(settings, "btw"))) modal.setNotice("Backend changed — started a fresh side thread.");
 				if (thread.turns.length === 0) {
 					thread.conversationId = undefined;
 					const context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS, BTW_CONTEXT_MAX)?.text;
@@ -3583,6 +3602,8 @@ async function openBtwModal(
 				thread.turns = [];
 				thread.conversationId = undefined;
 				thread.context = undefined;
+				thread.sessionFull = undefined;
+				thread.sessionPreferences = undefined;
 				modal.clearComposer();
 				modal.setNotice("");
 				modal.setText("");
@@ -3596,7 +3617,7 @@ async function openBtwModal(
 					return;
 				}
 				thread.turns.pop();
-				void runTurn(last.question);
+				void runTurn(last.question, last);
 			};
 
 			const copyOut = async (all: boolean) => {

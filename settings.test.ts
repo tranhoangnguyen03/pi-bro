@@ -609,7 +609,8 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'AN
  try {
   writeFileSync(preferences, "BTW_PREFS_A");
   await bro.default({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
-  await command.handler("btw", { mode: "tui", hasUI: true, cwd: bin, sessionManager: { getBranch: () => [] }, ui: { notify() {}, custom: async (factory: any) => { modal = factory({ mode: "fullscreen", terminal: { rows: 40 }, requestRender() {} }, { fg: (_c: string, t: string) => t, bold: (t: string) => t }, {}, () => {}); } } });
+  const ctx = { mode: "tui", hasUI: true, cwd: bin, sessionManager: { getBranch: () => [] }, ui: { notify() {}, custom: async (factory: any) => { modal = factory({ mode: "fullscreen", terminal: { rows: 40 }, requestRender() {} }, { fg: (_c: string, t: string) => t, bold: (t: string) => t }, {}, () => {}); } } };
+  await command.handler("btw", ctx);
   const header = () => modal.render(120)[1] as string;
 
   let argv = await ask("Q1");
@@ -632,6 +633,27 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'AN
   assert.ok(!argv.includes("--conversation"), "deleting preferences also reseeds");
   assert.doesNotMatch(prompt(argv), /preferences/);
   assert.doesNotMatch(header(), /prefs/);
+
+  const type = (text: string) => { for (const ch of text) modal.handleInput(ch); modal.handleInput("\r"); };
+  const idle = async () => { for (let i = 0; i < 300 && modal.running; i++) await new Promise((resolve) => setTimeout(resolve, 10)); };
+  writeFileSync(preferences, "x".repeat(4_001));
+  const before = calls().length;
+  type("/retry"); await idle();
+  assert.equal(calls().length, before, "oversize preferences stop BTW before any backend call");
+  assert.match(modal.notice, /4,001 characters; keep it under 4,000/);
+  rmSync(preferences);
+  argv = await ask("/retry");
+  assert.match(prompt(argv), /Question:\nQ4$/, "a /retry that never started kept the turn it replaced");
+
+  const afterRetry = calls().length;
+  type("Q5");
+  modal.dispose(); // close while settings and preferences are still being read
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(calls().length, afterRetry, "a closed thread never runs the turn");
+  await command.handler("btw", ctx);
+  const transcript = modal.markdown.text as string; // the whole thread, not just the visible window
+  assert.match(transcript, /Q4/);
+  assert.doesNotMatch(transcript, /Q5/, "closing during the reads leaves no phantom turn");
  } finally {
   modal?.dispose?.();
   process.env.PATH = originalPath;

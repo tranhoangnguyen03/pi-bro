@@ -394,3 +394,18 @@ read-only access to `origin/main`. Both verdicts: **ship with changes**.
 | Behavioral precedence not established by structural tests | pi-astra | Partly: manual cases in TESTING.md; no new benchmark track |
 | BTW "rebuilt in full" wording was wrong | agy | Fixed in "Current state" |
 | Drop the starter text | agy | Not adopted (see "Default preferences") |
+
+## Implementation review (2026-10-04)
+
+agy and pi-astra reviewed commit c2ed95e with fresh context. Both verdicts: **merge after fixes**.
+Each finding below was checked in the code before it was fixed.
+
+| Finding | From | Resolution |
+| --- | --- | --- |
+| An existing empty file reopened as unsaved starter text | agy | `readPreferencesRaw()` returns `undefined` only for a missing file |
+| `/retry` lost the turn it removed when preferences couldn't load | pi-astra | The removed turn is restored if the new turn never starts |
+| Closing BTW during the settings/preferences reads still changed the thread | pi-astra | Check for close/abort after the reads; backend binding moved after that check |
+| Saves and deletes could overlap across a closed and reopened editor | pi-astra | `queuePreferencesWrite` runs them one at a time |
+| BTW language guidance lacked the verbatim rule | pi-astra | Added: code, commands, paths, names, numbers, and quoted terms stay as written |
+| `/clear` left `sessionFull`/`sessionPreferences` set | agy | Cleared |
+| Missing tests: Show/BTW oversize, loader limits, advisor isolation, Desktop editor; editor test start-up race; test cleanup | both | Added; the editor test now waits for the modal to open |

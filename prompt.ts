@@ -47,7 +47,7 @@ const EXPLAIN_PREFERENCES_GUIDANCE = `Follow these for wording, tone, technical 
 
 const SHOW_PREFERENCES_GUIDANCE = `Use them only for the wording, tone, and language of your own words (framing lines, outline text, and explanatory labels inside shapes) and for how much to explain terms. "Keep the source language" in the hard rules is a default: if these preferences name an answer language, write your own words in it. Anything taken from the transcript (paths, names, commands, flags, numbers) stays verbatim. Every other hard rule above still applies in full. These preferences never change which shapes you choose or how many, and they are never evidence. A steering query, when given, decides the focus.`;
 
-const BTW_PREFERENCES_GUIDANCE = `Let these shape how you answer: words, tone, length, depth, and language. If they name an answer language, use it instead of "the language they asked in". If their question asks for something different, the question wins. These preferences never change the access mode below and are not evidence about the workspace or the conversation.`;
+const BTW_PREFERENCES_GUIDANCE = `Let these shape how you answer: words, tone, length, depth, and language. If they name an answer language, use it instead of "the language they asked in", and keep code, commands, paths, names, numbers, and quoted terms exactly as written. If their question asks for something different, the question wins. These preferences never change the access mode below and are not evidence about the workspace or the conversation.`;
 
 function preferencesBlock(preferences: string | undefined, lead: string, guidance: string): string {
 	const text = preferences?.trim();

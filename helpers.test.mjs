@@ -22,6 +22,9 @@ const {
 	createConfigModal,
 	createAdvisorSteerModal,
 	createPreferencesModal,
+	queuePreferencesWrite,
+	readPreferences,
+	readPreferencesRaw,
 	resolveAdvisorState,
 	buildAdvisorSnapshot,
 	advisorAgyCompatible,
@@ -1498,6 +1501,7 @@ await t.test("runAdvisorConsultation: the real stdin/stream-json transport again
 				process.env.AGY_CWD_FILE = cwdFile;
 				process.env.AGY_CALLS_FILE = callsFile;
 
+				await writeFile(join(configDir, "bro-preferences.md"), "ADVISOR_PREFS_MARKER");
 				const progress = [];
 				const result = await registeredTool.execute(
 					"registered-call",
@@ -1509,6 +1513,8 @@ await t.test("runAdvisorConsultation: the real stdin/stream-json transport again
 				assert.match(result.content[0].text, /^Bro advisor · model: gemini-advisor-override · effort: high · 1 attempt · /);
 				assert.match(result.content[0].text, /Context · cwd: .* · steering: included · snapshot: \d+ chars · Bro truncation: none/);
 				assert.match(result.content[0].text, /REGISTERED_ADVICE_CANARY$/);
+				assert.doesNotMatch(await readFile(stdinFile, "utf8") + await readFile(argsFile, "utf8"), /ADVISOR_PREFS_MARKER/, "the advisor never receives preferences");
+				await rm(join(configDir, "bro-preferences.md"), { force: true });
 				assert.equal(result.details.status, "done");
 				assert.equal(result.details.attempt, 1);
 				assert.equal(result.details.model, "gemini-advisor-override");
@@ -1769,8 +1775,14 @@ await t.test("/bro preferences writes, deletes, and stays headless-safe", async 
 	const ui = { notify(message) { notices.push(message); }, custom: (factory) => new Promise((resolve) => { modal = factory({ requestRender() {}, terminal: { rows: 30 } }, fakeTheme, {}, resolve); }) };
 	const text = () => stripVTControlCharacters(modal.render(120).join('\n'));
 
-	let closed = command.handler("preferences", { mode: "tui", hasUI: true, cwd: configDir, ui });
-	await settle();
+	const opened = async (context) => {
+		modal = undefined;
+		const done = command.handler("preferences", context);
+		for (let i = 0; i < 200 && !modal; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+		assert.ok(modal, "the editor opened");
+		return { done }; // wrapped: returning the bare promise from an async function would wait for close
+	};
+	let closed = (await opened({ mode: "tui", hasUI: true, cwd: configDir, ui })).done;
 	modal.handleInput('\x13');
 	for (let i = 0; i < 50 && !/Saved/.test(text()); i++) await settle();
 	assert.match(await readFile(file, "utf8"), /^## About me\n[\s\S]*No forced ones\.\n$/, "Ctrl+S saves the starter text");
@@ -1783,10 +1795,54 @@ await t.test("/bro preferences writes, deletes, and stays headless-safe", async 
 	modal.handleInput('\x1b');
 	await closed;
 
+	await writeFile(file, "");
+	closed = (await opened({ mode: "rpc", cwd: configDir, ui: { ...ui, getDesktopUiCapabilities: () => ({ version: 1, customTui: true, viewport: true }) } })).done;
+	assert.doesNotMatch(text(), /overworked|Starter text/, "an existing empty file opens empty, not as starter text (and Desktop gets the editor)");
+	modal.handleInput('\x1b');
+	await closed;
+	await rm(file, { force: true });
+
 	await command.handler("preferences", { mode: "rpc", cwd: configDir, ui });
 	assert.match(notices.at(-1), /Edit .*bro-preferences\.md directly/, "headless hosts get the file path");
 	await command.handler("preferences extra", { mode: "tui", hasUI: true, cwd: configDir, ui });
 	assert.match(notices.at(-1), /Use \/bro preferences\./);
+});
+
+await t.test("Preferences loading: missing, empty, oversize on disk, and unreadable files", async () => {
+	const configDir = process.env.PI_CODING_AGENT_DIR;
+	await mkdir(configDir, { recursive: true });
+	const file = join(configDir, "bro-preferences.md");
+	try {
+		await rm(file, { recursive: true, force: true });
+		assert.equal(await readPreferencesRaw(), undefined, "a missing file is distinguishable from an empty one");
+		assert.equal(await readPreferences(), "");
+		await writeFile(file, "  \n");
+		assert.equal(await readPreferencesRaw(), "  \n");
+		assert.equal(await readPreferences(), "", "blank means no preferences");
+		await writeFile(file, "x".repeat(64 * 1024 + 1));
+		await assert.rejects(readPreferencesRaw(), /larger than 64 KB/);
+		await assert.rejects(readPreferences(), /larger than 64 KB/);
+		await rm(file);
+		await mkdir(file);
+		await assert.rejects(readPreferences(), /Cannot read .*bro-preferences\.md/);
+	} finally {
+		await rm(file, { recursive: true, force: true });
+	}
+});
+
+await t.test("Preference writes run one at a time across editor instances", async () => {
+	const order = [];
+	const slow = deferred();
+	const first = queuePreferencesWrite(async () => { order.push("clear:start"); await slow.promise; order.push("clear:end"); });
+	const second = queuePreferencesWrite(async () => { order.push("save"); });
+	await settle();
+	assert.deepEqual(order, ["clear:start"], "a later save waits for an earlier delete");
+	slow.resolve();
+	await Promise.all([first, second]);
+	assert.deepEqual(order, ["clear:start", "clear:end", "save"]);
+	await assert.rejects(queuePreferencesWrite(async () => { throw new Error("disk full"); }), /disk full/);
+	await queuePreferencesWrite(async () => { order.push("after-failure"); });
+	assert.equal(order.at(-1), "after-failure", "a failed write does not block later ones");
 });
 
 // Real Pi lifecycle: bro_advisor is registered like any other tool and is never gated by bro.ts

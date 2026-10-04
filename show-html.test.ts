@@ -139,11 +139,16 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Dr
 		modal.handleInput("r"); await settled();
 		assert.doesNotMatch(header(), /prefs/, "R re-reads preferences");
 		assert.doesNotMatch(prompts().at(-1), /SHOW_PREFS_MARKER/);
+
+		const callsBefore = prompts().length;
+		writeFileSync(preferences, "x".repeat(4_001));
+		modal.handleInput("r"); await settled();
+		assert.match(modal.notice, /Retry failed: .*4,001 characters; keep it under 4,000/);
+		assert.equal(prompts().length, callsBefore, "oversize preferences stop Show before any backend call");
 	} finally {
 		modal?.dispose();
 		if (originalPath === undefined) delete process.env.PATH; else process.env.PATH = originalPath;
-		rmSync(fail, { force: true });
-		rmSync(preferences, { force: true });
+		for (const path of [fail, preferences, calls, bin]) rmSync(path, { recursive: true, force: true });
 	}
 });
 

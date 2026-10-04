@@ -299,6 +299,7 @@ test("btw places preferences before the access mode, seed, history, and question
 	assert.ok(prompt.startsWith(BTW_PROMPT));
 	indexesInOrder(prompt, [JSON.stringify(PREFS), "Access mode: conversation-only", JSON.stringify("ctx"), JSON.stringify("> earlier"), "Question:\nq?"]);
 	assert.match(prompt, /If their question asks for something different, the question wins/);
+	assert.match(prompt, /keep code, commands, paths, names, numbers, and quoted terms exactly as written/);
 	assert.match(prompt, /never change the access mode below/);
 });
 
