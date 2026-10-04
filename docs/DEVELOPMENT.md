@@ -115,6 +115,7 @@ modal interaction, including the BTW composer.
 
 ## Releases
 
-Changes to `bro.ts`, `prompt.ts`, `backend.ts`, or package files need a version
-bump and a matching `CHANGELOG.md` section, or the `release:none` label. See
-the PR template and `.github/workflows/`.
+Changes to shipped runtime modules (`package.json#files` excluding docs),
+`package.json`, or `package-lock.json` need a version bump and a matching
+`CHANGELOG.md` section, or the `release:none` label. See the PR template and
+`.github/workflows/`.
