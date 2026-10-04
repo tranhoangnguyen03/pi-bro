@@ -17,7 +17,7 @@ import { parseHTML } from "linkedom";
 import mammoth from "mammoth";
 import { Type } from "typebox";
 import { extractText } from "unpdf";
-import { BRO_MODES, DEFAULT_BRO_MODE, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, nextBroMode, parseBroMode, type BroMode } from "./prompt.ts";
+import { BRO_MODES, DEFAULT_BRO_MODE, MAX_PREFERENCES_CHARS, STARTER_PREFERENCES, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, nextBroMode, parseBroMode, type BroMode } from "./prompt.ts";
 import {
 	agyFailureMessage,
 	agySelection,
@@ -38,7 +38,9 @@ export { agyFailureMessage, agySelection, advisorFlagErrorHint, parseBtwAgyLine 
 const AGENT_DIR = getAgentDir();
 const ENV_MODEL = process.env.PI_BRO_MODEL?.trim();
 const DEFAULT_MODEL = ENV_MODEL || "gemini-3.7-flash";
-const PROMPT_FILE = join(AGENT_DIR, "bro-prompt.md");
+const PREFERENCES_FILE = join(AGENT_DIR, "bro-preferences.md");
+// Larger files are rejected before reading, even by the editor; the prompt limit is MAX_PREFERENCES_CHARS.
+const MAX_PREFERENCES_FILE_BYTES = 64 * 1024;
 const SETTINGS_FILE = join(AGENT_DIR, "bro-settings.json");
 const LOADING_TEXT = "Simplifying for my bro…";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -62,13 +64,15 @@ type TuiLike = {
 };
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
 type BroSource = { text: string; label?: string };
-// `mode` is the built-in explain mode that produced the text; absent for Show, Doctor, and a custom prompt.
-type BroResult = { source: BroSource; text: string; model?: string; mode?: BroMode };
-type ModalResult = { source?: BroSource; text: string; htmlPath?: string; model?: string; mode?: BroMode };
+// `mode` is the built-in explain mode that produced the text; absent for Show and Doctor.
+// `preferences` records whether bro-preferences.md shaped this result; like `mode`, it belongs to the result.
+type BroResult = { source: BroSource; text: string; model?: string; mode?: BroMode; preferences?: boolean };
+type ModalResult = { source?: BroSource; text: string; htmlPath?: string; model?: string; mode?: BroMode; preferences?: boolean };
 type BtwTurn = { question: string; answer: string };
 // `context` keeps the main-session seed so a fresh native session can be reseeded with the whole
-// thread; `sessionFull` is the access mode the native session last ran in.
-type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean; backend?: BackendName; model?: string; context?: string; sessionFull?: boolean };
+// thread; `sessionFull` and `sessionPreferences` are the access mode and preferences the native
+// session last ran with. `preferences` records whether the latest turn used them (header tag).
+type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean; backend?: BackendName; model?: string; preferences?: boolean; context?: string; sessionFull?: boolean; sessionPreferences?: string };
 const EFFORTS = ["default", "low", "medium", "high"] as const;
 const BACKENDS = ["agy", "claude", "grok", "codex", "muse"] as const;
 type BackendName = (typeof BACKENDS)[number];
@@ -139,6 +143,7 @@ const COMMANDS = [
 	{ value: "doctor", label: "doctor", description: "Check whether Bro is ready" },
 	{ value: "show", label: "show", description: "Draw what happened in recent session turns as shapes" },
 	{ value: "mode", label: "mode", description: "View or choose explanation mode (brief, balanced, faithful)" },
+	{ value: "preferences", label: "preferences", description: "View or edit what Bro knows about you and how you like answers" },
 	{ value: "btw", label: "btw", description: "Open a side conversation (starts conversation-only; /mode toggles full permission)" },
 	{ value: "config", label: "config", description: "Configure shared defaults and per-capability model/effort overrides" },
 	{ value: "advisor", label: "advisor", description: "Check whether the executor's advisor tool is available right now" },
@@ -1139,10 +1144,10 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 	}
 
 	try {
-		const prompt = await promptFor("", settings?.mode ?? DEFAULT_BRO_MODE);
-		pass("Prompt", prompt.custom ? "valid custom override" : `valid built-in ${settings?.mode ?? DEFAULT_BRO_MODE} mode`);
+		const preferences = await readPreferences();
+		pass("Preferences", preferences ? `${preferences.length.toLocaleString("en-US")} characters · used by explain, show, btw` : "none — /bro preferences to add some");
 	} catch (error) {
-		fail("Prompt", error);
+		fail("Preferences", error);
 	}
 
 	// Probe only the backends some feature actually selects: a Claude/Grok/Codex/Muse-only setup never
@@ -1596,20 +1601,32 @@ function openShowHtml(path: string): boolean {
 	return result.status === 0;
 }
 
-async function promptFor(response: string, mode: BroMode): Promise<{ text: string; custom: boolean }> {
-	let template: string;
+// Raw file text for the editor, undefined when there is no file: never rejects for length, so an
+// oversize file can be opened and trimmed.
+export async function readPreferencesRaw(): Promise<string | undefined> {
+	let size: number;
 	try {
-		template = await readFile(PROMPT_FILE, "utf8");
+		size = (await stat(PREFERENCES_FILE)).size;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			return { text: buildDefaultPrompt(response, mode), custom: false };
-		}
-		throw error;
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw new Error(`Cannot read ${PREFERENCES_FILE}: ${errorMessage(error)}`);
 	}
+	if (size > MAX_PREFERENCES_FILE_BYTES) throw new Error(`${PREFERENCES_FILE} is larger than 64 KB. Edit or delete it directly.`);
+	try {
+		return (await readFile(PREFERENCES_FILE, "utf8")).replace(/^\uFEFF/, "");
+	} catch (error) {
+		throw new Error(`Cannot read ${PREFERENCES_FILE}: ${errorMessage(error)}`);
+	}
+}
 
-	const parts = template.split("{{response}}");
-	if (parts.length !== 2) throw new Error(`${PROMPT_FILE} must contain {{response}} exactly once.`);
-	return { text: parts.join(JSON.stringify(response)), custom: true };
+// Preferences for prompts: "" when absent or blank. Re-read on every request. An oversize file stops
+// the request before any backend call instead of being silently truncated.
+export async function readPreferences(): Promise<string> {
+	const text = ((await readPreferencesRaw()) ?? "").trim();
+	if (text.length > MAX_PREFERENCES_CHARS) {
+		throw new Error(`${PREFERENCES_FILE} is ${text.length.toLocaleString("en-US")} characters; keep it under ${MAX_PREFERENCES_CHARS.toLocaleString("en-US")} (it's sent with every request). Use /bro preferences to trim it.`);
+	}
+	return text;
 }
 
 async function simplify(
@@ -1618,10 +1635,11 @@ async function simplify(
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
 	mode = settings.mode,
-): Promise<{ text: string; model: string; mode?: BroMode }> {
+): Promise<{ text: string; model: string; mode: BroMode; preferences: boolean }> {
 	const selection = selectionForCapability(settings, "explain");
-	const prompt = await promptFor(response, mode);
-	return { text: await runAgyText(prompt.text, selection, signal, onProgress), model: selectionLabel(selection), ...(prompt.custom ? {} : { mode }) };
+	const preferences = await readPreferences();
+	const text = await runAgyText(buildDefaultPrompt(response, mode, preferences), selection, signal, onProgress);
+	return { text, model: selectionLabel(selection), mode, preferences: Boolean(preferences) };
 }
 
 async function runShowExplanation(
@@ -1630,9 +1648,11 @@ async function runShowExplanation(
 	signal: AbortSignal,
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
-): Promise<{ text: string; model: string }> {
+): Promise<{ text: string; model: string; preferences: boolean }> {
 	const selection = selectionForCapability(settings, "show");
-	return { text: await runAgyText(buildShowPrompt(transcript, steering), selection, signal, onProgress, "show"), model: selectionLabel(selection) };
+	const preferences = await readPreferences();
+	const text = await runAgyText(buildShowPrompt(transcript, steering, preferences), selection, signal, onProgress, "show");
+	return { text, model: selectionLabel(selection), preferences: Boolean(preferences) };
 }
 
 // Thin presentation-boundary wrapper around the shared backend: coalesces raw text progress to the
@@ -2534,31 +2554,71 @@ export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: Exten
 	});
 }
 
-// Testable core for /bro advisor-steer: persistence only happens on Ctrl+S/Ctrl+K.
-// Esc leaves the stored brief untouched; only the in-memory draft is discarded.
-export function createAdvisorSteerModal(
-	initialText: string,
-	onSave: (text: string) => void,
-	onClear: () => void,
-	copy: (text: string) => Promise<void> = copyToClipboard,
+type TextEditorModalOptions = {
+	title: string;
+	subtitle: string;
+	initialText: string;
+	initialNotice?: string;
+	// Returns an error message to refuse the save without calling onSave.
+	validate?: (text: string) => string | undefined;
+	// Either may be async; the modal then waits, ignores further edits, and reports success only once it settles.
+	onSave: (text: string) => void | Promise<void>;
+	onClear: () => void | Promise<void>;
+	copy?: (text: string) => Promise<void>;
+};
+
+// Testable core shared by /bro advisor-steer and /bro preferences: persistence only happens on
+// Ctrl+S/Ctrl+K. Esc leaves the stored text untouched; only the in-memory draft is discarded.
+export function createTextEditorModal(
+	options: TextEditorModalOptions,
 ): (tui: TUI, theme: Theme, keybindings: unknown, done: (value?: void) => void) => Component & { dispose?(): void } {
+	const { onSave, onClear, validate, copy = copyToClipboard } = options;
 	return (tui, theme, _keybindings, done) => {
 		const editorTheme: EditorTheme = { borderColor: (s: string) => theme.fg("border", s), selectList: getSelectListTheme() };
 		const editor = new Editor(tui, editorTheme);
 		editor.focused = true;
-		editor.setText(initialText);
+		editor.setText(options.initialText);
 		let disposed = false;
-		const notice = new Text("");
+		let pending = false;
+		const notice = new Text(options.initialNotice ? theme.fg("accent", options.initialNotice) : "");
 		const showNotice = (message: string, color: "success" | "error") => {
 			if (disposed) return;
 			notice.setText(theme.fg(color, message));
 			tui.requestRender();
 		};
 		editor.onChange = () => notice.setText("");
+		const persist = (action: () => void | Promise<void>, success: string, failure: string, after?: () => void) => {
+			const fail = (error: unknown) => showNotice(`${failure}: ${errorMessage(error)}`, "error");
+			let result: void | Promise<void>;
+			try {
+				result = action();
+			} catch (error) {
+				fail(error);
+				return;
+			}
+			if (!(result instanceof Promise)) {
+				after?.();
+				showNotice(success, "success");
+				return;
+			}
+			pending = true;
+			result.then(
+				() => {
+					pending = false;
+					if (disposed) return;
+					after?.();
+					showNotice(success, "success");
+				},
+				(error) => {
+					pending = false;
+					fail(error);
+				},
+			);
+		};
 
 		const container = new Container();
-		container.addChild(new Text(theme.fg("accent", theme.bold("Bro · advisor steer"))));
-		container.addChild(new Text(theme.fg("dim", "One persistent steering brief the advisor always sees — never sent to the main model.")));
+		container.addChild(new Text(theme.fg("accent", theme.bold(options.title))));
+		container.addChild(new Text(theme.fg("dim", options.subtitle)));
 		container.addChild(editor);
 		container.addChild(notice);
 		container.addChild(new Text(theme.fg("dim", "Ctrl+S save · Enter newline · Ctrl+K clear · Ctrl+C copy · Esc close")));
@@ -2579,23 +2639,19 @@ export function createAdvisorSteerModal(
 					done(undefined);
 					return;
 				}
+				if (pending) return;
 				if (matchesKey(data, "ctrl+s")) {
-					try {
-						onSave(editor.getExpandedText());
-						showNotice("Saved", "success");
-					} catch (error) {
-						showNotice(`Save failed: ${errorMessage(error)}`, "error");
+					const text = editor.getExpandedText();
+					const invalid = validate?.(text);
+					if (invalid) {
+						showNotice(invalid, "error");
+						return;
 					}
+					persist(() => onSave(text), "Saved", "Save failed");
 					return;
 				}
 				if (matchesKey(data, "ctrl+k")) {
-					try {
-						onClear();
-						editor.setText("");
-						showNotice("Cleared", "success");
-					} catch (error) {
-						showNotice(`Clear failed: ${errorMessage(error)}`, "error");
-					}
+					persist(onClear, "Cleared", "Clear failed", () => editor.setText(""));
 					return;
 				}
 				if (matchesKey(data, "ctrl+c")) {
@@ -2619,6 +2675,83 @@ export function createAdvisorSteerModal(
 	};
 }
 
+export function createAdvisorSteerModal(
+	initialText: string,
+	onSave: (text: string) => void,
+	onClear: () => void,
+	copy: (text: string) => Promise<void> = copyToClipboard,
+): ReturnType<typeof createTextEditorModal> {
+	return createTextEditorModal({
+		title: "Bro · advisor steer",
+		subtitle: "One persistent steering brief the advisor always sees — never sent to the main model.",
+		initialText,
+		onSave,
+		onClear,
+		copy,
+	});
+}
+
+function preferencesTooLong(text: string): string | undefined {
+	const length = text.replace(/^\uFEFF/, "").trim().length;
+	return length > MAX_PREFERENCES_CHARS
+		? `${length.toLocaleString("en-US")}/${MAX_PREFERENCES_CHARS.toLocaleString("en-US")} characters — trim before saving`
+		: undefined;
+}
+
+// Testable core for /bro preferences. A missing file opens with the unsaved starter text; an
+// unreadable or oversize-on-disk file opens empty with the error, and Clear still works.
+export function createPreferencesModal(
+	loaded: { text?: string; error?: string },
+	persist: { save: (text: string) => Promise<void>; clear: () => Promise<void> },
+	copy?: (text: string) => Promise<void>,
+): ReturnType<typeof createTextEditorModal> {
+	const starter = loaded.text === undefined && !loaded.error;
+	return createTextEditorModal({
+		title: "Bro · preferences",
+		subtitle: "About you and how you like answers. Sent to the selected backend with every explain, show, and btw request — never to the advisor or Pi's main model.",
+		initialText: starter ? STARTER_PREFERENCES : (loaded.text ?? ""),
+		initialNotice: loaded.error ?? (starter ? "Starter text — not saved. Ctrl+S saves it; Esc leaves no file." : undefined),
+		validate: preferencesTooLong,
+		onSave: persist.save,
+		onClear: persist.clear,
+		copy,
+	});
+}
+
+// Saves and deletes run one at a time, even across a closed and reopened editor, so a slow delete
+// from an earlier editor can never remove a file saved by a later one.
+let preferencesWrites: Promise<void> = Promise.resolve();
+export function queuePreferencesWrite(write: () => Promise<void>): Promise<void> {
+	const next = preferencesWrites.then(write);
+	preferencesWrites = next.catch(() => {});
+	return next;
+}
+
+export async function showPreferencesModal(ctx: ExtensionCommandContext): Promise<void> {
+	if (!hasBroCustomUi(ctx)) {
+		ctx.ui.notify(`Edit ${PREFERENCES_FILE} directly.`, "warning");
+		return;
+	}
+	let loaded: { text?: string; error?: string };
+	try {
+		const text = await readPreferencesRaw();
+		loaded = text === undefined ? {} : { text };
+	} catch (error) {
+		loaded = { error: `${errorMessage(error)} Ctrl+K deletes it.` };
+	}
+	await ctx.ui.custom<void>(
+		createPreferencesModal(loaded, {
+			// ponytail: last writer wins against external edits while the editor is open, like writeSettings.
+			save: (text) => queuePreferencesWrite(() => writeFile(PREFERENCES_FILE, `${text.trim()}\n`, "utf8")),
+			clear: () => queuePreferencesWrite(() => rm(PREFERENCES_FILE, { force: true })),
+		}),
+		{
+			overlay: true,
+			overlayOptions: { width: "78%", minWidth: 48, maxHeight: "60%", anchor: "top-center", margin: { top: 1, left: 2, right: 2 } },
+		},
+	);
+}
+
 export async function showAdvisorSteerModal(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
 	if (!hasBroCustomUi(ctx)) {
 		ctx.ui.notify("Use /bro advisor-steer in Pi's interactive UI.", "warning");
@@ -2638,7 +2771,9 @@ export async function showAdvisorSteerModal(ctx: ExtensionCommandContext, pi: Ex
 	);
 }
 
-export function helpText(settings?: BroSettings, settingsError?: string): string {
+// `preferences` is a ready status ("off", "on (312 characters)", or "error: …") so a preferences
+// problem never hides Help or mixes with settings errors.
+export function helpText(settings?: BroSettings, settingsError?: string, preferences = "off"): string {
 	const overrideLines = settings
 		? CAPABILITIES.map((capability) => {
 				const override = capabilityOverride(settings, capability);
@@ -2677,15 +2812,17 @@ Quick reference. The README is the full user guide: https://github.com/tranhoang
 
 ## Configure and check
 
+- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, and btw prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
 - \`/bro config\` — shared default and per-capability (explain/show/btw/advisor) backend, model, and effort; explain mode; show turns. Changes save immediately.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
-- \`/bro doctor\` — check settings, prompt, and every selected backend without running a model turn
+- \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
 
 ## Current settings
 
 ${settingsSummary}
+- **Preferences:** ${preferences} — \`/bro preferences\`
 
-Saved in \`${SETTINGS_FILE}\`.
+Saved in \`${SETTINGS_FILE}\` and \`${PREFERENCES_FILE}\`.
 
 ## Explanation modes
 
@@ -2695,7 +2832,7 @@ Saved in \`${SETTINGS_FILE}\`.
 
 Press **M** in an explanation to re-simplify it in the next mode without changing the saved one.
 
-A valid \`${PROMPT_FILE}\` (with \`{{response}}\` exactly once) overrides the modes; the saved mode stays inactive until you remove or rename it. Show always uses its own prompt.
+The mode decides how much of the source to keep; your preferences decide who it's written for, its tone, and its language. Neither overrides Bro's source rules.
 
 ## Controls
 
@@ -2708,7 +2845,7 @@ A valid \`${PROMPT_FILE}\` (with \`{{response}}\` exactly once) overrides the mo
 
 ## Privacy
 
-Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Nothing is added to Pi's conversation unless you insert it. Access controls differ by backend; see the README.`;
+Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, and btw request. Nothing is added to Pi's conversation unless you insert it. Access controls differ by backend; see the README.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.
@@ -2729,6 +2866,8 @@ class BroModal implements Focusable {
 	private htmlPath = "";
 	// Survives loading/streaming so the header names the mode being produced; empty disables M.
 	private modeLabel = "";
+	// Set only with a result, so the tag never claims preferences for work still in flight.
+	private preferencesUsed = false;
 
 	constructor(
 		private readonly tui: TuiLike,
@@ -2761,6 +2900,11 @@ class BroModal implements Focusable {
 
 	setMode(mode: BroMode | undefined): void {
 		this.modeLabel = mode ?? "";
+		this.tui.requestRender();
+	}
+
+	setPreferences(used: boolean): void {
+		this.preferencesUsed = used;
 		this.tui.requestRender();
 	}
 
@@ -2849,7 +2993,7 @@ class BroModal implements Focusable {
 			this.borderLine(innerWidth, "top"),
 			this.frameLine(
 				this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}`)) +
-					this.theme.fg("dim", `${this.modelLabel ? ` · ${this.modelLabel}` : ""}${this.modeLabel ? ` · ${this.modeLabel}` : ""}${scroll}`),
+					this.theme.fg("dim", `${this.modelLabel ? ` · ${this.modelLabel}` : ""}${this.modeLabel ? ` · ${this.modeLabel}` : ""}${this.preferencesUsed ? " · prefs" : ""}${scroll}`),
 				innerWidth,
 			),
 			this.ruleLine(innerWidth),
@@ -2996,6 +3140,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 				modal.setResult(display, options.retryable ?? Boolean(options.run), notice, result.source?.label, result.text, result.model);
 				modal.setHtmlPath(result.htmlPath ?? "");
 				modal.setMode(result.mode);
+				modal.setPreferences(Boolean(result.preferences));
 			};
 
 			execute = (source?: BroSource, mode?: BroMode, notice = "") => {
@@ -3006,6 +3151,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 				inFlightMode = mode;
 				modal.setLoading(options.loadingText);
 				modal.setMode(mode);
+				modal.setPreferences(false);
 
 				void options
 					.run(nextController.signal, source, (text) => {
@@ -3080,7 +3226,7 @@ export function resolveBtwThread(existing: BtwThread | undefined): BtwThread {
 
 export function bindBtwBackend(thread: BtwThread, backend: BackendName): boolean {
 	const changed = thread.backend !== undefined && thread.backend !== backend;
-	if (changed) { thread.turns = []; thread.conversationId = undefined; thread.context = undefined; thread.sessionFull = undefined; }
+	if (changed) { thread.turns = []; thread.conversationId = undefined; thread.context = undefined; thread.sessionFull = undefined; thread.sessionPreferences = undefined; }
 	thread.backend = backend;
 	return changed;
 }
@@ -3099,11 +3245,18 @@ export function toggleBtwMode(thread: BtwThread): void {
 // /mode switches. An Agy conversation stays bound to the workspace it started in (a sandbox scratch
 // dir vs. the repo), so an access change drops it; the next turn reseeds a fresh native session
 // with the main-session context and the whole thread.
-export function nativeBtwContinuation(thread: BtwThread, backend: BackendName): string | undefined {
+// A native session remembers every earlier prompt, including old preferences, so a preferences
+// change (or deletion) on any backend starts a fresh session reseeded with the quoted thread.
+export function nativeBtwContinuation(thread: BtwThread, backend: BackendName, preferences = ""): string | undefined {
 	if (backend === "agy" && thread.conversationId && thread.sessionFull !== undefined && thread.sessionFull !== thread.full) {
 		thread.conversationId = undefined;
 	}
+	if (thread.conversationId && (thread.sessionPreferences ?? "") !== preferences) thread.conversationId = undefined;
 	return thread.conversationId;
+}
+
+export function btwHeaderLabel(thread: Pick<BtwThread, "model" | "preferences">): string {
+	return thread.model ? `${thread.model}${thread.preferences ? " · prefs" : ""}` : "";
 }
 
 export function formatBtwTranscript(turns: readonly BtwTurn[]): string {
@@ -3362,7 +3515,8 @@ async function openBtwModal(
 				controller?.abort();
 			});
 
-			const runTurn = async (question: string) => {
+			// `replaced` is the turn /retry removed; it is put back if the turn never starts.
+			const runTurn = async (question: string, replaced?: BtwTurn) => {
 				if (controller) return;
 				const turnController = new AbortController();
 				controller = turnController;
@@ -3370,13 +3524,23 @@ async function openBtwModal(
 				modal.clearComposer();
 
 				let settings: BroSettings;
+				let preferences: string;
 				try {
 					settings = await readSettings();
-					const backend = capabilityBackend(settings, "btw");
-					if (bindBtwBackend(thread, backend)) modal.setNotice("Backend changed — started a fresh side thread.");
+					preferences = await readPreferences();
 				} catch (error) {
-					controller = undefined; modal.setRunning(false); modal.setNotice(errorMessage(error)); return;
+					if (replaced) thread.turns.push(replaced);
+					if (controller === turnController) controller = undefined;
+					if (!closed) { modal.setRunning(false); modal.setNotice(errorMessage(error)); }
+					return;
 				}
+				// Closing (or reopening) during the reads above must not touch the shared thread.
+				if (closed || turnController.signal.aborted) {
+					if (replaced) thread.turns.push(replaced);
+					if (controller === turnController) controller = undefined;
+					return;
+				}
+				if (bindBtwBackend(thread, capabilityBackend(settings, "btw"))) modal.setNotice("Backend changed — started a fresh side thread.");
 				if (thread.turns.length === 0) {
 					thread.conversationId = undefined;
 					const context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS, BTW_CONTEXT_MAX)?.text;
@@ -3384,7 +3548,7 @@ async function openBtwModal(
 				}
 				// Resume natively when possible; otherwise seed the fresh native session with the main-session
 				// context plus every earlier turn so nothing is silently lost.
-				const conversationId = nativeBtwContinuation(thread, capabilityBackend(settings, "btw"));
+				const conversationId = nativeBtwContinuation(thread, capabilityBackend(settings, "btw"), preferences);
 				const history = !conversationId && thread.turns.length ? formatBtwTranscript(thread.turns) : undefined;
 				const context = conversationId ? undefined : thread.context;
 				const full = thread.full;
@@ -3395,9 +3559,10 @@ async function openBtwModal(
 				try {
 					const selection = selectionForCapability(settings, "btw");
 					thread.model = selectionLabel(selection);
-					modal.setModel(thread.model);
+					thread.preferences = Boolean(preferences);
+					modal.setModel(btwHeaderLabel(thread));
 					const result = await runBtwTurn(
-						buildBtwPrompt(context, question, { full, history }),
+						buildBtwPrompt(context, question, { full, history, preferences }),
 						selection,
 						{ full, cwd: ctx.cwd, conversationId },
 						turnController.signal,
@@ -3411,6 +3576,7 @@ async function openBtwModal(
 					if (result.conversationId) {
 						thread.conversationId = result.conversationId;
 						thread.sessionFull = full;
+						thread.sessionPreferences = preferences;
 					}
 					thread.turns[thread.turns.length - 1]!.answer = result.text;
 				} catch (error) {
@@ -3436,6 +3602,8 @@ async function openBtwModal(
 				thread.turns = [];
 				thread.conversationId = undefined;
 				thread.context = undefined;
+				thread.sessionFull = undefined;
+				thread.sessionPreferences = undefined;
 				modal.clearComposer();
 				modal.setNotice("");
 				modal.setText("");
@@ -3449,7 +3617,7 @@ async function openBtwModal(
 					return;
 				}
 				thread.turns.pop();
-				void runTurn(last.question);
+				void runTurn(last.question, last);
 			};
 
 			const copyOut = async (all: boolean) => {
@@ -3521,7 +3689,7 @@ async function openBtwModal(
 			}
 
 			modal.setFull(thread.full);
-			modal.setModel(thread.model ?? "");
+			modal.setModel(btwHeaderLabel(thread));
 			modal.setText(transcript());
 
 			if (options.initialQuestion) void runTurn(options.initialQuestion);
@@ -3716,15 +3884,14 @@ export default async function bro(pi: ExtensionAPI) {
 					if (!captured) {
 						return { text: "**Nothing to show yet**\n\nThis session has no conversation turns to draw. Run something first, then press **R**." };
 					}
-					let text: string;
-					let model: string;
+					let result: Awaited<ReturnType<typeof runShowExplanation>>;
 					try {
-						({ text, model } = await runShowExplanation(captured.text, steering, signal, await readSettings(), onProgress));
+						result = await runShowExplanation(captured.text, steering, signal, await readSettings(), onProgress);
 					} catch (error) {
 						throw new Error(withDoctor(error));
 					}
-					const html = extractShowHtml(text);
-					return { source: captured, text, model, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
+					const html = extractShowHtml(result.text);
+					return { source: captured, ...result, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
 				};
 				try {
 					await showBroModal(ctx, {
@@ -3882,6 +4049,15 @@ export default async function bro(pi: ExtensionAPI) {
 				return;
 			}
 
+			if (action === "preferences") {
+				if (parts.length !== 1) {
+					ctx.ui.notify("Use /bro preferences.", "warning");
+					return;
+				}
+				await showPreferencesModal(ctx);
+				return;
+			}
+
 			if (action === "help") {
 				if (parts.length !== 1) {
 					ctx.ui.notify("Use /bro help.", "warning");
@@ -3894,7 +4070,14 @@ export default async function bro(pi: ExtensionAPI) {
 				} catch (error) {
 					settingsError = errorMessage(error);
 				}
-				await showBroModal(ctx, { text: helpText(settings, settingsError), kind: "help", copyable: true });
+				let preferences: string;
+				try {
+					const text = await readPreferences();
+					preferences = text ? `on (${text.length.toLocaleString("en-US")} characters)` : "off";
+				} catch (error) {
+					preferences = `error: ${errorMessage(error)}`;
+				}
+				await showBroModal(ctx, { text: helpText(settings, settingsError, preferences), kind: "help", copyable: true });
 				return;
 			}
 

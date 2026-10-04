@@ -15,7 +15,8 @@ done
 export PATH="$test_dir/guard-bin:$PATH"
 session_file="$test_dir/session.jsonl"
 config_dir="$test_dir/config"
-prompt_file="$config_dir/bro-prompt.md"
+preferences_file="$config_dir/bro-preferences.md"
+legacy_prompt_file="$config_dir/bro-prompt.md"
 settings_file="$config_dir/bro-settings.json"
 settings_snapshot="$test_dir/settings-after-commands.json"
 calls_file="$test_dir/agy-calls"
@@ -49,7 +50,9 @@ pi_bin="$test_dir/pi-rpc"
 
 
 mkdir "$config_dir"
-printf 'CUSTOM_TEMPLATE_MARKER\n\n{{response}}\n' > "$prompt_file"
+printf 'PREFERENCES_MARKER\n' > "$preferences_file"
+# The legacy template is no longer read; the fake agy fails if its marker ever reaches a prompt.
+printf 'LEGACY_MARKER\n\n{{response}}\n' > "$legacy_prompt_file"
 printf '# Complex notes\n\n%s\n' "$document_canary" > "$document_file"
 printf '# Spaced notes\n\n%s\n' "$document_canary" > "$spaced_file"
 
@@ -80,7 +83,9 @@ printf '%s\n' \
 	'  printf "{\"status\":\"SUCCESS\",\"response\":\"Gemini Models %s\\\\tWeekly Limit Remaining\\\\t97%%\\\\n\"}\n" "$BRO_USAGE_CANARY"' \
 	'  exit 0' \
 	'fi' \
+	'case "$*" in *"LEGACY_MARKER"*) exit 19;; esac' \
 	'case "$*" in *"Quoted session transcript as a JSON string"*)' \
+	'  case "$*" in *"PREFERENCES_MARKER"*) ;; *) exit 20;; esac' \
 	'  case " $* " in *" --sandbox "*) ;; *) exit 17;; esac' \
 	'  case " $* " in *" --output-format stream-json "*) ;; *) exit 14;; esac' \
 	'  case "$*" in *"## user"*) ;; *) exit 18;; esac' \
@@ -96,7 +101,7 @@ printf '%s\n' \
 	'  printf "%s\n" "{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"SHOW_OUTPUT_CANARY\"}}"' \
 	'  exit 0' \
 	'esac' \
-	'case "$*" in *"CUSTOM_TEMPLATE_MARKER"*) ;; *) exit 12;; esac' \
+	'case "$*" in *"PREFERENCES_MARKER"*) ;; *) exit 12;; esac' \
 	'case "$*" in *"Original complicated reply."*|*"$BRO_DOCUMENT_CANARY"*|*"PASTED_TEXT_ONLY_CANARY"*|*"ROUTED_WHOLE_RAW_CANARY"*) ;; *) exit 12;; esac' \
 	'case " $* " in *" --output-format stream-json "*) ;; *) exit 14;; esac' \
 	'call=$(( $(wc -l < "$BRO_CALLS") + 1 ))' \
@@ -313,19 +318,19 @@ fi
 
 broken_config="$test_dir/broken-config"
 broken_settings="$broken_config/bro-settings.json"
-broken_prompt="$broken_config/bro-prompt.md"
+broken_preferences="$broken_config/bro-preferences.md"
 broken_session="$test_dir/broken-session.jsonl"
 mkdir "$broken_config"
 printf '{not json}\n' > "$broken_settings"
-printf 'CUSTOM_TEMPLATE_MARKER\n\n{{response}}\n' > "$broken_prompt"
+printf 'PREFERENCES_MARKER\n' > "$broken_preferences"
 cp "$session_file" "$broken_session"
 broken_output=$(
 	{
 		printf '%s\n' '{"id":"broken-help","type":"prompt","message":"/bro help"}'
 		printf '%s\n' '{"id":"broken-settings-doctor","type":"prompt","message":"/bro doctor"}'
-		node -e 'console.log(JSON.stringify({type:"smoke-write",path:process.argv[1],text:JSON.stringify({model:"gemini-3.7-flash",effort:"low"})})); console.log(JSON.stringify({type:"smoke-write",path:process.argv[2],text:"This prompt has no placeholder.\n"}))' "$broken_settings" "$broken_prompt"
-		printf '%s\n' '{"id":"broken-prompt-doctor","type":"prompt","message":"/bro doctor"}'
-		printf '%s\n' '{"id":"broken-prompt-latest","type":"prompt","message":"/bro"}'
+		node -e 'console.log(JSON.stringify({type:"smoke-write",path:process.argv[1],text:JSON.stringify({model:"gemini-3.7-flash",effort:"low"})})); console.log(JSON.stringify({type:"smoke-write",path:process.argv[2],text:"x".repeat(4001)}))' "$broken_settings" "$broken_preferences"
+		printf '%s\n' '{"id":"broken-preferences-doctor","type":"prompt","message":"/bro doctor"}'
+		printf '%s\n' '{"id":"broken-preferences-latest","type":"prompt","message":"/bro"}'
 	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$broken_config" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$broken_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts" 2>&1
 )
 
@@ -334,12 +339,12 @@ if [ "$broken_success_count" -ne 4 ]; then
 	printf 'Bro did not contain broken local configuration:\n%s\n' "$broken_output" >&2
 	exit 1
 fi
-if ! printf '%s\n' "$broken_output" | grep -q 'must contain'; then
-	printf 'Broken-prompt errors were not actionable:\n%s\n' "$broken_output" >&2
+if ! printf '%s\n' "$broken_output" | grep -q 'keep it under 4,000'; then
+	printf 'Oversize-preferences errors were not actionable:\n%s\n' "$broken_output" >&2
 	exit 1
 fi
 if ! printf '%s\n' "$broken_output" | grep -q '/bro doctor'; then
-	printf 'Broken-prompt errors did not suggest Doctor:\n%s\n' "$broken_output" >&2
+	printf 'Oversize-preferences errors did not suggest Doctor:\n%s\n' "$broken_output" >&2
 	exit 1
 fi
 

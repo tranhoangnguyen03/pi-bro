@@ -495,9 +495,26 @@ test("BTW /mode keeps the transcript; only Agy drops its native session on an ac
 });
 
 test("BTW backend change also clears the saved seed context and session mode", () => {
- const thread={turns:[{question:"q",answer:"a"}],conversationId:"c",full:true,backend:"agy",context:"ctx",sessionFull:true};
+ const thread={turns:[{question:"q",answer:"a"}],conversationId:"c",full:true,backend:"agy",context:"ctx",sessionFull:true,sessionPreferences:"p"};
  assert.equal(bro.bindBtwBackend(thread,"claude"),true);
- assert.deepEqual(thread,{turns:[],conversationId:undefined,full:true,backend:"claude",context:undefined,sessionFull:undefined});
+ assert.deepEqual(thread,{turns:[],conversationId:undefined,full:true,backend:"claude",context:undefined,sessionFull:undefined,sessionPreferences:undefined});
+});
+
+test("BTW drops the native session on any backend when preferences change or are deleted", () => {
+ const turns=[{question:"q",answer:"a"}];
+ for (const backend of ["agy","claude","grok","codex","muse"]) {
+  const thread={turns:[...turns],conversationId:"sess",full:false,backend,sessionFull:false,sessionPreferences:"Answer in Vietnamese."};
+  assert.equal(bro.nativeBtwContinuation(thread,backend,"Answer in Vietnamese."),"sess",`${backend}: unchanged preferences resume`);
+  assert.equal(bro.nativeBtwContinuation(thread,backend,"Answer in English."),undefined,`${backend}: a change reseeds`);
+  assert.deepEqual(thread.turns,turns,"the transcript is kept for the reseed");
+  const deleted={turns:[...turns],conversationId:"sess",full:false,backend,sessionFull:false,sessionPreferences:"Be brief."};
+  assert.equal(bro.nativeBtwContinuation(deleted,backend),undefined,`${backend}: deleting preferences reseeds`);
+  const never={turns:[...turns],conversationId:"sess",full:false,backend,sessionFull:false};
+  assert.equal(bro.nativeBtwContinuation(never,backend),"sess",`${backend}: no preferences before or now resumes`);
+ }
+ assert.equal(bro.btwHeaderLabel({model:"m · low",preferences:true}),"m · low · prefs");
+ assert.equal(bro.btwHeaderLabel({model:"m · low",preferences:false}),"m · low");
+ assert.equal(bro.btwHeaderLabel({}),"");
 });
 
 
@@ -559,5 +576,88 @@ test("modals use live host terminal rows, not extension stdout", async () => {
   tui.terminal.rows=45; const tall=modal.render(80).length;
   assert.ok(tall > short, `${action}: host resize must change modal height (${short} -> ${tall})`);
   modal.dispose?.();
+ }
+});
+
+test("BTW turns carry preferences and reseed the native session when they change", async () => {
+ const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
+ const { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } = await import("node:fs");
+ const { tmpdir } = await import("node:os");
+ const bin = mkdtempSync(join(tmpdir(), "pi-bro-btw-prefs-"));
+ const log = join(bin, "argv.jsonl");
+ writeFileSync(join(bin, "agy"), `#!/usr/bin/env node
+require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'ANSWER',conversation_id:'conv-1'}}));
+`, { mode: 0o755 });
+ const agentDir = process.env.PI_CODING_AGENT_DIR!;
+ mkdirSync(agentDir, { recursive: true });
+ writeFileSync(join(agentDir, "bro-settings.json"), JSON.stringify({ model: "gemini-3.7-flash", effort: "low", mode: "balanced", showTurns: 1, overrides: {} }));
+ const preferences = join(agentDir, "bro-preferences.md");
+ const originalPath = process.env.PATH;
+ process.env.PATH = `${bin}:${originalPath}`;
+ let command: any, modal: any;
+ const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]) : [];
+ const prompt = (argv: string[]) => argv[argv.indexOf("--print") + 1]!;
+ const ask = async (question: string) => {
+  const before = calls().length;
+  for (const ch of question) modal.handleInput(ch);
+  modal.handleInput("\r");
+  for (let i = 0; i < 1000 && (calls().length === before || modal.running); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(calls().length, before + 1);
+  return calls().at(-1)!;
+ };
+ try {
+  writeFileSync(preferences, "BTW_PREFS_A");
+  await bro.default({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
+  const ctx = { mode: "tui", hasUI: true, cwd: bin, sessionManager: { getBranch: () => [] }, ui: { notify() {}, custom: async (factory: any) => { modal = factory({ mode: "fullscreen", terminal: { rows: 40 }, requestRender() {} }, { fg: (_c: string, t: string) => t, bold: (t: string) => t }, {}, () => {}); } } };
+  await command.handler("btw", ctx);
+  const header = () => modal.render(120)[1] as string;
+
+  let argv = await ask("Q1");
+  assert.ok(prompt(argv).includes(JSON.stringify("BTW_PREFS_A")));
+  assert.ok(!argv.includes("--conversation"));
+  assert.match(header(), / · prefs/);
+
+  argv = await ask("Q2");
+  assert.deepEqual(argv.slice(argv.indexOf("--conversation"), argv.indexOf("--conversation") + 2), ["--conversation", "conv-1"], "unchanged preferences resume natively");
+
+  writeFileSync(preferences, "BTW_PREFS_B");
+  argv = await ask("Q3");
+  assert.ok(!argv.includes("--conversation"), "changed preferences start a fresh native session");
+  assert.ok(prompt(argv).includes(JSON.stringify("BTW_PREFS_B")));
+  assert.match(prompt(argv), /Earlier turns of this side conversation/, "the fresh session is reseeded with the thread");
+  assert.doesNotMatch(prompt(argv).split("Earlier turns")[0]!, /BTW_PREFS_A/, "old preferences are not current instructions");
+
+  rmSync(preferences);
+  argv = await ask("Q4");
+  assert.ok(!argv.includes("--conversation"), "deleting preferences also reseeds");
+  assert.doesNotMatch(prompt(argv), /preferences/);
+  assert.doesNotMatch(header(), /prefs/);
+
+  const type = (text: string) => { for (const ch of text) modal.handleInput(ch); modal.handleInput("\r"); };
+  const idle = async () => { for (let i = 0; i < 300 && modal.running; i++) await new Promise((resolve) => setTimeout(resolve, 10)); };
+  writeFileSync(preferences, "x".repeat(4_001));
+  const before = calls().length;
+  type("/retry"); await idle();
+  assert.equal(calls().length, before, "oversize preferences stop BTW before any backend call");
+  assert.match(modal.notice, /4,001 characters; keep it under 4,000/);
+  rmSync(preferences);
+  argv = await ask("/retry");
+  assert.match(prompt(argv), /Question:\nQ4$/, "a /retry that never started kept the turn it replaced");
+
+  const afterRetry = calls().length;
+  type("Q5");
+  modal.dispose(); // close while settings and preferences are still being read
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(calls().length, afterRetry, "a closed thread never runs the turn");
+  await command.handler("btw", ctx);
+  const transcript = modal.markdown.text as string; // the whole thread, not just the visible window
+  assert.match(transcript, /Q4/);
+  assert.doesNotMatch(transcript, /Q5/, "closing during the reads leaves no phantom turn");
+ } finally {
+  modal?.dispose?.();
+  process.env.PATH = originalPath;
+  rmSync(bin, { recursive: true, force: true });
+  rmSync(preferences, { force: true });
  }
 });

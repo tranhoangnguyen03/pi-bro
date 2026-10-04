@@ -68,11 +68,20 @@ BTW keeps one in-memory thread bound to a backend and an access mode
 - Cancellation or a host deadline never produces a late success or a retry.
   CLI-reported errors remain retryable invocation failures; they are not inferred
   to be host timeouts by matching diagnostic text.
-- Explain modes and Show are separate; `bro-prompt.md` affects explain only.
-- An explanation's mode belongs to its result: **M** and **R** re-run with it
-  and `/bro open` restores it, but only `/bro mode` and `/bro config` write
-  the saved mode. A result without a built-in mode (Show, Doctor, a custom
-  prompt) offers no **M**.
+- Explain modes and Show are separate. `bro-preferences.md` is added to the
+  explain, Show, and BTW prompts as a JSON-quoted section and never to the
+  advisor. It shapes wording, tone, depth, and answer language and never
+  overrides the source rules, Show's hard rules, or BTW access mode. The prompt
+  builders in `prompt.ts` stay pure: blank preferences reproduce the frozen
+  `prompt.fixtures.json` byte for byte, so the benchmark measures the built-in
+  prompts.
+- An explanation's mode and preferences tag belong to its result: **M** and
+  **R** re-run with the mode and re-read preferences, and `/bro open` restores
+  both without a backend call. Only `/bro mode` and `/bro config` write the
+  saved mode. A result without a built-in mode (Show, Doctor) offers no **M**.
+- A native BTW session remembers earlier prompts, so a change to preferences
+  (like an Agy access change) drops it and reseeds a fresh one with the
+  quoted thread.
 - Guidance prompts such as BTW's describe the reader and the goal and trust
   the model with the form of the answer; prefer that to templates, hard caps,
   or required labels.
