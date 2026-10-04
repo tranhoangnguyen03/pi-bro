@@ -2,6 +2,24 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.21.0] - 2026-10-04
+
+### Added
+
+- `bro-preferences.md`: tell Bro about yourself and how you like answers. Bro adds it, JSON-quoted and labelled, to every explain, `/bro show`, and `/bro btw` prompt alongside its own instructions; the advisor never receives it. Preferences can change wording, tone, technical depth, and the answer language (code, commands, paths, names, and numbers stay verbatim). In Show they change only wording and language. Per-run choices (the mode, **M**, a Show steering query, a BTW question) win over them, and Bro's source rules, Show's hard rules, and BTW access mode always apply. Blank or missing preferences leave every prompt byte-identical to 0.20.0 (#94).
+- `/bro preferences` edits the file (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close). Without a file it opens with unsaved starter text that restates the old built-in audience and brief wording. Saves are checked against the 4,000-character limit, and an oversize file still opens so it can be trimmed (#94).
+- The modal header shows `· prefs` when preferences shaped an explanation, drawing, or BTW turn; `/bro open` keeps the result's tag (#94).
+
+### Changed
+
+- Modes, **M**, and the source guard now always apply; nothing disables them (#94).
+- Preferences over 4,000 characters stop explain, Show, and BTW with an actionable error before any backend call instead of being truncated. `/bro doctor` replaces its Prompt check with a Preferences check, and `/bro help` shows the preferences status (#94).
+- When preferences change mid-thread, the next BTW turn starts a fresh native session reseeded with the quoted thread, on every backend, so old preferences don't linger in the backend's history (#94).
+
+### Removed
+
+- **Breaking:** `bro-prompt.md` is no longer read. It was a full replacement template for the explain prompt that disabled modes, **M**, and the source guard and did not affect Show or BTW. Bro does not migrate, rename, or delete it. Move what you want to keep into `/bro preferences`, and use `/bro mode brief` for the original ELI-simpleton instruction (#94).
+
 ## [0.20.0] - 2026-10-04
 
 ### Added

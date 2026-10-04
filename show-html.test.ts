@@ -84,6 +84,69 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Di
 	}
 });
 
+test("Show results keep the preferences tag they were drawn with", async () => {
+	const { initTheme } = await import("@earendil-works/pi-coding-agent");
+	initTheme();
+	const bin = join(buildDir, "bin-prefs"); mkdirSync(bin);
+	const calls = join(buildDir, "calls-prefs.jsonl");
+	const fail = join(buildDir, "fail-prefs");
+	writeFileSync(join(bin, "agy"), `#!/usr/bin/env node
+const fs=require('node:fs');
+fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(process.argv.slice(2))+ '\\n');
+if(fs.existsSync(${JSON.stringify(fail)})) process.exit(1);
+console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Drawn'}}));
+`, { mode: 0o755 });
+	const agentDir = process.env.PI_CODING_AGENT_DIR!;
+	mkdirSync(agentDir, { recursive: true });
+	const preferences = join(agentDir, "bro-preferences.md");
+	writeFileSync(preferences, "SHOW_PREFS_MARKER");
+	const originalPath = process.env.PATH;
+	process.env.PATH = `${bin}:${originalPath}`;
+	let modal: any, command: any;
+	const ctx: any = {
+		mode: "tui", cwd: buildDir,
+		sessionManager: { getBranch: () => [{ type: "message", message: { role: "user", content: "SHOW_SOURCE" } }] },
+		ui: { notify() {}, custom: async (factory: any) => {
+			modal = factory({ mode: "fullscreen", terminal: { rows: 40 }, requestRender() {} },
+				{ fg: (_color: string, text: string) => text, bold: (text: string) => text }, {}, () => {});
+		} },
+	};
+	const prompts = () => existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").map(line => JSON.parse(line).at(-1)) : [];
+	const header = () => modal.render(140)[1];
+	const settled = async () => {
+		const deadline = Date.now() + 5000;
+		while (modal.kind !== "result" && modal.kind !== "error") {
+			if (Date.now() > deadline) throw new Error("modal did not settle");
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+	};
+	try {
+		await registerBro({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
+		await command.handler("show 1", ctx); await settled();
+		assert.ok(prompts()[0].includes(JSON.stringify("SHOW_PREFS_MARKER")), "Show prompts carry preferences");
+		assert.match(header(), / · prefs/, "the initial Show result carries the tag");
+		assert.doesNotMatch(header(), /balanced|brief|faithful/, "Show has no mode");
+		modal.dispose();
+
+		rmSync(preferences);
+		await command.handler("open", ctx);
+		assert.match(header(), / · prefs/, "/bro open restores the stored tag");
+		assert.equal(prompts().length, 1, "reopening makes no backend call");
+		writeFileSync(fail, "fail");
+		modal.handleInput("r"); await settled();
+		assert.match(header(), / · prefs/, "a failed re-run keeps the previous result's tag");
+		rmSync(fail);
+		modal.handleInput("r"); await settled();
+		assert.doesNotMatch(header(), /prefs/, "R re-reads preferences");
+		assert.doesNotMatch(prompts().at(-1), /SHOW_PREFS_MARKER/);
+	} finally {
+		modal?.dispose();
+		if (originalPath === undefined) delete process.env.PATH; else process.env.PATH = originalPath;
+		rmSync(fail, { force: true });
+		rmSync(preferences, { force: true });
+	}
+});
+
 const BRO_CSP =
 	'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:;">';
 

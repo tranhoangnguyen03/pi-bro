@@ -58,8 +58,9 @@ They are review aids, not proof of semantic quality. A single matrix is
 directional evidence for one model and effort; it does not validate every Agy
 model.
 
-The benchmark covers Bro's built-in prompts only. A user-provided
-`bro-prompt.md` fully overrides built-in modes and is not evaluated here.
+The benchmark covers Bro's built-in prompts only and always runs without
+preferences: `run.ts` calls the prompt builders directly and never reads
+`bro-preferences.md`.
 
 The bounded release decision and final measurements are in
 [`initial-results.md`](initial-results.md). The corpus and several mechanical

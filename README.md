@@ -72,8 +72,9 @@ text directly captures a new source the same way.
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Reopen the latest explanation without calling the simplifier again. |
 | `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
-| `/bro doctor` | Check Bro's settings, prompt, and each selected backend, with the effective backend/model/effort per feature. |
+| `/bro doctor` | Check Bro's settings, preferences, and each selected backend, with the effective backend/model/effort per feature. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
+| `/bro preferences` | View or edit what Bro knows about you and how you like answers; see [Preferences](#preferences). |
 | `/bro config` | Open an interactive settings screen for the shared default backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) overrides. |
 | `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; type `/mode` inside to toggle full permission (read and edit the workspace) without losing the thread. |
 | `/bro advisor` | Quick notice of whether the executor's `bro_advisor` tool is available right now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`. |
@@ -91,7 +92,8 @@ Giving `/bro` the input directly works the same way:
 ## Explanation modes
 
 Bro treats the source as data, rejects embedded instructions, preserves its
-language, and avoids adding facts, advice, or conclusions in every mode. Choose
+language (unless your [preferences](#preferences) name another), and avoids
+adding facts, advice, or conclusions in every mode. Choose
 a persistent mode with `/bro mode`, or press **M** in an explanation to try the
 next mode without saving it:
 
@@ -112,13 +114,14 @@ next mode without saving it:
 - **M**: Re-simplify the captured source in the next mode (brief → balanced →
   faithful → brief). It applies to this explanation only and does not change
   the mode saved by `/bro mode`; pressing it again while Bro is working skips
-  ahead. Not offered while a custom prompt is active
+  ahead
 - **O**: Open the HTML diagram when a show reply contains one
 - **Esc**: Close the modal, or cancel while Bro is working
 
 The modal header shows the model and reasoning effort the explanation or
 drawing used (`default` when the model's own effort applies), followed by the
-explanation mode; `/bro open` keeps the original labels and mode.
+explanation mode, and `prefs` when your [preferences](#preferences) shaped the
+result; `/bro open` keeps the original labels, mode, and tag.
 
 Bro temporarily captures mouse input while its modal is open. Native mouse
 selection may be unavailable or visually extend outside the modal depending on
@@ -241,7 +244,9 @@ assistant conversation text, including every intermediate assistant message in
 a turn — tool calls, tool results, reasoning, and images never leave the
 session. It runs the same backend-specific model call and shows the result
 in the same modal, never touching your conversation. `/bro show` uses its own
-draw prompt; the explanation modes and `bro-prompt.md` do not affect it.
+draw prompt; the explanation modes do not affect it. Your
+[preferences](#preferences) can change only its wording and language, never
+which shapes it draws or its rules.
 
 Because the draw model only ever sees conversation text, its shapes reflect
 what was *reported* in the conversation — what the assistant said it did or
@@ -693,7 +698,7 @@ it as a PDF, then use `/bro file <path>`.
 ## Check your setup
 
 Run `/bro doctor` when Bro is newly installed or something is not working. It
-checks Bro's settings and prompt, then probes only the backends some feature
+checks Bro's settings and preferences, then probes only the backends some feature
 actually selects, and reports the effective backend/model/effort for each
 feature. Failed checks explain what to fix.
 
@@ -809,41 +814,66 @@ When resolving turn count for `/bro show`:
 1. **Command argument**: an explicit count like `/bro show 3` or `/bro show 1 query` overrides for that run.
 2. **Saved setting**: `showTurns` (defaults to 1).
 
-When resolving the explanation prompt (`explain` capability only):
-1. **Custom prompt**: a valid `~/.pi/agent/bro-prompt.md` (or `$PI_CODING_AGENT_DIR/bro-prompt.md`) completely overrides all built-in modes.
-2. **Saved mode**: `mode` in `bro-settings.json` (defaults to `balanced`).
-3. `bro-prompt.md` applies only to `/bro`, `/bro text`, `/bro file`, and `/bro url`; it does not affect `/bro show`, `/bro btw`, or `bro_advisor`.
+When shaping an answer, each part has one owner:
 
-## Custom prompt
+| Part | Decided by |
+| --- | --- |
+| Bro's source rules: quoted source treated as data, no added facts, Show's traceability rules, BTW access mode | Built in; nothing overrides them |
+| How much of the source an explanation keeps | The mode: **M** for one explanation, otherwise the saved `mode` |
+| What a Show drawing focuses on | The steering query |
+| Who the answer is for: wording, tone, depth, and answer language | Your [preferences](#preferences), otherwise Bro's built-in defaults |
 
-Bro uses a built-in prompt by default. To use your own, create:
+## Preferences
 
-```text
-~/.pi/agent/bro-prompt.md
-```
+Tell Bro about yourself and how you like answers. Bro adds what you write to
+every explain, `/bro show`, and `/bro btw` prompt as a labelled section,
+alongside its own instructions. It never replaces them: modes, **M**, and the
+source rules keep working. The advisor never receives your preferences; use
+`/bro advisor-steer` for it.
 
-Your prompt must include `{{response}}` exactly once. For example:
+Run `/bro preferences` to edit them: **Ctrl+S** saves, **Ctrl+K** deletes the
+file, **Ctrl+C** copies, and **Esc** closes without saving. The first time,
+the editor opens with this starter text, which is not saved until you press
+**Ctrl+S**:
 
 ```md
-Explain this in plain English in no more than 200 words.
-Keep important warnings and next steps.
+## About me
+I'm an overworked white-collar worker, and so are my colleagues. By the end of a
+hard day our brains are fried and we can only handle simple language, no matter
+how sharp we are at our best.
 
-Text to explain:
-{{response}}
+## How I like answers
+- Explain it like I'm a simpleton: plain, everyday words.
+- Go easy on analogies. No forced ones.
 ```
 
-Bro re-reads this file every time you simplify, so your edits take effect
-immediately without reloading Pi. Bro never creates or modifies this file.
-Existing valid custom prompts continue working unchanged.
+You can also edit the file directly (under `$PI_CODING_AGENT_DIR` instead when
+that is set):
 
-A valid custom prompt fully overrides all built-in mode instructions.
-`/bro show` is separate: it always uses its own built-in draw prompt and
-ignores `bro-prompt.md`. `/bro
-mode` still changes the saved mode, but that mode remains inactive while
-`bro-prompt.md` exists. Remove or rename `bro-prompt.md` to use the saved
-built-in mode again. If the custom prompt is invalid—for example, it has no
-`{{response}}` placeholder or has more than one—Bro blocks the explanation;
-run `/bro doctor` for the exact problem.
+```text
+~/.pi/agent/bro-preferences.md
+```
+
+- **Free-form**: no placeholder or structure is required. Bro re-reads the
+  file on every request, so edits apply next time. A missing or empty file
+  means no preferences, and Bro's prompts are then exactly the built-in ones.
+- **What preferences can change**: wording, tone, technical depth, length in
+  BTW, and the answer language. If you name a language, code, commands, paths,
+  names, and numbers still stay exactly as written. In `/bro show`,
+  preferences only change wording and language. A per-run choice (the mode,
+  **M**, a Show steering query, or what a BTW question asks for) wins over a
+  standing preference.
+- **Limit**: 4,000 characters, because the text goes with every request. A
+  longer file stops explain, Show, and BTW with an error until you trim it;
+  Bro never cuts it silently. `/bro doctor` reports the problem, and the
+  editor still opens the file so you can fix it.
+- **BTW threads**: when your preferences change, the next side question starts
+  a fresh backend session that is caught up on the thread, so old preferences
+  don't linger.
+
+`bro-prompt.md`, the full prompt template from earlier versions, is no longer
+read. Move what you want to keep into `/bro preferences`, and choose
+`/bro mode brief` for the original ELI-simpleton instruction.
 
 
 ## Privacy and safety
@@ -856,6 +886,9 @@ run `/bro doctor` for the exact problem.
   seeded main-session conversation text (plus earlier turns when a native
   session is reseeded) to the selected backend. In full permission mode the
   side agent can additionally read and edit the workspace.
+- **Preferences**: `bro-preferences.md` is sent with every explain, Show,
+  and BTW request to the selected backend. It is never sent to the advisor or
+  to Pi's main model.
 - **Advisor requests**: `bro_advisor` sends the executor agent's system
   instructions, active tool list (excluding `bro_advisor`), ordered
   conversation history including tool calls and tool results (unlike Show,
