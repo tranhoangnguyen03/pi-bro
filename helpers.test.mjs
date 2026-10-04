@@ -1763,4 +1763,108 @@ await t.test("Real Pi lifecycle: bro_advisor is registered like any other tool a
 	}
 
 });
+
+// Explain modal M key: drive the real /bro command and modal against a fake agy that reports which
+// mode prompt it received. M switches this explanation only; R and /bro open keep the shown mode.
+await t.test("Explain modal M switches mode for this explanation only", async () => {
+	const commands = new Map();
+	await registerBro({ on() {}, registerCommand(name, command) { commands.set(name, command); }, registerTool() {} });
+	const command = commands.get("bro");
+	const configDir = process.env.PI_CODING_AGENT_DIR;
+	await mkdir(configDir, { recursive: true });
+	const settingsPath = join(configDir, "bro-settings.json");
+	const savedSettings = JSON.stringify({ model: "gemini-shared", effort: "low", mode: "balanced", showTurns: 1, overrides: {} });
+	await writeFile(settingsPath, savedSettings);
+
+	const originalPath = process.env.PATH;
+	const binDir = await mkdtemp(join(tmpdir(), "pi-bro-fake-agy-mode-"));
+	const log = join(binDir, "modes.log");
+	await writeFile(join(binDir, "agy"), [
+		"#!/bin/sh",
+		"prompt=''",
+		"while [ $# -gt 0 ]; do [ \"$1\" = --print ] && { shift; prompt=$1; }; shift; done",
+		"case $prompt in *'Preserve every single claim'*) m=faithful;; *'ELI-simpleton'*) m=brief;; *) m=balanced;; esac",
+		`echo $m >> '${log}'`,
+		"printf '{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"%s explanation\"}}\\n' $m",
+	].join("\n"));
+	chmodSync(join(binDir, "agy"), 0o755);
+	process.env.PATH = `${binDir}:${originalPath}`;
+
+	let modal;
+	const ctx = {
+		mode: "tui",
+		cwd: binDir,
+		waitForIdle: async () => {},
+		ui: {
+			notify() {},
+			custom: (factory) => new Promise((resolve) => {
+				modal = factory({ mode: "fullscreen", requestRender() {}, terminal: { rows: 30 } }, fakeTheme, {}, resolve);
+			}),
+		},
+	};
+	const screen = () => stripVTControlCharacters(modal.render(96).join("\n"));
+	const waitFor = async (pattern) => {
+		for (let i = 0; i < 200 && !pattern.test(screen()); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+		assert.match(screen(), pattern);
+	};
+	const loggedModes = async () => existsSync(log) ? (await readFile(log, "utf8")).trim().split("\n") : [];
+	// Wait until agy has run `count` times in total and the modal is back in its result state.
+	const settled = async (count, pattern) => {
+		for (let i = 0; i < 200 && ((await loggedModes()).length < count || !/Esc close/.test(screen())); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+		assert.equal((await loggedModes()).length, count);
+		await waitFor(pattern);
+	};
+
+	try {
+		let closed = command.handler("text hello there", ctx);
+		await settled(1, /balanced explanation/);
+		assert.match(screen(), /Bro · .* · balanced/, "the header names the mode that produced the text");
+		assert.match(screen(), /M mode/);
+
+		modal.handleInput("m");
+		await settled(2, /faithful explanation/);
+		assert.match(screen(), /Bro · .* · faithful/);
+		assert.match(screen(), /Mode: faithful \(not saved\)/);
+
+		modal.handleInput("r");
+		await settled(3, /faithful explanation/);
+		assert.equal((await loggedModes()).at(-1), "faithful", "R repeats the shown mode, not the saved default");
+
+		modal.handleInput("m"); // faithful -> brief; the second press cancels it before agy even starts.
+		modal.handleInput("m"); // brief -> balanced
+		await settled(4, /balanced explanation/);
+		assert.equal((await loggedModes()).at(-1), "balanced", "the cancelled brief run never reached agy");
+		assert.match(screen(), /Mode: balanced \(not saved\)/);
+		modal.handleInput("m");
+		await settled(5, /faithful explanation/);
+		modal.handleInput("\u001b");
+		await closed;
+
+		assert.equal(await readFile(settingsPath, "utf8"), savedSettings, "M never rewrites the saved default");
+
+		closed = command.handler("open", ctx);
+		await waitFor(/faithful explanation/);
+		assert.match(screen(), /Bro · .* · faithful/, "/bro open keeps the reopened result's mode");
+		modal.handleInput("r");
+		await settled(6, /faithful explanation/);
+		assert.equal((await loggedModes()).at(-1), "faithful");
+		modal.handleInput("\u001b");
+		await closed;
+
+		const promptFile = join(configDir, "bro-prompt.md");
+		await writeFile(promptFile, "Custom: {{response}}");
+		try {
+			closed = command.handler("text hello there", ctx);
+			await settled(7, /balanced explanation/);
+			assert.doesNotMatch(screen(), /M mode|· balanced/, "a custom prompt ignores modes, so M is not offered");
+			modal.handleInput("\u001b");
+			await closed;
+		} finally {
+			await rm(promptFile, { force: true });
+		}
+	} finally {
+		process.env.PATH = originalPath;
+		await rm(binDir, { recursive: true, force: true });
+	}
+});
 });

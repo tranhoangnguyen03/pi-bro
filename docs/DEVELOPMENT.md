@@ -19,7 +19,7 @@ Production is published as TypeScript source (no build step):
   feature, private temp prompt files, streaming parse, native continuation
   IDs, deadlines, cancellation, and process-group cleanup. Feature behavior
   (retries, UI, settings) stays out of it.
-- **`prompt.ts`** — pure prompt builders: explain modes, show, BTW (including access mode and reseeded history), and the
+- **`prompt.ts`** — pure prompt builders: explain modes, show, BTW (reader guidance, access mode, and reseeded history), and the
   advisor. Prompts are backend-neutral; backend differences belong in
   `backend.ts`, not in prompt text.
 
@@ -69,6 +69,13 @@ BTW keeps one in-memory thread bound to a backend and an access mode
   CLI-reported errors remain retryable invocation failures; they are not inferred
   to be host timeouts by matching diagnostic text.
 - Explain modes and Show are separate; `bro-prompt.md` affects explain only.
+- An explanation's mode belongs to its result: **M** and **R** re-run with it
+  and `/bro open` restores it, but only `/bro mode` and `/bro config` write
+  the saved mode. A result without a built-in mode (Show, Doctor, a custom
+  prompt) offers no **M**.
+- Guidance prompts such as BTW's describe the reader and the goal and trust
+  the model with the form of the answer; prefer that to templates, hard caps,
+  or required labels.
 
 ## Lifecycle limits
 
@@ -109,8 +116,9 @@ requests and applies them only after earlier requests are acknowledged; scenario
 does not depend on sleeps. `smoke-rpc.test.ts` checks this with a delayed fake host, and
 `show-html.test.ts` checks generated HTML's restrictive content policy.
 
-Config interactions are also exercised with a fake TUI/persistence harness;
-that is not live terminal verification. Use [TESTING.md](TESTING.md) for real
+Config interactions are also exercised with a fake TUI/persistence harness, and
+the explain modal's **M**/**R**/`/bro open` flow runs through the real `/bro`
+command against a fake `agy`; neither is live terminal verification. Use [TESTING.md](TESTING.md) for real
 modal interaction, including the BTW composer.
 
 ## Releases

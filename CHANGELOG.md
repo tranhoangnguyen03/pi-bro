@@ -2,6 +2,16 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.20.0] - 2026-10-04
+
+### Added
+
+- Press **M** in an explanation modal to re-simplify the captured source in the next explain mode (brief → balanced → faithful). The switch applies to that explanation only: the saved mode is unchanged, **R** and `/bro open` keep the shown mode, and a second press while Bro is working cancels and skips ahead. The header now names the mode; **M** is hidden for Show, Doctor, and custom prompts.
+
+### Changed
+
+- `/bro btw` now tells the model who it is writing for: a tired reader who needs the point first, in plain words, at a length that fits the question, in the language they asked in. The guidance describes the reader and the goal rather than a fixed template. In full-permission mode, answers say which points were checked in the workspace.
+
 ## [0.19.5] - 2026-10-01
 
 ### Changed
