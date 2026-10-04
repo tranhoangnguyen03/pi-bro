@@ -2,7 +2,6 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 
 // Shared internal execution boundary for all four Bro features (explain, show, btw, advisor).
 // This implements docs/plans/2026-09-22-shared-backend-design.md for Agy (all features) and the
@@ -126,15 +125,20 @@ const DEFAULT_KILL_ESCALATION_MS = 5_000;
 export function beginAttempt(child: ChildProcess, signal: AbortSignal, deadlineMs: number, killEscalationMs: number): Attempt {
 	let cause: StopCause | undefined;
 	let killTimer: ReturnType<typeof setTimeout> | undefined;
+	let isClosed = false;
 	let finishClose: (value: { code: number | null; exitSignal: NodeJS.Signals | null }) => void;
 	const closed = new Promise<{ code: number | null; exitSignal: NodeJS.Signals | null }>((resolve) => {
-		finishClose = resolve;
-		child.once("close", (code, exitSignal) => resolve({ code, exitSignal }));
+		finishClose = (val) => {
+			isClosed = true;
+			resolve(val);
+		};
+		child.once("close", (code, exitSignal) => finishClose({ code, exitSignal }));
 	});
 
 	const stop = (next: StopCause) => {
 		if (cause) return; // latched: the first stop cause wins
 		cause = next;
+		if (isClosed) return;
 		killAgyGroup(child, "SIGTERM");
 		killTimer = setTimeout(() => {
 			killAgyGroup(child, "SIGKILL");
@@ -270,7 +274,6 @@ async function executeArgvPrint(
 		let partial = "";
 		let final = "";
 		let conversationId = request.continuation?.id;
-		let parseError: string | undefined;
 
 		child.stderr?.setEncoding("utf8");
 		child.stderr?.on("data", (chunk: string) => {
@@ -285,44 +288,31 @@ async function executeArgvPrint(
 			child.stdin?.end(`${JSON.stringify({ event: "user", message: { content: request.prompt } })}\n`);
 		}
 
-		const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
-		void attempt.closed.then(() => lines.close());
-		try {
-			for await (const line of lines) {
-				if (!line.trim() || attempt.causeOf()) continue;
-				try {
-					if (isBtw) {
-						const parsed = parseBtwAgyLine(line);
-						if (parsed.conversationId) conversationId = parsed.conversationId;
-						if (parsed.error) {
-							parseError = parsed.error;
-							attempt.stop("protocol");
-							break;
-						}
-						if (parsed.delta) {
-							partial += parsed.delta;
-							onProgress?.({ kind: "text", text: partial });
-						}
-						if (parsed.result !== undefined) final = parsed.result;
-					} else {
-						const parsed = parseExplainLine(line);
-						if (parsed.delta) {
-							partial += parsed.delta;
-							onProgress?.({ kind: "text", text: partial });
-						}
-						if (parsed.result !== undefined) final = parsed.result;
-					}
-				} catch (error) {
-					parseError = errorMessage(error);
-					attempt.stop("protocol");
-					break;
+		const handleLine = (line: string) => {
+			if (!line.trim() || attempt.causeOf()) return;
+			if (isBtw) {
+				const parsed = parseBtwAgyLine(line);
+				if (parsed.conversationId) conversationId = parsed.conversationId;
+				if (parsed.error) throw new Error(parsed.error);
+				if (parsed.delta) {
+					partial += parsed.delta;
+					onProgress?.({ kind: "text", text: partial });
 				}
+				if (parsed.result !== undefined) final = parsed.result;
+			} else {
+				const parsed = parseExplainLine(line);
+				if (parsed.delta) {
+					partial += parsed.delta;
+					onProgress?.({ kind: "text", text: partial });
+				}
+				if (parsed.result !== undefined) final = parsed.result;
 			}
-		} finally {
-			lines.close();
-		}
+		};
+
+		const finishFraming = frameStdoutLines(child, attempt, "Agy", handleLine);
 
 		const { code, exitSignal } = await attempt.closed;
+		const parseError = finishFraming();
 		attempt.dispose();
 		const cause = attempt.causeOf();
 
@@ -348,8 +338,69 @@ async function executeArgvPrint(
 }
 
 // Guards only against a single runaway line with no newline (a protocol break, not a real
-// response size) -- agy's real NDJSON lines are far smaller than this.
-const ADVISOR_MAX_STDOUT_LINE_CHARS = 2_000_000;
+// response size) -- real NDJSON lines across all backends are far smaller than this.
+export const MAX_STDOUT_LINE_CHARS = 2_000_000;
+
+export function frameStdoutLines(
+	child: ChildProcess,
+	attempt: Attempt,
+	backendName: string,
+	onLine: (line: string) => void,
+): () => string | undefined {
+	const oversize = `${backendName} emitted a stdout line over ${MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
+	let buffer = "";
+	let protocolError: string | undefined;
+
+	const fail = (message: string) => {
+		protocolError ??= message;
+		buffer = "";
+		attempt.stop("protocol");
+	};
+
+	child.stdout?.setEncoding("utf8");
+
+	child.stdout?.on("error", (error) => {
+		fail(`${backendName} stdout error: ${errorMessage(error)}`);
+	});
+
+	child.stdout?.on("data", (chunk: string) => {
+		if (attempt.causeOf()) return;
+		const parts = (buffer + chunk).split(/\r?\n/);
+		buffer = parts.pop() ?? "";
+
+		const pendingLen = buffer.endsWith("\r") ? buffer.length - 1 : buffer.length;
+		if (pendingLen > MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > MAX_STDOUT_LINE_CHARS)) {
+			return fail(oversize);
+		}
+
+		for (const line of parts) {
+			if (attempt.causeOf()) return;
+			if (!line.trim()) continue;
+			try {
+				onLine(line);
+			} catch (error) {
+				return fail(errorMessage(error));
+			}
+		}
+	});
+
+	return (): string | undefined => {
+		if (!attempt.causeOf() && buffer.trim()) {
+			const line = buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer;
+			if (line.length > MAX_STDOUT_LINE_CHARS) {
+				fail(oversize);
+			} else if (line.trim()) {
+				try {
+					onLine(line);
+				} catch (error) {
+					fail(errorMessage(error));
+				}
+			}
+		}
+		buffer = "";
+		return protocolError;
+	};
+}
 
 type AdvisorAgyEvent = {
 	event?: string;
@@ -417,9 +468,7 @@ async function executeAdvisorStdin(
 	let stderr = "";
 	let final: string | undefined;
 	let terminalError: string | undefined;
-	let protocolError: string | undefined;
 	let sawTerminal = false;
-	let stdoutBuffer = "";
 
 	child.stderr?.setEncoding("utf8");
 	child.stderr?.on("data", (chunk: string) => {
@@ -455,37 +504,11 @@ async function executeAdvisorStdin(
 		}
 	};
 
-	child.stdout?.setEncoding("utf8");
-	child.stdout?.on("data", (chunk: string) => {
-		stdoutBuffer += chunk;
-		const parts = stdoutBuffer.split(/\r?\n/);
-		stdoutBuffer = parts.pop() ?? "";
-		if (stdoutBuffer.length > ADVISOR_MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > ADVISOR_MAX_STDOUT_LINE_CHARS)) {
-			protocolError ??= `Agy emitted a stdout line over ${ADVISOR_MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
-			stdoutBuffer = "";
-			attempt.stop("protocol");
-			return;
-		}
-		for (const line of parts) {
-			try {
-				handleLine(line);
-			} catch (error) {
-				protocolError ??= errorMessage(error);
-				attempt.stop("protocol");
-				return;
-			}
-		}
-	});
+	const finishFraming = frameStdoutLines(child, attempt, "Agy", handleLine);
 
 	const { code, exitSignal } = await attempt.closed;
+	const protocolError = finishFraming();
 	attempt.dispose();
-	if (stdoutBuffer.trim() && !sawTerminal) {
-		try {
-			handleLine(stdoutBuffer);
-		} catch (error) {
-			protocolError ??= errorMessage(error);
-		}
-	}
 
 	const cause = attempt.causeOf();
 	if (cause === "cancelled") return { status: "cancelled", message: "Canceled." };
@@ -587,8 +610,6 @@ async function executeClaude(
 		let partial = "";
 		let final: string | undefined;
 		let terminalError: string | undefined;
-		let protocolError: string | undefined;
-		let stdoutBuffer = "";
 		let initSessionId: string | undefined;
 		let resultSessionId: string | undefined;
 
@@ -623,6 +644,7 @@ async function executeClaude(
 			}
 			if (isAdvisor && topLevel && event.type === "assistant" && Array.isArray(event.message?.content)) {
 				for (const block of event.message.content as Array<{ type?: unknown; name?: unknown; text?: unknown }>) {
+					if (attempt.causeOf()) break;
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
 							? block.name.trim()
@@ -653,37 +675,11 @@ async function executeClaude(
 			}
 		};
 
-		child.stdout?.setEncoding("utf8");
-		child.stdout?.on("data", (chunk: string) => {
-			stdoutBuffer += chunk;
-			const parts = stdoutBuffer.split(/\r?\n/);
-			stdoutBuffer = parts.pop() ?? "";
-			if (stdoutBuffer.length > ADVISOR_MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > ADVISOR_MAX_STDOUT_LINE_CHARS)) {
-				protocolError ??= `Claude emitted a stdout line over ${ADVISOR_MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
-				stdoutBuffer = "";
-				attempt.stop("protocol");
-				return;
-			}
-			for (const line of parts) {
-				try {
-					handleLine(line);
-				} catch (error) {
-					protocolError ??= errorMessage(error);
-					attempt.stop("protocol");
-					return;
-				}
-			}
-		});
+		const finishFraming = frameStdoutLines(child, attempt, "Claude", handleLine);
 
 		const { code, exitSignal } = await attempt.closed;
+		const protocolError = finishFraming();
 		attempt.dispose();
-		if (stdoutBuffer.trim()) {
-			try {
-				handleLine(stdoutBuffer);
-			} catch (error) {
-				protocolError ??= errorMessage(error);
-			}
-		}
 
 		const partialText = partial || undefined;
 		const cause = attempt.causeOf();
@@ -815,8 +811,6 @@ async function executeGrok(
 		let resultSessionId: string | undefined;
 		let final: string | undefined;
 		let terminalError: string | undefined;
-		let protocolError: string | undefined;
-		let stdoutBuffer = "";
 
 		child.stderr?.setEncoding("utf8");
 		child.stderr?.on("data", (chunk: string) => {
@@ -869,6 +863,7 @@ async function executeGrok(
 			}
 			if (isAdvisor && event.type === "assistant" && Array.isArray(message?.content)) {
 				for (const block of message.content as Array<{ type?: unknown; name?: unknown; text?: unknown }>) {
+					if (attempt.causeOf()) break;
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
 							? block.name.trim()
@@ -904,37 +899,11 @@ async function executeGrok(
 			terminalError ??= `Grok failed: ${detail}`;
 		};
 
-		child.stdout?.setEncoding("utf8");
-		child.stdout?.on("data", (chunk: string) => {
-			stdoutBuffer += chunk;
-			const parts = stdoutBuffer.split(/\r?\n/);
-			stdoutBuffer = parts.pop() ?? "";
-			if (stdoutBuffer.length > ADVISOR_MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > ADVISOR_MAX_STDOUT_LINE_CHARS)) {
-				protocolError ??= `Grok emitted a stdout line over ${ADVISOR_MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
-				stdoutBuffer = "";
-				attempt.stop("protocol");
-				return;
-			}
-			for (const line of parts) {
-				try {
-					handleLine(line);
-				} catch (error) {
-					protocolError ??= errorMessage(error);
-					attempt.stop("protocol");
-					return;
-				}
-			}
-		});
+		const finishFraming = frameStdoutLines(child, attempt, "Grok", handleLine);
 
 		const { code, exitSignal } = await attempt.closed;
+		const protocolError = finishFraming();
 		attempt.dispose();
-		if (stdoutBuffer.trim()) {
-			try {
-				handleLine(stdoutBuffer);
-			} catch (error) {
-				protocolError ??= errorMessage(error);
-			}
-		}
 
 		const partialText = partial ? { partialText: partial } : {};
 		const cause = attempt.causeOf();
@@ -1076,8 +1045,6 @@ async function executeCodex(
 		let final: string | undefined;
 		let sawTerminal = false;
 		let terminalError: string | undefined;
-		let protocolError: string | undefined;
-		let stdoutBuffer = "";
 
 		child.stderr?.setEncoding("utf8");
 		child.stderr?.on("data", (chunk: string) => {
@@ -1133,37 +1100,11 @@ async function executeCodex(
 			}
 		};
 
-		child.stdout?.setEncoding("utf8");
-		child.stdout?.on("data", (chunk: string) => {
-			stdoutBuffer += chunk;
-			const parts = stdoutBuffer.split(/\r?\n/);
-			stdoutBuffer = parts.pop() ?? "";
-			if (stdoutBuffer.length > ADVISOR_MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > ADVISOR_MAX_STDOUT_LINE_CHARS)) {
-				protocolError ??= `Codex emitted a stdout line over ${ADVISOR_MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
-				stdoutBuffer = "";
-				attempt.stop("protocol");
-				return;
-			}
-			for (const line of parts) {
-				try {
-					handleLine(line);
-				} catch (error) {
-					protocolError ??= errorMessage(error);
-					attempt.stop("protocol");
-					return;
-				}
-			}
-		});
+		const finishFraming = frameStdoutLines(child, attempt, "Codex", handleLine);
 
 		const { code, exitSignal } = await attempt.closed;
+		const protocolError = finishFraming();
 		attempt.dispose();
-		if (stdoutBuffer.trim()) {
-			try {
-				handleLine(stdoutBuffer);
-			} catch (error) {
-				protocolError ??= errorMessage(error);
-			}
-		}
 
 		const partialText = partial ? { partialText: partial } : {};
 		const cause = attempt.causeOf();
@@ -1279,8 +1220,6 @@ async function executeMuse(
 		let final: string | undefined;
 		let sawTerminal = false;
 		let terminalError: string | undefined;
-		let protocolError: string | undefined;
-		let stdoutBuffer = "";
 
 		child.stderr?.setEncoding("utf8");
 		child.stderr?.on("data", (chunk: string) => {
@@ -1358,37 +1297,11 @@ async function executeMuse(
 			}
 		};
 
-		child.stdout?.setEncoding("utf8");
-		child.stdout?.on("data", (chunk: string) => {
-			stdoutBuffer += chunk;
-			const parts = stdoutBuffer.split(/\r?\n/);
-			stdoutBuffer = parts.pop() ?? "";
-			if (stdoutBuffer.length > ADVISOR_MAX_STDOUT_LINE_CHARS || parts.some((line) => line.length > ADVISOR_MAX_STDOUT_LINE_CHARS)) {
-				protocolError ??= `Muse emitted a stdout line over ${ADVISOR_MAX_STDOUT_LINE_CHARS} characters; the stream is unparseable.`;
-				stdoutBuffer = "";
-				attempt.stop("protocol");
-				return;
-			}
-			for (const line of parts) {
-				try {
-					handleLine(line);
-				} catch (error) {
-					protocolError ??= errorMessage(error);
-					attempt.stop("protocol");
-					return;
-				}
-			}
-		});
+		const finishFraming = frameStdoutLines(child, attempt, "Muse", handleLine);
 
 		const { code, exitSignal } = await attempt.closed;
+		const protocolError = finishFraming();
 		attempt.dispose();
-		if (stdoutBuffer.trim()) {
-			try {
-				handleLine(stdoutBuffer);
-			} catch (error) {
-				protocolError ??= errorMessage(error);
-			}
-		}
 
 		const partialText = partial ? { partialText: partial } : {};
 		const cause = attempt.causeOf();
