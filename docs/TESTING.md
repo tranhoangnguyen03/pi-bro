@@ -33,8 +33,10 @@ in `/bro config` as the shared default or as the capability under test.
 3. **Explain**: `/bro text There are two retries, after five and ten seconds.`
    streams and keeps the numbers. **R** reruns, **C** copies, Esc closes,
    `/bro open` reopens without a new request, and the header label shows
-   model and effort (`default` when the model's effort applies). Also run
-   `/bro file sample.txt`.
+   model, effort (`default` when the model's effort applies), and mode.
+   **M** re-simplifies in the next mode with a `(not saved)` notice, a quick
+   second **M** skips ahead, and `/bro mode` still shows the saved mode. Also
+   run `/bro file sample.txt`.
 4. **Show**: after two parent turns, `/bro show 2` draws the transcript without
    investigating the repository.
 5. **BTW context and mode** (start from a new thread, `/clear` first if one is open):
@@ -48,6 +50,10 @@ in `/bro config` as the shared default or as the capability under test.
       instruction is behavioral, so inspect behavior rather than assuming enforcement).
    5. `/clear` — empty thread, same mode; the next question is seeded with
       main-session context again.
+   6. Ask a quick question, a "walk me through" question, and one in another
+      language. Answers lead with the point in plain words, their length
+      follows the question, and they reply in the language asked. In full
+      permission, answers say what was checked in the workspace.
 6. **BTW composer**: with a draft in the main editor, `/insert` and
    `/insert-all` leave it untouched with an edit/clear notice; after clearing
    it they insert without submitting. `/copy` and `/copy-all` reach the

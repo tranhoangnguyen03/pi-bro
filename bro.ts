@@ -17,7 +17,7 @@ import { parseHTML } from "linkedom";
 import mammoth from "mammoth";
 import { Type } from "typebox";
 import { extractText } from "unpdf";
-import { BRO_MODES, DEFAULT_BRO_MODE, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, parseBroMode, type BroMode } from "./prompt.ts";
+import { BRO_MODES, DEFAULT_BRO_MODE, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, nextBroMode, parseBroMode, type BroMode } from "./prompt.ts";
 import {
 	agyFailureMessage,
 	agySelection,
@@ -62,8 +62,9 @@ type TuiLike = {
 };
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
 type BroSource = { text: string; label?: string };
-type BroResult = { source: BroSource; text: string; model?: string };
-type ModalResult = { source?: BroSource; text: string; htmlPath?: string; model?: string };
+// `mode` is the built-in explain mode that produced the text; absent for Show, Doctor, and a custom prompt.
+type BroResult = { source: BroSource; text: string; model?: string; mode?: BroMode };
+type ModalResult = { source?: BroSource; text: string; htmlPath?: string; model?: string; mode?: BroMode };
 type BtwTurn = { question: string; answer: string };
 // `context` keeps the main-session seed so a fresh native session can be reseeded with the whole
 // thread; `sessionFull` is the access mode the native session last ran in.
@@ -1616,9 +1617,11 @@ async function simplify(
 	signal: AbortSignal,
 	settings: BroSettings,
 	onProgress?: (text: string) => void,
-): Promise<{ text: string; model: string }> {
+	mode = settings.mode,
+): Promise<{ text: string; model: string; mode?: BroMode }> {
 	const selection = selectionForCapability(settings, "explain");
-	return { text: await runAgyText((await promptFor(response, settings.mode)).text, selection, signal, onProgress), model: selectionLabel(selection) };
+	const prompt = await promptFor(response, mode);
+	return { text: await runAgyText(prompt.text, selection, signal, onProgress), model: selectionLabel(selection), ...(prompt.custom ? {} : { mode }) };
 }
 
 async function runShowExplanation(
@@ -2690,13 +2693,16 @@ Saved in \`${SETTINGS_FILE}\`.
 - balanced — default; material detail with clearer structure
 - faithful — closest to the source, with no fixed word limit
 
+Press **M** in an explanation to re-simplify it in the next mode without changing the saved one.
+
 A valid \`${PROMPT_FILE}\` (with \`{{response}}\` exactly once) overrides the modes; the saved mode stays inactive until you remove or rename it. Show always uses its own prompt.
 
 ## Controls
 
 - **Mouse wheel / trackpad**, **↑ / ↓** — scroll
 - **C** — copy the full explanation
-- **R** — repeat the current action
+- **R** — repeat the current action (an explanation keeps its mode)
+- **M** — re-simplify in the next mode (brief → balanced → faithful); not saved
 - **O** — open the HTML diagram when a show reply contains one
 - **Esc** — close, or cancel while Bro is working
 
@@ -2721,6 +2727,8 @@ class BroModal implements Focusable {
 	private retryable = false;
 	private disposed = false;
 	private htmlPath = "";
+	// Survives loading/streaming so the header names the mode being produced; empty disables M.
+	private modeLabel = "";
 
 	constructor(
 		private readonly tui: TuiLike,
@@ -2729,6 +2737,7 @@ class BroModal implements Focusable {
 		private readonly onRetry: () => void,
 		private readonly onDispose: () => void,
 		private readonly retryLabel: string,
+		private readonly onSwitchMode: () => void = () => {},
 	) {
 		setRegularMouseReporting(this.tui, true);
 	}
@@ -2747,6 +2756,11 @@ class BroModal implements Focusable {
 
 	setHtmlPath(path: string): void {
 		this.htmlPath = path;
+		this.tui.requestRender();
+	}
+
+	setMode(mode: BroMode | undefined): void {
+		this.modeLabel = mode ?? "";
 		this.tui.requestRender();
 	}
 
@@ -2800,11 +2814,16 @@ class BroModal implements Focusable {
 		return this.theme.fg("border", `├${"─".repeat(innerWidth)}┤`);
 	}
 
+	private canSwitchMode(): boolean {
+		return Boolean(this.modeLabel) && (this.kind === "loading" || this.kind === "streaming" || this.kind === "result");
+	}
+
 	private controls(): string {
-		if (this.kind === "loading") return "Esc cancel";
-		if (this.kind === "streaming") return "Simplifying… · ↑/↓ scroll · Esc cancel";
+		const mode = this.canSwitchMode() ? " · M mode" : "";
+		if (this.kind === "loading") return mode ? "M mode · Esc cancel" : "Esc cancel";
+		if (this.kind === "streaming") return `Simplifying… · ↑/↓ scroll${mode} · Esc cancel`;
 		if (this.kind === "result") {
-			return `↑/↓ scroll · C copy${this.htmlPath ? " · O open diagram" : ""}${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
+			return `↑/↓ scroll · C copy${this.htmlPath ? " · O open diagram" : ""}${mode}${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
 		}
 		if (this.kind === "help") return "↑/↓ scroll · C copy · Esc close";
 		if (this.kind === "error") return "R try again · Esc close";
@@ -2830,7 +2849,7 @@ class BroModal implements Focusable {
 			this.borderLine(innerWidth, "top"),
 			this.frameLine(
 				this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}`)) +
-					this.theme.fg("dim", `${this.modelLabel ? ` · ${this.modelLabel}` : ""}${scroll}`),
+					this.theme.fg("dim", `${this.modelLabel ? ` · ${this.modelLabel}` : ""}${this.modeLabel ? ` · ${this.modeLabel}` : ""}${scroll}`),
 				innerWidth,
 			),
 			this.ruleLine(innerWidth),
@@ -2889,6 +2908,11 @@ class BroModal implements Focusable {
 			return;
 		}
 
+		if ((matchesKey(data, "m") || matchesKey(data, "shift+m")) && this.canSwitchMode()) {
+			this.onSwitchMode();
+			return;
+		}
+
 		if ((matchesKey(data, "o") || matchesKey(data, "shift+o")) && this.htmlPath && this.kind === "result") {
 			this.notice = openShowHtml(this.htmlPath)
 				? "Opening diagram"
@@ -2914,6 +2938,7 @@ interface BroModalOptions {
 		signal: AbortSignal,
 		source?: BroSource,
 		onProgress?: (text: string) => void,
+		mode?: BroMode,
 	) => Promise<ModalResult>;
 	onResult?: (result: ModalResult) => void;
 	loadingText?: string;
@@ -2935,7 +2960,8 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 			let closed = false;
 			let controller: AbortController | undefined;
 			let current = options.result;
-			let execute: (source?: BroSource) => void = () => {};
+			let inFlightMode: BroMode | undefined;
+			let execute: (source?: BroSource, mode?: BroMode, notice?: string) => void = () => {};
 
 			const close = () => {
 				if (closed) return;
@@ -2948,37 +2974,49 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 				tui,
 				theme,
 				close,
-				() => execute(current?.source),
+				() => execute(current?.source, current?.mode),
 				() => {
 					closed = true;
 					controller?.abort();
 				},
 				options.retryLabel ?? "simplify again",
+				// M advances from the mode in flight, so repeated presses cancel and skip ahead; the saved default is untouched.
+				() => {
+					const from = inFlightMode ?? current?.mode;
+					if (!from || !current?.source || closed) return;
+					const next = nextBroMode(from);
+					controller?.abort();
+					controller = undefined;
+					execute(current.source, next, `Mode: ${next} (not saved)`);
+				},
 			);
 
 			const present = (result: ModalResult, notice = "") => {
 				const display = result.htmlPath ? stripShowHtmlFence(result.text) : result.text;
 				modal.setResult(display, options.retryable ?? Boolean(options.run), notice, result.source?.label, result.text, result.model);
 				modal.setHtmlPath(result.htmlPath ?? "");
+				modal.setMode(result.mode);
 			};
 
-			execute = (source?: BroSource) => {
+			execute = (source?: BroSource, mode?: BroMode, notice = "") => {
 				if (!options.run || controller || closed) return;
 				const previous = current;
 				const nextController = new AbortController();
 				controller = nextController;
+				inFlightMode = mode;
 				modal.setLoading(options.loadingText);
+				modal.setMode(mode);
 
 				void options
 					.run(nextController.signal, source, (text) => {
 						if (closed || nextController.signal.aborted || controller !== nextController) return;
 						modal.setStreaming(text);
-					})
+					}, mode)
 					.then((result) => {
 						if (closed || nextController.signal.aborted) return;
 						current = result;
 						options.onResult?.(result);
-						present(result);
+						present(result, notice);
 					})
 					.catch((error) => {
 						if (closed || nextController.signal.aborted) return;
@@ -2987,11 +3025,15 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 							current = previous;
 							present(previous, `Retry failed: ${message}`);
 						} else {
+							modal.setMode(undefined);
 							modal.setError(message);
 						}
 					})
 					.finally(() => {
-						if (controller === nextController) controller = undefined;
+						if (controller === nextController) {
+							controller = undefined;
+							inFlightMode = undefined;
+						}
 					});
 			};
 
@@ -3706,6 +3748,7 @@ export default async function bro(pi: ExtensionAPI) {
 					signal: AbortSignal,
 					source?: BroSource,
 					onProgress?: (text: string) => void,
+					mode?: BroMode,
 				): Promise<BroResult> => {
 					const target = source ?? (action === "url"
 						? await extractWebPage(value, signal)
@@ -3713,7 +3756,7 @@ export default async function bro(pi: ExtensionAPI) {
 					try {
 						return {
 							source: target,
-							...(await simplify(target.text, signal, await readSettings(), onProgress)),
+							...(await simplify(target.text, signal, await readSettings(), onProgress, mode)),
 						};
 					} catch (error) {
 						throw new Error(withDoctor(error));
@@ -3859,6 +3902,7 @@ export default async function bro(pi: ExtensionAPI) {
 				signal: AbortSignal,
 				source?: BroSource,
 				onProgress?: (text: string) => void,
+				mode?: BroMode,
 			): Promise<BroResult> => {
 				let target = source ?? (action === "text" && value ? { text: value } : undefined);
 				if (!target) {
@@ -3870,7 +3914,7 @@ export default async function bro(pi: ExtensionAPI) {
 					const settings = await readSettings();
 					return {
 						source: target,
-						...(await simplify(target.text, signal, settings, onProgress)),
+						...(await simplify(target.text, signal, settings, onProgress, mode)),
 					};
 				} catch (error) {
 					throw new Error(withDoctor(error));

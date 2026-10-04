@@ -56,7 +56,8 @@ installing it, use `pi -e npm:pi-bro`.
 | Recent session turns | `/bro show` | Draws the last turns' conversation text as shapes instead of prose (tool calls, tool results, reasoning, and images are omitted). |
 | Any of the above, auto-detected | `/bro <input>` | Routes a lone URL to the webpage reader, an existing workspace file with a supported extension to the document reader, and anything else to pasted text. |
 
-Pressing **R** simplifies the captured source again. These commands capture a
+Pressing **R** simplifies the captured source again in the mode shown, and
+**M** re-simplifies it in the next mode. These commands capture a
 new source: `/bro text`, `/bro file`, `/bro url`, and `/bro show`. Giving `/bro` a URL, path, or
 text directly captures a new source the same way.
 
@@ -91,7 +92,8 @@ Giving `/bro` the input directly works the same way:
 
 Bro treats the source as data, rejects embedded instructions, preserves its
 language, and avoids adding facts, advice, or conclusions in every mode. Choose
-a persistent mode with `/bro mode`:
+a persistent mode with `/bro mode`, or press **M** in an explanation to try the
+next mode without saving it:
 
 - **`brief`**: Uses the original audience-led ELI-simpleton prompt with no fixed
   word target.
@@ -105,13 +107,18 @@ a persistent mode with `/bro mode`:
 - **Mouse wheel / trackpad**: Scroll in regular or fullscreen mode
 - **↑ / ↓**: Scroll in any mode
 - **C**: Copy the complete explanation
-- **R**: Simplify the captured source or run the current Doctor check again
+- **R**: Simplify the captured source again in the mode shown, or run the
+  current Doctor check again
+- **M**: Re-simplify the captured source in the next mode (brief → balanced →
+  faithful → brief). It applies to this explanation only and does not change
+  the mode saved by `/bro mode`; pressing it again while Bro is working skips
+  ahead. Not offered while a custom prompt is active
 - **O**: Open the HTML diagram when a show reply contains one
 - **Esc**: Close the modal, or cancel while Bro is working
 
 The modal header shows the model and reasoning effort the explanation or
-drawing used (`default` when the model's own effort applies); `/bro open`
-keeps the original label.
+drawing used (`default` when the model's own effort applies), followed by the
+explanation mode; `/bro open` keeps the original labels and mode.
 
 Bro temporarily captures mouse input while its modal is open. Native mouse
 selection may be unavailable or visually extend outside the modal depending on
@@ -123,7 +130,9 @@ your terminal mode; press **C** to copy the complete explanation reliably.
 `/bro btw` opens a separate multi-turn conversation in a modal, so you can ask
 a quick side question while the main agent keeps working. It runs through the
 selected backend and never adds anything to Pi's conversation unless you
-explicitly insert it into the editor.
+explicitly insert it into the editor. Bro writes for a tired reader: the point
+first, in plain words, at a length that fits the question, in the language you
+asked in.
 
 - `/bro btw <question>` asks immediately; `/bro btw` opens an empty thread.
   Reopening keeps the thread and its mode.
@@ -707,8 +716,9 @@ and any per-capability (explain/show/btw/advisor) overrides, the explanation
 mode, and the default show turn count. Changes save immediately. Esc inside a
 picker cancels that pick; Esc on the settings screen closes it, keeping
 whatever was already saved. A failed save (for example, a read-only file) is
-shown inline. `/bro mode` changes the mode directly, and `/bro help` shows the
-active settings and file path.
+shown inline. `/bro mode` changes the mode directly (**M** in an explanation
+tries another mode without saving it), and `/bro help` shows the active settings
+and file path.
 
 Settings live in this user-editable file, created when the extension loads
 (under `$PI_CODING_AGENT_DIR` instead when that is set):
