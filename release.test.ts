@@ -108,6 +108,17 @@ test("package.json files declares every locally imported module from pi.extensio
 	}
 });
 
+test("isShippedFile matches exact files and bare/trailing-slash directory descendants", () => {
+	const shipped = ["bro.ts", "lib", "dist/"];
+	assert.equal(isShippedFile("bro.ts", shipped), true);
+	assert.equal(isShippedFile("bro.ts.map", shipped), false);
+	assert.equal(isShippedFile("lib/runtime.json", shipped), true);
+	assert.equal(isShippedFile("lib/sub/deep.ts", shipped), true);
+	assert.equal(isShippedFile("lib-other.ts", shipped), false);
+	assert.equal(isShippedFile("dist/bundle.js", shipped), true);
+	assert.equal(isShippedFile("dist-other.js", shipped), false);
+});
+
 test("every non-documentation entry in package.json files requires a release", () => {
 	const manifest = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8"));
 	const shippedFiles = getShippedFiles(manifest);

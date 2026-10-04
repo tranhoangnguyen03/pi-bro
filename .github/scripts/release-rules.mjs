@@ -57,9 +57,11 @@ export const getShippedFiles = (manifest) => {
 
 export const isShippedFile = (file, shippedFiles) => {
 	const norm = normalizePath(file);
-	return shippedFiles.some((shipped) =>
-		shipped.endsWith("/") ? norm.startsWith(shipped) : norm === shipped,
-	);
+	return shippedFiles.some((shipped) => {
+		const clean = normalizePath(shipped);
+		const prefix = clean.endsWith("/") ? clean : `${clean}/`;
+		return norm === clean || norm === clean.replace(/\/$/, "") || norm.startsWith(prefix);
+	});
 };
 
 export const classify = ({
@@ -161,6 +163,14 @@ export const runSelftest = (fail = (msg) => { throw new Error(msg); }) => {
 	if (isDocOrLegal("changelog-parser.ts")) fail("changelog-parser.ts must NOT be doc");
 	if (isDocOrLegal("LICENSE-validator.js")) fail("LICENSE-validator.js must NOT be doc");
 
+	// 2b. Directory entry matching tests
+	if (!isShippedFile("lib/runtime.json", ["lib"])) fail("lib must match lib/runtime.json");
+	if (isShippedFile("lib-other.ts", ["lib"])) fail("lib must NOT match lib-other.ts");
+	if (!isShippedFile("lib/runtime.json", ["lib/"])) fail("lib/ must match lib/runtime.json");
+	if (isShippedFile("lib-other.ts", ["lib/"])) fail("lib/ must NOT match lib-other.ts");
+	if (!isShippedFile("bro.ts", ["bro.ts"])) fail("bro.ts must match bro.ts");
+	if (isShippedFile("bro.ts.map", ["bro.ts"])) fail("bro.ts must NOT match bro.ts.map");
+
 	// 3. Shipped files derivation & rejection tests
 	try {
 		getShippedFiles({});
@@ -254,6 +264,26 @@ export const runSelftest = (fail = (msg) => { throw new Error(msg); }) => {
 			desc: "equal version with extra-runtime.json (fail-closed check)",
 			input: { published: "0.19.5", next: "0.19.5", changed: ["extra-runtime.json"], shippedFiles },
 			want: { ok: false, errorMatch: /shipped files changed \(extra-runtime\.json\)/ },
+		},
+		{
+			desc: "bare directory entry matches descendant",
+			input: { published: "0.19.5", next: "0.19.5", changed: ["lib/runtime.json"], shippedFiles: ["lib", "package.json", "package-lock.json"] },
+			want: { ok: false, errorMatch: /shipped files changed \(lib\/runtime\.json\)/ },
+		},
+		{
+			desc: "bare directory entry does not match sibling prefix name",
+			input: { published: "0.19.5", next: "0.19.5", changed: ["lib-other.ts"], shippedFiles: ["lib", "package.json", "package-lock.json"] },
+			want: { ok: true, action: "none" },
+		},
+		{
+			desc: "directory entry with trailing slash matches descendant",
+			input: { published: "0.19.5", next: "0.19.5", changed: ["dist/bundle.js"], shippedFiles: ["dist/", "package.json", "package-lock.json"] },
+			want: { ok: false, errorMatch: /shipped files changed \(dist\/bundle\.js\)/ },
+		},
+		{
+			desc: "directory entry with trailing slash does not match sibling prefix name",
+			input: { published: "0.19.5", next: "0.19.5", changed: ["dist-other.js"], shippedFiles: ["dist/", "package.json", "package-lock.json"] },
+			want: { ok: true, action: "none" },
 		},
 		{
 			desc: "equal version with docs/runtime.ts changed (ensures docs/ code is not excluded)",
