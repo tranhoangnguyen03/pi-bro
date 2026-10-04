@@ -1782,15 +1782,19 @@ await t.test("/bro preferences writes, deletes, and stays headless-safe", async 
 		assert.ok(modal, "the editor opened");
 		return { done }; // wrapped: returning the bare promise from an async function would wait for close
 	};
+	// Waits for every queued save/delete (the notice alone can be left over from an earlier action).
+	const written = async () => { await queuePreferencesWrite(async () => {}); await settle(); };
 	let closed = (await opened({ mode: "tui", hasUI: true, cwd: configDir, ui })).done;
 	modal.handleInput('\x13');
-	for (let i = 0; i < 50 && !/Saved/.test(text()); i++) await settle();
+	await written();
+	assert.match(text(), /Saved/);
 	assert.match(await readFile(file, "utf8"), /^## About me\n[\s\S]*No forced ones\.\n$/, "Ctrl+S saves the starter text");
 	modal.handleInput('\x0b');
-	for (let i = 0; i < 50 && !/Cleared/.test(text()); i++) await settle();
+	await written();
 	assert.equal(existsSync(file), false, "Ctrl+K deletes the file");
 	modal.handleInput('\x0b');
-	for (let i = 0; i < 50 && !/Cleared/.test(text()); i++) await settle();
+	await written();
+	assert.match(text(), /Cleared/);
 	assert.doesNotMatch(text(), /Clear failed/, "clearing a missing file succeeds");
 	modal.handleInput('\x1b');
 	await closed;
@@ -2043,7 +2047,8 @@ await t.test("Explain modal M switches mode for this explanation only", async ()
 
 			await writeFile(preferencesFile, `  ${"x".repeat(4_001)}  `);
 			closed = command.handler("text hello there", ctx);
-			await waitFor(/4,001 characters; keep it under 4,000/);
+			for (let i = 0; i < 200 && modal.kind !== "error"; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+			assert.match(modal.markdown.text, /4,001 characters; keep it under 4,000/, "checked unwrapped: the screen wraps long paths");
 			assert.equal((await loggedModes()).length, 10, "oversize preferences stop the request before any backend call");
 			modal.handleInput("\u001b");
 			await closed;
