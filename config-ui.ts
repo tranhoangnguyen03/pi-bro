@@ -21,10 +21,8 @@ import {
 	type BroSettings,
 	type Capability,
 	type ExternalBackend,
-	type ModelEffortPair,
 	CAPABILITIES,
 	CAPABILITY_LABELS,
-	DEFAULT_SHOW_TURNS,
 	EXTERNAL_BACKENDS,
 	applyEffortChange,
 	applyModelChange,
@@ -32,7 +30,6 @@ import {
 	capabilityOverride,
 	capabilityPair,
 	effortDisplay,
-	parseBackendOption,
 	resolveModelEffort,
 	withCapabilityOverride,
 } from "./settings.ts";

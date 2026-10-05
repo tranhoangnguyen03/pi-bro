@@ -3,7 +3,7 @@ import { hasBroCustomUi, broModalRows, canBroInsertIntoEditor, insertBroDesktopT
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { extname, join, resolve } from "node:path";
+import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Container, Editor, Input, Markdown, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type EditorTheme, type Focusable, type TUI } from "@earendil-works/pi-tui";
@@ -14,17 +14,13 @@ import {
 	agyFailureMessage,
 	agySelection,
 	advisorFlagErrorHint,
-	CLAUDE_EFFORTS,
-	GROK_EFFORTS,
-	CODEX_EFFORTS,
-	MUSE_EFFORTS,
 	execute as executeBackend,
 	parseBtwAgyLine,
 	type AgySelection,
 	type BackendProgress,
 	type BackendSelection,
 } from "./backend.ts";
-import { isRecord, errorMessage, withDoctor, fileError, unquote } from "./util.ts";
+import { isRecord, errorMessage, withDoctor, unquote } from "./util.ts";
 import {
 	type BackendName,
 	type BroSettings,
@@ -1257,17 +1253,6 @@ export function advisorAttemptLabel(details: AdvisorToolDetails): string {
 		: `awaiting first activity from ${backendLabel}`;
 	return `Bro advisor · running · ${Math.floor(details.elapsedMs / 1_000)}s · attempt ${details.attempt}/${details.of} · ${activityLabel}`;
 }
-
-const SHOW_TURNS_PRESETS = [1, 2, 3, 5, 8];
-
-function showTurnsValues(current: number): string[] {
-	return [...new Set([...SHOW_TURNS_PRESETS, current])].sort((a, b) => a - b).map(String);
-}
-
-// A resolved pair's display string: distinguishes a model that is genuinely fixed-effort from
-// one that simply isn't in the current catalog (both used to render as "fixed", which read as
-// falsely healthy for an unavailable model), and flags a stored effort that isn't one of the
-// resolved family's supported efforts instead of silently showing it as if it were valid.
 
 export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
 	if (!hasBroCustomUi(ctx)) {

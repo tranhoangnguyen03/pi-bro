@@ -43,22 +43,22 @@ export type BroSettings = {
 };
 
 export const CLAUDE_MODELS = [
-	{ id: "sonnet", label: "Claude Sonnet (default)" },
+	{ id: "sonnet", label: "Claude Sonnet" },
 	{ id: "opus", label: "Claude Opus" },
 ] as const;
 
 export const GROK_MODELS = [
-	{ id: "grok-4.7", label: "Grok 4.7 (default)" },
+	{ id: "grok-4.7", label: "Grok 4.7" },
 	{ id: "grok-4.7-build-fast", label: "Grok 4.7 Build Fast" },
 ] as const;
 
 export const CODEX_MODELS = [
-	{ id: "gpt-5.5", label: "GPT-5.5 (default)" },
+	{ id: "gpt-5.5", label: "GPT-5.5" },
 	{ id: "gpt-5.4", label: "GPT-5.4" },
 ] as const;
 
 export const MUSE_MODELS = [
-	{ id: "muse-spark-1.3-contributor", label: "Muse Spark 1.3 Contributor (default)" },
+	{ id: "muse-spark-1.3-contributor", label: "Muse Spark 1.3 Contributor" },
 	{ id: "muse-spark-1.3", label: "Muse Spark 1.3" },
 ] as const;
 
