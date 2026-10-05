@@ -37,6 +37,10 @@
   ],
   "files": [
     "bro.ts",
+    "util.ts",
+    "settings.ts",
+    "sources.ts",
+    "config-ui.ts",
     "ui-capabilities.ts",
     "backend.ts",
     "prompt.ts",

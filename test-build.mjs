@@ -24,3 +24,7 @@ execFileSync(process.execPath, [join(repoDir, 'node_modules', 'typescript', 'bin
 symlinkSync(join(repoDir, 'node_modules'), join(buildDir, 'node_modules'));
 export const bro = await import(pathToFileURL(join(buildDir, 'bro.js')).href);
 export const backend = await import(pathToFileURL(join(buildDir, 'backend.js')).href);
+export const settings = await import(pathToFileURL(join(buildDir, 'settings.js')).href);
+export const sources = await import(pathToFileURL(join(buildDir, 'sources.js')).href);
+export const configUi = await import(pathToFileURL(join(buildDir, 'config-ui.js')).href);
+export const util = await import(pathToFileURL(join(buildDir, 'util.js')).href);
