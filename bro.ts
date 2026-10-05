@@ -1,22 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { hasBroCustomUi, broModalRows, canBroInsertIntoEditor, insertBroDesktopText } from "./ui-capabilities.ts";
 import { createHash } from "node:crypto";
-import { lookup } from "node:dns/promises";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { request as httpRequest, type IncomingMessage } from "node:http";
-import { request as httpsRequest } from "node:https";
-import { BlockList, isIP } from "node:net";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { Container, Editor, Input, Markdown, SettingsList, SelectList, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type EditorTheme, type Focusable, type SelectItem, type SettingItem, type TUI } from "@earendil-works/pi-tui";
-import { convertToLlm, copyToClipboard, getAgentDir, getMarkdownTheme, getSelectListTheme, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { Defuddle } from "defuddle/node";
-import { parseHTML } from "linkedom";
-import mammoth from "mammoth";
+import { Container, Editor, Input, Markdown, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type EditorTheme, type Focusable, type TUI } from "@earendil-works/pi-tui";
+import { convertToLlm, copyToClipboard, getAgentDir, getMarkdownTheme, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { extractText } from "unpdf";
 import { BRO_MODES, DEFAULT_BRO_MODE, MAX_PREFERENCES_CHARS, STARTER_PREFERENCES, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, nextBroMode, parseBroMode, type BroMode } from "./prompt.ts";
 import {
 	agyFailureMessage,
@@ -32,38 +24,59 @@ import {
 	type BackendProgress,
 	type BackendSelection,
 } from "./backend.ts";
+import { isRecord, errorMessage, withDoctor, fileError, unquote } from "./util.ts";
+import {
+	type BackendName,
+	type BroSettings,
+	type Capability,
+	type ModelEffortPair,
+	type AgyModelFamily,
+	type AgyEffort,
+	EFFORTS,
+	CAPABILITIES,
+	CAPABILITY_LABELS,
+	capabilityBackend,
+	capabilityOverride,
+	capabilityPair,
+	ensureSettingsFile,
+	isClaudeEffort,
+	isGrokEffort,
+	isCodexEffort,
+	isMuseEffort,
+	readSettings,
+	resolveCapabilitySettings,
+	resolveModelEffort,
+	selectionForCapability,
+	selectionLabel,
+	settingsFile,
+	settingsPayload,
+	writeSettings,
+} from "./settings.ts";
+import {
+	type BroSource,
+	extractDocumentText,
+	extractWebPage,
+	isWorkspaceFile,
+	looksLikeWebUrl,
+	MAX_TEXT_LENGTH,
+} from "./sources.ts";
+import { createConfigModal, type Theme, type TuiLike } from "./config-ui.ts";
 
+export * from "./util.ts";
+export * from "./settings.ts";
+export * from "./sources.ts";
+export * from "./config-ui.ts";
 export { agyFailureMessage, agySelection, advisorFlagErrorHint, parseBtwAgyLine };
 
-const AGENT_DIR = getAgentDir();
-const ENV_MODEL = process.env.PI_BRO_MODEL?.trim();
-const DEFAULT_MODEL = ENV_MODEL || "gemini-3.7-flash";
-const PREFERENCES_FILE = join(AGENT_DIR, "bro-preferences.md");
+const PREFERENCES_FILE = join(getAgentDir(), "bro-preferences.md");
 // Larger files are rejected before reading, even by the editor; the prompt limit is MAX_PREFERENCES_CHARS.
 const MAX_PREFERENCES_FILE_BYTES = 64 * 1024;
-const SETTINGS_FILE = join(AGENT_DIR, "bro-settings.json");
 const LOADING_TEXT = "Simplifying for my bro…";
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_WEB_BYTES = 5 * 1024 * 1024;
-const MAX_WEB_ELEMENTS = 100_000;
-const MAX_WEB_REDIRECTS = 5;
-const WEB_TIMEOUT_MS = 25_000;
-const MAX_TEXT_LENGTH = 100_000;
 const BTW_CONTEXT_TURNS = 8;
 const BTW_CONTEXT_MAX = 40_000;
-const DEFAULT_SHOW_TURNS = 1;
 const SHOW_HTML_FILE_PATTERN = /^bro-show-[0-9a-f]{8}\.html$/;
-const TEXT_EXTENSIONS = new Set([".md", ".markdown", ".txt"]);
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-type Theme = ExtensionCommandContext["ui"]["theme"];
-type TuiLike = {
-	readonly mode: "regular" | "fullscreen";
-	readonly terminal?: { rows?: number; write?: (data: string) => void };
-	requestRender(): void;
-};
 type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
-type BroSource = { text: string; label?: string };
 // `mode` is the built-in explain mode that produced the text; absent for Show and Doctor.
 // `preferences` records whether bro-preferences.md shaped this result; like `mode`, it belongs to the result.
 type BroResult = { source: BroSource; text: string; model?: string; mode?: BroMode; preferences?: boolean };
@@ -73,55 +86,6 @@ type BtwTurn = { question: string; answer: string };
 // thread; `sessionFull` and `sessionPreferences` are the access mode and preferences the native
 // session last ran with. `preferences` records whether the latest turn used them (header tag).
 type BtwThread = { turns: BtwTurn[]; conversationId?: string; full: boolean; backend?: BackendName; model?: string; preferences?: boolean; context?: string; sessionFull?: boolean; sessionPreferences?: string };
-const EFFORTS = ["default", "low", "medium", "high"] as const;
-const BACKENDS = ["agy", "claude", "grok", "codex", "muse"] as const;
-type BackendName = (typeof BACKENDS)[number];
-type BroEffort = "default" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-type AgyEffort = Exclude<BroEffort, "default" | "minimal" | "xhigh" | "max">;
-type ClaudeEffort = (typeof CLAUDE_EFFORTS)[number];
-export { GROK_EFFORTS, CODEX_EFFORTS, MUSE_EFFORTS };
-type GrokEffort = (typeof GROK_EFFORTS)[number];
-type CodexEffort = (typeof CODEX_EFFORTS)[number];
-type MuseEffort = (typeof MUSE_EFFORTS)[number];
-// "advisor" is a real capability (command, Agy invocation, Doctor check) like the other three;
-// see docs/plans/2026-09-19-bro-advisor-design.md. All four share one model/effort resolution,
-// override, and Doctor-check path via this single list -- there is no configuration-only tier.
-const CAPABILITIES = ["explain", "show", "btw", "advisor"] as const;
-type Capability = (typeof CAPABILITIES)[number];
-const CAPABILITY_LABELS: Record<Capability, string> = { explain: "Explain", show: "Show", btw: "Btw", advisor: "Advisor" };
-type ModelEffortPair = { backend?: BackendName; model: string; effort: BroEffort };
-type BroSettings = {
-	backend?: BackendName;
-	model: string;
-	effort: BroEffort;
-	mode: BroMode;
-	showTurns: number;
-	overrides: Partial<Record<Capability, ModelEffortPair>>;
-};
-// BackendSelection (shared execution routing selection) lives in backend.ts; the backend
-// field stays optional there so every legacy backend-less pair keeps meaning Agy.
-export const CLAUDE_MODELS = [
-	{ id: "sonnet", label: "Claude Sonnet" },
-	{ id: "opus", label: "Claude Opus" },
-] as const;
-export const GROK_MODELS = [
-	{ id: "grok-4.7", label: "Grok 4.7" },
-	{ id: "grok-4.7-build-fast", label: "Grok 4.7 Build Fast" },
-] as const;
-export const CODEX_MODELS = [
-	{ id: "gpt-5.5", label: "GPT-5.5" },
-	{ id: "gpt-5.4", label: "GPT-5.4" },
-] as const;
-export const MUSE_MODELS = [
-	{ id: "muse-spark-1.3-contributor", label: "Muse Spark 1.3 Contributor" },
-	{ id: "muse-spark-1.3", label: "Muse Spark 1.3" },
-] as const;
-type AgyModelFamily = {
-	id: string;
-	label: string;
-	efforts: AgyEffort[];
-	variants: Array<{ id: string; effort?: AgyEffort }>;
-};
 export function wheelDelta(data: string): number {
 	const match = /^\x1b\[<(\d+);\d+;\d+[Mm]$/.exec(data);
 	if (!match) return 0;
@@ -152,652 +116,6 @@ const COMMANDS = [
 ];
 const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-function withDoctor(error: unknown): string {
-	const message = errorMessage(error);
-	return message.includes("/bro doctor") ? message : `${message}\n\nRun \`/bro doctor\` for setup help.`;
-}
-
-function fileError(path: string, error: unknown): Error {
-	const code = (error as NodeJS.ErrnoException).code;
-	if (code === "ENOENT") return new Error(`File not found: ${path}`);
-	if (code === "EACCES" || code === "EPERM") return new Error(`File is not readable: ${path}`);
-	return new Error(`Could not read ${path}: ${errorMessage(error)}`);
-}
-
-function unquote(value: string): string {
-	if (value.length >= 2 && ((value[0] === '"' && value.at(-1) === '"') || (value[0] === "'" && value.at(-1) === "'"))) {
-		return value.slice(1, -1);
-	}
-	return value;
-}
-
-export async function extractDocumentText(input: string, cwd: string, signal?: AbortSignal): Promise<string> {
-	const requested = unquote(input.trim());
-	if (!requested) throw new Error("Use /bro file <path>.");
-
-	let root: string;
-	let path: string;
-	try {
-		root = await realpath(cwd);
-		path = await realpath(resolve(cwd, requested));
-	} catch (error) {
-		throw fileError(requested, error);
-	}
-
-	const fromRoot = relative(root, path);
-	if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-		throw new Error("Bro can read only files inside the current workspace.");
-	}
-
-	let info;
-	try {
-		info = await stat(path);
-	} catch (error) {
-		throw fileError(requested, error);
-	}
-	if (!info.isFile()) throw new Error(`Not a regular file: ${requested}`);
-	if (info.size > MAX_FILE_BYTES) throw new Error("File is larger than Bro's 10 MiB limit.");
-
-	let buffer: Buffer;
-	try {
-		buffer = await readFile(path, { signal });
-	} catch (error) {
-		if (signal?.aborted) throw new Error("Canceled.");
-		throw fileError(requested, error);
-	}
-	if (buffer.byteLength > MAX_FILE_BYTES) throw new Error("File is larger than Bro's 10 MiB limit.");
-	if (signal?.aborted) throw new Error("Canceled.");
-
-	const extension = extname(path).toLowerCase();
-	let text: string;
-	try {
-		if (TEXT_EXTENSIONS.has(extension)) {
-			text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
-		} else if (extension === ".pdf") {
-			text = (await extractText(new Uint8Array(buffer), { mergePages: true })).text;
-		} else if (extension === ".docx") {
-			text = (await mammoth.extractRawText({ buffer })).value;
-		} else {
-			throw new Error("Unsupported file type. Use .md, .markdown, .txt, .pdf, or .docx.");
-		}
-	} catch (error) {
-		if (error instanceof Error && error.message.startsWith("Unsupported file type.")) throw error;
-		throw new Error(`Could not extract text from ${requested}: ${errorMessage(error)}`);
-	}
-
-	text = text.trim();
-	if (!text) throw new Error("No readable text found. Scanned PDFs need OCR, which Bro does not support.");
-	if (text.length > MAX_TEXT_LENGTH) throw new Error("Extracted text is longer than Bro's 100,000-character limit.");
-	return text;
-}
-
-const SNIFFABLE_FILE_EXTENSIONS = new Set([...TEXT_EXTENSIONS, ".pdf", ".docx"]);
-
-async function isWorkspaceFile(input: string, cwd: string): Promise<boolean> {
-	// ponytail: duplicates extractDocumentText's workspace guard rather than sharing its error semantics.
-	try {
-		const path = await realpath(resolve(cwd, input));
-		const fromRoot = relative(await realpath(cwd), path);
-		if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-			return false;
-		}
-		const info = await stat(path);
-		return info.isFile() && SNIFFABLE_FILE_EXTENSIONS.has(extname(path).toLowerCase());
-	} catch {
-		return false;
-	}
-}
-
-const NON_PUBLIC_ADDRESSES = new BlockList();
-for (const [network, prefix] of [
-	["0.0.0.0", 8],
-	["10.0.0.0", 8],
-	["100.64.0.0", 10],
-	["127.0.0.0", 8],
-	["169.254.0.0", 16],
-	["172.16.0.0", 12],
-	["192.0.0.0", 24],
-	["192.0.2.0", 24],
-	["192.31.196.0", 24],
-	["192.52.193.0", 24],
-	["192.88.99.0", 24],
-	["192.168.0.0", 16],
-	["192.175.48.0", 24],
-	["198.18.0.0", 15],
-	["198.51.100.0", 24],
-	["203.0.113.0", 24],
-	["224.0.0.0", 4],
-	["240.0.0.0", 4],
-] as const) {
-	NON_PUBLIC_ADDRESSES.addSubnet(network, prefix, "ipv4");
-}
-for (const [network, prefix] of [
-	["::", 128],
-	["::1", 128],
-	["64:ff9b::", 96],
-	["64:ff9b:1::", 48],
-	["100::", 64],
-	["2001::", 23],
-	["2001:db8::", 32],
-	["2002::", 16],
-	["3fff::", 20],
-	["5f00::", 16],
-	["fc00::", 7],
-	["fe80::", 10],
-	["ff00::", 8],
-] as const) {
-	NON_PUBLIC_ADDRESSES.addSubnet(network, prefix, "ipv6");
-}
-
-export function isPublicWebAddress(address: string): boolean {
-	const family = isIP(address);
-	return family === 4
-		? !NON_PUBLIC_ADDRESSES.check(address, "ipv4")
-		: family === 6
-			? !NON_PUBLIC_ADDRESSES.check(address, "ipv6")
-			: false;
-}
-
-export function parseWebUrl(input: string): URL {
-	const requested = unquote(input.trim());
-	if (!requested) throw new Error("Use /bro url <url>.");
-
-	let url: URL;
-	try {
-		url = new URL(requested);
-	} catch {
-		throw new Error("That is not a valid URL. Use /bro url https://example.com/article.");
-	}
-	if (url.protocol !== "http:" && url.protocol !== "https:") {
-		throw new Error("Bro can read only public HTTP or HTTPS webpages.");
-	}
-	if (url.username || url.password) {
-		throw new Error("Bro does not accept URLs containing usernames or passwords.");
-	}
-	url.hash = "";
-	return url;
-}
-
-export function looksLikeWebUrl(input: string): boolean {
-	// Structurally http(s) only: credential or syntax problems must surface as url errors, not text leaks.
-	let url: URL;
-	try {
-		url = new URL(input);
-	} catch {
-		return false;
-	}
-	return url.protocol === "http:" || url.protocol === "https:";
-}
-
-export function parseWebRedirect(current: URL, location: string): URL {
-	const next = parseWebUrl(new URL(location, current).href);
-	if (current.protocol === "https:" && next.protocol !== "https:") {
-		throw new Error("Bro refused an insecure HTTPS-to-HTTP redirect.");
-	}
-	return next;
-}
-
-function headerValue(value: string | string[] | undefined): string {
-	return Array.isArray(value) ? value[0] ?? "" : value ?? "";
-}
-
-async function resolvePublicAddress(hostname: string): Promise<{ address: string; family: 4 | 6 }> {
-	const host = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
-	let addresses: Array<{ address: string; family: number }>;
-	try {
-		addresses = await lookup(host, { all: true, verbatim: true });
-	} catch (error) {
-		throw new Error(`Could not resolve webpage host: ${errorMessage(error)}`);
-	}
-	if (!addresses.length) throw new Error("The webpage host has no network address.");
-	if (addresses.some((item) => !isPublicWebAddress(item.address))) {
-		throw new Error("Bro cannot connect to local, private, or reserved network addresses.");
-	}
-	return { address: addresses[0].address, family: addresses[0].family === 6 ? 6 : 4 };
-}
-
-function requestWebPage(url: URL, address: { address: string; family: 4 | 6 }, signal: AbortSignal): Promise<IncomingMessage> {
-	return new Promise((resolveResponse, rejectResponse) => {
-		const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
-			url,
-			{
-				method: "GET",
-				signal,
-				headers: {
-					Accept: "text/html,application/xhtml+xml",
-					"Accept-Encoding": "identity",
-					"User-Agent": "pi-bro URL reader (+https://github.com/tranhoangnguyen03/pi-bro)",
-				},
-				lookup: (_hostname, options, callback) => {
-					if (options.all) callback(null, [address]);
-					else callback(null, address.address, address.family);
-				},
-			},
-			resolveResponse,
-		);
-		request.once("error", rejectResponse);
-		request.end();
-	});
-}
-
-async function readWebBody(response: IncomingMessage): Promise<Buffer> {
-	const contentEncoding = headerValue(response.headers["content-encoding"]).trim().toLowerCase();
-	if (contentEncoding && contentEncoding !== "identity") {
-		response.destroy();
-		throw new Error(`Bro cannot read this page's ${contentEncoding} response encoding.`);
-	}
-
-	const contentLength = Number.parseInt(headerValue(response.headers["content-length"]), 10);
-	if (Number.isFinite(contentLength) && contentLength > MAX_WEB_BYTES) {
-		response.destroy();
-		throw new Error("Webpage is larger than Bro's 5 MiB download limit.");
-	}
-
-	const chunks: Buffer[] = [];
-	let size = 0;
-	try {
-		for await (const chunk of response) {
-			const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-			size += buffer.byteLength;
-			if (size > MAX_WEB_BYTES) throw new Error("Webpage is larger than Bro's 5 MiB download limit.");
-			chunks.push(buffer);
-		}
-	} catch (error) {
-		response.destroy();
-		throw error;
-	}
-	return Buffer.concat(chunks, size);
-}
-
-function decodeWebHtml(buffer: Buffer, contentType: string): string {
-	const headerCharset = /charset\s*=\s*["']?([^\s;"']+)/i.exec(contentType)?.[1];
-	const head = new TextDecoder("latin1").decode(buffer.subarray(0, 2048));
-	const metaCharset = /<meta[^>]+charset\s*=\s*["']?([^\s;"'>]+)/i.exec(head)?.[1]
-		?? /<meta[^>]+content\s*=\s*["'][^"']*charset=([^\s;"']+)/i.exec(head)?.[1];
-	const charset = headerCharset ?? metaCharset ?? "utf-8";
-	try {
-		return new TextDecoder(charset).decode(buffer);
-	} catch {
-		throw new Error(`Bro does not support this page's ${charset} character encoding.`);
-	}
-}
-
-function assertWebElementLimit(html: string): void {
-	let count = 0;
-	for (let index = 0; index < html.length - 1; index++) {
-		if (html.charCodeAt(index) !== 60) continue;
-		const next = html.charCodeAt(index + 1) | 32;
-		if (next >= 97 && next <= 122 && ++count > MAX_WEB_ELEMENTS) {
-			throw new Error("Webpage is too complex for Bro to read safely.");
-		}
-	}
-}
-
-async function fetchPublicHtml(startUrl: URL, signal: AbortSignal): Promise<{ html: string; url: URL }> {
-	let url = startUrl;
-	const visited = new Set<string>();
-
-	for (let redirects = 0; ; redirects++) {
-		if (visited.has(url.href)) throw new Error("Webpage redirect loop detected.");
-		visited.add(url.href);
-		const address = await resolvePublicAddress(url.hostname);
-		let response: IncomingMessage;
-		try {
-			response = await requestWebPage(url, address, signal);
-		} catch (error) {
-			throw new Error(`Could not fetch webpage: ${errorMessage(error)}`);
-		}
-		const status = response.statusCode ?? 0;
-
-		if (REDIRECT_STATUSES.has(status)) {
-			response.destroy();
-			if (redirects >= MAX_WEB_REDIRECTS) throw new Error("Webpage redirected too many times.");
-			const location = headerValue(response.headers.location);
-			if (!location) throw new Error(`Webpage returned HTTP ${status} without a redirect location.`);
-			url = parseWebRedirect(url, location);
-			continue;
-		}
-
-		if (status < 200 || status >= 300) {
-			response.destroy();
-			if (status === 401 || status === 403) {
-				throw new Error(`Webpage returned HTTP ${status}. It may require a login or block automated readers.`);
-			}
-			if (status === 429) throw new Error("Webpage returned HTTP 429 and is limiting automated requests.");
-			throw new Error(`Webpage returned HTTP ${status}.`);
-		}
-
-		const contentType = headerValue(response.headers["content-type"]);
-		const mime = contentType.split(";", 1)[0].trim().toLowerCase();
-		if (mime !== "text/html" && mime !== "application/xhtml+xml") {
-			response.destroy();
-			throw new Error(`Unsupported webpage content type: ${mime || "missing"}.`);
-		}
-
-		const html = decodeWebHtml(await readWebBody(response), contentType);
-		assertWebElementLimit(html);
-		return { html, url };
-	}
-}
-
-export async function extractWebHtml(html: string, url: string): Promise<BroSource> {
-	assertWebElementLimit(html);
-	const parsedUrl = parseWebUrl(url);
-	const { document } = parseHTML(html);
-	const result = await Defuddle(document, parsedUrl.href, {
-		markdown: true,
-		removeImages: true,
-		includeReplies: false,
-		useAsync: false,
-	});
-	const text = (result.contentMarkdown || result.content || "").trim();
-	if (!text) {
-		throw new Error("Bro found no readable page content. The page may require JavaScript, a login, or block automated readers.");
-	}
-	if (text.length > MAX_TEXT_LENGTH) {
-		throw new Error("Extracted webpage text is longer than Bro's 100,000-character limit.");
-	}
-	const title = result.title
-		? stripVTControlCharacters(result.title).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200)
-		: undefined;
-	return { text, label: [parsedUrl.hostname, title].filter(Boolean).join(" · ") };
-}
-
-export async function extractWebPage(input: string, signal?: AbortSignal): Promise<BroSource> {
-	const timeout = AbortSignal.timeout(WEB_TIMEOUT_MS);
-	const combinedSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-	try {
-		const fetched = await fetchPublicHtml(parseWebUrl(input), combinedSignal);
-		return await extractWebHtml(fetched.html, fetched.url.href);
-	} catch (error) {
-		if (signal?.aborted) throw new Error("Canceled.");
-		if (timeout.aborted) throw new Error("Webpage took longer than 25 seconds to respond.");
-		throw error;
-	}
-}
-
-function parseBackend(value: unknown, context: string): BackendName {
-	if (typeof value !== "string" || !BACKENDS.some((backend) => backend === value)) {
-		throw new Error(`${context} backend must be "agy", "claude", "grok", "codex", or "muse".`);
-	}
-	return value as BackendName;
-}
-
-function isAgyEffort(effort: unknown): effort is AgyEffort | "default" {
-	return EFFORTS.some((item) => item === effort);
-}
-
-function isClaudeEffort(effort: unknown): effort is ClaudeEffort | "default" {
-	return effort === "default" || CLAUDE_EFFORTS.some((item) => item === effort);
-}
-
-function isGrokEffort(effort: unknown): effort is GrokEffort | "default" {
-	return effort === "default" || GROK_EFFORTS.some((item) => item === effort);
-}
-
-function isCodexEffort(effort: unknown): effort is CodexEffort | "default" {
-	return effort === "default" || CODEX_EFFORTS.some((item) => item === effort);
-}
-
-function isMuseEffort(effort: unknown): effort is MuseEffort | "default" {
-	return effort === "default" || MUSE_EFFORTS.some((item) => item === effort);
-}
-
-function parseModelEffortPair(value: unknown, context: string): ModelEffortPair {
-	if (!isRecord(value) || typeof value.model !== "string" || !value.model.trim()) {
-		throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", or "high".`);
-	}
-	const backend = value.backend === undefined ? undefined : parseBackend(value.backend, context);
-	if (backend === "claude") {
-		if (!isClaudeEffort(value.effort)) {
-			throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", "high", "xhigh", or "max".`);
-		}
-		return { backend, model: value.model.trim(), effort: value.effort };
-	}
-	if (backend === "grok") {
-		if (!isGrokEffort(value.effort)) {
-			throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", "high", or "xhigh".`);
-		}
-		return { backend, model: value.model.trim(), effort: value.effort };
-	}
-	if (backend === "codex") {
-		if (!isCodexEffort(value.effort)) {
-			throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", "high", or "xhigh".`);
-		}
-		return { backend, model: value.model.trim(), effort: value.effort };
-	}
-	if (backend === "muse") {
-		if (!isMuseEffort(value.effort)) {
-			throw new Error(`${context} must contain a model and effort set to "default", "minimal", "low", "medium", "high", "xhigh", or "max".`);
-		}
-		return { backend, model: value.model.trim(), effort: value.effort };
-	}
-	if (!isAgyEffort(value.effort)) {
-		throw new Error(`${context} must contain a model and effort set to "default", "low", "medium", or "high".`);
-	}
-	const pair: ModelEffortPair = { model: value.model.trim(), effort: value.effort };
-	if (backend !== undefined) pair.backend = backend;
-	return pair;
-}
-
-function parseOverrides(value: unknown): Partial<Record<Capability, ModelEffortPair>> {
-	if (value === undefined) return {};
-	if (!isRecord(value)) throw new Error("Settings overrides must be an object.");
-	const overrides: Partial<Record<Capability, ModelEffortPair>> = {};
-	for (const capability of CAPABILITIES) {
-		if (value[capability] === undefined) continue;
-		overrides[capability] = parseModelEffortPair(value[capability], `Settings overrides.${capability}`);
-	}
-	return overrides;
-}
-
-export function parseBroSettings(value: unknown): BroSettings {
-	if (!isRecord(value)) {
-		throw new Error('Settings must contain a model and effort set to "default", "low", "medium", or "high".');
-	}
-	// v2 disk shape: { version: 2, default: { backend, model, effort }, mode, showTurns, overrides }.
-	// Reads never rewrite: a legacy flat file keeps parsing into backend-less (Agy) settings.
-	if (value.version !== undefined && value.version !== 2) throw new Error(`Unsupported settings version ${JSON.stringify(value.version)}.`);
-	if (value.version === 2 && value.default === undefined) throw new Error("Settings version 2 requires default.");
-	if (value.default !== undefined) {
-		if (!isRecord(value.default)) throw new Error("Settings default must contain a model and effort.");
-		if (value.version !== undefined && value.version !== 2) {
-			throw new Error(`Unsupported settings version ${JSON.stringify(value.version)}.`);
-		}
-		const pair = parseModelEffortPair(value.default, "Settings default");
-		const mode = value.mode === undefined ? DEFAULT_BRO_MODE : parseBroMode(value.mode);
-		if (!mode) throw new Error('Settings mode must be "brief", "balanced", or "faithful".');
-		const showTurns = value.showTurns === undefined ? DEFAULT_SHOW_TURNS : value.showTurns;
-		if (typeof showTurns !== "number" || !Number.isInteger(showTurns) || showTurns < 1) {
-			throw new Error("Settings showTurns must be a positive whole number of turns.");
-		}
-		const overrides = parseOverrides(value.overrides);
-		const settings: BroSettings = { model: pair.model, effort: pair.effort, mode, showTurns, overrides };
-		if (pair.backend !== undefined) settings.backend = pair.backend;
-		return settings;
-	}
-	if (typeof value.model !== "string" || !value.model.trim()) {
-		throw new Error('Settings must contain a model and effort set to "default", "low", "medium", or "high".');
-	}
-	const backend = value.backend === undefined ? undefined : parseBackend(value.backend, "Settings");
-	const effortOk =
-		backend === "claude"
-			? isClaudeEffort(value.effort)
-			: backend === "grok"
-				? isGrokEffort(value.effort)
-				: backend === "codex"
-					? isCodexEffort(value.effort)
-					: backend === "muse"
-						? isMuseEffort(value.effort)
-						: isAgyEffort(value.effort);
-	if (!effortOk) {
-		throw new Error(
-			backend === "claude"
-				? 'Settings must contain a model and effort set to "default", "low", "medium", "high", "xhigh", or "max".'
-				: backend === "grok" || backend === "codex"
-					? 'Settings must contain a model and effort set to "default", "low", "medium", "high", or "xhigh".'
-					: backend === "muse"
-						? 'Settings must contain a model and effort set to "default", "minimal", "low", "medium", "high", "xhigh", or "max".'
-						: 'Settings must contain a model and effort set to "default", "low", "medium", or "high".',
-		);
-	}
-	const mode = value.mode === undefined ? DEFAULT_BRO_MODE : parseBroMode(value.mode);
-	if (!mode) throw new Error('Settings mode must be "brief", "balanced", or "faithful".');
-	const showTurns = value.showTurns === undefined ? DEFAULT_SHOW_TURNS : value.showTurns;
-	if (typeof showTurns !== "number" || !Number.isInteger(showTurns) || showTurns < 1) {
-		throw new Error("Settings showTurns must be a positive whole number of turns.");
-	}
-	const overrides = parseOverrides(value.overrides);
-	const settings: BroSettings = {
-		model: value.model.trim(),
-		effort: value.effort as BroSettings["effort"],
-		mode,
-		showTurns,
-		overrides,
-	};
-	if (backend !== undefined) settings.backend = backend;
-	return settings;
-}
-
-function capabilityOverride(settings: BroSettings, capability: Capability): ModelEffortPair | undefined {
-	return settings.overrides[capability];
-}
-
-function capabilityPair(settings: BroSettings, capability: Capability): ModelEffortPair {
-	return capabilityOverride(settings, capability) ?? { ...(settings.backend ? { backend: settings.backend } : {}), model: settings.model, effort: settings.effort };
-}
-
-// An override always pins both model and effort together (never just one), so a capability's
-// setting is either fully inherited or fully its own — no partial-inheritance edge cases.
-//
-// An override is cleared ONLY by an explicit "Default" selection (pair === undefined), never
-// automatically because it happens to match the shared default: a user who deliberately pins a
-// capability to the model that currently IS the shared default must keep that pin — unchanged —
-// if the shared default is later changed to something else. Silently dropping an override that
-// merely coincides with the default would make that pin impossible to express.
-export function withCapabilityOverride(
-	settings: BroSettings,
-	capability: Capability,
-	pair: ModelEffortPair | undefined,
-): BroSettings {
-	const overrides = { ...settings.overrides };
-	if (!pair) delete overrides[capability];
-	else overrides[capability] = pair;
-	return { ...settings, overrides };
-}
-
-export function resolveModelEffort(
-	pair: ModelEffortPair,
-	families: AgyModelFamily[],
-): { pair: ModelEffortPair; family?: AgyModelFamily } {
-	// Claude/Grok/Codex/Muse selections never resolve through the Agy catalog; they pass through untouched.
-	if (pair.backend === "claude" || pair.backend === "grok" || pair.backend === "codex" || pair.backend === "muse") return { pair };
-	const family = families.find((item) => item.id === pair.model || item.variants.some((variant) => variant.id === pair.model));
-	if (!family) return { pair };
-	const variant = family.variants.find((item) => item.id === pair.model);
-	const resolved: ModelEffortPair = {
-		model: family.id,
-		effort: pair.effort === "default" && variant?.effort ? variant.effort : pair.effort,
-	};
-	if (pair.backend !== undefined) resolved.backend = pair.backend;
-	return { family, pair: resolved };
-}
-
-// A capability's effective backend: an explicit override is a complete selection, so a
-// backend-less override still means Agy (all legacy stays Agy) and never inherits the
-// shared default's backend. Only a capability without an override inherits the default.
-export function capabilityBackend(settings: BroSettings, capability: Capability): BackendName {
-	const override = settings.overrides[capability];
-	if (override) return override.backend ?? "agy";
-	return settings.backend ?? "agy";
-}
-
-// Sonnet/opus aliases resolve case-insensitively; any other non-empty string passes
-// through untouched as an explicit user-entered model ID.
-export function resolveClaudeModel(input: string): string {
-	const trimmed = input.trim();
-	if (!trimmed) throw new Error("Claude model must be a non-empty model ID (sonnet, opus, or an explicit model ID).");
-	const alias = CLAUDE_MODELS.find((model) => model.id === trimmed.toLowerCase());
-	return alias ? alias.id : trimmed;
-}
-
-// Grok seeds resolve to themselves; any other non-empty string passes through
-// untouched as an explicit user-entered model ID (installed `grok models` confirms).
-export function resolveGrokModel(input: string): string {
-	const trimmed = input.trim();
-	if (!trimmed) throw new Error("Grok model must be a non-empty model ID (grok-4.7, grok-4.7-build-fast, or an explicit model ID).");
-	return trimmed;
-}
-
-// Codex seeds resolve to themselves; any other non-empty string passes through
-// untouched as an explicit user-entered model ID.
-export function resolveCodexModel(input: string): string {
-	const trimmed = input.trim();
-	if (!trimmed) throw new Error("Codex model must be a non-empty model ID (gpt-5.5, gpt-5.4, or an explicit model ID).");
-	return trimmed;
-}
-
-// Muse seeds resolve to themselves; any other non-empty string passes through
-// untouched as an explicit user-entered model ID.
-export function resolveMuseModel(input: string): string {
-	const trimmed = input.trim();
-	if (!trimmed) throw new Error("Muse model must be a non-empty model ID (muse-spark-1.3-contributor, muse-spark-1.3, or an explicit model ID).");
-	return trimmed;
-}
-
-// Routes one capability's whole pair to its backend execution selection. Agy keeps the
-// existing model/effort split; Claude/Grok/Codex/Muse carry the model plus an optional effort
-// ("default" means the CLI's own default and is omitted). Throws for an effort the
-// resolved backend does not support instead of silently sending a mismatched pair.
-export function selectionForCapability(settings: BroSettings, capability: Capability): BackendSelection {
-	const pair = capabilityPair(settings, capability);
-	const backend = capabilityBackend(settings, capability);
-	if (backend === "claude" || backend === "grok" || backend === "codex" || backend === "muse") {
-		const valid =
-			backend === "claude"
-				? isClaudeEffort(pair.effort)
-				: backend === "grok"
-					? isGrokEffort(pair.effort)
-					: backend === "codex"
-						? isCodexEffort(pair.effort)
-						: isMuseEffort(pair.effort);
-		if (!valid) {
-			const label = backend === "claude" ? "Claude" : backend === "grok" ? "Grok" : backend === "codex" ? "Codex" : "Muse";
-			throw new Error(`\`${pair.effort}\` is not supported on the ${label} backend. Run \`/bro config\` to fix this.`);
-		}
-		return (
-			pair.effort === "default"
-				? { backend, model: pair.model }
-				: { backend, model: pair.model, effort: pair.effort }
-		) as BackendSelection;
-	}
-	if (!isAgyEffort(pair.effort)) {
-		throw new Error(`\`${pair.effort}\` is not supported on the Agy backend. Run \`/bro config\` to fix this.`);
-	}
-	return agySelection({ model: pair.model, effort: pair.effort });
-}
-
-// The modal label for the exact selection a request runs with: model plus effort, where an
-// omitted effort (the model's own default) reads simply "default".
-export function selectionLabel(selection: BackendSelection): string {
-	return `${selection.model} · ${selection.effort ?? "default"}`;
-}
-
-function resolveCapabilitySettings(
-	settings: BroSettings,
-	capability: Capability,
-	families: AgyModelFamily[],
-): { pair: ModelEffortPair; family?: AgyModelFamily } {
-	return resolveModelEffort(capabilityPair(settings, capability), families);
-}
 
 // The steering brief is stored as a session `custom` entry — extension state that never
 // participates in LLM context (see docs/plans/2026-09-19-bro-advisor-design.md). Writes go
@@ -830,52 +148,6 @@ export function resolveAdvisorState(branch: readonly SessionEntry[]): AdvisorSta
 	return { steering };
 }
 
-async function ensureSettingsFile(): Promise<void> {
-	await mkdir(AGENT_DIR, { recursive: true });
-	try {
-		await writeFile(
-			SETTINGS_FILE,
-			`${JSON.stringify({ model: DEFAULT_MODEL, effort: ENV_MODEL ? "default" : "low", mode: DEFAULT_BRO_MODE, showTurns: DEFAULT_SHOW_TURNS }, null, 2)}\n`,
-			{ encoding: "utf8", flag: "wx", mode: 0o600 },
-		);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-	}
-}
-
-async function readSettings(): Promise<BroSettings> {
-	await ensureSettingsFile();
-	try {
-		return parseBroSettings(JSON.parse(await readFile(SETTINGS_FILE, "utf8")));
-	} catch (error) {
-		if (error instanceof SyntaxError) throw new Error(`${SETTINGS_FILE} is not valid JSON.`);
-		if (error instanceof Error) throw new Error(`${SETTINGS_FILE}: ${error.message}`);
-		throw error;
-	}
-}
-
-// Exported so persistence stays testable without touching the filesystem. This only ever omits
-// the `overrides` key itself when there are no overrides at all — it does NOT deduplicate or drop
-// any individual override that happens to match the shared default; see withCapabilityOverride
-// for why an explicit override is always kept until the user clears it back to "Default".
-export function settingsPayload(settings: BroSettings): Record<string, unknown> {
-	const overrides: Record<string, unknown> = {};
-	for (const [capability, pair] of Object.entries(settings.overrides)) {
-		if (pair) overrides[capability] = { backend: pair.backend ?? "agy", model: pair.model, effort: pair.effort };
-	}
-	return {
-		version: 2,
-		default: { backend: settings.backend ?? "agy", model: settings.model, effort: settings.effort },
-		mode: settings.mode,
-		showTurns: settings.showTurns,
-		...(Object.keys(overrides).length ? { overrides } : {}),
-	};
-}
-
-async function writeSettings(settings: BroSettings): Promise<void> {
-	// ponytail: last writer wins across concurrent Pi processes; add locking only if that becomes a common workflow.
-	await writeFile(SETTINGS_FILE, `${JSON.stringify(settingsPayload(settings), null, 2)}\n`, "utf8");
-}
 
 export function formatAgyUsage(value: unknown): string {
 	if (!isRecord(value) || value.status !== "SUCCESS" || typeof value.response !== "string") {
@@ -977,25 +249,21 @@ function resolveCatalogSettings(
 	return { family: resolved.family, settings: { ...settings, ...resolved.pair } };
 }
 
-function preferredEffort(family: AgyModelFamily): BroEffort {
-	return family.efforts.includes("low") ? "low" : (family.efforts[0] ?? "default");
-}
-
-async function checkClaudeVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+async function checkCliVersion(pi: ExtensionAPI, binary: string, displayName: string, signal: AbortSignal): Promise<string> {
 	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 	try {
-		const result = await pi.exec("claude", ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
+		const result = await pi.exec(binary, ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
 		if (signal.aborted) throw new Error("Canceled.");
 		if (result.killed || result.code !== 0) {
 			const detail = result.stderr.trim() || result.stdout.trim();
 			throw new Error(
 				detail
-					? `Claude could not start: ${detail}\n\nRun \`/bro doctor\` for setup help.`
-					: "Claude could not start. Make sure Claude is installed and on PATH, then run `/bro doctor`.",
+					? `${displayName} could not start: ${detail}\n\nRun \`/bro doctor\` for setup help.`
+					: `${displayName} could not start. Make sure ${displayName} is installed and on PATH, then run \`/bro doctor\`.`,
 			);
 		}
 		const version = result.stdout.trim() || result.stderr.trim();
-		if (!version) throw new Error("Claude returned no version information. Update Claude, then run `/bro doctor` again.");
+		if (!version) throw new Error(`${displayName} returned no version information. Update ${displayName}, then run \`/bro doctor\` again.`);
 		return version;
 	} finally {
 		await rm(runDirectory, { recursive: true, force: true });
@@ -1022,48 +290,6 @@ async function checkClaudeAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<s
 	}
 }
 
-async function checkGrokVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
-	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
-	try {
-		const result = await pi.exec("grok", ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
-		if (signal.aborted) throw new Error("Canceled.");
-		if (result.killed || result.code !== 0) {
-			const detail = result.stderr.trim() || result.stdout.trim();
-			throw new Error(
-				detail
-					? `Grok could not start: ${detail}\n\nRun \`/bro doctor\` for setup help.`
-					: "Grok could not start. Make sure Grok is installed and on PATH, then run `/bro doctor`.",
-			);
-		}
-		const version = result.stdout.trim() || result.stderr.trim();
-		if (!version) throw new Error("Grok returned no version information. Update Grok, then run `/bro doctor` again.");
-		return version;
-	} finally {
-		await rm(runDirectory, { recursive: true, force: true });
-	}
-}
-
-async function checkCodexVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
-	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
-	try {
-		const result = await pi.exec("codex", ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
-		if (signal.aborted) throw new Error("Canceled.");
-		if (result.killed || result.code !== 0) {
-			const detail = result.stderr.trim() || result.stdout.trim();
-			throw new Error(
-				detail
-					? `Codex could not start: ${detail}\n\nRun \`/bro doctor\` for setup help.`
-					: "Codex could not start. Make sure Codex is installed and on PATH, then run `/bro doctor`.",
-			);
-		}
-		const version = result.stdout.trim() || result.stderr.trim();
-		if (!version) throw new Error("Codex returned no version information. Update Codex, then run `/bro doctor` again.");
-		return version;
-	} finally {
-		await rm(runDirectory, { recursive: true, force: true });
-	}
-}
-
 // Auth status only: a version/auth answer without a model request. A passing answer here
 // says the CLI starts and reports signed-in state -- it does not imply connectivity.
 async function checkCodexAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
@@ -1078,27 +304,6 @@ async function checkCodexAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<st
 		const status = result.stdout.trim() || result.stderr.trim();
 		if (!status || !/logged in/i.test(status)) throw new Error("Codex is not logged in. Run `codex login`.");
 		return "authentication configured (not a connectivity test)";
-	} finally {
-		await rm(runDirectory, { recursive: true, force: true });
-	}
-}
-
-async function checkMuseVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
-	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
-	try {
-		const result = await pi.exec("muse", ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
-		if (signal.aborted) throw new Error("Canceled.");
-		if (result.killed || result.code !== 0) {
-			const detail = result.stderr.trim() || result.stdout.trim();
-			throw new Error(
-				detail
-					? `Muse could not start: ${detail}\n\nRun \`/bro doctor\` for setup help.`
-					: "Muse could not start. Make sure Muse is installed and on PATH, then run `/bro doctor`.",
-			);
-		}
-		const version = result.stdout.trim() || result.stderr.trim();
-		if (!version) throw new Error("Muse returned no version information. Update Muse, then run `/bro doctor` again.");
-		return version;
 	} finally {
 		await rm(runDirectory, { recursive: true, force: true });
 	}
@@ -1194,7 +399,7 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 	// starts and reports signed-in state -- it does not imply connectivity.
 	if (claudeInUse) {
 		try {
-			pass("Claude", await checkClaudeVersion(pi, signal));
+			pass("Claude", await checkCliVersion(pi, "claude", "Claude", signal));
 		} catch (error) {
 			if (signal.aborted) throw error;
 			fail("Claude", error);
@@ -1213,7 +418,7 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 	// version says the CLI starts — it says nothing about auth or connectivity.
 	if (grokInUse) {
 		try {
-			pass("Grok", await checkGrokVersion(pi, signal));
+			pass("Grok", await checkCliVersion(pi, "grok", "Grok", signal));
 		} catch (error) {
 			if (signal.aborted) throw error;
 			fail("Grok", error);
@@ -1226,7 +431,7 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 	// Version and auth status only, never a model request.
 	if (codexInUse) {
 		try {
-			pass("Codex", await checkCodexVersion(pi, signal));
+			pass("Codex", await checkCliVersion(pi, "codex", "Codex", signal));
 		} catch (error) {
 			if (signal.aborted) throw error;
 			fail("Codex", error);
@@ -1245,7 +450,7 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 	// version says the CLI starts — it says nothing about auth or connectivity.
 	if (museInUse) {
 		try {
-			pass("Muse", await checkMuseVersion(pi, signal));
+			pass("Muse", await checkCliVersion(pi, "muse", "Muse", signal));
 		} catch (error) {
 			if (signal.aborted) throw error;
 			fail("Muse", error);
@@ -2063,464 +1268,6 @@ function showTurnsValues(current: number): string[] {
 // one that simply isn't in the current catalog (both used to render as "fixed", which read as
 // falsely healthy for an unavailable model), and flags a stored effort that isn't one of the
 // resolved family's supported efforts instead of silently showing it as if it were valid.
-function effortDisplay(resolved: { pair: ModelEffortPair; family?: AgyModelFamily }, backend: BackendName): string {
-	// Claude/Grok/Codex/Muse selections never touch the Agy catalog: the stored effort is valid exactly
-	// when it is one of that backend's levels (or "default" for the CLI's own default).
-	if (backend === "claude") return isClaudeEffort(resolved.pair.effort) ? resolved.pair.effort : `${resolved.pair.effort} (unsupported)`;
-	if (backend === "grok") return isGrokEffort(resolved.pair.effort) ? resolved.pair.effort : `${resolved.pair.effort} (unsupported)`;
-	if (backend === "codex") return isCodexEffort(resolved.pair.effort) ? resolved.pair.effort : `${resolved.pair.effort} (unsupported)`;
-	if (backend === "muse") return isMuseEffort(resolved.pair.effort) ? resolved.pair.effort : `${resolved.pair.effort} (unsupported)`;
-	if (!resolved.family) return "unavailable";
-	const fixed = !resolved.family.efforts.length;
-	const valid = fixed ? resolved.pair.effort === "default" : resolved.family.efforts.includes(resolved.pair.effort as AgyEffort);
-	if (!valid) return `${resolved.pair.effort} (unsupported)`;
-	return fixed ? "fixed" : resolved.pair.effort;
-}
-
-// Model-picker values that switch backend carry a "claude:"/"grok:"/"codex:"/"muse:" prefix so one
-// atomic picker commit changes backend+model together -- cancelling the picker (Esc)
-// leaves both unchanged via the existing submenu-cancel path.
-const CLAUDE_OPTION_PREFIX = "claude:";
-function parseClaudeOption(value: string): string | undefined {
-	return value.startsWith(CLAUDE_OPTION_PREFIX) && value.length > CLAUDE_OPTION_PREFIX.length
-		? value.slice(CLAUDE_OPTION_PREFIX.length)
-		: undefined;
-}
-const GROK_OPTION_PREFIX = "grok:";
-function parseGrokOption(value: string): string | undefined {
-	return value.startsWith(GROK_OPTION_PREFIX) && value.length > GROK_OPTION_PREFIX.length
-		? value.slice(GROK_OPTION_PREFIX.length)
-		: undefined;
-}
-const CODEX_OPTION_PREFIX = "codex:";
-function parseCodexOption(value: string): string | undefined {
-	return value.startsWith(CODEX_OPTION_PREFIX) && value.length > CODEX_OPTION_PREFIX.length
-		? value.slice(CODEX_OPTION_PREFIX.length)
-		: undefined;
-}
-const MUSE_OPTION_PREFIX = "muse:";
-function parseMuseOption(value: string): string | undefined {
-	return value.startsWith(MUSE_OPTION_PREFIX) && value.length > MUSE_OPTION_PREFIX.length
-		? value.slice(MUSE_OPTION_PREFIX.length)
-		: undefined;
-}
-function parseBackendOption(value: string): { backend: "claude" | "grok" | "codex" | "muse"; id: string } | undefined {
-	const claudeId = parseClaudeOption(value);
-	if (claudeId !== undefined) return { backend: "claude", id: claudeId };
-	const grokId = parseGrokOption(value);
-	if (grokId !== undefined) return { backend: "grok", id: grokId };
-	const codexId = parseCodexOption(value);
-	if (codexId !== undefined) return { backend: "codex", id: codexId };
-	const museId = parseMuseOption(value);
-	if (museId !== undefined) return { backend: "muse", id: museId };
-	return undefined;
-}
-
-// Testable core: takes settings/catalog/persist as plain arguments so smoke tests can drive
-// the exact interaction (submenus, cancel, cycling, save failure) without a real Agy process
-// or settings file. showBroConfigModal below wires this to the real ctx/pi/filesystem.
-export function createConfigModal(
-	initialSettings: BroSettings,
-	families: AgyModelFamily[],
-	persistSettings: (settings: BroSettings) => Promise<void>,
-): (tui: TuiLike, theme: Theme, keybindings: unknown, done: (value?: void) => void) => Component & { dispose?(): void } {
-	return (tui, theme, _keybindings, done) => {
-		let settings = initialSettings;
-		// The last settings actually confirmed on disk. A failed save reverts `settings` (and the
-		// whole displayed row set) back to this, so the screen never shows state that doesn't exist.
-		let savedSettings = initialSettings;
-		// Only one persistSettings call is ever in flight. A change that arrives while one is
-		// already running is coalesced into `queued` (overwriting any earlier queued change) rather
-		// than firing a second concurrent write — this is what keeps writes serialized and makes
-		// sure the on-disk file always converges on the latest intent instead of a stale one that
-		// happened to finish last.
-		let saving = false;
-		let queued: BroSettings | undefined;
-		// Esc while a save is in flight must not close past an unshown result: it requests a close
-		// that only actually happens once the in-flight (and any coalesced) save has settled, and
-		// only if it succeeded — a failure cancels the pending close so its notice stays visible.
-		let closeRequested = false;
-
-		const findFamily = (modelId: string) =>
-			families.find((item) => item.id === modelId || item.variants.some((variant) => variant.id === modelId));
-
-		const modelPicker = (current: string, pickerDone: (value?: string) => void, capability?: Capability) => {
-			const defaultResolved = resolveModelEffort({ model: settings.model, effort: settings.effort }, families);
-			const options: SelectItem[] = [
-				...(capability ? [{ value: "__default__", label: `Default (${defaultResolved.family?.label ?? settings.model})` }] : []),
-				...families.map((family) => ({
-					value: family.id,
-					label: `${family.label}${family.efforts.length ? "" : " · fixed effort"}`,
-				})),
-				// Alternative CLI entries stay last so existing Agy keyboard navigation is unaffected.
-				...CLAUDE_MODELS.map((model) => ({
-					value: `${CLAUDE_OPTION_PREFIX}${model.id}`,
-					label: `${model.label} · claude`,
-				})),
-				...GROK_MODELS.map((model) => ({
-					value: `${GROK_OPTION_PREFIX}${model.id}`,
-					label: `${model.label} · grok`,
-				})),
-				...CODEX_MODELS.map((model) => ({
-					value: `${CODEX_OPTION_PREFIX}${model.id}`,
-					label: `${model.label} · codex`,
-				})),
-				...MUSE_MODELS.map((model) => ({
-					value: `${MUSE_OPTION_PREFIX}${model.id}`,
-					label: `${model.label} · muse`,
-				})),
-			];
-			options.push({ value: "__claude_custom__", label: "Claude · custom model ID…" });
-			options.push({ value: "__grok_custom__", label: "Grok · custom model ID…" });
-			options.push({ value: "__codex_custom__", label: "Codex · custom model ID…" });
-			options.push({ value: "__muse_custom__", label: "Muse · custom model ID…" });
-			const input = new Input();
-			let enteringBackend: "claude" | "grok" | "codex" | "muse" | undefined;
-			input.onSubmit = (value) => {
-				if (value.trim() && enteringBackend) {
-					const prefix =
-						enteringBackend === "claude"
-							? CLAUDE_OPTION_PREFIX
-							: enteringBackend === "grok"
-								? GROK_OPTION_PREFIX
-								: enteringBackend === "codex"
-									? CODEX_OPTION_PREFIX
-									: MUSE_OPTION_PREFIX;
-					pickerDone(`${prefix}${value.trim()}`);
-				}
-			};
-			const picker = new SelectList(options, Math.min(options.length, 8), getSelectListTheme());
-			const selectedIndex = capability && current === "Default" ? 0 : options.findIndex((option) => option.value === current);
-			picker.setSelectedIndex(Math.max(0, selectedIndex));
-			picker.onSelect = (item) => {
-				if (item.value === "__claude_custom__") { enteringBackend = "claude"; tui.requestRender(); }
-				else if (item.value === "__grok_custom__") { enteringBackend = "grok"; tui.requestRender(); }
-				else if (item.value === "__codex_custom__") { enteringBackend = "codex"; tui.requestRender(); }
-				else if (item.value === "__muse_custom__") { enteringBackend = "muse"; tui.requestRender(); }
-				else pickerDone(item.value);
-			};
-			picker.onCancel = () => pickerDone();
-			const customLabel = () => enteringBackend === "claude" ? "Claude" : enteringBackend === "grok" ? "Grok" : enteringBackend === "codex" ? "Codex" : "Muse";
-			return {
-				render: (width: number) => enteringBackend ? [`${customLabel()} model ID (Enter saves, Esc cancels)`, ...input.render(width)] : picker.render(width),
-				invalidate: () => { picker.invalidate(); input.invalidate(); },
-				handleInput: (data: string) => {
-					if (enteringBackend && matchesKey(data, "escape")) pickerDone();
-					else if (enteringBackend) input.handleInput(data);
-					else picker.handleInput(data);
-				},
-			};
-		};
-
-		const modelItem: SettingItem = { id: "model", label: "Default model", currentValue: settings.model, submenu: modelPicker };
-		const effortItem: SettingItem = { id: "effort", label: "Default effort", currentValue: "" };
-		const modeItem: SettingItem = { id: "mode", label: "Explain mode", currentValue: settings.mode, values: [...BRO_MODES] };
-		const showTurnsItem: SettingItem = {
-			id: "showTurns",
-			label: "Show turns",
-			currentValue: String(settings.showTurns),
-			values: showTurnsValues(settings.showTurns),
-		};
-		const capabilityItems = Object.fromEntries(
-			CAPABILITIES.map((capability) => [
-				capability,
-				{
-					model: {
-						id: `${capability}Model`,
-						label: `${CAPABILITY_LABELS[capability]} model`,
-						currentValue: "Default",
-						submenu: (current: string, pickerDone: (value?: string) => void) => modelPicker(current, pickerDone, capability),
-					} as SettingItem,
-					effort: {
-						id: `${capability}Effort`,
-						label: `${CAPABILITY_LABELS[capability]} effort`,
-						currentValue: "",
-					} as SettingItem,
-				},
-			]),
-		) as Record<Capability, { model: SettingItem; effort: SettingItem }>;
-
-		function refresh(): void {
-			const defaultBackend = settings.backend ?? "agy";
-			const def = resolveModelEffort({ backend: settings.backend, model: settings.model, effort: settings.effort }, families);
-			modelItem.currentValue =
-				defaultBackend === "claude"
-					? `${CLAUDE_OPTION_PREFIX}${settings.model}`
-					: defaultBackend === "grok"
-						? `${GROK_OPTION_PREFIX}${settings.model}`
-						: defaultBackend === "codex"
-							? `${CODEX_OPTION_PREFIX}${settings.model}`
-							: defaultBackend === "muse"
-								? `${MUSE_OPTION_PREFIX}${settings.model}`
-								: (def.family?.id ?? settings.model);
-			effortItem.currentValue = effortDisplay(def, defaultBackend);
-			effortItem.values =
-				defaultBackend === "claude"
-					? ["default", ...CLAUDE_EFFORTS]
-					: defaultBackend === "grok"
-						? ["default", ...GROK_EFFORTS]
-						: defaultBackend === "codex"
-							? ["default", ...CODEX_EFFORTS]
-							: defaultBackend === "muse"
-								? ["default", ...MUSE_EFFORTS]
-								: def.family?.efforts.length
-									? [...def.family.efforts]
-									: undefined;
-			modeItem.currentValue = settings.mode;
-			showTurnsItem.currentValue = String(settings.showTurns);
-			showTurnsItem.values = showTurnsValues(settings.showTurns);
-
-			for (const capability of CAPABILITIES) {
-				const override = capabilityOverride(settings, capability);
-				const backend = capabilityBackend(settings, capability);
-				const resolved = resolveModelEffort(capabilityPair(settings, capability), families);
-				const rows = capabilityItems[capability];
-				rows.model.currentValue = !override
-					? "Default"
-					: backend === "claude"
-						? `${CLAUDE_OPTION_PREFIX}${override.model}`
-						: backend === "grok"
-							? `${GROK_OPTION_PREFIX}${override.model}`
-							: backend === "codex"
-								? `${CODEX_OPTION_PREFIX}${override.model}`
-								: backend === "muse"
-									? `${MUSE_OPTION_PREFIX}${override.model}`
-									: (resolved.family?.id ?? override.model);
-				rows.effort.currentValue = effortDisplay(resolved, backend);
-				rows.effort.values =
-					backend === "claude"
-						? ["default", ...CLAUDE_EFFORTS]
-						: backend === "grok"
-							? ["default", ...GROK_EFFORTS]
-							: backend === "codex"
-								? ["default", ...CODEX_EFFORTS]
-								: backend === "muse"
-									? ["default", ...MUSE_EFFORTS]
-									: resolved.family?.efforts.length
-										? [...resolved.family.efforts]
-										: undefined;
-			}
-		}
-		refresh();
-
-		const items: SettingItem[] = [
-			modelItem,
-			effortItem,
-			modeItem,
-			showTurnsItem,
-			...CAPABILITIES.flatMap((capability) => [capabilityItems[capability].model, capabilityItems[capability].effort]),
-		];
-
-		const noticeText = new Text("");
-
-		function runSave(toSave: BroSettings): void {
-			saving = true;
-			void persistSettings(toSave)
-				.then(() => {
-					savedSettings = toSave;
-					noticeText.setText("");
-				})
-				.catch((error: unknown) => {
-					// Restore the last state that is actually on disk: showing the failed, unsaved
-					// value would let the screen claim a setting that doesn't really exist.
-					settings = savedSettings;
-					queued = undefined;
-					closeRequested = false;
-					refresh();
-					noticeText.setText(theme.fg("warning", `Could not save settings: ${errorMessage(error)}. Reverted to the last saved settings.`));
-				})
-				.finally(() => {
-					saving = false;
-					tui.requestRender();
-					if (queued !== undefined) {
-						const next = queued;
-						queued = undefined;
-						runSave(next);
-					} else if (closeRequested) {
-						closeRequested = false;
-						done(undefined);
-					}
-				});
-		}
-
-		function persist(toSave: BroSettings): void {
-			if (saving) {
-				queued = toSave;
-				return;
-			}
-			runSave(toSave);
-		}
-
-		const onChange = (id: string, newValue: string) => {
-			if (id === "model") {
-				const switched = parseBackendOption(newValue);
-				if (switched !== undefined) {
-					if (switched.backend === "claude") {
-						const effort = settings.backend === "claude" && isClaudeEffort(settings.effort) ? settings.effort : "default";
-						settings = { ...settings, backend: "claude", model: resolveClaudeModel(switched.id), effort };
-					} else if (switched.backend === "grok") {
-						const effort = settings.backend === "grok" && isGrokEffort(settings.effort) ? settings.effort : "default";
-						settings = { ...settings, backend: "grok", model: resolveGrokModel(switched.id), effort };
-					} else if (switched.backend === "codex") {
-						const effort = settings.backend === "codex" && isCodexEffort(settings.effort) ? settings.effort : "default";
-						settings = { ...settings, backend: "codex", model: resolveCodexModel(switched.id), effort };
-					} else {
-						const effort = settings.backend === "muse" && isMuseEffort(settings.effort) ? settings.effort : "default";
-						settings = { ...settings, backend: "muse", model: resolveMuseModel(switched.id), effort };
-					}
-				} else {
-					const family = findFamily(newValue);
-					if (!family) return;
-					const keepCurrent = (settings.backend ?? "agy") === "agy" && (settings.effort === "default" ? !family.efforts.length : family.efforts.includes(settings.effort as AgyEffort));
-					// Backend-less internal pairs mean Agy; disk saves still tag them explicitly.
-					const { backend: _dropped, ...rest } = settings;
-					settings = { ...rest, model: family.id, effort: keepCurrent ? settings.effort : preferredEffort(family) };
-				}
-			} else if (id === "effort") {
-				if ((settings.backend ?? "agy") === "claude") {
-					if (!isClaudeEffort(newValue)) return;
-					settings = { ...settings, effort: newValue };
-				} else if ((settings.backend ?? "agy") === "grok") {
-					if (!isGrokEffort(newValue)) return;
-					settings = { ...settings, effort: newValue };
-				} else if ((settings.backend ?? "agy") === "codex") {
-					if (!isCodexEffort(newValue)) return;
-					settings = { ...settings, effort: newValue };
-				} else if ((settings.backend ?? "agy") === "muse") {
-					if (!isMuseEffort(newValue)) return;
-					settings = { ...settings, effort: newValue };
-				} else {
-					// Effort-only edit: pin the resolved family's canonical id, same reasoning as the
-					// capability-override effort-only edit below -- otherwise a shared default created
-					// from a suffixed variant id (e.g. "gemini-x-low") would end up paired with an
-					// unrelated effort instead of its actual family id.
-					const resolved = resolveModelEffort({ model: settings.model, effort: settings.effort }, families);
-					settings = { ...settings, model: resolved.family?.id ?? settings.model, effort: newValue as BroEffort };
-				}
-			} else if (id === "mode") {
-				const mode = parseBroMode(newValue);
-				if (!mode) return;
-				settings = { ...settings, mode };
-			} else if (id === "showTurns") {
-				const turns = Number(newValue);
-				if (!Number.isInteger(turns) || turns < 1) return;
-				settings = { ...settings, showTurns: turns };
-			} else {
-				const capability = CAPABILITIES.find((item) => id === `${item}Model` || id === `${item}Effort`);
-				if (!capability) return;
-				if (id === `${capability}Model`) {
-					if (newValue === "__default__") {
-						settings = withCapabilityOverride(settings, capability, undefined);
-					} else {
-						const switched = parseBackendOption(newValue);
-						if (switched !== undefined) {
-							const currentEffort = capabilityPair(settings, capability).effort;
-							if (switched.backend === "claude") {
-								settings = withCapabilityOverride(settings, capability, {
-									backend: "claude",
-									model: resolveClaudeModel(switched.id),
-									effort: capabilityBackend(settings, capability) === "claude" && isClaudeEffort(currentEffort) ? currentEffort : "default",
-								});
-							} else if (switched.backend === "grok") {
-								settings = withCapabilityOverride(settings, capability, {
-									backend: "grok",
-									model: resolveGrokModel(switched.id),
-									effort: capabilityBackend(settings, capability) === "grok" && isGrokEffort(currentEffort) ? currentEffort : "default",
-								});
-							} else if (switched.backend === "codex") {
-								settings = withCapabilityOverride(settings, capability, {
-									backend: "codex",
-									model: resolveCodexModel(switched.id),
-									effort: capabilityBackend(settings, capability) === "codex" && isCodexEffort(currentEffort) ? currentEffort : "default",
-								});
-							} else {
-								settings = withCapabilityOverride(settings, capability, {
-									backend: "muse",
-									model: resolveMuseModel(switched.id),
-									effort: capabilityBackend(settings, capability) === "muse" && isMuseEffort(currentEffort) ? currentEffort : "default",
-								});
-							}
-						} else {
-							const family = findFamily(newValue);
-							if (!family) return;
-							const currentEffort = capabilityPair(settings, capability).effort;
-							const keepCurrent = capabilityBackend(settings, capability) === "agy" && (currentEffort === "default" ? !family.efforts.length : family.efforts.includes(currentEffort as AgyEffort));
-							settings = withCapabilityOverride(settings, capability, {
-								model: family.id,
-								effort: keepCurrent ? currentEffort : preferredEffort(family),
-							});
-						}
-					}
-				} else if (capabilityBackend(settings, capability) === "claude") {
-					if (!isClaudeEffort(newValue)) return;
-					const existing = capabilityOverride(settings, capability);
-					const model = existing?.model ?? settings.model;
-					settings = withCapabilityOverride(settings, capability, { backend: "claude", model, effort: newValue });
-				} else if (capabilityBackend(settings, capability) === "grok") {
-					if (!isGrokEffort(newValue)) return;
-					const existing = capabilityOverride(settings, capability);
-					const model = existing?.model ?? settings.model;
-					settings = withCapabilityOverride(settings, capability, { backend: "grok", model, effort: newValue });
-				} else if (capabilityBackend(settings, capability) === "codex") {
-					if (!isCodexEffort(newValue)) return;
-					const existing = capabilityOverride(settings, capability);
-					const model = existing?.model ?? settings.model;
-					settings = withCapabilityOverride(settings, capability, { backend: "codex", model, effort: newValue });
-				} else if (capabilityBackend(settings, capability) === "muse") {
-					if (!isMuseEffort(newValue)) return;
-					const existing = capabilityOverride(settings, capability);
-					const model = existing?.model ?? settings.model;
-					settings = withCapabilityOverride(settings, capability, { backend: "muse", model, effort: newValue });
-				} else {
-					// Effort-only edit: pin the resolved family's canonical id, never whatever raw
-					// string happens to sit in settings.model/override.model (which — for a shared
-					// default created from a suffixed variant id such as "gemini-x-low" with
-					// effort "default" — is not the family id). Storing the raw string here would
-					// pair a mismatched model/effort (e.g. a "-low"-suffixed id with effort "high").
-					const resolved = resolveModelEffort(capabilityPair(settings, capability), families);
-					const existing = capabilityOverride(settings, capability);
-					const model = resolved.family?.id ?? existing?.model ?? settings.model;
-					settings = withCapabilityOverride(settings, capability, { model, effort: newValue as BroEffort });
-				}
-			}
-			refresh();
-			tui.requestRender();
-			persist(settings);
-		};
-
-		const requestClose = () => {
-			if (saving) {
-				closeRequested = true;
-				return;
-			}
-			done(undefined);
-		};
-
-		const settingsList = new SettingsList(items, Math.min(items.length + 2, 18), getSettingsListTheme(), onChange, requestClose);
-		const container = new Container();
-		container.addChild(new Text(theme.fg("accent", theme.bold("Bro · config"))));
-		container.addChild(new Text(theme.fg("dim", "Shared defaults, with optional overrides per capability")));
-		container.addChild(settingsList);
-		container.addChild(noticeText);
-		container.addChild(new Text(theme.fg("dim", "↑/↓ navigate · Enter select/change · Esc back/close")));
-
-		return {
-			render: (w: number) => {
-				const inner = Math.max(1, w - 4);
-				const border = (left: string, right: string) => theme.fg("border", left + "─".repeat(inner + 2) + right);
-				return [border("┌", "┐"), ...container.render(inner).map(line => {
-					const text = truncateToWidth(line, inner, "");
-					return theme.fg("border", "│") + " " + text + " ".repeat(Math.max(0, inner - visibleWidth(text))) + " " + theme.fg("border", "│");
-				}), border("└", "┘")];
-			},
-			invalidate: () => container.invalidate(),
-			handleInput: (data: string) => {
-				settingsList.handleInput?.(data);
-				tui.requestRender();
-			},
-		};
-	};
-}
 
 export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
 	if (!hasBroCustomUi(ctx)) {
@@ -2822,7 +1569,7 @@ Quick reference. The README is the full user guide: https://github.com/tranhoang
 ${settingsSummary}
 - **Preferences:** ${preferences} — \`/bro preferences\`
 
-Saved in \`${SETTINGS_FILE}\` and \`${PREFERENCES_FILE}\`.
+Saved in \`${settingsFile()}\` and \`${PREFERENCES_FILE}\`.
 
 ## Explanation modes
 

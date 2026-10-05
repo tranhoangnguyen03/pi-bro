@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -35,6 +36,8 @@ const {
 	resolveCodexModel,
 	resolveMuseModel,
 	resolveModelEffort,
+	applyModelChange,
+	applyEffortChange,
 	helpText,
 	selectionForCapability,
 	selectionLabel,
@@ -107,6 +110,26 @@ test("explicit save migrates legacy settings to version 2", () => {
 		mode: "balanced",
 		showTurns: 1,
 	});
+});
+
+test("ensureSettingsFile initializes clean version 2 settings on disk", async () => {
+	const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-init-"));
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = tempDir;
+	try {
+		await bro.ensureSettingsFile();
+		const raw = JSON.parse(readFileSync(join(tempDir, "bro-settings.json"), "utf8"));
+		assert.equal(raw.version, 2);
+		assert.equal(raw.default.backend, "agy");
+		assert.equal(raw.default.effort, "low");
+		assert.equal(raw.mode, "balanced");
+		assert.equal(raw.showTurns, 1);
+		assert.deepEqual(raw.overrides, undefined);
+	} finally {
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		rmSync(tempDir, { recursive: true, force: true });
+	}
 });
 
 test("v2 settings parse into shared default plus whole overrides", () => {
@@ -214,6 +237,48 @@ test("Claude pairs resolve with no Agy family so config/doctor flag nothing cata
 test("unknown schemas cannot be accepted as legacy and overwritten", () => {
  assert.throws(() => parseBroSettings({version: 99, model: "m", effort: "low"}), /Unsupported settings version/);
  assert.throws(() => parseBroSettings({version: 2, model: "m", effort: "low"}), /requires default/);
+});
+
+test("pure model/effort transitions preserve resolved variant effort and pin family IDs", () => {
+	const families = [
+		{
+			id: "gemini-a",
+			label: "Gemini A",
+			efforts: ["low", "high"] as ("low" | "high")[],
+			variants: [
+				{ id: "gemini-a-low", effort: "low" as const },
+				{ id: "gemini-a-high", effort: "high" as const },
+			],
+		},
+		{
+			id: "gemini-b",
+			label: "Gemini B",
+			efforts: [] as ("low" | "medium" | "high")[],
+			variants: [{ id: "gemini-b" }],
+		},
+	];
+
+	// P1 Codex regression: {model: "gemini-a-high", effort: "default"} resolves to high;
+	// reselecting gemini-a preserves high instead of resetting to low.
+	const variantPair = { model: "gemini-a-high", effort: "default" as const };
+	const reselected = applyModelChange(variantPair, "gemini-a", families);
+	assert.deepEqual(reselected, { model: "gemini-a", effort: "high" });
+
+	// Reselecting a fixed-effort family normalizes to default
+	const fixedReselected = applyModelChange(variantPair, "gemini-b", families);
+	assert.deepEqual(fixedReselected, { model: "gemini-b", effort: "default" });
+
+	// Switching to external backend with compatible effort keeps effort
+	const claudeSwitch = applyModelChange({ backend: "claude", model: "sonnet", effort: "high" }, "claude:opus", families);
+	assert.deepEqual(claudeSwitch, { backend: "claude", model: "opus", effort: "high" });
+
+	// Switching across different backends resets effort to default
+	const grokSwitch = applyModelChange({ backend: "claude", model: "sonnet", effort: "high" }, "grok:grok-4.7", families);
+	assert.deepEqual(grokSwitch, { backend: "grok", model: "grok-4.7", effort: "default" });
+
+	// Effort edit pins resolved family ID
+	const effortEdit = applyEffortChange({ model: "gemini-a-low", effort: "default" }, "high", families);
+	assert.deepEqual(effortEdit, { model: "gemini-a", effort: "high" });
 });
 
 

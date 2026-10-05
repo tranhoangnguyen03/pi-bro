@@ -2,6 +2,21 @@
 
 All notable changes to pi-bro are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Separate Bro responsibilities and unify settings and backend-selection policy (#83):
+  - Extract `settings.ts` (schema, typed `EXTERNAL_BACKENDS` metadata, selection policy, pure transitions, and file persistence).
+  - Extract `sources.ts` (self-contained document text extraction and public web scraping with SSRF protection).
+  - Extract `config-ui.ts` (`/bro config` modal, setting items, and async save serialization).
+  - Extract `util.ts` (shared leaf utility helpers).
+  - Unify legacy flat and v2 settings parsing into one converged validation pipeline in `settings.ts`, eliminating duplicate validation branches.
+  - Initialize clean version 2 settings on fresh installations in `ensureSettingsFile()`.
+  - Share pure state transitions (`applyModelChange`, `applyEffortChange`) across default and capability override rows.
+  - Fix Agy variant model reselection bug where resolved effort from suffixed variants was lost.
+  - Consolidate CLI version probes in `/bro doctor` into a single `checkCliVersion` helper.
+
 ## [0.21.0] - 2026-10-04
 
 ### Added

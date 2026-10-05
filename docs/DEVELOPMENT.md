@@ -8,12 +8,16 @@ those are historical records.
 
 Production is published as TypeScript source (no build step):
 
-- **`bro.ts`** — the Pi extension. Owns the `/bro` command and completion,
-  source capture (latest reply, text, workspace files, public webpages, show
-  turns), settings (`bro-settings.json` parse/write, per-capability
-  resolution), `/bro config`, `/bro doctor`, `/bro help`, all modals, the BTW
-  thread and composer, the `bro_advisor` tool (snapshot, retries, progress),
-  and advisor steering state.
+- **`bro.ts`** — the Pi extension entry point and wiring. Owns the `/bro` command and completion,
+  `/bro doctor`, `/bro help`, the BTW thread and composer, the `bro_advisor` tool
+  (snapshot, retries, progress), and advisor steering state.
+- **`settings.ts`** — settings schema, validation, backend metadata table,
+  selection policy, pure model/effort transitions, and file persistence.
+- **`sources.ts`** — self-contained document text extraction (PDF, DOCX) and public webpage
+  scraping with SSRF protection.
+- **`config-ui.ts`** — the `/bro config` modal, settings items, model pickers, and
+  async save queue.
+- **`util.ts`** — shared leaf utility helpers (`isRecord`, `errorMessage`, `withDoctor`, etc.).
 - **`backend.ts`** — the shared execution layer. `execute()` runs one request
   on Agy, Claude Code, Grok, Codex, or Muse: argv/stdin construction per backend and
   feature, private temp prompt files, streaming parse, native continuation
@@ -22,6 +26,7 @@ Production is published as TypeScript source (no build step):
 - **`prompt.ts`** — pure prompt builders: explain modes, show, BTW (reader guidance, access mode, and reseeded history), and the
   advisor. Prompts are backend-neutral; backend differences belong in
   `backend.ts`, not in prompt text.
+- **`ui-capabilities.ts`** — environment UI capability probes (interactive TUI, virtual viewport, Desktop panels).
 
 ## Settings
 
