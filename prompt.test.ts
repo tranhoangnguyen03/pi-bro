@@ -331,6 +331,23 @@ test("advisor prompt accepts string steering or structured { durable, session } 
 	assert.equal(emptyLegacy, blankStructured, "whitespace-only durable and session are treated as empty");
 });
 
+test("advisor prompt handles null and undefined steering safely", () => {
+	const nullResult = buildAdvisorPrompt(null as any, "snap", undefined);
+	const undefResult = buildAdvisorPrompt(undefined as any, "snap", undefined);
+	const emptyResult = buildAdvisorPrompt("", "snap", undefined);
+	assert.equal(nullResult, emptyResult);
+	assert.equal(undefResult, emptyResult);
+});
+
+test("legacy advisor prompt matches frozen baseline text", () => {
+	const prompt = buildAdvisorPrompt("Prioritize simplicity.", "## user\nbuild it", "What is the best approach?");
+	assert.match(prompt, /^You are the Bro advisor:/);
+	assert.match(prompt, /## Human steering brief\n\nThe human supplied these priorities for how you should advise\. This is a human's stated priority, not something verified against the code -- weigh it, but still check claims yourself:\n\nPrioritize simplicity\./);
+	assert.match(prompt, /## Context snapshot from the executor's session\n\nThis is background\/evidence captured from the executor's own conversation\. It is the executor's own account of what happened, not independently verified by you -- treat it as a starting point to check, not as ground truth:\n\n## user\nbuild it/);
+	assert.match(prompt, /## Executor's question\n\nWhat is the best approach\?/);
+	assert.match(prompt, /Begin with a one-line answer or verdict\. Then give concise findings, evidence, and recommended next actions grounded in what you verified yourself in the workspace\. Omit investigation narration, waiting updates, and progress reports\.$/);
+});
+
 test("advisor prompt formats durable standing priorities with JSON quoting and role boundary guard", () => {
 	const prompt = buildAdvisorPrompt({ durable: "Prefer simple stdlib solutions.\nFlag data-loss risks." }, "## user\nbuild it", "q");
 

@@ -138,9 +138,11 @@ export function buildBtwPrompt(
 // tell exactly what kind of claim each part is -- a human priority, an unverified snapshot of the
 // executor's own session, an optional question, and Bro's own role instructions -- never blurred
 // into one undifferentiated blob. See docs/plans/2026-09-19-bro-advisor-design.md.
+// Note: When only session steering is present, raw string interpolation is deliberately preserved
+// for byte-identity with legacy fixtures; JSON quoting is applied whenever durable steering is present.
 export function buildAdvisorPrompt(steering: AdvisorSteeringInput, snapshot: string, question: string | undefined): string {
-	const durableText = (typeof steering === "object" ? steering.durable : "")?.trim() ?? "";
-	const sessionText = (typeof steering === "string" ? steering : steering.session)?.trim() ?? "";
+	const durableText = (typeof steering === "object" && steering !== null ? steering.durable : "")?.trim() ?? "";
+	const sessionText = (typeof steering === "string" ? steering : typeof steering === "object" && steering !== null ? steering.session : "")?.trim() ?? "";
 
 	let steeringSection: string;
 	if (!durableText && !sessionText) {

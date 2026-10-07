@@ -605,7 +605,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 		const durable = await readAdvisorSteering();
 		pass("Advisor steering (durable)", durable ? `${durable.length.toLocaleString("en-US")} characters · ${ADVISOR_STEERING_FILE}` : `none — ${ADVISOR_STEERING_FILE}`);
 	} catch (error) {
-		fail("Advisor steering (durable)", errorMessage(error));
+		fail("Advisor steering (durable)", error);
 	}
 	if (settings && capabilityBackend(settings, "advisor") === "claude") {
 		pass("Advisor compatibility", "Claude backend — no Agy version floor applies");
@@ -856,7 +856,8 @@ export async function readAdvisorSteeringRaw(): Promise<string | undefined> {
 		throw new Error(`${ADVISOR_STEERING_FILE} is larger than 64 KB. Edit or delete it directly.`);
 	}
 	try {
-		return (await readFile(ADVISOR_STEERING_FILE, "utf8")).replace(/^\uFEFF/, "");
+		const bytes = await readFile(ADVISOR_STEERING_FILE);
+		return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/, "");
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 		throw new Error(`Cannot read ${ADVISOR_STEERING_FILE}: ${errorMessage(error)}`);
@@ -1461,7 +1462,7 @@ export function createAdvisorSteerModal(
 ): ReturnType<typeof createTextEditorModal> {
 	return createTextEditorModal({
 		title: "Bro · advisor steer",
-		subtitle: "Session-specific steering brief for the advisor (takes precedence over ~/.pi/agent/bro-advisor.md) — never sent to the main model.",
+		subtitle: `Session-specific steering brief for the advisor (takes precedence over ${ADVISOR_STEERING_FILE}) — never sent to the main model.`,
 		initialText,
 		onSave,
 		onClear,
@@ -2815,7 +2816,7 @@ export default async function bro(pi: ExtensionAPI) {
 				// an actionable notice pointing at the commands that replaced it, not a silent no-op.
 				if (parts.length > 1) {
 					ctx.ui.notify(
-						"/bro advisor no longer has on/off/status controls -- bro_advisor is always registered and available whenever this host exposes and activates it. Use /bro config for its model/effort, /bro advisor-steer for its steering brief, or /bro doctor for full diagnostics.",
+						"/bro advisor no longer has on/off/status controls -- bro_advisor is always registered and available whenever this host exposes and activates it. Use /bro config for its model/effort, /bro advisor-steer for session steering, or /bro doctor for full diagnostics.",
 						"warning",
 					);
 					return;
@@ -2823,7 +2824,7 @@ export default async function bro(pi: ExtensionAPI) {
 				const active = pi.getActiveTools().includes(ADVISOR_TOOL_NAME);
 				ctx.ui.notify(
 					active
-						? "Bro advisor is available -- the executor agent can call bro_advisor. Use /bro config for its model/effort, /bro advisor-steer for session steering, ~/.pi/agent/bro-advisor.md for standing steering, or /bro doctor for full diagnostics."
+						? `Bro advisor is available -- the executor agent can call bro_advisor. Use /bro config for its model/effort, /bro advisor-steer for session steering, ${ADVISOR_STEERING_FILE} for standing steering, or /bro doctor for full diagnostics.`
 						: "Bro advisor is unavailable in this runtime. Use /bro doctor for full diagnostics, /bro config for its model/effort, or /bro advisor-steer for session steering.",
 					active ? "info" : "warning",
 				);
