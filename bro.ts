@@ -9,14 +9,10 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionEn
 import { Container, Editor, Input, Markdown, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type EditorTheme, type Focusable, type TUI } from "@earendil-works/pi-tui";
 import { convertToLlm, copyToClipboard, getAgentDir, getMarkdownTheme, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { BRO_MODES, DEFAULT_BRO_MODE, MAX_PREFERENCES_CHARS, MAX_ADVISOR_STEERING_CHARS, STARTER_PREFERENCES, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, nextBroMode, parseBroMode, type BroMode } from "./prompt.ts";
+import { BRO_MODES, MAX_PREFERENCES_CHARS, MAX_ADVISOR_STEERING_CHARS, STARTER_PREFERENCES, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, nextBroMode, parseBroMode, type BroMode } from "./prompt.ts";
 import {
 	agyFailureMessage,
-	agySelection,
-	advisorFlagErrorHint,
 	execute as executeBackend,
-	parseBtwAgyLine,
-	type AgySelection,
 	type BackendProgress,
 	type BackendSelection,
 } from "./backend.ts";
@@ -24,8 +20,6 @@ import { isRecord, errorMessage, withDoctor, unquote } from "./util.ts";
 import {
 	type BackendName,
 	type BroSettings,
-	type Capability,
-	type ModelEffortPair,
 	type AgyModelFamily,
 	type AgyEffort,
 	EFFORTS,
@@ -45,7 +39,6 @@ import {
 	selectionForCapability,
 	selectionLabel,
 	settingsFile,
-	settingsPayload,
 	writeSettings,
 } from "./settings.ts";
 import {
@@ -62,7 +55,6 @@ export * from "./util.ts";
 export * from "./settings.ts";
 export * from "./sources.ts";
 export * from "./config-ui.ts";
-export { agyFailureMessage, agySelection, advisorFlagErrorHint, parseBtwAgyLine };
 
 const PREFERENCES_FILE = join(getAgentDir(), "bro-preferences.md");
 const ADVISOR_STEERING_FILE = join(getAgentDir(), "bro-advisor.md");
@@ -885,7 +877,7 @@ async function simplify(
 ): Promise<{ text: string; model: string; mode: BroMode; preferences: boolean }> {
 	const selection = selectionForCapability(settings, "explain");
 	const preferences = await readPreferences();
-	const text = await runAgyText(buildDefaultPrompt(response, mode, preferences), selection, signal, onProgress);
+	const text = await runBackendText(buildDefaultPrompt(response, mode, preferences), selection, signal, onProgress);
 	return { text, model: selectionLabel(selection), mode, preferences: Boolean(preferences) };
 }
 
@@ -898,14 +890,14 @@ async function runShowExplanation(
 ): Promise<{ text: string; model: string; preferences: boolean }> {
 	const selection = selectionForCapability(settings, "show");
 	const preferences = await readPreferences();
-	const text = await runAgyText(buildShowPrompt(transcript, steering, preferences), selection, signal, onProgress, "show");
+	const text = await runBackendText(buildShowPrompt(transcript, steering, preferences), selection, signal, onProgress, "show");
 	return { text, model: selectionLabel(selection), preferences: Boolean(preferences) };
 }
 
 // Thin presentation-boundary wrapper around the shared backend: coalesces raw text progress to the
-// existing 75ms cadence (unchanged from before the backend extraction) and translates the backend's
-// tagged outcome back into this function's existing throw-on-failure contract.
-async function runAgyText(
+// existing 75ms cadence and translates the backend's tagged outcome back into this function's
+// existing throw-on-failure contract.
+async function runBackendText(
 	prompt: string,
 	selection: BackendSelection,
 	signal: AbortSignal,
@@ -1160,7 +1152,7 @@ export type AdvisorToolDetails = {
 	snapshotChars?: number;
 	broTruncated?: false;
 	omissions?: string;
-	// Real Agy-reported activity for the current attempt only -- reset to empty whenever a new
+	// Real backend-reported activity for the current attempt only -- reset to empty whenever a new
 	// attempt (including a retry) starts, never carried over from a prior failed attempt.
 	activity?: string[];
 	lastActivityAt?: number;
@@ -1178,9 +1170,9 @@ export type AdvisorRunResult = { advice: string; attempts: number; durationMs: n
 // keeps ticking independently.
 const ADVISOR_ACTIVITY_THROTTLE_MS = 250;
 
-// `consult`/`delayFn` are injectable so tests can swap in a fake agy spawn and a fake clock
+// `consult`/`delayFn` are injectable so tests can swap in a fake process spawn and a fake clock
 // instead of spawning real processes and waiting 15 real seconds. Every attempt sends the
-// identical prompt/selection/cwd to a fresh, standalone Agy process — never resumed via
+// identical prompt/selection/cwd to a fresh, standalone backend process — never resumed via
 // --conversation, even across retries.
 export async function runAdvisorWithRetries(
 	prompt: string,

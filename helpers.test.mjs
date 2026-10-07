@@ -3,19 +3,17 @@ import { chmodSync, existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
-import { bro, buildDir } from "./test-build.mjs";
+import { bro, backend, buildDir } from "./test-build.mjs";
 
 test("Bro helpers, modals, advisor lifecycle and SDK restrictions", async (t) => {
-
-
-
-
-
-
-
+const {
+	advisorFlagErrorHint,
+	agyFailureMessage,
+	agySelection,
+	parseBtwAgyLine,
+} = backend;
 
 const {
 	default: registerBro,
@@ -31,13 +29,9 @@ const {
 	resolveAdvisorState,
 	buildAdvisorSnapshot,
 	advisorAgyCompatible,
-	advisorFlagErrorHint,
 	runAdvisorConsultation,
 	runAdvisorWithRetries,
 	TerminalConsultError,
-	helpText,
-	agyFailureMessage,
-	agySelection,
 	captureShowTranscript,
 	extractDocumentText,
 	extractShowHtml,
@@ -53,7 +47,6 @@ const {
 	parseAgyModels,
 	parseBroSettings,
 	parseBtwArguments,
-	parseBtwAgyLine,
 	parseBtwComposerCommand,
 	parseShowArguments,
 	resolveBtwThread,
@@ -436,7 +429,7 @@ assert.deepEqual(
 assert.deepEqual(
 	withCapabilityOverride(base, "advisor", { model: "gemini-b", effort: "default" }).overrides,
 	{ advisor: { model: "gemini-b", effort: "default" } },
-	"withCapabilityOverride also accepts the reserved advisor capability, for the config modal's advisor rows",
+	"withCapabilityOverride also accepts the advisor capability, for the config modal's advisor rows",
 );
 
 // settingsPayload only ever omits an empty `overrides` object; it does not deduplicate or drop any
@@ -451,7 +444,7 @@ assert.deepEqual(
 );
 
 // Old settings migrate cleanly: no overrides key, unknown capability keys ignored,
-// and a reserved "advisor" override round-trips even though nothing reads it yet.
+// and an advisor override round-trips.
 assert.deepEqual(parseBroSettings({ model: "m", effort: "low" }).overrides, {});
 assert.deepEqual(
 	parseBroSettings({ model: "m", effort: "low", overrides: { explain: { model: "gemini-a", effort: "high" }, somethingUnknown: { model: "x", effort: "low" } } }).overrides,
@@ -460,7 +453,7 @@ assert.deepEqual(
 assert.deepEqual(
 	parseBroSettings({ model: "m", effort: "low", overrides: { advisor: { model: "gemini-a", effort: "high" } } }).overrides,
 	{ advisor: { model: "gemini-a", effort: "high" } },
-	"a reserved advisor override is preserved even though no command reads it yet",
+	"an advisor override is preserved",
 );
 assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: { explain: { model: "m" } } }), /overrides\.explain/);
 assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: { explain: [] } }), /overrides\.explain/, "an array is not a valid per-capability override either");

@@ -1,7 +1,7 @@
 import { beginAttempt } from "../backend.ts";
 import { spawn } from "node:child_process";
 import { createHash, randomInt, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -18,7 +18,6 @@ const MODES_WORK_DIRECTORY = fileURLToPath(new URL("./.work/", import.meta.url))
 const SHOW_WORK_DIRECTORY = fileURLToPath(new URL("./.work/show/", import.meta.url));
 const VARIANTS = ["baseline", ...BRO_MODES] as const;
 const SHOW_VARIANTS = ["show-v1"] as const;
-type PromptVariant = (typeof VARIANTS)[number];
 export type Track = "modes" | "show";
 const DEFAULT_TRACK: Track = "modes";
 

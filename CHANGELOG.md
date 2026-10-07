@@ -18,6 +18,12 @@ All notable changes to pi-bro are documented here.
 
 ### Changed
 
+- Remove dead declarations and stale backend naming (#90):
+  - Enable native TypeScript unused checks (`noUnusedLocals`, `noUnusedParameters`) in `tsconfig.json`.
+  - Remove verified unused declarations across `bro.ts`, `backend.test.ts`, `benchmark/run.ts`, `codex.test.ts`, and `release.test.ts`.
+  - Drop pass-through re-exports from `bro.ts` (`agyFailureMessage`, `agySelection`, `advisorFlagErrorHint`, `parseBtwAgyLine`); tests and consumers import them directly from `backend.ts`.
+  - Rename multi-backend facilities with obsolete Agy prefixes: `runAgyText` -> `runBackendText` in `bro.ts` and `killAgyGroup` -> `killProcessGroup` in `backend.ts`.
+  - Modernize outdated single-backend and pre-extraction comments.
 - Separate Bro responsibilities and unify settings and backend-selection policy (#83):
   - Extract `settings.ts` (schema, typed `EXTERNAL_BACKENDS` metadata, selection policy, pure transitions, and file persistence).
   - Extract `sources.ts` (self-contained document text extraction and public web scraping with SSRF protection).
