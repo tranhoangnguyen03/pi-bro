@@ -25,6 +25,9 @@ const {
 	queuePreferencesWrite,
 	readPreferences,
 	readPreferencesRaw,
+	readAdvisorSteering,
+	readAdvisorSteeringRaw,
+	doctorReport,
 	resolveAdvisorState,
 	buildAdvisorSnapshot,
 	advisorAgyCompatible,
@@ -109,6 +112,21 @@ function deferred() {
 	let resolve, reject;
 	const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
 	return { promise, resolve, reject };
+}
+
+async function withFakeAgy(script, run) {
+	const originalPath = process.env.PATH;
+	const binDir = await mkdtemp(join(tmpdir(), "pi-bro-fake-agy-"));
+	const fakeAgyPath = join(binDir, "agy");
+	await writeFile(fakeAgyPath, script);
+	chmodSync(fakeAgyPath, 0o755);
+	process.env.PATH = `${binDir}:${originalPath}`;
+	try {
+		await run(binDir);
+	} finally {
+		process.env.PATH = originalPath;
+		await rm(binDir, { recursive: true, force: true });
+	}
 }
 
 await t.test("Modal interactions: default model/effort resolution, an override that starts out identical", async (t) => {
@@ -1275,21 +1293,6 @@ await t.test("A retry resets the per-attempt tail but must never reset the cumul
 // confirms the exact wire protocol (args, stdin envelope, NDJSON parsing), not just the retry
 // wrapper around it. No live paid Agy call is made.
 await t.test("runAdvisorConsultation: the real stdin/stream-json transport against a fake `agy` on PATH --", async (t) => {
-	const originalPath = process.env.PATH;
-	async function withFakeAgy(script, run) {
-		const binDir = await mkdtemp(join(tmpdir(), "pi-bro-fake-agy-"));
-		const fakeAgyPath = join(binDir, "agy");
-		await writeFile(fakeAgyPath, script);
-		chmodSync(fakeAgyPath, 0o755);
-		process.env.PATH = `${binDir}:${originalPath}`;
-		try {
-			await run(binDir);
-		} finally {
-			process.env.PATH = originalPath;
-			await rm(binDir, { recursive: true, force: true });
-		}
-	}
-
 	await withFakeAgy(
 		"#!/bin/sh\ncat >/dev/null\nsleep 30\n",
 		async (binDir) => {
@@ -1521,6 +1524,7 @@ await t.test("runAdvisorConsultation: the real stdin/stream-json transport again
 				assert.equal(result.details.effort, "high");
 				assert.equal(result.details.cwd, workspace);
 				assert.equal(result.details.steeringIncluded, true);
+				assert.deepEqual(result.details.steeringSources, { durable: false, session: true });
 				assert.equal(result.details.broTruncated, false);
 				assert.ok(result.details.snapshotChars > 0);
 				assert.match(progress[0].content[0].text, /Bro advisor · running · 0s · attempt 1\/3/);
@@ -1547,6 +1551,66 @@ await t.test("runAdvisorConsultation: the real stdin/stream-json transport again
 				assert.doesNotMatch(args, /--conversation|--resume/, "advisor consultations never resume a prior process");
 				assert.equal(await realpath((await readFile(cwdFile, "utf8")).trim()), await realpath(workspace));
 				assert.equal((await readFile(callsFile, "utf8")).trim(), "called", "the invocation reaches Agy");
+
+				// Both durable and session steering together
+				await writeFile(join(configDir, "bro-advisor.md"), "DURABLE_ADVISOR_CANARY");
+				const resultBoth = await registeredTool.execute(
+					"registered-call-2",
+					{ question: "QUESTION_CANARY_2" },
+					new AbortController().signal,
+					() => {},
+					ctx,
+				);
+				assert.match(resultBoth.content[0].text, /steering: included \(durable\+session\) · snapshot:/);
+				assert.equal(resultBoth.details.steeringIncluded, true);
+				assert.deepEqual(resultBoth.details.steeringSources, { durable: true, session: true });
+				const promptBoth = JSON.parse((await readFile(stdinFile, "utf8")).trim()).message.content;
+				assert.match(promptBoth, /DURABLE_ADVISOR_CANARY/);
+				assert.match(promptBoth, /STEERING_CANARY/);
+				assert.match(promptBoth, /Session-specific priorities take precedence over standing defaults/);
+
+				// Session steering cleared: durable steering remains active
+				const ctxNoSession = { ...ctx, sessionManager: { ...ctx.sessionManager, getBranch: () => [] } };
+				const resultDurableOnly = await registeredTool.execute(
+					"registered-call-3",
+					undefined,
+					new AbortController().signal,
+					() => {},
+					ctxNoSession,
+				);
+				assert.match(resultDurableOnly.content[0].text, /steering: included \(durable\) · snapshot:/);
+				assert.equal(resultDurableOnly.details.steeringIncluded, true);
+				assert.deepEqual(resultDurableOnly.details.steeringSources, { durable: true, session: false });
+				const promptDurableOnly = JSON.parse((await readFile(stdinFile, "utf8")).trim()).message.content;
+				assert.match(promptDurableOnly, /DURABLE_ADVISOR_CANARY/);
+				assert.doesNotMatch(promptDurableOnly, /Session priorities/);
+
+				// Neither durable nor session steering set
+				await rm(join(configDir, "bro-advisor.md"), { force: true });
+				const resultNeither = await registeredTool.execute(
+					"registered-call-neither",
+					undefined,
+					new AbortController().signal,
+					() => {},
+					ctxNoSession,
+				);
+				assert.match(resultNeither.content[0].text, /steering: none · snapshot:/);
+				assert.equal(resultNeither.details.steeringIncluded, false);
+				assert.deepEqual(resultNeither.details.steeringSources, { durable: false, session: false });
+				const promptNeither = JSON.parse((await readFile(stdinFile, "utf8")).trim()).message.content;
+				assert.match(promptNeither, /## Human steering brief\n\nNone was set\./);
+
+				// Fail-closed when durable steering is oversize: fails before any backend call
+				const callsBeforeOversize = (await readFile(callsFile, "utf8")).trim().split("\n").length;
+				await writeFile(join(configDir, "bro-advisor.md"), "e".repeat(4_001));
+				await assert.rejects(
+					registeredTool.execute("registered-call-fail", undefined, new AbortController().signal, () => {}, ctx),
+					/keep under 4,000/,
+				);
+				const callsAfterOversize = (await readFile(callsFile, "utf8")).trim().split("\n").length;
+				assert.equal(callsAfterOversize, callsBeforeOversize, "backend was never called on oversize steering");
+
+				await rm(join(configDir, "bro-advisor.md"), { force: true });
 			},
 		);
 	} finally {
@@ -1847,6 +1911,206 @@ await t.test("Preference writes run one at a time across editor instances", asyn
 	await assert.rejects(queuePreferencesWrite(async () => { throw new Error("disk full"); }), /disk full/);
 	await queuePreferencesWrite(async () => { order.push("after-failure"); });
 	assert.equal(order.at(-1), "after-failure", "a failed write does not block later ones");
+});
+
+await t.test("Durable advisor steering loading: missing, empty, oversize, non-regular, and BOM", async () => {
+	const configDir = process.env.PI_CODING_AGENT_DIR;
+	const file = join(configDir, "bro-advisor.md");
+	try {
+		await rm(file, { recursive: true, force: true });
+		assert.equal(await readAdvisorSteeringRaw(), undefined, "missing file returns undefined");
+		assert.equal(await readAdvisorSteering(), "", "missing file produces empty string");
+
+		await writeFile(file, "  \n\t  ");
+		assert.equal(await readAdvisorSteeringRaw(), "  \n\t  ");
+		assert.equal(await readAdvisorSteering(), "", "whitespace-only file produces empty string");
+
+		await writeFile(file, "\uFEFFStanding priorities for the advisor.");
+		assert.equal(await readAdvisorSteering(), "Standing priorities for the advisor.", "UTF-8 BOM is stripped");
+
+		await writeFile(file, "x".repeat(64 * 1024 + 1));
+		await assert.rejects(readAdvisorSteeringRaw(), /larger than 64 KB/);
+		await assert.rejects(readAdvisorSteering(), /larger than 64 KB/);
+
+		await rm(file);
+		await mkdir(file);
+		await assert.rejects(readAdvisorSteeringRaw(), /not a regular file/);
+		await assert.rejects(readAdvisorSteering(), /not a regular file/);
+
+		await rm(file, { recursive: true });
+		// Malformed UTF-8 bytes are rejected with fatal decoding error
+		await writeFile(file, Buffer.from([0x61, 0xff, 0x62]));
+		await assert.rejects(readAdvisorSteeringRaw(), /Cannot read .*bro-advisor\.md/);
+		await assert.rejects(readAdvisorSteering(), /Cannot read .*bro-advisor\.md/);
+
+		await writeFile(file, "a".repeat(4_001));
+		await assert.rejects(readAdvisorSteering(), /keep under 4,000/);
+		await assert.rejects(readAdvisorSteering(), /retrying won't help/);
+	} finally {
+		await rm(file, { recursive: true, force: true });
+	}
+});
+
+await t.test("Doctor reports session and durable advisor steering status", async () => {
+	const configDir = process.env.PI_CODING_AGENT_DIR;
+	const file = join(configDir, "bro-advisor.md");
+	const fakePi = {
+		getAllTools: () => [{ name: "bro_advisor" }],
+		getActiveTools: () => ["bro_advisor"],
+	};
+	const fakeCtx = {
+		sessionManager: {
+			getBranch: () => [
+				{ type: "custom", customType: "bro-advisor-steering", data: { text: "Session brief" } },
+			],
+		},
+	};
+
+	try {
+		await rm(file, { recursive: true, force: true });
+		const reportNone = await doctorReport(fakePi, fakeCtx, new AbortController().signal);
+		assert.match(reportNone, /Advisor steering \(session\):\*\* 13 characters/);
+		assert.match(reportNone, /Advisor steering \(durable\):\*\* none/);
+
+		await writeFile(file, "Durable priorities.");
+		const reportDurable = await doctorReport(fakePi, fakeCtx, new AbortController().signal);
+		assert.match(reportDurable, /Advisor steering \(durable\):\*\* 19 characters/);
+
+		await writeFile(file, "x".repeat(4_001));
+		const reportFail = await doctorReport(fakePi, fakeCtx, new AbortController().signal);
+		assert.match(reportFail, /Advisor steering \(durable\).*keep under 4,000/);
+		assert.match(reportFail, /Bro needs attention/);
+	} finally {
+		await rm(file, { recursive: true, force: true });
+	}
+});
+
+await t.test("Two-way isolation between reader preferences and advisor steering", async () => {
+	const configDir = process.env.PI_CODING_AGENT_DIR;
+	const advisorFile = join(configDir, "bro-advisor.md");
+	const prefsFile = join(configDir, "bro-preferences.md");
+
+	try {
+		// A broken/oversize advisor steering file does NOT affect readPreferences()
+		await writeFile(advisorFile, "x".repeat(4_001));
+		await writeFile(prefsFile, "Valid reader preferences.");
+		assert.equal(await readPreferences(), "Valid reader preferences.");
+
+		// A broken/oversize preferences file does NOT affect readAdvisorSteering()
+		await writeFile(prefsFile, "p".repeat(4_001));
+		await writeFile(advisorFile, "Valid durable advisor steering.");
+		assert.equal(await readAdvisorSteering(), "Valid durable advisor steering.");
+	} finally {
+		await rm(advisorFile, { force: true });
+		await rm(prefsFile, { force: true });
+	}
+});
+
+await t.test("Advisor consultation uses a stable prompt snapshot across retries even if steering changes mid-run", async () => {
+	const configDir = process.env.PI_CODING_AGENT_DIR;
+	const advisorFile = join(configDir, "bro-advisor.md");
+	await writeFile(advisorFile, "DURABLE_V1_FROZEN_CANARY");
+
+	const tools = new Map();
+	const fakePi = {
+		on() {},
+		registerCommand() {},
+		registerTool(tool) { tools.set(tool.name, tool); },
+		getActiveTools: () => ["bro_advisor"],
+		getAllTools: () => [{ name: "bro_advisor" }],
+	};
+	await registerBro(fakePi);
+	const advisorTool = tools.get("bro_advisor");
+	assert.ok(advisorTool);
+
+	const workspace = await mkdtemp(join(tmpdir(), "pi-bro-retry-workspace-"));
+	const testCtx = {
+		cwd: workspace,
+		getSystemPrompt: () => "SYS",
+		sessionManager: {
+			getBranch: () => [],
+			buildContextEntries: () => [{ type: "message", message: { role: "user", content: "TEST_CTX" } }],
+		},
+		ui: { setStatus: () => {} },
+	};
+
+	try {
+		await withFakeAgy(
+			"#!/bin/sh\n" +
+			"cat >> \"$AGY_PROMPTS_LOG\"\n" +
+			"printf '\\n---SPLIT---\\n' >> \"$AGY_PROMPTS_LOG\"\n" +
+			"count=$(wc -l < \"$AGY_CALLS_FILE\" 2>/dev/null || echo 0)\n" +
+			"printf 'call\\n' >> \"$AGY_CALLS_FILE\"\n" +
+			"if [ \"$count\" -eq 0 ]; then\n" +
+			"  printf 'DURABLE_V2_MUTATED_CANARY\\n' > \"$AGY_STEERING_FILE\"\n" +
+			"  printf '%s\\n' '{\"event\":\"result\",\"result\":{\"status\":\"ERROR\",\"error\":\"transient backend failure\"}}'\n" +
+			"  exit 1\n" +
+			"fi\n" +
+			"printf '%s\\n' '{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"RETRY_ADVICE_CANARY\"}}'\n",
+			async (binDir) => {
+				const promptsLog = join(binDir, "prompts.log");
+				const callsFile = join(binDir, "calls.txt");
+				process.env.AGY_PROMPTS_LOG = promptsLog;
+				process.env.AGY_CALLS_FILE = callsFile;
+				process.env.AGY_STEERING_FILE = advisorFile;
+
+				const result = await advisorTool.execute(
+					"retry-call-1",
+					{ question: "RETRY_Q" },
+					new AbortController().signal,
+					() => {},
+					testCtx,
+				);
+
+				assert.equal(result.details.attempt, 2, "the consultation succeeded on attempt 2 after a retry");
+				assert.match(result.content[0].text, /RETRY_ADVICE_CANARY/);
+
+				// Inspect the prompts sent on attempt 1 and attempt 2
+				const log = await readFile(promptsLog, "utf8");
+				const attempts = log.split("---SPLIT---").filter((s) => s.trim().length > 0);
+				assert.equal(attempts.length, 2, "exactly two attempts were logged");
+
+				const prompt1 = JSON.parse(attempts[0].trim()).message.content;
+				const prompt2 = JSON.parse(attempts[1].trim()).message.content;
+
+				// Both attempts must contain V1
+				assert.match(prompt1, /DURABLE_V1_FROZEN_CANARY/);
+				assert.match(prompt2, /DURABLE_V1_FROZEN_CANARY/);
+
+				// Neither attempt may contain V2, because the prompt was frozen before retrying
+				assert.doesNotMatch(prompt1, /DURABLE_V2_MUTATED_CANARY/);
+				assert.doesNotMatch(prompt2, /DURABLE_V2_MUTATED_CANARY/);
+
+				// However, a brand new consultation now reads V2
+				await withFakeAgy(
+					"#!/bin/sh\n" +
+					"cat > \"$AGY_PROMPTS_LOG_2\"\n" +
+					"printf '%s\\n' '{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"FRESH_ADVICE\"}}'\n",
+					async (binDir2) => {
+						const promptsLog2 = join(binDir2, "prompts2.log");
+						process.env.AGY_PROMPTS_LOG_2 = promptsLog2;
+						const freshResult = await advisorTool.execute(
+							"fresh-call",
+							undefined,
+							new AbortController().signal,
+							() => {},
+							testCtx,
+						);
+						assert.match(freshResult.content[0].text, /FRESH_ADVICE/);
+						const freshPrompt = JSON.parse((await readFile(promptsLog2, "utf8")).trim()).message.content;
+						assert.match(freshPrompt, /DURABLE_V2_MUTATED_CANARY/, "a subsequent fresh consultation sees the mutated steering");
+					},
+				);
+			},
+		);
+	} finally {
+		await rm(workspace, { recursive: true, force: true });
+		await rm(advisorFile, { force: true });
+		delete process.env.AGY_PROMPTS_LOG;
+		delete process.env.AGY_PROMPTS_LOG_2;
+		delete process.env.AGY_CALLS_FILE;
+		delete process.env.AGY_STEERING_FILE;
+	}
 });
 
 // Real Pi lifecycle: bro_advisor is registered like any other tool and is never gated by bro.ts

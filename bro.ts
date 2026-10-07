@@ -9,7 +9,7 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionEn
 import { Container, Editor, Input, Markdown, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type EditorTheme, type Focusable, type TUI } from "@earendil-works/pi-tui";
 import { convertToLlm, copyToClipboard, getAgentDir, getMarkdownTheme, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { BRO_MODES, DEFAULT_BRO_MODE, MAX_PREFERENCES_CHARS, STARTER_PREFERENCES, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, nextBroMode, parseBroMode, type BroMode } from "./prompt.ts";
+import { BRO_MODES, DEFAULT_BRO_MODE, MAX_PREFERENCES_CHARS, MAX_ADVISOR_STEERING_CHARS, STARTER_PREFERENCES, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, nextBroMode, parseBroMode, type BroMode } from "./prompt.ts";
 import {
 	agyFailureMessage,
 	agySelection,
@@ -65,8 +65,10 @@ export * from "./config-ui.ts";
 export { agyFailureMessage, agySelection, advisorFlagErrorHint, parseBtwAgyLine };
 
 const PREFERENCES_FILE = join(getAgentDir(), "bro-preferences.md");
+const ADVISOR_STEERING_FILE = join(getAgentDir(), "bro-advisor.md");
 // Larger files are rejected before reading, even by the editor; the prompt limit is MAX_PREFERENCES_CHARS.
 const MAX_PREFERENCES_FILE_BYTES = 64 * 1024;
+const MAX_ADVISOR_STEERING_FILE_BYTES = 64 * 1024;
 const LOADING_TEXT = "Simplifying for my bro…";
 const BTW_CONTEXT_TURNS = 8;
 const BTW_CONTEXT_MAX = 40_000;
@@ -325,7 +327,7 @@ async function checkAgyUsage(pi: ExtensionAPI, signal: AbortSignal): Promise<str
 	}
 }
 
-async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, signal: AbortSignal): Promise<string> {
+export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, signal: AbortSignal): Promise<string> {
 	const lines: string[] = [];
 	let failed = false;
 	let settings: BroSettings | undefined;
@@ -597,7 +599,14 @@ async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContext, sign
 	const advisorActive = pi.getActiveTools().includes(ADVISOR_TOOL_NAME);
 	if (advisorExposed && !advisorActive) fail("Advisor tool", "bro_advisor is exposed but not active in this session. Run /reload.");
 	else pass("Advisor tool", advisorExposed ? "bro_advisor is exposed and active" : "bro_advisor is not exposed by this host (tool restriction, or the extension has not finished loading)");
-	pass("Advisor steering", resolveAdvisorState(ctx.sessionManager.getBranch()).steering.trim() ? "present" : "none");
+	const sessionSteering = resolveAdvisorState(ctx.sessionManager.getBranch()).steering.trim();
+	pass("Advisor steering (session)", sessionSteering ? `${sessionSteering.length.toLocaleString("en-US")} characters · /bro advisor-steer` : "none — /bro advisor-steer to set for this session");
+	try {
+		const durable = await readAdvisorSteering();
+		pass("Advisor steering (durable)", durable ? `${durable.length.toLocaleString("en-US")} characters · ${ADVISOR_STEERING_FILE}` : `none — ${ADVISOR_STEERING_FILE}`);
+	} catch (error) {
+		fail("Advisor steering (durable)", error);
+	}
 	if (settings && capabilityBackend(settings, "advisor") === "claude") {
 		pass("Advisor compatibility", "Claude backend — no Agy version floor applies");
 	} else if (settings && capabilityBackend(settings, "advisor") === "grok") {
@@ -826,6 +835,43 @@ export async function readPreferences(): Promise<string> {
 	const text = ((await readPreferencesRaw()) ?? "").trim();
 	if (text.length > MAX_PREFERENCES_CHARS) {
 		throw new Error(`${PREFERENCES_FILE} is ${text.length.toLocaleString("en-US")} characters; keep it under ${MAX_PREFERENCES_CHARS.toLocaleString("en-US")} (it's sent with every request). Use /bro preferences to trim it.`);
+	}
+	return text;
+}
+
+// Raw durable advisor steering text, undefined when there is no file. Rejects non-regular files and
+// files > 64 KB before read.
+export async function readAdvisorSteeringRaw(): Promise<string | undefined> {
+	let stats: Awaited<ReturnType<typeof stat>>;
+	try {
+		stats = await stat(ADVISOR_STEERING_FILE);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw new Error(`Cannot read ${ADVISOR_STEERING_FILE}: ${errorMessage(error)}`);
+	}
+	if (!stats.isFile()) {
+		throw new Error(`${ADVISOR_STEERING_FILE} is not a regular file. Edit or delete it directly.`);
+	}
+	if (stats.size > MAX_ADVISOR_STEERING_FILE_BYTES) {
+		throw new Error(`${ADVISOR_STEERING_FILE} is larger than 64 KB. Edit or delete it directly.`);
+	}
+	try {
+		const bytes = await readFile(ADVISOR_STEERING_FILE);
+		return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/, "");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw new Error(`Cannot read ${ADVISOR_STEERING_FILE}: ${errorMessage(error)}`);
+	}
+}
+
+// Durable steering for the advisor tool: "" when absent or blank. Re-read on every consultation.
+// An oversize or unreadable file throws an actionable message for the executor agent before spawn.
+export async function readAdvisorSteering(): Promise<string> {
+	const text = ((await readAdvisorSteeringRaw()) ?? "").trim();
+	if (text.length > MAX_ADVISOR_STEERING_CHARS) {
+		throw new Error(
+			`Bro advisor steering file ${ADVISOR_STEERING_FILE} is ${text.length.toLocaleString("en-US")} characters (keep under ${MAX_ADVISOR_STEERING_CHARS.toLocaleString("en-US")}). Tell the human to edit or delete it; retrying won't help.`
+		);
 	}
 	return text;
 }
@@ -1110,6 +1156,7 @@ export type AdvisorToolDetails = {
 	durationMs?: number;
 	cwd?: string;
 	steeringIncluded?: boolean;
+	steeringSources?: { durable: boolean; session: boolean };
 	snapshotChars?: number;
 	broTruncated?: false;
 	omissions?: string;
@@ -1415,7 +1462,7 @@ export function createAdvisorSteerModal(
 ): ReturnType<typeof createTextEditorModal> {
 	return createTextEditorModal({
 		title: "Bro · advisor steer",
-		subtitle: "One persistent steering brief the advisor always sees — never sent to the main model.",
+		subtitle: `Session-specific steering brief for the advisor (takes precedence over ${ADVISOR_STEERING_FILE}) — never sent to the main model.`,
 		initialText,
 		onSave,
 		onClear,
@@ -1541,6 +1588,7 @@ Quick reference. The README is the full user guide: https://github.com/tranhoang
 - \`bro_advisor\` — a tool the executor agent may call for a second opinion from a fresh backend process with real, auto-approved workspace access; it is told to advise, not edit, but that is not enforced
 - \`/bro advisor\` — whether \`bro_advisor\` is available right now
 - \`/bro advisor-steer\` — edit the session's persistent steering brief (**Ctrl+S** save, **Ctrl+K** clear, **Ctrl+C** copy, **Esc** close)
+- Standing advisor steering: \`${ADVISOR_STEERING_FILE}\` sets standing priorities across sessions (session steering takes precedence)
 
 ## Configure and check
 
@@ -1554,7 +1602,7 @@ Quick reference. The README is the full user guide: https://github.com/tranhoang
 ${settingsSummary}
 - **Preferences:** ${preferences} — \`/bro preferences\`
 
-Saved in \`${settingsFile()}\` and \`${PREFERENCES_FILE}\`.
+Saved in \`${settingsFile()}\`, \`${PREFERENCES_FILE}\`, and \`${ADVISOR_STEERING_FILE}\`.
 
 ## Explanation modes
 
@@ -2476,11 +2524,14 @@ export default async function bro(pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const state = resolveAdvisorState(ctx.sessionManager.getBranch());
+			const durableSteering = await readAdvisorSteering();
 			const settings = await readSettings();
 			const selection = selectionForCapability(settings, "advisor");
 			const backend = selection.backend ?? "agy";
 			const snapshot = buildAdvisorSnapshot(ctx, pi);
-			const prompt = buildAdvisorPrompt(state.steering, snapshot.text, params.question);
+			const prompt = buildAdvisorPrompt({ durable: durableSteering, session: state.steering }, snapshot.text, params?.question);
+			const hasDurable = Boolean(durableSteering.trim());
+			const hasSession = Boolean(state.steering.trim());
 			let lastAttempt: AdvisorToolDetails = { status: "investigating", attempt: 1, of: 3, elapsedMs: 0, backend };
 			try {
 				const run = await runAdvisorWithRetries(
@@ -2517,7 +2568,8 @@ export default async function bro(pi: ExtensionAPI) {
 					effort,
 					durationMs: run.durationMs,
 					cwd: ctx.cwd,
-					steeringIncluded: Boolean(state.steering.trim()),
+					steeringIncluded: hasDurable || hasSession,
+					steeringSources: { durable: hasDurable, session: hasSession },
 					snapshotChars: snapshot.text.length,
 					broTruncated: false,
 					omissions,
@@ -2527,7 +2579,14 @@ export default async function bro(pi: ExtensionAPI) {
 				};
 				// The backend qualifier appears only off Agy, keeping the Agy header byte-identical.
 				const header = `Bro advisor · ${backend === "agy" ? "" : `backend: ${backend} · `}model: ${selection.model} · effort: ${effort} · ${run.attempts} attempt${run.attempts === 1 ? "" : "s"} · ${Math.ceil(run.durationMs / 1_000)}s`;
-				const context = `Context · cwd: ${JSON.stringify(ctx.cwd)} · steering: ${details.steeringIncluded ? "included" : "none"} · snapshot: ${snapshot.text.length} chars · Bro truncation: none · omissions: ${omissions}`;
+				const steeringSummary = hasDurable && hasSession
+					? "included (durable+session)"
+					: hasDurable
+						? "included (durable)"
+						: hasSession
+							? "included"
+							: "none";
+				const context = `Context · cwd: ${JSON.stringify(ctx.cwd)} · steering: ${steeringSummary} · snapshot: ${snapshot.text.length} chars · Bro truncation: none · omissions: ${omissions}`;
 				return { content: [{ type: "text", text: `${header}\n${context}\n\n${run.advice}` }], details };
 			} finally {
 				ctx.ui.setStatus(ADVISOR_STATUS_BAR_KEY, undefined);
@@ -2757,7 +2816,7 @@ export default async function bro(pi: ExtensionAPI) {
 				// an actionable notice pointing at the commands that replaced it, not a silent no-op.
 				if (parts.length > 1) {
 					ctx.ui.notify(
-						"/bro advisor no longer has on/off/status controls -- bro_advisor is always registered and available whenever this host exposes and activates it. Use /bro config for its model/effort, /bro advisor-steer for its steering brief, or /bro doctor for full diagnostics.",
+						"/bro advisor no longer has on/off/status controls -- bro_advisor is always registered and available whenever this host exposes and activates it. Use /bro config for its model/effort, /bro advisor-steer for session steering, or /bro doctor for full diagnostics.",
 						"warning",
 					);
 					return;
@@ -2765,8 +2824,8 @@ export default async function bro(pi: ExtensionAPI) {
 				const active = pi.getActiveTools().includes(ADVISOR_TOOL_NAME);
 				ctx.ui.notify(
 					active
-						? "Bro advisor is available -- the executor agent can call bro_advisor. Use /bro config for its model/effort, /bro advisor-steer for its steering brief, or /bro doctor for full diagnostics."
-						: "Bro advisor is unavailable in this runtime. Use /bro doctor for full diagnostics, /bro config for its model/effort, or /bro advisor-steer for its steering brief.",
+						? `Bro advisor is available -- the executor agent can call bro_advisor. Use /bro config for its model/effort, /bro advisor-steer for session steering, ${ADVISOR_STEERING_FILE} for standing steering, or /bro doctor for full diagnostics.`
+						: "Bro advisor is unavailable in this runtime. Use /bro doctor for full diagnostics, /bro config for its model/effort, or /bro advisor-steer for session steering.",
 					active ? "info" : "warning",
 				);
 				return;

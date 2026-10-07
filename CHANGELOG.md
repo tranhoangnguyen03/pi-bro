@@ -4,6 +4,18 @@ All notable changes to pi-bro are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Durable advisor steering across sessions in `~/.pi/agent/bro-advisor.md` (#97):
+  - Ingest standing priorities from `bro-advisor.md` alongside session steering (`/bro advisor-steer`).
+  - Labeled prompt composition in `buildAdvisorPrompt`: standing priorities appear under `### Standing priorities (durable across sessions)` and session priorities under `### Session priorities (this session only)`.
+  - Session-specific priorities take precedence over standing defaults where they conflict.
+  - Fail-closed validation rejects files > 64 KB and > 4,000 characters before spawning any backend process.
+  - Doctor reports both `Advisor steering (session)` and `Advisor steering (durable)`.
+  - Tool result context line and details track `steeringSources: { durable, session }` while preserving backwards-compatible `steeringIncluded` boolean.
+  - Retries use a frozen prompt snapshot built prior to `runAdvisorWithRetries`.
+  - Clearing session steering leaves durable steering intact.
+
 ### Changed
 
 - Separate Bro responsibilities and unify settings and backend-selection policy (#83):
