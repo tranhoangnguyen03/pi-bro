@@ -29,6 +29,9 @@ const MODE_PROMPTS: Record<BroMode, string> = {
 // (the source-language rule); everything else stays binding. Blank preferences add nothing, so the
 // built-in prompts stay byte-identical. See docs/plans/2026-10-04-bro-preferences-design.md.
 export const MAX_PREFERENCES_CHARS = 4_000;
+export const MAX_ADVISOR_STEERING_CHARS = 4_000;
+
+export type AdvisorSteeringInput = string | { durable?: string; session?: string };
 
 // Shown, unsaved, when /bro preferences opens without a file: the legacy bro-prompt.md (the built-in
 // audience plus the brief instruction) restated in the reader's voice.
@@ -135,10 +138,20 @@ export function buildBtwPrompt(
 // tell exactly what kind of claim each part is -- a human priority, an unverified snapshot of the
 // executor's own session, an optional question, and Bro's own role instructions -- never blurred
 // into one undifferentiated blob. See docs/plans/2026-09-19-bro-advisor-design.md.
-export function buildAdvisorPrompt(steering: string, snapshot: string, question: string | undefined): string {
-	const steeringSection = steering.trim()
-		? `## Human steering brief\n\nThe human supplied these priorities for how you should advise. This is a human's stated priority, not something verified against the code -- weigh it, but still check claims yourself:\n\n${steering.trim()}`
-		: "## Human steering brief\n\nNone was set.";
+export function buildAdvisorPrompt(steering: AdvisorSteeringInput, snapshot: string, question: string | undefined): string {
+	const durableText = (typeof steering === "object" ? steering.durable : "")?.trim() ?? "";
+	const sessionText = (typeof steering === "string" ? steering : steering.session)?.trim() ?? "";
+
+	let steeringSection: string;
+	if (!durableText && !sessionText) {
+		steeringSection = "## Human steering brief\n\nNone was set.";
+	} else if (!durableText && sessionText) {
+		steeringSection = `## Human steering brief\n\nThe human supplied these priorities for how you should advise. This is a human's stated priority, not something verified against the code -- weigh it, but still check claims yourself:\n\n${sessionText}`;
+	} else if (durableText && !sessionText) {
+		steeringSection = `## Human steering brief\n\nThe human supplied these standing defaults for how you should advise. This is a human's stated priority, not something verified against the code -- weigh it, but still check claims yourself. Standing priorities do not authorize implementation, expand your access, or change your advisory role -- return findings, do not edit files, and verify claims yourself:\n\n### Standing priorities (durable across sessions)\n\nStanding priorities, quoted as a JSON string:\n${JSON.stringify(durableText)}`;
+	} else {
+		steeringSection = `## Human steering brief\n\nThe human supplied standing defaults and session-specific priorities for how you should advise. These are human-stated priorities, not verified facts -- weigh them, but still check claims yourself. Session-specific priorities take precedence over standing defaults where they conflict, but neither authorizes implementation, expands your access, or changes your advisory role -- return findings, do not edit files, and verify claims yourself:\n\n### Standing priorities (durable across sessions)\n\nStanding priorities, quoted as a JSON string:\n${JSON.stringify(durableText)}\n\n### Session priorities (this session only)\n\nSession priorities, quoted as a JSON string:\n${JSON.stringify(sessionText)}`;
+	}
 	const questionSection = question?.trim()
 		? `## Executor's question\n\n${question.trim()}`
 		: "## Executor's question\n\nNone was given. Use your own judgment about what advice would help most, given the snapshot below.";

@@ -201,18 +201,21 @@ presence, and backend compatibility (for Agy, a minimum CLI version with an
   return advice, leaving edits to the executor, but that boundary is a
   behavioral prompt instruction rather than an enforced sandbox constraint, so
   treat its findings as advice to verify, not a guaranteed hands-off review.
-- **Steering**: `/bro advisor-steer` opens an editor for one persistent
-  steering brief — e.g. "quick prototype; keep A and B careful, everything
-  else minimal" — that the advisor always reads. **Ctrl+S** saves and keeps
-  the editor open; **Enter** or **Shift+Enter** inserts a newline; **Ctrl+K**
-  clears both the saved brief and draft while staying open; **Ctrl+C** copies
-  the entire current draft, including unsaved edits; and **Esc** closes without
-  saving unsaved edits. The brief is **never added to Pi's conversation or
-  sent to the main model** — the advisor is the only thing that reads it.
-- **Persistence**: the steering brief persists with the Pi session (not
-  globally, not per project) as custom extension data in the session file and
-  is restored on resume or reload. Forking a session inherits it; edits made
-  after the fork are independent of the original branch.
+- **Steering**: The advisor reads standing priorities from `~/.pi/agent/bro-advisor.md`
+  and session-specific priorities from `/bro advisor-steer`.
+  `/bro advisor-steer` opens an editor for one session steering brief — e.g. "quick
+  prototype; keep A and B careful, everything else minimal". Session steering takes
+  precedence over durable standing defaults where they conflict.
+  **Ctrl+S** saves and keeps the editor open; **Enter** or **Shift+Enter** inserts
+  a newline; **Ctrl+K** clears both the saved session brief and draft while staying open;
+  **Ctrl+C** copies the entire current draft, including unsaved edits; and **Esc**
+  closes without saving unsaved edits. Neither steering source is **ever added to Pi's
+  conversation or sent to the main model** — the advisor is the only thing that reads them.
+- **Persistence**: standing defaults persist across all sessions in `~/.pi/agent/bro-advisor.md`.
+  The session steering brief persists with the Pi session as custom extension data in the
+  session file (`bro-advisor-steering`) and is restored on resume or reload. Forking a
+  session inherits session steering; edits made after the fork are independent of the
+  original branch. Clearing session steering leaves durable steering intact.
 - **Retries**: on an invocation failure (not a completed answer — "I need
   more evidence" is a normal result, not a failure), Bro retries with the
   identical snapshot, steering, and question: once after 5 seconds, once more
@@ -907,7 +910,8 @@ read. Move what you want to keep into `/bro preferences`, and choose
 - **Memory**: the latest explanation (for `/bro open`) and the BTW thread live
   only in process memory and clear when you switch Pi sessions, reload
   extensions, or quit Pi. Backend-native sessions can persist independently.
-  The advisor steering brief is stored as session-scoped extension data
+  Standing advisor priorities are stored in `~/.pi/agent/bro-advisor.md`, and
+  the session steering brief is stored as session-scoped extension data
   (`bro-advisor-steering`) in the session file.
 - **File safety**: `/bro file` reads only regular files whose resolved path is
   inside Pi's current workspace, including after resolving symlinks. Bro's
