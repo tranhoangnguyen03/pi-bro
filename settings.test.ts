@@ -280,6 +280,50 @@ test("writeSettings preserves symlinked settings file and updates target file", 
 	}
 });
 
+test("writeSettings rejects and preserves symlink when symlink target disappears", async (t) => {
+	if (process.platform === "win32") {
+		t.skip("Symlink creation requires elevated privileges on Windows");
+		return;
+	}
+	const agentDir = mkdtempSync(join(tmpdir(), "pi-bro-broken-link-agent-"));
+	const targetDir = mkdtempSync(join(tmpdir(), "pi-bro-broken-link-target-"));
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+
+	try {
+		const realTarget = join(targetDir, "dotfiles-bro-settings.json");
+		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "valid-initial", effort: "low" } });
+		writeFileSync(realTarget, `${JSON.stringify(settingsPayload(initial), null, 2)}\n`, { mode: 0o600 });
+
+		const linkPath = join(agentDir, "bro-settings.json");
+		symlinkSync(realTarget, linkPath);
+
+		// 1. Load settings succeeds
+		const loaded = await bro.readSettings();
+		assert.equal(loaded.model, "valid-initial");
+
+		// 2. Remove symlink target (dotfiles target disappears)
+		rmSync(realTarget);
+
+		// 3. Save must reject rather than silently overwriting the symlink with a regular file
+		const updated = parseBroSettings({ version: 2, default: { backend: "agy", model: "attempted-mutation", effort: "high" } });
+		await assert.rejects(bro.writeSettings(updated));
+
+		// 4. Symlink is preserved
+		assert.ok(lstatSync(linkPath).isSymbolicLink(), "linkPath must remain a symlink");
+		assert.equal(readlinkSync(linkPath), realTarget, "symlink destination must be intact");
+
+		// 5. No stray temporary files created
+		const files = readdirSync(agentDir);
+		assert.deepEqual(files, ["bro-settings.json"]);
+	} finally {
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		rmSync(agentDir, { recursive: true, force: true });
+		rmSync(targetDir, { recursive: true, force: true });
+	}
+});
+
 test("modal rollback on persistence failure agrees with on-disk state", async (t) => {
 	const { initTheme } = await import("@earendil-works/pi-coding-agent");
 	initTheme();

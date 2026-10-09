@@ -1,6 +1,6 @@
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	type BackendSelection,
@@ -477,7 +477,18 @@ export function settingsPayload(settings: BroSettings): Record<string, unknown> 
 export async function writeSettings(settings: BroSettings): Promise<void> {
 	// ponytail: last writer wins across concurrent Pi processes; add locking only if that becomes a common workflow.
 	await mkdir(getAgentDir(), { recursive: true });
-	const target = await realpath(settingsFile()).catch(() => settingsFile());
+	const file = settingsFile();
+	let target = file;
+	let exists = false;
+	try {
+		await lstat(file);
+		exists = true;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+	if (exists) {
+		target = await realpath(file);
+	}
 	const temporary = `${target}.${randomUUID()}.tmp`;
 	try {
 		await writeFile(temporary, `${JSON.stringify(settingsPayload(settings), null, 2)}\n`, {
