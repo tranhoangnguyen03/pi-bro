@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
 import test from "node:test";
 
 // @ts-ignore Pure release validation rules module

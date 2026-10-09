@@ -7,7 +7,6 @@ import { join } from "node:path";
 import test from "node:test";
 import {
 	type BackendProgress,
-	type BackendRequest,
 	type BackendSelection,
 	CODEX_EFFORTS,
 	execute,

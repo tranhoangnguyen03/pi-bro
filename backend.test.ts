@@ -9,7 +9,6 @@ import test from "node:test";
 import { PassThrough } from "node:stream";
 import {
 	type AgySelection,
-	type BackendOnProgress,
 	type BackendProgress,
 	type BackendRequest,
 	MAX_STDOUT_LINE_CHARS,
@@ -349,7 +348,7 @@ test("timeout, cancel, and unexpected signal handling", async () => {
 cat > /dev/null
 sleep 10
 `,
-		async (binDir) => {
+		async () => {
 			const controller = new AbortController();
 			setTimeout(() => controller.abort(), 100);
 
@@ -372,7 +371,7 @@ sleep 10
 cat > /dev/null
 sleep 10
 `,
-		async (binDir) => {
+		async () => {
 			const outcome = await execute(
 				{ feature: "explain", access: "restricted", prompt: "Explain" },
 				{ model: "gemini-2.5-flash" },
@@ -394,7 +393,7 @@ sleep 10
 cat > /dev/null
 kill -HUP $$
 `,
-		async (binDir) => {
+		async () => {
 			const outcome = await execute(
 				{ feature: "explain", access: "restricted", prompt: "Explain" },
 				{ model: "gemini-2.5-flash" },
@@ -445,7 +444,9 @@ touch "$BIN_DIR/still-running-after-kill.txt"
 			const grandchildPid = Number(await readFile(join(binDir, "grandchild.pid"), "utf8"));
 			// Allow the OS to reap after SIGKILL before probing the process table.
 			await new Promise(resolve => setTimeout(resolve, 100));
-			const state = spawnSync("ps", ["-o", "stat=", "-p", String(grandchildPid)], { encoding: "utf8" }).stdout.trim();
+			const probe = spawnSync("ps", ["-o", "stat=", "-p", String(grandchildPid)], { encoding: "utf8" });
+			assert.equal(probe.error, undefined, probe.error?.message);
+			const state = (probe.stdout ?? "").trim();
 			assert.ok(!state || state.startsWith("Z"), `grandchild must be gone or awaiting reaping, got ${state}`);
 			assert.ok(elapsed < 4_000, `SIGKILL escalation must bound cleanup time (took ${elapsed}ms, expected < 4000ms)`);
 			assert.equal(
