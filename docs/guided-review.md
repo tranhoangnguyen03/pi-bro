@@ -6,7 +6,7 @@ The normal journey is: **open a PR → read and investigate → leave when satis
 
 ## Open a review
 
-Requirements: local Pi interactive mode, Git, authenticated GitHub CLI (`gh`), and a configured Bro backend. Run `gh auth status` to check GitHub authentication; `/bro doctor` checks Bro's selected backend setup but does not prove GitHub access or model connectivity.
+Requirements: local Pi interactive mode, Git, authenticated GitHub CLI (`gh`), and Claude or Muse configured for review. Run `gh auth status` to check GitHub authentication; `/bro doctor` checks Bro's selected backend setup but does not prove GitHub access or model connectivity.
 
 ```text
 /bro guided-review https://github.com/OWNER/REPO/pull/123
@@ -46,7 +46,7 @@ Contents is on the left; reading and contextual actions are on the right. Narrow
 
 A finding is a proposal, not a proven defect or an applied patch. **No findings is not approval.** Source blocks and diffs come from captured Git objects, not model quotations. Valid citations establish locations; they do not certify the reasoning or complete inspection. Coverage paths and access explanations are model-reported. Suggested tests have not been independently executed by Bro.
 
-The preparation prompt investigates the whole change and relevant unchanged callers/tests before organizing topics. It supplies the first 100,000 diff characters, with an omission marker for larger changes; the backend can inspect the captured checkout beyond that seed. Follow-up questions include at most the latest 12 relevant turns and disclose older omitted discussion. Older saved walkthroughs without an assessment are labelled unassessed.
+The preparation prompt investigates the whole change and relevant unchanged callers/tests before organizing topics. It supplies the first 100,000 diff characters, with an omission marker for larger changes; the backend can inspect the captured checkout beyond that seed. Follow-up questions include at most the latest 12 relevant turns and disclose older omitted discussion. A saved guide without an assessment is explicitly labelled unassessed. Prototype formats are not supported; unreadable files are left unchanged.
 
 The generation header shows observable application stages and elapsed time—not a percentage or invented model checklist.
 
@@ -71,6 +71,8 @@ Choose Ask from a topic, finding, file or Overview. Type in the composer below t
 
 Back restores the originating screen. Failed/stopped questions offer Edit and resend; it restores the question only if the current draft is empty. Resending is explicit and makes a new call. Nothing enters the main Pi conversation or is posted to GitHub.
 
+Capture fetches only the head and GitHub-reported merge-base trees (depth 1). Source/diff/evidence remain available offline; ancestry, log and blame history are not captured. Fetch has a ten-minute bound; metadata and other commands have two-minute bounds. Very large trees can still exceed time/output/disk limits; retries reuse the managed store rather than intentionally deleting it.
+
 ## Optional conveniences
 
 ### Your work is remembered
@@ -87,9 +89,13 @@ Use Overview → Regenerate guide only when you want a fresh explanation/assessm
 
 ## Access, privacy and storage
 
-Review runs with the backend's existing **full-access** behavior in a separate captured checkout. It is instructed to inspect, not implement or publish. Automatic preparation is instructed not to install dependencies or execute project scripts/code. **These are instructions, not an enforced sandbox.** A separate directory protects the active checkout from normal acquisition operations; it does not confine a full-access model process.
+Review uses **file-only inspection**, not full-access execution. Claude runs with `--restricted`, Read/Grep/Glob only, `dontAsk`, safe mode and no MCP; Muse disables write, shell and web tools, foreign personal context and native session logs, without trusting repository rules. No model-run project tests, commands, Git or network tools are available. Unsupported/older CLI flags fail visibly; there is no full-access fallback.
 
-PR identity/description, diff, relevant saved discussion and your Bro preferences are sent to the selected backend. It can read the captured source. Main-session conversation is not automatically attached. Each request reconstructs context; review does not resume BTW/native sessions. Claude/Codex/Muse disable native session persistence where their CLIs support it; backend/provider retention policies still apply.
+Agy, Grok and Codex are not available for review generation/questions: supported controls do not establish equivalent shell-free inspection (Codex read-only sandbox still executes commands). Set the **review** override to Claude or Muse in `/bro config`; shared defaults and other features are unchanged. Saved reviews remain readable without a supported model backend.
+
+These controls reduce malicious-code execution/write risk, but repository content can still manipulate the model's conclusions. Captured content, questions and answers go to the provider; do not use review as a secrets boundary or approval certificate. CLI enforcement and managed host policies remain the backend's responsibility.
+
+PR identity/description, diff, relevant saved discussion and your Bro preferences are sent to the selected backend. It can read the captured source. Main-session conversation is not automatically attached. Each request reconstructs context; review does not resume BTW/native sessions. Claude/Muse disable native session persistence where their CLIs support it; backend/provider retention policies still apply.
 
 Records, private text and captured source remain under:
 
@@ -106,6 +112,7 @@ One open writer per review is supported within a Pi process. Concurrent editing 
 | Problem | What to do |
 | --- | --- |
 | GitHub unavailable when reopening | Use bare `/bro guided-review` to choose a saved review; the picker does not fetch |
+| Unsupported review backend | Choose Claude or Muse for review in `/bro config`; no automatic switching |
 | Git/gh authentication or fetch error | Read the acquisition error; check Git/`gh auth status`; retry explicitly |
 | Invalid/failed preparation | Changed files remain available; use Prepare guide to retry when ready for another call |
 | Failed regeneration | Current guide is kept; retry only if you want another call |

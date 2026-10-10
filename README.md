@@ -5,7 +5,7 @@ Turn a dense AI reply, pasted text, document or webpage into a plain-language ex
 `pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
 Experimental [PiG 0.3.0 compatibility](docs/pig-compatibility.md) uses the same npm package and requires Node.js. See the compatibility notes for verified coverage and the PiG RPC tool-exclusion limitation.
 It opens explanations in a separate modal and runs them through a CLI backend
-you already have installed and signed in to. Explain, show, BTW, advisor and Guided Review use five backend adapters (live verification varies by feature):
+you already have installed and signed in to. Explain, show, BTW and advisor use five backend adapters. Guided Review generation/questions require Claude or Muse file-only inspection (live verification varies by feature):
 
 - [Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`) — the default for new settings
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
@@ -138,7 +138,7 @@ Nothing is automatically applied or posted to GitHub.
 /bro guided-review https://github.com/OWNER/REPO/pull/123
 ```
 
-Local Pi interactive mode, Git, authenticated `gh`, and a configured backend
+Local Pi interactive mode, Git, authenticated `gh`, and Claude or Muse configured for review
 are required. A new review makes a model call using that backend's account.
 Opening the same PR restores its saved review without another model call.
 Bare `/bro guided-review` lists saved reviews (`resume` is an alias).
@@ -157,7 +157,7 @@ Optional conveniences:
 
 Reopening also keeps the captured revision, even after the author pushes.
 Findings are model suggestions, not approval; citations show real locations,
-not proof of the conclusion. Every review request has full backend access in a separate checkout. It is instructed not to edit or publish. Automatic preparation is also instructed not to install or run project code. These are instructions, not a sandbox.
+not proof of the conclusion. Review uses Claude or Muse file-only inspection: shell, writes and web tools are disabled. Agy/Grok/Codex review requests fail clearly; choose a review override in `/bro config`. Saved reviews remain readable with any selection. Repository text can still mislead the model; tool restrictions are not proof of its conclusions.
 Use `pi --tui-mode fullscreen` for pane-local wheel scrolling.
 
 See the [Guided Review guide](docs/guided-review.md) for controls, calls and
@@ -812,11 +812,11 @@ data under their own settings and policies.
 
 | | Explain / show | BTW conversation-only | BTW full permission | Advisor | Guided Review |
 | --- | --- | --- | --- | --- | --- |
-| **Agy** | Temporary directory, Agy sandbox | Temporary directory, Agy sandbox | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Captured checkout, permissions bypassed |
-| **Claude Code** | Scratch directory, tools/MCP/skills disabled, no session persistence | Workspace, tools disabled | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Captured checkout, permissions bypassed, no session persistence |
-| **Grok** | Temporary directory, **prompt instruction only** | Workspace, **prompt instruction only** | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Captured checkout, permissions bypassed |
-| **Codex** | Scratch directory, read-only sandbox, ephemeral session | Workspace, read-only sandbox | Workspace, approvals and sandbox bypassed | Fresh workspace process, approvals and sandbox bypassed | Captured checkout, approvals/sandbox bypassed, ephemeral |
-| **Muse** | Scratch directory, approval/write/shell disabled, no session log | Workspace, approval/write/shell disabled | Workspace, permissions bypassed (`--yolo`) | Fresh workspace process, permissions bypassed (`--yolo`) | Captured checkout, `--yolo`, no session log |
+| **Agy** | Temporary directory, Agy sandbox | Temporary directory, Agy sandbox | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Unavailable; choose Claude/Muse |
+| **Claude Code** | Scratch directory, tools/MCP/skills disabled, no session persistence | Workspace, tools disabled | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Restricted Read/Grep/Glob only; confined checkout, no persistence |
+| **Grok** | Temporary directory, **prompt instruction only** | Workspace, **prompt instruction only** | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Unavailable; choose Claude/Muse |
+| **Codex** | Scratch directory, read-only sandbox, ephemeral session | Workspace, read-only sandbox | Workspace, approvals and sandbox bypassed | Fresh workspace process, approvals and sandbox bypassed | Unavailable; command execution is not allowed for review |
+| **Muse** | Scratch directory, approval/write/shell disabled, no session log | Workspace, approval/write/shell disabled | Workspace, permissions bypassed (`--yolo`) | Fresh workspace process, permissions bypassed (`--yolo`) | Captured checkout; writes/shell/web disabled, no session log |
 
 - Grok always runs with its sandbox off and permissions bypassed; its tools,
   hooks, skills, plugins, and MCP may remain available. "Answer only from the
@@ -926,7 +926,7 @@ read. Move what you want to keep into `/bro preferences`, and choose
   seeded main-session conversation text (plus earlier turns when a native
   session is reseeded) to the selected backend. In full permission mode the
   side agent can additionally read and edit the workspace.
-- **Guided Review requests**: PR identity/description, captured diff, relevant private discussion and preferences go to the selected backend, which can inspect the captured checkout with full access. Main-session context is not attached. Every review request is instructed not to edit/publish; automatic preparation is also instructed not to install or run project code. These instructions are behavioral, not a sandbox. See [Guided Review access and storage](docs/guided-review.md#access-privacy-and-storage).
+- **Guided Review requests**: PR identity/description, captured diff, relevant private discussion and preferences go to the selected backend, which can inspect captured files using Claude/Muse read-only tools. Main-session context is not attached. Review shell/write/web tools are disabled; Claude file tools are confined with `--restricted`, Muse uses workspace-scoped inspection. Prompt injection can still corrupt conclusions or reveal captured content to the provider; this is not a general confidentiality guarantee. See [Guided Review access and storage](docs/guided-review.md#access-privacy-and-storage).
 - **Preferences**: `bro-preferences.md` is sent with every explain, Show,
   BTW, and Guided Review request to the selected backend. It is never sent to the advisor or
   to Pi's main model.

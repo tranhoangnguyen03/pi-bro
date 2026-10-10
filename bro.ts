@@ -12,6 +12,7 @@ import { Type } from "typebox";
 import { BRO_MODES, MAX_PREFERENCES_CHARS, MAX_ADVISOR_STEERING_CHARS, STARTER_PREFERENCES, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, nextBroMode, parseBroMode, type BroMode } from "./prompt.ts";
 import {
 	agyFailureMessage,
+	reviewBackendError,
 	execute as executeBackend,
 	type BackendProgress,
 	type BackendSelection,
@@ -516,6 +517,8 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 			const override = capabilityOverride(settings, capability);
 			const backend = capabilityBackend(settings, capability);
 			const pair = capabilityPair(settings, capability);
+			const reviewError = capability === "review" ? reviewBackendError(backend) : undefined;
+			if (reviewError) { fail(label, reviewError); continue; }
 			if (backend === "claude") {
 				if (!isClaudeEffort(pair.effort)) {
 					fail(label, `\`${pair.effort}\` is unsupported for claude \`${pair.model}\`. Run \`/bro config\` to fix this.`);
@@ -1581,7 +1584,7 @@ Quick reference. The README is the full user guide: https://github.com/tranhoang
 - \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).
 - Your work is saved automatically. Open the same PR to return without a model call; \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Reopening keeps the captured revision, not newer commits.
 - Enter opens an item or focuses actions; Enter on a highlighted action activates it. Tab changes focus. Esc goes back, then closes from Contents. Close saves automatically; Stop and close stops active work first.
-- Copy finding copies to the system clipboard, not GitHub. Regenerate guide is optional and makes a confirmed call about the same captured code. Every request has full backend access, instructed not to edit/publish. Automatic preparation is also instructed not to install or run project code. These are instructions, not a sandbox.
+- Copy finding copies to the system clipboard, not GitHub. Regenerate guide is optional and makes a confirmed call about the same captured code. Review generation/questions require Claude or Muse file-only tools: shell, writes and web tools are disabled. Set a review override in /bro config; other backends can still read saved reviews. Repository text can still mislead the model; citations are not proof.
 
 ## Side conversation
 

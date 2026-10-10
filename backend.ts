@@ -11,6 +11,9 @@ import { join } from "node:path";
 
 export type BackendFeature = "explain" | "show" | "btw" | "advisor" | "review";
 export type BackendAccess = "restricted" | "workspace-full";
+export function reviewBackendError(backend: string): string | undefined {
+	if (backend !== "claude" && backend !== "muse") return "Guided Review requires Claude or Muse for file-only inspection. Set the review backend in /bro config; saved reviews remain readable.";
+}
 export type AgySelection = { model: string; effort?: "low" | "medium" | "high" };
 export const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export const GROK_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
@@ -565,12 +568,13 @@ async function executeClaude(
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
+	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
+	const deadlineMs = deadlineMsOverride ?? (full || inspect ? 610_000 : isBtw ? 130_000 : 125_000);
 	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
-	const runDirectory = full || isBtw ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
+	const runDirectory = full || isBtw || inspect ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
 	if (signal.aborted) {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 		return { status: "cancelled", message: "Canceled." };
@@ -588,7 +592,9 @@ async function executeClaude(
 				"stream-json",
 				"--verbose",
 				"--include-partial-messages",
-				...(full
+				...(inspect
+					? ["--restricted", "--tools", "Read,Grep,Glob", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--permission-mode", "dontAsk"]
+					: full
 					? ["--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--dangerously-skip-permissions"]
 					: ["--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--permission-mode", "dontAsk"]),
 				...(isBtw && request.continuation ? ["--resume", request.continuation.id] : []),
@@ -1172,8 +1178,9 @@ async function executeMuse(
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
+	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
+	const deadlineMs = deadlineMsOverride ?? (full || inspect ? 610_000 : isBtw ? 130_000 : 125_000);
 	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
 	const timeoutVerb = request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
 	const emptyTextMessage = request.feature === "review" ? "Muse returned no response for Guided Review." : isAdvisor ? "Muse returned no advice." : isBtw ? "Muse returned no answer for the side question." : "Muse returned no final explanation.";
@@ -1186,7 +1193,7 @@ async function executeMuse(
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const promptFile = join(promptDirectory, "prompt.txt");
 		await writeFile(promptFile, request.prompt, { encoding: "utf8", mode: 0o600 });
-		if (!full && !isBtw) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+		if (!full && !isBtw && !inspect) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const workspace = runDirectory ?? request.cwd!;
 
@@ -1197,6 +1204,7 @@ async function executeMuse(
 			"--workspace", workspace,
 			...(!isBtw ? ["--no-session-log"] : []),
 			...(full ? ["--yolo"] : ["--disable-approval", "--disable-write", "--disable-shell"]),
+			...(inspect ? ["--disable-web-tools", "--no-foreign-personal-context"] : []),
 			...(isBtw && request.continuation ? ["--session-id", request.continuation.id] : []),
 			"--model", selection.model,
 			...(selection.effort ? ["--reasoning-effort", selection.effort] : []),
@@ -1355,11 +1363,16 @@ export async function execute(
 ): Promise<BackendOutcome> {
 	if (
 		(request.access === "workspace-full" && !request.cwd?.trim()) ||
-		((request.feature === "advisor" || request.feature === "review") && request.access !== "workspace-full") ||
+		(request.feature === "advisor" && request.access !== "workspace-full") ||
+		(request.feature === "review" && (request.access !== "restricted" || !request.cwd?.trim())) ||
 		((request.feature === "explain" || request.feature === "show") && request.access !== "restricted") ||
 		(request.feature !== "btw" && request.continuation)
 	) return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 	const backend = (selection as { backend?: unknown }).backend;
+	if (request.feature === "review") {
+		const error = reviewBackendError(String(backend ?? "agy"));
+		if (error) return { status: "failure", message: error };
+	}
 	// An explicit tag guard: a stale or corrupt runtime tag must fail, never fall through to Agy.
 	if (backend !== undefined && backend !== "agy" && backend !== "claude" && backend !== "grok" && backend !== "codex" && backend !== "muse") {
 		return { status: "failure", message: `Unknown backend ${JSON.stringify(backend)}: pick Agy, Claude, Grok, Codex or Muse in \`/bro config\`.` };

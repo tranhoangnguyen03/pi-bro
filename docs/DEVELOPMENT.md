@@ -11,7 +11,7 @@ Production is published as TypeScript source (no build step):
 - **`bro.ts`** — the Pi extension entry point and wiring. Owns the `/bro` command and completion,
   `/bro doctor`, `/bro help`, the BTW thread and composer, the `bro_advisor` tool
   (snapshot, retries, progress), and advisor steering state.
-- **`review.ts`** — Guided Review schema/validation, atomic records, legacy migration, guide replacement and prompt construction.
+- **`review.ts`** — Guided Review schema/validation, atomic records, guide replacement and prompt construction.
 - **`review-source.ts`** — explicit GitHub identity through `gh`, managed Git capture and protected blob evidence reads.
 - **`review-ui.ts`** — acquisition, backend execution, streaming/cancellation, serialized saves, evidence hydration and host UI lifecycle.
 - **`review-modal.ts`** — renderer, focus/navigation, discussion composer, paging/wheel and contextual controls. No Git/model execution.
@@ -45,7 +45,7 @@ Agy; reads never rewrite the file.
 
 ## Prompt size and recent context
 
-Agy explain, Show, BTW, and review retain argv transport below 120,000 UTF-8 bytes.
+Agy explain, Show, and BTW retain argv transport below 120,000 UTF-8 bytes.
 Larger prompts use stdin NDJSON (Agy 1.1.15+), avoiding Linux's single-argument
 limit; an unsupported CLI reports an upgrade hint without retrying another transport.
 Show and BTW context budgets retain newest complete turns first, then newest
@@ -102,12 +102,12 @@ BTW keeps one in-memory thread bound to a backend and an access mode
 Normal journey: open PR → read/investigate → close. Automatic persistence supports this; Copy finding and regeneration are optional. Do not add a mandatory notes/approval/publication lifecycle.
 
 - PR key is host/repository numeric identity/PR number, not head SHA. URL/number opening checks metadata, then restores an existing capture; picker resume does not fetch. Do not silently replace source with a newer revision.
-- Capture runs outside the active tree, pins base/head Git objects and reads display evidence from blobs with `GIT_NO_REPLACE_OBJECTS=1`. Diff mapping fails visibly on inventory mismatch. Type-change adjacent sections remain grouped; binary/directory blobs are not displayed as text. Recovery directories are preserved rather than purged.
-- One current `guide` has app-generated topic/finding IDs. `replaceGuide` retains compact original context only for sent questions/nonempty drafts. Legacy versions are validated/migrated in memory; loading does not rewrite the source record.
+- Capture resolves GitHub compare merge-base before depth-1 fetch, runs outside the active tree, pins merge-base/head Git objects and reads display evidence from blobs with `GIT_NO_REPLACE_OBJECTS=1`. Diff mapping fails visibly on inventory mismatch. Type-change adjacent sections remain grouped; binary/directory blobs are not displayed as text. Recovery directories are preserved rather than purged. No full-history fallback or lazy blob fetching; model has no Git/shell access. Fetch timeout 600 seconds, other commands 120 seconds.
+- One current `guide` has app-generated topic/finding IDs. `replaceGuide` retains compact original context only for sent questions/nonempty drafts. Only the current schema is accepted; prototype guideVersions/missing-ui records fail unchanged. Development records were backed up/normalized once before removal.
 - `ReviewView` holds destination, screen, row, drafts and offsets; optional return point/topic scope are validated convenience state. Back preserves the real origin. List rows are clamped after membership changes. Wheel scrolling does not alter keyboard focus or list selection.
 - Controller debounce/serial write queue saves atomic snapshots; close aborts/awaits execution and flushes before exiting. Save failures retain the modal/in-memory work. Do not claim Saved on a failed write.
-- `execute({feature:'review',access:'workspace-full',cwd:capturedCheckout,...})` uses all five adapters, rejects native continuation and reconstructs context from records. It disables persistence where supported; it must not change BTW session semantics. Host full-access deadline is 610 seconds. No automatic paid retry/fallback.
-- Prompt instructions to avoid installs/project execution/edits/publication are behavioral. Do not call captured checkout isolation a sandbox. Source ranges are validated, but inspected paths, conclusions, reported access errors and execution remain model-reported.
+- `execute({feature:'review',access:'restricted',cwd:capturedCheckout,...})` uses Claude/Muse file-only tools; unsupported adapters fail before spawn, rejects native continuation and reconstructs context from records. It disables persistence where supported; it must not change BTW session semantics. Review deadline is 610 seconds. No automatic paid retry/fallback.
+- Claude uses restricted Read/Grep/Glob with dontAsk/no MCP; Muse disables write/shell/web without trusting workspace rules. Shell-free means even read-only Codex execution is unavailable. Preserve these restrictions; no bypass fallback. Captured text remains a prompt-injection/model-quality risk. Source ranges are validated, but inspected paths, conclusions, reported access errors and execution remain model-reported.
 - Fresh guide calls omit prior guide/discussion; question calls include current guide, original target context and latest 12 relevant nonfailed turns. First 100,000 diff characters are seeded with disclosure. Preferences are included; main-session context is not.
 - Copy delegates to Pi's clipboard helper and reports errors. It does not insert into the editor, mutate code or publish; clipboard retention is outside Bro.
 - One active writer per target in-process; no cross-process locking/sync guarantee. Do not delete user review/source data as part of a simplification.
@@ -135,7 +135,7 @@ node .github/scripts/release-utils.mjs selftest
 npm run benchmark:dry-run                  # manual live benchmark: see benchmark/README.md
 ```
 
-Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs` and `review-ux.test.mjs` (rendering/interaction), `review-session.test.mjs` and `review-regeneration.test.mjs` (fake-CLI controller/save/recovery), `review-versions.test.mjs` (single-guide/legacy migration), `review-ui.test.mjs` (evidence/save presentation), `review-doctor.test.mjs` (review-only backend selection). Adapter tests keep BTW/native-session behavior separate from stateless review. Add regressions to the existing owner; do not create another generic harness.
+Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs` and `review-ux.test.mjs` (rendering/interaction), `review-session.test.mjs` and `review-regeneration.test.mjs` (fake-CLI controller/save/recovery), `review-versions.test.mjs` (single-guide/current validation and rejected prototype schemas), `review-ui.test.mjs` (evidence/save presentation), `review-doctor.test.mjs` (review-only backend selection). Adapter tests keep BTW/native-session behavior separate from stateless review. Add regressions to the existing owner; do not create another generic harness.
 
 `npm test` never calls a real model: `backend.test.ts`, `claude.test.ts`,
 `grok.test.ts`, `codex.test.ts`, and `muse.test.ts` run fake CLIs; `settings.test.ts` and `prompt.test.ts` cover

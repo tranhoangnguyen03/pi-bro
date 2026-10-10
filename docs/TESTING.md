@@ -111,14 +111,16 @@ pi --tui-mode fullscreen --no-extensions -e "$BRO/bro.ts"
 
 ### Bounded live checks (not part of npm test)
 
-New capture/preparation, Send question, Prepare guide, Edit and resend followed by Send, and confirmed Regenerate guide make model calls. Specify backend/model, fixtures and maximum attempts first; never automatically retry. Use isolated source/profile and retain results. Do not post to GitHub or run unknown project code as a test shortcut.
+Current security/capture tests are offline: enforce review flags/no dangerous bypass, reject unsupported adapters before spawn, preserve captured cwd, reconstruct questions, reject prototype formats unchanged, and prove shallow captures omit intermediate commits while old/new evidence remains available. These test adapter contracts, not independently certified CLI enforcement. No additional live calls were authorized for this revision.
+
+With Claude/Muse, new capture/preparation, Send question, Prepare guide, Edit and resend followed by Send, and confirmed Regenerate guide make model calls. Specify backend/model, fixtures and maximum attempts first; never automatically retry. Use isolated source/profile and retain results. Do not post to GitHub or run unknown project code as a test shortcut.
 
 - Known defect: correct scenario, unchanged caller/test investigation when relevant, supported references and useful fix/check—not just valid JSON.
 - Clean change: distinguish present defects from intentional contract questions/speculative advice; zero findings is allowed, not required.
 - Regeneration: decline first to verify navigation without a call; then approve once. Completion must follow observed running state, not the already-ready header. Verify new identities/current replacement, unchanged captured revision, preserved question/draft/original context, clean source, close/resume without another call.
 - Streaming/cancellation and save failures: offline fake-CLI tests cover contracts. Live claims require actual observation; simulate disk errors only in disposable profiles, never by damaging user state.
 
-Current record: manual UI accepted; 316 full serial tests passed before final prompt calibration, focused tests/typecheck passed afterward; bounded Agy known-defect and final regeneration checks succeeded. Earlier real PR #102 work also exercised Claude questions/cancellation. This is not an unfamiliar-reader study, private/fork acquisition matrix or live five-backend certification. Live calls are separate from offline documentation/contract checks. See [qualification record](plans/2026-10-10-guided-review-live-qualification.md).
+Historical full-access record (not qualification of the later file-only controls): manual UI accepted; 316 full serial tests passed before final prompt calibration, focused tests/typecheck passed afterward; bounded Agy known-defect and final regeneration checks succeeded. Earlier real PR #102 work also exercised Claude questions/cancellation. This is not an unfamiliar-reader study, private/fork acquisition matrix or live five-backend certification. Live calls are separate from offline documentation/contract checks. See [qualification record](plans/2026-10-10-guided-review-live-qualification.md).
 
 ## Backend specifics
 
