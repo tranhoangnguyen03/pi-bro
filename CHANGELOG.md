@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.22.1] - 2026-10-11
+
+### Fixed
+
+- `/bro show` no longer invites Mermaid inside the HTML fence. Bro's HTML page blocks all scripts, so Mermaid could only appear as plain source text. The prompt now asks for hand-rolled HTML and CSS only and says prose subjects never use the HTML fence (#108).
+
 ## [0.22.0] - 2026-10-11
 
 ### Fixed
