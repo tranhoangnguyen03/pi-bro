@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "version": "0.22.0",
+  "version": "0.22.1",
   "description": "An Earendil Pi extension for plain-language explanations, conversation diagrams, side questions, guided PR understanding and assessment, and a second-opinion advisor tool.",
   "type": "module",
   "license": "MIT",
