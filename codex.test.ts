@@ -406,7 +406,7 @@ test("codex cancel after partial and deadline reuse the attempt lifecycle", asyn
 				{ feature: "explain", access: "restricted", prompt: "Explain" },
 				codex(),
 				controller.signal,
-				undefined,
+				(prog) => { if (prog.kind === "text") controller.abort(); },
 				{ killEscalationMs: 200 },
 			);
 			clearInterval(timer);

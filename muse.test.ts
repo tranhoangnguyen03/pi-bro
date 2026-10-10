@@ -484,7 +484,7 @@ test("muse cancel after partial and deadline reuse attempt lifecycle", async () 
 				{ feature: "explain", access: "restricted", prompt: "Explain" },
 				muse(),
 				controller.signal,
-				undefined,
+				(prog) => { if (prog.kind === "text") controller.abort(); },
 				{ killEscalationMs: 200 },
 			);
 			clearInterval(timer);

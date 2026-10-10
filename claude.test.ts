@@ -185,7 +185,7 @@ test("claude cancel after partial and deadline reuse the attempt lifecycle", asy
 	await withFakeClaude(`${textDelta("Partial")}\ntouch "$BIN_DIR/ready"\nsleep 10`, async (binDir) => {
 		const controller = new AbortController();
 		const timer = setInterval(() => existsSync(join(binDir, "ready")) && controller.abort(), 10);
-		const cancelled = await execute({ feature: "explain", access: "restricted", prompt: "p" }, claude(), controller.signal, undefined, { killEscalationMs: 200 });
+		const cancelled = await execute({ feature: "explain", access: "restricted", prompt: "p" }, claude(), controller.signal, (prog) => { if (prog.kind === "text") controller.abort(); }, { killEscalationMs: 200 });
 		clearInterval(timer);
 		assert.deepEqual(cancelled, { status: "cancelled", message: "Canceled.", partialText: "Partial" });
 		const cwd = (await readFile(join(binDir, "pwd.txt"), "utf8")).trim();
