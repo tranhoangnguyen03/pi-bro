@@ -67,12 +67,13 @@ test("show prompt retains traceability and safe HTML rendering contracts", () =>
 	assert.match(prompt, /never connect two co-present tokens without evidence/);
 	assert.match(prompt, /Never invent, guess, or complete a name from world knowledge/);
 	assert.match(prompt, /Traceability: every path, function, command, flag, and number in your output must appear verbatim in the quoted source/);
-	assert.match(prompt, /At most one ```html fenced block, only as the very last block of the reply/);
+	assert.match(prompt, /At most one diagram fence — one ```mermaid block or one ```html block, never both — and only as the very last block of the reply/);
 	assert.match(prompt, /self-contained with no external resources/);
-	assert.match(prompt, /never for prose or outline subjects/);
-	assert.match(prompt, /hand-rolled HTML and CSS only: no scripts and no Mermaid/);
+	assert.match(prompt, /Never use either for prose or outline subjects/);
+	assert.match(prompt, /Use ```mermaid for a user flow, data flow, state diagram, or sequence/);
+	assert.match(prompt, /No styling, classes, links, click handlers, or HTML in labels/);
+	assert.match(prompt, /hand-rolled HTML and CSS, self-contained with no external resources, and no scripts or Mermaid/);
 	assert.doesNotMatch(prompt, /Mermaid syntax only inside that html fence/);
-	assert.match(prompt, /Never write mermaid anywhere in the reply/);
 	assert.match(prompt, /Never wrap identifiers or paths in Markdown links/);
 });
 

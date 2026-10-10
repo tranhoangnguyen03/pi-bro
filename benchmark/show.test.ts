@@ -12,8 +12,8 @@ const fixture = (id: string): ShowFixture => {
 const debugging = () => fixture("show-debug-session-restore");
 
 test("defines serialized transcript fixtures with quoted payloads", () => {
-	assert.equal(SHOW_CORPUS.length, 10);
-	assert.equal(new Set(SHOW_CORPUS.map((item) => item.id)).size, 10);
+	assert.equal(SHOW_CORPUS.length, 13);
+	assert.equal(new Set(SHOW_CORPUS.map((item) => item.id)).size, 13);
 	for (const item of SHOW_CORPUS) {
 		assert.match(item.target, /^## user\n"/);
 		assert.ok(JSON.parse(item.target.split("\n")[1]!).length > 0);
@@ -28,11 +28,11 @@ test("required tokens exclude files that were merely inspected", () => {
 	assert.ok(!fixture("show-refactor-utils-split").expectations.requiredTokens.includes("src/utils/strings.ts"));
 });
 
-test("the show manifest is a separate ten-row track", () => {
+test("the show manifest is a separate thirteen-row track", () => {
 	const manifest = buildManifest("show");
-	assert.equal(manifest.rows.length, 10);
+	assert.equal(manifest.rows.length, 13);
 	assert.deepEqual(new Set(manifest.rows.map((row) => row.variant)), new Set(["show-v1"]));
-	assert.equal(new Set(manifest.rows.map((row) => row.callId)).size, 10);
+	assert.equal(new Set(manifest.rows.map((row) => row.callId)).size, 13);
 	const modes = buildManifest("modes");
 	assert.equal(modes.rows.length, 32);
 	assert.notEqual(manifest.fingerprint, modes.fingerprint);
@@ -81,9 +81,18 @@ test("flags fence violations", () => {
 	assert.ok(
 		checkShowOutput(debugging(), "```html\n<div></div>\n```\n\nHope this helps!").fenceViolations.includes("trailing content after the html fence"),
 	);
+	assert.deepEqual(checkShowOutput(debugging(), "```text\nshape\n```\n\n```mermaid\nflowchart LR\n  n1[\"loadConfig\"] --> n2\n```").fenceViolations, []);
+	assert.deepEqual(checkShowOutput(debugging(), "```mermaid\nflowchart TD\n  n1 --> n2\n```").untraceableTokens, [], "diagram type and direction are syntax");
+	assert.ok(checkShowOutput(debugging(), "```mermaid\ngraph TD;\n```").fenceViolations.includes("unsupported mermaid diagram type"));
+	assert.ok(checkShowOutput(debugging(), "```mermaid\nflowchart LR\n  n1 --> n2\n  click n1 call x()\n```").fenceViolations.includes("mermaid styling, links, or html labels"));
+	assert.ok(checkShowOutput(debugging(), "```mermaid\nflowchart LR\n  n1[\"<b>x</b>\"]\n```").fenceViolations.includes("mermaid styling, links, or html labels"));
 	assert.ok(
-		checkShowOutput(debugging(), "```mermaid\ngraph TD;\n```").fenceViolations.includes("bare mermaid fence"),
+		checkShowOutput(debugging(), "```mermaid\nflowchart LR\n```\n\n```html\n<div></div>\n```").fenceViolations.includes("more than one diagram fence"),
 	);
+	assert.ok(
+		checkShowOutput(debugging(), "```mermaid\nflowchart LR\n```\n\n```text\nafter\n```").fenceViolations.includes("mermaid fence is not the last fenced block"),
+	);
+	assert.ok(checkShowOutput(debugging(), "```html\n<script>x()</script>\n```").fenceViolations.includes("script or mermaid inside the html fence"));
 	assert.ok(
 		checkShowOutput(debugging(), "```\nsequenceDiagram\n    participant User\n```").fenceViolations.includes("untagged mermaid-like fence"),
 	);

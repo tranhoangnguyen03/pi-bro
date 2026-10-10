@@ -762,14 +762,16 @@ export function parseShowArguments(value: string): ParsedShowArguments {
 	return { requested: valid ? firstToken : undefined, steering, invalid: !valid };
 }
 
-export function extractShowHtml(text: string): string | undefined {
-	const fences = [...text.matchAll(/^```html[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\r\n]*$/gm)];
-	return fences.at(-1)?.[1]?.trim();
+export type ShowDiagram = { kind: "html" | "mermaid"; source: string };
+const SHOW_DIAGRAM_FENCE = /^```(html|mermaid)[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\r\n]*$/gm;
+
+export function extractShowDiagram(text: string): ShowDiagram | undefined {
+	const last = [...text.matchAll(SHOW_DIAGRAM_FENCE)].at(-1);
+	return last ? { kind: last[1] as ShowDiagram["kind"], source: last[2]!.trim() } : undefined;
 }
 
-export function stripShowHtmlFence(text: string): string {
-	const matches = [...text.matchAll(/^```html[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\r\n]*$/gm)];
-	const last = matches.at(-1);
+export function stripShowDiagramFence(text: string): string {
+	const last = [...text.matchAll(SHOW_DIAGRAM_FENCE)].at(-1);
 	if (!last || last.index === undefined) return text;
 	return text.slice(0, last.index) + "[HTML diagram saved — press O to open]" + text.slice(last.index + last[0].length);
 }
@@ -790,15 +792,48 @@ function withShowCsp(html: string): string {
 	return html.replace(/^(\s*(?:<!--[^<>]*-->\s*)*(?:<!doctype[^>]*>\s*)?)/i, `$1\n${meta}\n`);
 }
 
-export async function writeShowHtml(html: string): Promise<string> {
-	const slug = createHash("sha256").update(html).digest("hex").slice(0, 8);
+// Bro, not the model, owns every script on a Mermaid page: the CSP allows only these two exact
+// scripts by hash, and the model's source is inserted as escaped text that Mermaid parses itself.
+const MERMAID_INIT = 'mermaid.initialize({startOnLoad:true,securityLevel:"strict",htmlLabels:false,flowchart:{htmlLabels:false}});';
+
+async function vendoredMermaid(): Promise<string> {
+	const library = await readFile(new URL("./vendor/mermaid.min.js", import.meta.url), "utf8");
+	// Inlined in <script>: "<!--" or "<script" would change how HTML parses the element. Every
+	// occurrence sits inside a JS string or regex literal, where \x3C is the same character.
+	return library.replace(/<(?=!--|\/?script)/gi, "\\x3C");
+}
+
+function escapeHtml(text: string): string {
+	return text.replace(/[&<>"]/g, (character) => `&#${character.charCodeAt(0)};`);
+}
+
+export async function mermaidShowPage(source: string): Promise<string> {
+	const library = await vendoredMermaid();
+	const hash = (script: string) => `'sha256-${createHash("sha256").update(script).digest("base64")}'`;
+	const escaped = escapeHtml(source);
+	return `<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src ${hash(library)} ${hash(MERMAID_INIT)}">
+<title>Bro diagram</title>
+<body style="margin:16px;font-family:system-ui,sans-serif">
+<style>pre.mermaid svg{max-height:calc(100vh - 64px)}</style>
+<pre class="mermaid">${escaped}</pre>
+<details><summary>Diagram source</summary><pre>${escaped}</pre></details>
+<script>${library}</script>
+<script>${MERMAID_INIT}</script>
+</body>`;
+}
+
+export async function writeShowDiagram(diagram: ShowDiagram): Promise<string> {
+	const page = diagram.kind === "mermaid" ? await mermaidShowPage(diagram.source) : withShowCsp(diagram.source);
+	const slug = createHash("sha256").update(page).digest("hex").slice(0, 8);
 	const directory = showHtmlDirectory();
 	await mkdir(directory, { recursive: true, mode: 0o700 });
 	for (const name of await readdir(directory)) {
 		if (SHOW_HTML_FILE_PATTERN.test(name)) await rm(join(directory, name), { force: true });
 	}
 	const path = join(directory, `bro-show-${slug}.html`);
-	await writeFile(path, `${withShowCsp(html)}\n`, "utf8");
+	await writeFile(path, `${page}\n`, "utf8");
 	return path;
 }
 
@@ -1924,7 +1959,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 			);
 
 			const present = (result: ModalResult, notice = "") => {
-				const display = result.htmlPath ? stripShowHtmlFence(result.text) : result.text;
+				const display = result.htmlPath ? stripShowDiagramFence(result.text) : result.text;
 				modal.setResult(display, options.retryable ?? Boolean(options.run), notice, result.source?.label, result.text, result.model);
 				modal.setHtmlPath(result.htmlPath ?? "");
 				modal.setMode(result.mode);
@@ -2691,8 +2726,8 @@ export default async function bro(pi: ExtensionAPI) {
 					} catch (error) {
 						throw new Error(withDoctor(error));
 					}
-					const html = extractShowHtml(result.text);
-					return { source: captured, ...result, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
+					const diagram = extractShowDiagram(result.text);
+					return { source: captured, ...result, ...(diagram ? { htmlPath: await writeShowDiagram(diagram) } : {}) };
 				};
 				try {
 					await showBroModal(ctx, {
@@ -2926,10 +2961,10 @@ export default async function bro(pi: ExtensionAPI) {
 
 				const steering = lastShowSteering;
 				if (steering !== undefined) {
-					const html = extractShowHtml(lastResult.text);
+					const diagram = extractShowDiagram(lastResult.text);
 					// Temp files may have been cleaned by the OS or another Bro session.
-					if (html && ctx.mode === "tui") {
-						try { lastResult.htmlPath = await writeShowHtml(html); }
+					if (diagram && ctx.mode === "tui") {
+						try { lastResult.htmlPath = await writeShowDiagram(diagram); }
 						catch (error) {
 							lastResult.htmlPath = undefined;
 							ctx.ui.notify(`Diagram file unavailable: ${errorMessage(error)}`, "warning");
@@ -2943,8 +2978,8 @@ export default async function bro(pi: ExtensionAPI) {
 					run: steering === undefined ? run : async (signal, source, onProgress) => {
 						if (!source) throw new Error("No captured Show source.");
 						const result = await runShowExplanation(source.text, steering, signal, await readSettings(), onProgress);
-						const html = extractShowHtml(result.text);
-						return { source, ...result, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
+						const diagram = extractShowDiagram(result.text);
+						return { source, ...result, ...(diagram ? { htmlPath: await writeShowDiagram(diagram) } : {}) };
 					},
 					onResult: (result) => remember(result, steering),
 				});

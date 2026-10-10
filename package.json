@@ -53,6 +53,7 @@
     "src/ui-capabilities.ts",
     "src/backend.ts",
     "src/prompt.ts",
+    "src/vendor/mermaid.min.js",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",

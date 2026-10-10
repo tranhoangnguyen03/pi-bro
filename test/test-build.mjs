@@ -22,6 +22,7 @@ execFileSync(process.execPath, [join(repoDir, 'node_modules', 'typescript', 'bin
  '--rewriteRelativeImportExtensions', '--skipLibCheck', '--types', 'node', '--outDir', buildDir,
 ], { stdio: 'pipe' });
 symlinkSync(join(repoDir, 'node_modules'), join(buildDir, 'node_modules'));
+symlinkSync(join(repoDir, 'src', 'vendor'), join(buildDir, 'vendor'));
 export const bro = await import(pathToFileURL(join(buildDir, 'bro.js')).href);
 export const backend = await import(pathToFileURL(join(buildDir, 'backend.js')).href);
 export const settings = await import(pathToFileURL(join(buildDir, 'settings.js')).href);

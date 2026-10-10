@@ -39,10 +39,10 @@ const {
 	TerminalConsultError,
 	captureShowTranscript,
 	extractDocumentText,
-	extractShowHtml,
-	stripShowHtmlFence,
+	extractShowDiagram,
+	stripShowDiagramFence,
 	showEntriesForMessage,
-	writeShowHtml,
+	writeShowDiagram,
 	extractWebHtml,
 	extractWebPage,
 	formatAgyUsage,
@@ -621,17 +621,23 @@ await t.test("Show turn extraction and structural message filtering", () => {
 });
 
 await t.test("Show HTML diagram extraction, fenced formatting, and sandboxed storage", async () => {
-	assert.equal(extractShowHtml("no fences"), undefined);
-	assert.equal(
-		extractShowHtml("```text\nshape\n```\n\n```html\n<div>x</div>\n```"),
-		"<div>x</div>",
+	assert.equal(extractShowDiagram("no fences"), undefined);
+	assert.deepEqual(
+		extractShowDiagram("```text\nshape\n```\n\n```html\n<div>x</div>\n```"),
+		{ kind: "html", source: "<div>x</div>" },
 	);
-	assert.equal(stripShowHtmlFence("```html\n<div>x</div>\n```\n\ntail"), "[HTML diagram saved — press O to open]\n\ntail");
-	assert.equal(stripShowHtmlFence("```text\nshape\n```\n```html\n<div>x</div>\n```").trim(), "```text\nshape\n```\n[HTML diagram saved — press O to open]".trim());
-	assert.equal(extractShowHtml("```html  \r\n<div>crlf</div>\r\n```  "), "<div>crlf</div>");
+	assert.equal(stripShowDiagramFence("```html\n<div>x</div>\n```\n\ntail"), "[HTML diagram saved — press O to open]\n\ntail");
+	assert.equal(stripShowDiagramFence("```text\nshape\n```\n```html\n<div>x</div>\n```").trim(), "```text\nshape\n```\n[HTML diagram saved — press O to open]".trim());
+	assert.deepEqual(extractShowDiagram("```html  \r\n<div>crlf</div>\r\n```  "), { kind: "html", source: "<div>crlf</div>" });
+	assert.deepEqual(
+		extractShowDiagram("```html\n<div>x</div>\n```\n\n```mermaid\nflowchart LR\n  n1 --> n2\n```"),
+		{ kind: "mermaid", source: "flowchart LR\n  n1 --> n2" },
+		"the last diagram fence wins",
+	);
+	assert.equal(stripShowDiagramFence("intro\n\n```mermaid\nflowchart LR\n```"), "intro\n\n[HTML diagram saved — press O to open]");
 
-	const showHtmlFirst = await writeShowHtml("<div>one</div>");
-	const showHtmlSecond = await writeShowHtml("<div>two</div>");
+	const showHtmlFirst = await writeShowDiagram({ kind: "html", source: "<div>one</div>" });
+	const showHtmlSecond = await writeShowDiagram({ kind: "html", source: "<div>two</div>" });
 	assert.notEqual(showHtmlFirst, showHtmlSecond);
 	const { readdir: showReaddir, readFile: showReadFile } = await import("node:fs/promises");
 	const showDir = showHtmlSecond.slice(0, showHtmlSecond.lastIndexOf("/"));
