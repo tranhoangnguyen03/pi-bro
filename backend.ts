@@ -3,14 +3,17 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Shared internal execution boundary for all four Bro features (explain, show, btw, advisor).
+// Shared internal execution boundary for explain, show, btw, advisor, and review.
 // This implements docs/plans/2026-09-22-shared-backend-design.md across all supported backends
 // (Agy, Claude Code, Grok, Codex, Muse): it owns CLI selection, process invocation,
-// progress/outcome normalization, continuation, and single-attempt cleanup. Feature code (bro.ts)
+// progress/outcome normalization, continuation, and single-attempt cleanup. Feature code
 // keeps retries, UI, source/session capture and settings.
 
-export type BackendFeature = "explain" | "show" | "btw" | "advisor";
+export type BackendFeature = "explain" | "show" | "btw" | "advisor" | "review";
 export type BackendAccess = "restricted" | "workspace-full";
+export function reviewBackendError(backend: string): string | undefined {
+	if (backend !== "claude" && backend !== "muse") return "Guided Review requires Claude or Muse for file-only inspection. Set the review backend in /bro config; saved reviews remain readable.";
+}
 export type AgySelection = { model: string; effort?: "low" | "medium" | "high" };
 export const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export const GROK_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
@@ -229,12 +232,12 @@ async function executeArgvPrint(
 	// stdin protocol rather than risking Linux's per-argument byte limit.
 	const stdinPrompt = Buffer.byteLength(request.prompt, "utf8") >= 120_000;
 	const isBtw = request.feature === "btw";
-	const full = isBtw && request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? (isBtw ? (full ? 610_000 : 130_000) : 125_000);
+	const full = request.access === "workspace-full";
+	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
 	const printTimeout = full ? "10m" : "2m";
-	const action = isBtw ? "answer the side question" : "simplify the response";
-	const timeoutVerb = isBtw ? "during the side conversation" : "while simplifying the response";
-	const emptyTextMessage = isBtw ? "Agy returned no answer for the side question." : "Agy returned no final explanation.";
+	const action = request.feature === "review" ? "complete the guided review request" : isBtw ? "answer the side question" : "simplify the response";
+	const timeoutVerb = request.feature === "review" ? "during the guided review request" : isBtw ? "during the side conversation" : "while simplifying the response";
+	const emptyTextMessage = request.feature === "review" ? "Agy returned no response for Guided Review." : isBtw ? "Agy returned no answer for the side question." : "Agy returned no final explanation.";
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 
@@ -257,7 +260,7 @@ async function executeArgvPrint(
 				...(selection.effort ? ["--effort", selection.effort] : []),
 				"--print-timeout",
 				printTimeout,
-				...(request.continuation ? ["--conversation", request.continuation.id] : []),
+				...(isBtw && request.continuation ? ["--conversation", request.continuation.id] : []),
 				...(stdinPrompt ? ["--input-format", "stream-json"] : ["--print", request.prompt]),
 			],
 			{
@@ -565,12 +568,13 @@ async function executeClaude(
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
+	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
-	const action = isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
+	const deadlineMs = deadlineMsOverride ?? (full || inspect ? 610_000 : isBtw ? 130_000 : 125_000);
+	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
-	const runDirectory = isAdvisor || isBtw ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
+	const runDirectory = full || isBtw || inspect ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
 	if (signal.aborted) {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 		return { status: "cancelled", message: "Canceled." };
@@ -588,7 +592,9 @@ async function executeClaude(
 				"stream-json",
 				"--verbose",
 				"--include-partial-messages",
-				...(full
+				...(inspect
+					? ["--restricted", "--tools", "Read,Grep,Glob", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--permission-mode", "dontAsk"]
+					: full
 					? ["--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--dangerously-skip-permissions"]
 					: ["--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--permission-mode", "dontAsk"]),
 				...(isBtw && request.continuation ? ["--resume", request.continuation.id] : []),
@@ -685,7 +691,7 @@ async function executeClaude(
 		const cause = attempt.causeOf();
 		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", partialText };
 		if (cause === "timeout") {
-			const during = isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
+			const during = request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
 			return { status: "timeout", message: `Claude timed out ${during}. Run \`/bro doctor\` for setup help.`, partialText };
 		}
 		if (protocolError) return { status: "failure", message: withDoctor(protocolError), partialText };
@@ -706,7 +712,7 @@ async function executeClaude(
 			return { status: "failure", message: withDoctor(`Claude exited without a result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`), partialText };
 		}
 		const text = final.trim();
-		if (!text) return { status: "failure", message: withDoctor(isBtw ? "Claude returned no answer for the side question." : "Claude returned no final answer."), partialText };
+		if (!text) return { status: "failure", message: withDoctor(request.feature === "review" ? "Claude returned no response for Guided Review." : isBtw ? "Claude returned no answer for the side question." : "Claude returned no final answer."), partialText };
 		if (!isBtw) return { status: "success", text };
 		// btw continuation: the session id must be reported, consistent, and (on resume) unchanged.
 		const sessionId = resultSessionId ?? initSessionId;
@@ -767,10 +773,10 @@ async function executeGrok(
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
-	const deadlineMs = deadlineMsOverride ?? (isAdvisor || (isBtw && request.access === "workspace-full") ? 610_000 : isBtw ? 130_000 : 125_000);
-	const action = isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
-	const timeoutVerb = isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
-	const emptyTextMessage = isAdvisor ? "Grok returned no advice." : isBtw ? "Grok returned no answer for the side question." : "Grok returned no final explanation.";
+	const deadlineMs = deadlineMsOverride ?? (request.access === "workspace-full" ? 610_000 : isBtw ? 130_000 : 125_000);
+	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
+	const timeoutVerb = request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
+	const emptyTextMessage = request.feature === "review" ? "Grok returned no response for Guided Review." : isAdvisor ? "Grok returned no advice." : isBtw ? "Grok returned no answer for the side question." : "Grok returned no final explanation.";
 	const prompt = request.access === "restricted" ? `${GROK_RESTRICTED_PREFIX}\n\n${request.prompt}` : request.prompt;
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
@@ -780,7 +786,7 @@ async function executeGrok(
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const promptFile = join(promptDirectory, "prompt.txt");
 		await writeFile(promptFile, prompt, { encoding: "utf8", mode: 0o600 });
-		if (!isAdvisor && !isBtw) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+		if (request.access !== "workspace-full" && !isBtw) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 
 		const child = spawn(
@@ -1003,12 +1009,12 @@ async function executeCodex(
 	const isBtw = request.feature === "btw";
 	const full = request.access === "workspace-full";
 	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
-	const action = isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
-	const timeoutVerb = isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
-	const emptyTextMessage = isAdvisor ? "Codex returned no advice." : isBtw ? "Codex returned no answer for the side question." : "Codex returned no final explanation.";
+	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
+	const timeoutVerb = request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
+	const emptyTextMessage = request.feature === "review" ? "Codex returned no response for Guided Review." : isAdvisor ? "Codex returned no advice." : isBtw ? "Codex returned no answer for the side question." : "Codex returned no final explanation.";
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
-	const runDirectory = isAdvisor || isBtw ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
+	const runDirectory = full || isBtw ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
 	if (signal.aborted) {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 		return { status: "cancelled", message: "Canceled." };
@@ -1172,11 +1178,12 @@ async function executeMuse(
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
+	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
-	const action = isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
-	const timeoutVerb = isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
-	const emptyTextMessage = isAdvisor ? "Muse returned no advice." : isBtw ? "Muse returned no answer for the side question." : "Muse returned no final explanation.";
+	const deadlineMs = deadlineMsOverride ?? (full || inspect ? 610_000 : isBtw ? 130_000 : 125_000);
+	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
+	const timeoutVerb = request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
+	const emptyTextMessage = request.feature === "review" ? "Muse returned no response for Guided Review." : isAdvisor ? "Muse returned no advice." : isBtw ? "Muse returned no answer for the side question." : "Muse returned no final explanation.";
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 	const promptDirectory = await mkdtemp(join(tmpdir(), "pi-bro-muse-"));
@@ -1186,7 +1193,7 @@ async function executeMuse(
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const promptFile = join(promptDirectory, "prompt.txt");
 		await writeFile(promptFile, request.prompt, { encoding: "utf8", mode: 0o600 });
-		if (!isAdvisor && !isBtw) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+		if (!full && !isBtw && !inspect) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const workspace = runDirectory ?? request.cwd!;
 
@@ -1197,6 +1204,7 @@ async function executeMuse(
 			"--workspace", workspace,
 			...(!isBtw ? ["--no-session-log"] : []),
 			...(full ? ["--yolo"] : ["--disable-approval", "--disable-write", "--disable-shell"]),
+			...(inspect ? ["--disable-web-tools", "--no-foreign-personal-context"] : []),
 			...(isBtw && request.continuation ? ["--session-id", request.continuation.id] : []),
 			"--model", selection.model,
 			...(selection.effort ? ["--reasoning-effort", selection.effort] : []),
@@ -1341,7 +1349,7 @@ async function executeMuse(
 	}
 }
 
-// Single-attempt executor shared by all four features. Never retries (retries are feature-owned,
+// Single-attempt executor shared by all features. Never retries (retries are feature-owned,
 // e.g. advisor's 3-attempt backoff in bro.ts); never spawns a pre-aborted request; on cancellation,
 // host deadline, or a protocol failure, stops the whole POSIX process group (SIGTERM, then SIGKILL
 // after a bounded grace period) before resolving. `options` is for offline tests only -- production
@@ -1356,10 +1364,15 @@ export async function execute(
 	if (
 		(request.access === "workspace-full" && !request.cwd?.trim()) ||
 		(request.feature === "advisor" && request.access !== "workspace-full") ||
+		(request.feature === "review" && (request.access !== "restricted" || !request.cwd?.trim())) ||
 		((request.feature === "explain" || request.feature === "show") && request.access !== "restricted") ||
 		(request.feature !== "btw" && request.continuation)
 	) return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 	const backend = (selection as { backend?: unknown }).backend;
+	if (request.feature === "review") {
+		const error = reviewBackendError(String(backend ?? "agy"));
+		if (error) return { status: "failure", message: error };
+	}
 	// An explicit tag guard: a stale or corrupt runtime tag must fail, never fall through to Agy.
 	if (backend !== undefined && backend !== "agy" && backend !== "claude" && backend !== "grok" && backend !== "codex" && backend !== "muse") {
 		return { status: "failure", message: `Unknown backend ${JSON.stringify(backend)}: pick Agy, Claude, Grok, Codex or Muse in \`/bro config\`.` };
@@ -1367,7 +1380,7 @@ export async function execute(
 	const killEscalationMs = options?.killEscalationMs ?? DEFAULT_KILL_ESCALATION_MS;
 	if (selection.backend === "codex") {
 		// Codex btw always runs (and resumes) in the caller's workspace, even restricted.
-		if (request.feature === "btw" && !request.cwd?.trim()) {
+		if ((request.feature === "btw" || request.feature === "review") && !request.cwd?.trim()) {
 			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 		}
 		if (typeof selection.model !== "string" || !selection.model.trim() || (selection.effort !== undefined && !CODEX_EFFORTS.includes(selection.effort))) {
@@ -1377,7 +1390,7 @@ export async function execute(
 	}
 	if (selection.backend === "muse") {
 		// Muse btw always runs (and resumes) in the caller's workspace, even restricted.
-		if (request.feature === "btw" && !request.cwd?.trim()) {
+		if ((request.feature === "btw" || request.feature === "review") && !request.cwd?.trim()) {
 			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 		}
 		if (typeof selection.model !== "string" || !selection.model.trim() || (selection.effort !== undefined && !MUSE_EFFORTS.includes(selection.effort))) {
@@ -1387,7 +1400,7 @@ export async function execute(
 	}
 	if (selection.backend === "grok") {
 		// Grok btw always runs (and resumes) in the caller's workspace, even restricted.
-		if (request.feature === "btw" && !request.cwd?.trim()) {
+		if ((request.feature === "btw" || request.feature === "review") && !request.cwd?.trim()) {
 			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 		}
 		if (typeof selection.model !== "string" || !selection.model.trim() || (selection.effort !== undefined && !GROK_EFFORTS.includes(selection.effort))) {
@@ -1397,7 +1410,7 @@ export async function execute(
 	}
 	if (selection.backend === "claude") {
 		// Claude btw always runs (and resumes) in the caller's workspace, even restricted.
-		if (request.feature === "btw" && !request.cwd?.trim()) {
+		if ((request.feature === "btw" || request.feature === "review") && !request.cwd?.trim()) {
 			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 		}
 		if (!selection.model.trim() || (selection.effort !== undefined && !CLAUDE_EFFORTS.includes(selection.effort))) {

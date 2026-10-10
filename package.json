@@ -1,7 +1,7 @@
 {
   "name": "pi-bro",
-  "version": "0.21.0",
-  "description": "An Earendil Pi extension that explains pasted text, assistant responses, local documents, public webpages, and recent session turns (as shapes) in a context-isolated window, opens a sandboxed side conversation with /bro btw, and provides a second-opinion advisor tool for executor agents.",
+  "version": "0.22.0",
+  "description": "An Earendil Pi extension for plain-language explanations, conversation diagrams, side questions, guided PR understanding and assessment, and a second-opinion advisor tool.",
   "type": "module",
   "license": "MIT",
   "author": "Tran Hoang Nguyen",
@@ -37,6 +37,10 @@
   ],
   "files": [
     "bro.ts",
+    "review.ts",
+    "review-source.ts",
+    "review-ui.ts",
+    "review-modal.ts",
     "util.ts",
     "settings.ts",
     "sources.ts",
@@ -48,7 +52,8 @@
     "CHANGELOG.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
-    "docs/pig-compatibility.md"
+    "docs/pig-compatibility.md",
+    "docs/guided-review.md"
   ],
   "publishConfig": {
     "access": "public"
@@ -58,7 +63,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && node .github/scripts/release-utils.mjs selftest && node --test helpers.test.mjs prompt.test.ts backend.test.ts claude.test.ts grok.test.ts codex.test.ts muse.test.ts settings.test.ts release.test.ts show-html.test.ts smoke-rpc.test.ts ui-capabilities.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
+    "test": "npm run typecheck && node .github/scripts/release-utils.mjs selftest && node --test review-ux.test.mjs review-doctor.test.mjs review-versions.test.mjs review-regeneration.test.mjs review-modal.test.mjs review.test.ts review-ui.test.mjs review-session.test.mjs helpers.test.mjs prompt.test.ts backend.test.ts claude.test.ts grok.test.ts codex.test.ts muse.test.ts settings.test.ts release.test.ts show-html.test.ts smoke-rpc.test.ts ui-capabilities.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
     "benchmark:dry-run": "node benchmark/run.ts dry-run",
     "benchmark:run": "node benchmark/run.ts run",
     "benchmark:report": "node benchmark/run.ts report",

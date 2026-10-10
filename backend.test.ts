@@ -20,6 +20,36 @@ import {
 
 const withFakeAgy = (script: string, run: (binDir: string) => Promise<void>) => withFakeExecutable("agy", script, run);
 
+test('review inspection fails closed on command-capable adapters', async () => {
+ for (const backend of ['agy', 'grok', 'codex'] as const) {
+  const result = await execute({feature:'review',access:'restricted',cwd:process.cwd(),prompt:'inspect'}, {backend,model:'test'}, new AbortController().signal);
+  assert.equal(result.status,'failure');assert.match(result.message,/Claude or Muse/);
+ }
+});
+
+test('review exposes only confined inspection tools and retains captured cwd', async () => {
+ for (const backend of ['claude', 'muse'] as const) await withFakeExecutable(backend, `#!/usr/bin/env node
+const fs=require('node:fs');const args=process.argv.slice(2);
+const required=${JSON.stringify([])};
+if(${JSON.stringify(backend)}==='claude'){
+ fs.readFileSync(0,'utf8');
+ for(const flag of ['--restricted','--safe-mode','--no-session-persistence'])if(!args.includes(flag))process.exit(9);
+ if(args[args.indexOf('--tools')+1]!=='Read,Grep,Glob'||args[args.indexOf('--permission-mode')+1]!=='dontAsk')process.exit(9);
+ console.log(JSON.stringify({type:'system',subtype:'init',permissionMode:'dontAsk'}));
+ console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,result:process.cwd(),stop_reason:'end_turn'}));
+}else{
+ for(const flag of ['--disable-write','--disable-shell','--disable-web-tools','--no-foreign-personal-context','--no-session-log'])if(!args.includes(flag))process.exit(9);
+ console.log(JSON.stringify({payload_type:'runtime.command.accepted',payload:{command_id:'cmd'}}));
+ console.log(JSON.stringify({payload_type:'session.run.linked',payload:{command_id:'cmd',run_stream:{kind:'run',id:'run'}}}));
+ console.log(JSON.stringify({payload_type:'run.terminal.completed',payload:{terminal:'completed',text:process.cwd(),run_stream:{kind:'run',id:'run'}}}));
+}
+if(args.some(x=>['--yolo','--dangerously-skip-permissions','--disable-sandbox','--trust-workspace'].includes(x)))process.exit(9);
+`,async bin=>{
+  const result=await execute({feature:'review',access:'restricted',cwd:bin,prompt:'inspect'},{backend,model:'test'},new AbortController().signal);
+  assert.equal(result.status,'success',JSON.stringify(result));if(result.status==='success'){assert.equal(await realpath(result.text),await realpath(bin));assert.equal(result.continuation,undefined);}
+ });
+});
+
 test("large multibyte Agy prompts use stdin for explain, show and BTW reseeding", async () => {
  await withFakeAgy(`#!/usr/bin/env node
 const fs=require('node:fs');

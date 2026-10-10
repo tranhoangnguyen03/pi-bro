@@ -12,6 +12,7 @@ import { Type } from "typebox";
 import { BRO_MODES, MAX_PREFERENCES_CHARS, MAX_ADVISOR_STEERING_CHARS, STARTER_PREFERENCES, buildAdvisorPrompt, buildBtwPrompt, buildDefaultPrompt, buildShowPrompt, nextBroMode, parseBroMode, type BroMode } from "./prompt.ts";
 import {
 	agyFailureMessage,
+	reviewBackendError,
 	execute as executeBackend,
 	type BackendProgress,
 	type BackendSelection,
@@ -50,6 +51,8 @@ import {
 	MAX_TEXT_LENGTH,
 } from "./sources.ts";
 import { createConfigModal, type Theme, type TuiLike } from "./config-ui.ts";
+
+import { openGuidedReview, stopGuidedReviews } from "./review-ui.ts";
 
 export * from "./util.ts";
 export * from "./settings.ts";
@@ -98,6 +101,7 @@ const COMMANDS = [
 	{ value: "show", label: "show", description: "Draw what happened in recent session turns as shapes" },
 	{ value: "mode", label: "mode", description: "View or choose explanation mode (brief, balanced, faithful)" },
 	{ value: "preferences", label: "preferences", description: "View or edit what Bro knows about you and how you like answers" },
+	{ value: "guided-review", label: "guided-review", description: "Understand and assess a PR with captured code and optional private questions" },
 	{ value: "btw", label: "btw", description: "Open a side conversation (starts conversation-only; /mode toggles full permission)" },
 	{ value: "config", label: "config", description: "Configure shared defaults and per-capability model/effort overrides" },
 	{ value: "advisor", label: "advisor", description: "Check whether the executor's advisor tool is available right now" },
@@ -347,11 +351,14 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 
 	// Probe only the backends some feature actually selects: a Claude/Grok/Codex/Muse-only setup never
 	// requires Agy to be installed, and vice versa.
-	const agyInUse = !settings || capabilityBackend(settings, "explain") === "agy" || capabilityBackend(settings, "show") === "agy" || capabilityBackend(settings, "btw") === "agy" || capabilityBackend(settings, "advisor") === "agy" || (settings.backend ?? "agy") === "agy";
-	const claudeInUse = !!settings && (capabilityBackend(settings, "explain") === "claude" || capabilityBackend(settings, "show") === "claude" || capabilityBackend(settings, "btw") === "claude" || capabilityBackend(settings, "advisor") === "claude" || settings.backend === "claude");
-	const grokInUse = !!settings && (capabilityBackend(settings, "explain") === "grok" || capabilityBackend(settings, "show") === "grok" || capabilityBackend(settings, "btw") === "grok" || capabilityBackend(settings, "advisor") === "grok" || settings.backend === "grok");
-	const codexInUse = !!settings && (capabilityBackend(settings, "explain") === "codex" || capabilityBackend(settings, "show") === "codex" || capabilityBackend(settings, "btw") === "codex" || capabilityBackend(settings, "advisor") === "codex" || settings.backend === "codex");
-	const museInUse = !!settings && (capabilityBackend(settings, "explain") === "muse" || capabilityBackend(settings, "show") === "muse" || capabilityBackend(settings, "btw") === "muse" || capabilityBackend(settings, "advisor") === "muse" || settings.backend === "muse");
+	const backendInUse = (backend: BackendName) => settings
+		? CAPABILITIES.some(capability => capabilityBackend(settings, capability) === backend)
+		: backend === "agy";
+	const agyInUse = backendInUse("agy");
+	const claudeInUse = backendInUse("claude");
+	const grokInUse = backendInUse("grok");
+	const codexInUse = backendInUse("codex");
+	const museInUse = backendInUse("muse");
 
 	let agyStarted = false;
 	if (agyInUse) {
@@ -510,6 +517,8 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 			const override = capabilityOverride(settings, capability);
 			const backend = capabilityBackend(settings, capability);
 			const pair = capabilityPair(settings, capability);
+			const reviewError = capability === "review" ? reviewBackendError(backend) : undefined;
+			if (reviewError) { lines.push(`- ℹ **${label}:** needs a Claude or Muse override in \`/bro config\` for model calls; saved reviews remain readable.`); continue; }
 			if (backend === "claude") {
 				if (!isClaudeEffort(pair.effort)) {
 					fail(label, `\`${pair.effort}\` is unsupported for claude \`${pair.model}\`. Run \`/bro config\` to fix this.`);
@@ -1479,7 +1488,7 @@ export function createPreferencesModal(
 	const starter = loaded.text === undefined && !loaded.error;
 	return createTextEditorModal({
 		title: "Bro · preferences",
-		subtitle: "About you and how you like answers. Sent to the selected backend with every explain, show, and btw request — never to the advisor or Pi's main model.",
+		subtitle: "About you and how you like answers. Sent to the selected backend with every explain, show, btw, and Guided Review request — never to the advisor or Pi's main model.",
 		initialText: starter ? STARTER_PREFERENCES : (loaded.text ?? ""),
 		initialNotice: loaded.error ?? (starter ? "Starter text — not saved. Ctrl+S saves it; Esc leaves no file." : undefined),
 		validate: preferencesTooLong,
@@ -1570,6 +1579,13 @@ Quick reference. The README is the full user guide: https://github.com/tranhoang
 - \`/bro open\` — reopen the latest explanation without a new request
 - \`/bro show [n-turns] [query]\` — draw recent turns' conversation text as shapes; an optional query steers the focus
 
+## Guided Review
+
+- \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).
+- Your work is saved automatically. Open the same PR to return without a model call; \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Reopening keeps the captured revision, not newer commits.
+- Enter opens an item or focuses actions; Enter on a highlighted action activates it. Tab changes focus. Esc goes back, then closes from Contents. Close saves automatically; Stop and close stops active work first.
+- Copy finding copies to the system clipboard, not GitHub. Regenerate guide is optional and makes a confirmed call about the same captured code. Review generation/questions require Claude or Muse file-only tools: shell, writes and web tools are disabled. Set a review override in /bro config; other backends can still read saved reviews. Repository text can still mislead the model; citations are not proof.
+
 ## Side conversation
 
 - \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
@@ -1584,8 +1600,8 @@ Quick reference. The README is the full user guide: https://github.com/tranhoang
 
 ## Configure and check
 
-- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, and btw prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
-- \`/bro config\` — shared default and per-capability (explain/show/btw/advisor) backend, model, and effort; explain mode; show turns. Changes save immediately.
+- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
+- \`/bro config\` — shared default and per-capability (explain/show/btw/advisor/review) backend, model, and effort; explain mode; show turns. Changes save immediately.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
 
@@ -1617,7 +1633,7 @@ The mode decides how much of the source to keep; your preferences decide who it'
 
 ## Privacy
 
-Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, and btw request. Nothing is added to Pi's conversation unless you insert it. Access controls differ by backend; see the README.`;
+Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, and Guided Review request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you insert it. Access controls differ by backend; see the README.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.
@@ -2492,6 +2508,8 @@ export default async function bro(pi: ExtensionAPI) {
 		}
 	};
 
+	pi.on("session_shutdown", async () => { stopGuidedReviews(); });
+
 	pi.on("session_start", async (_event, _ctx) => {
 		lastResult = undefined;
 		btwThread = undefined;
@@ -2768,6 +2786,12 @@ export default async function bro(pi: ExtensionAPI) {
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");
 				}
+				return;
+			}
+
+			if (action === "guided-review") {
+				try { await openGuidedReview(ctx, value, await readPreferences()); }
+				catch (error) { ctx.ui.notify(errorMessage(error), "error"); }
 				return;
 			}
 

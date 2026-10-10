@@ -22,6 +22,7 @@ Bro follows the host's `getAgentDir()`: normally `~/.pi/agent` on Pi and `~/.pig
 
 - **PiG 0.3.0 RPC does not enforce `--exclude-tools`.** Excluded tools may remain active and reach provider requests. This is not a sandbox boundary. Use an explicit `--tools` allowlist instead; do not rely on `/bro doctor` to prove exclusion. Bro does not mask this defect by falsely reporting an active tool as unavailable.
 - The smoke suite retains Pi's strict exclusion assertion. The PiG lane has an explicit version-specific expected failure; a changed result fails the lane so the exception must be reviewed/removed.
+- Guided Review currently targets local Pi interactive mode. Its capture/reading/question/regeneration journey is not qualified on PiG or RPC/Desktop; existing Bro PiG checks do not establish review support. See [current review scope](guided-review.md#not-available-yet).
 - Mouse-wheel forwarding is not qualified; use keyboard scrolling.
 - Remote/SSH OSC 52 clipboard forwarding is not qualified. Local clipboard behavior depends on the host and installed platform utilities.
 - Windows support is not qualified by these checks.

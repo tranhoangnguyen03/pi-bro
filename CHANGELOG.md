@@ -2,7 +2,7 @@
 
 All notable changes to pi-bro are documented here.
 
-## [Unreleased]
+## [0.22.0] - 2026-10-11
 
 ### Fixed
 
@@ -14,6 +14,11 @@ All notable changes to pi-bro are documented here.
   - Align on-disk state with modal rollback behavior in `/bro config`.
 
 ### Added
+
+- Guided Review (#104): open a PR by URL/number in local Pi to automatically get an explanation and quality assessment, captured Git evidence, findings with fix/check suggestions, diffs and optional private questions. Acquisition uses authenticated `gh` outside the active working tree. Findings remain model proposals, not approval or applied changes.
+- Automatic local remembering of questions/drafts/reading position; reopening the same PR restores the captured revision without a model call. Bare `/bro guided-review` lists saved reviews; `resume` remains an alias. Close saves automatically; Stop and close cancels first. Copy finding copies to the system clipboard without submission.
+- Confirmed same-revision regeneration replaces one current guide and preserves original private context; failed/cancelled generation retains it and save errors offer recovery. There is no guide-version UI or prototype-format migration. Review has its own backend override.
+- Bounded live checks demonstrated an unchanged-caller defect and successful regeneration; manual UX accepted. This is not a general accuracy guarantee, live five-backend matrix or complete #104 scope. Notes, examination tracking, branch/update review and feedback delivery are not implemented.
 
 - Durable advisor steering across sessions in `~/.pi/agent/bro-advisor.md` (#97):
   - Ingest standing priorities from `bro-advisor.md` alongside session steering (`/bro advisor-steer`).
@@ -27,6 +32,12 @@ All notable changes to pi-bro are documented here.
 
 ### Changed
 
+- Doctor treats an unsupported optional review backend as an informational override hint, not a broken installation; healthy Agy/Grok/Codex defaults still report ready.
+- Review is file-only on Claude/Muse: no shell, write or web tools; Agy/Grok/Codex review calls fail closed without switching backend. Other features retain their access behavior.
+- Capture uses depth-1 head/merge-base trees instead of full history; fetch gets a ten-minute bound while evidence stays offline. Interrupted-capture recovery remains.
+- Removed prototype record migrations after one-time backup/normalization of development records; split validation and formatted review modules/tests to the repository tab style.
+
+- Guided Review UX consistency pass: origin-preserving Back, focused-action Enter, topic-filtered findings, pane-aware paging, visible focus/overflow, selected-item previews and compact full-width 36×18 layout. Discussion follows conversation/composer/actions order; save errors have shared retry controls and failed questions have draft-safe explicit edit/resend. Request errors are separate from model answers, streaming follows again at the bottom, and acquisition/resume/close messages give clearer orientation. Current review behavior, controls, access/storage and recovery are documented in the user guide; developer/testing guidance records its implementation rules and verification limits. Review itself has no publication action.
 - Remove dead declarations and stale backend naming (#90):
   - Enable native TypeScript unused checks (`noUnusedLocals`, `noUnusedParameters`) in `tsconfig.json`.
   - Remove verified unused declarations across `bro.ts`, `backend.test.ts`, `benchmark/run.ts`, `codex.test.ts`, and `release.test.ts`.
