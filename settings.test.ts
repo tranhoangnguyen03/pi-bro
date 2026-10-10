@@ -40,6 +40,7 @@ const {
 	resolveModelEffort,
 	applyModelChange,
 	applyEffortChange,
+	EXTERNAL_BACKENDS,
 	helpText,
 	selectionForCapability,
 	selectionLabel,
@@ -132,6 +133,70 @@ test("ensureSettingsFile initializes clean version 2 settings on disk", async ()
 		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
 		rmSync(tempDir, { recursive: true, force: true });
 	}
+});
+
+test("legacy settings migration, capability override persistence, and model/turn validation", () => {
+	const base = { model: "gemini-a", effort: "low" as const, mode: "balanced" as const, showTurns: 1, overrides: {} };
+	assert.deepEqual(
+		withCapabilityOverride(base, "show", { model: "gemini-a", effort: "low" }).overrides,
+		{ show: { model: "gemini-a", effort: "low" } },
+		"an override matching the shared default is still stored explicitly -- it is never silently treated as redundant",
+	);
+	assert.deepEqual(withCapabilityOverride(base, "show", { model: "gemini-b", effort: "default" }).overrides, { show: { model: "gemini-b", effort: "default" } });
+	assert.deepEqual(
+		withCapabilityOverride({ ...base, overrides: { show: { model: "gemini-b", effort: "default" } } }, "show", undefined).overrides,
+		{},
+		'clearing an override removes it only via an explicit undefined (the "Default" selection)',
+	);
+	assert.deepEqual(
+		withCapabilityOverride(base, "advisor", { model: "gemini-b", effort: "default" }).overrides,
+		{ advisor: { model: "gemini-b", effort: "default" } },
+		"withCapabilityOverride also accepts the advisor capability, for the config modal's advisor rows",
+	);
+
+	assert.deepEqual(
+		settingsPayload({ model: "gemini-a", effort: "low", mode: "balanced", showTurns: 1, overrides: { show: { model: "gemini-a", effort: "low" } } }),
+		{ version: 2, default: { backend: "agy", model: "gemini-a", effort: "low" }, mode: "balanced", showTurns: 1, overrides: { show: { backend: "agy", model: "gemini-a", effort: "low" } } },
+		"an override identical to the shared default is still written to disk -- settingsPayload does not deduplicate entries",
+	);
+
+	assert.deepEqual(parseBroSettings({ model: "m", effort: "low" }).overrides, {});
+	assert.deepEqual(
+		parseBroSettings({ model: "m", effort: "low", overrides: { explain: { model: "gemini-a", effort: "high" }, somethingUnknown: { model: "x", effort: "low" } } }).overrides,
+		{ explain: { model: "gemini-a", effort: "high" } },
+	);
+	assert.deepEqual(
+		parseBroSettings({ model: "m", effort: "low", overrides: { advisor: { model: "gemini-a", effort: "high" } } }).overrides,
+		{ advisor: { model: "gemini-a", effort: "high" } },
+		"an advisor override is preserved",
+	);
+	assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: { explain: { model: "m" } } }), /overrides\.explain/);
+	assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: { explain: [] } }), /overrides\.explain/);
+	assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: "nope" }), /overrides must be an object/);
+	assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: [] }), /overrides must be an object/);
+	assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: [{ model: "m", effort: "low" }] }), /overrides must be an object/);
+
+	assert.deepEqual(parseBroSettings({ model: " gemini-one ", effort: "high" }), {
+		model: "gemini-one",
+		effort: "high",
+		mode: "balanced",
+		showTurns: 1,
+		overrides: {},
+	});
+	assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "faithful" }), {
+		model: "gemini-one",
+		effort: "low",
+		mode: "faithful",
+		showTurns: 1,
+		overrides: {},
+	});
+	assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
+	assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
+
+	assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 0 }), /showTurns/);
+	assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 2.5 }), /showTurns/);
+	assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief" }).showTurns, 1);
+	assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 9 }).showTurns, 9);
 });
 
 test("writeSettings persists valid settings atomically with mode 0o600 and no leftover temp files", async () => {
@@ -588,35 +653,6 @@ test("Grok default effort omits effort; max rejected, backend-less override stay
 	assert.deepEqual(pinned.overrides.advisor, { backend: "grok", model: "grok-4.7", effort: "high" });
 });
 
-test("config custom Claude model selection is atomic and cancel preserves settings", async () => {
- const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
- const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
- const { createConfigModal } = bro;
- const saved: any[] = [];
- const component = createConfigModal(parseBroSettings({model:"m",effort:"low"}), [], async (s: unknown) => { saved.push(s); })({requestRender(){}}, theme, {}, () => {});
- component.handleInput("\r");
- for (let i = 0; i < 8; i++) component.handleInput("\u001b[B"); component.handleInput("\r");
- component.handleInput("custom-claude-model"); component.handleInput("\u001b");
- assert.equal(saved.length,0);
- component.handleInput("\r"); for (let i = 0; i < 8; i++) component.handleInput("\u001b[B"); component.handleInput("\r");
- component.handleInput("custom-claude-model"); component.handleInput("\r");
- await new Promise(resolve => setTimeout(resolve,0));
- assert.equal(saved.length,1);
- assert.equal(saved[0].backend,"claude"); assert.equal(saved[0].model,"custom-claude-model"); assert.equal(saved[0].effort,"default");
-});
-
-
-test("Grok custom picker cancels atomically and resets cross-backend effort", async () => {
- const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
- const saved: any[] = [];
- const modal = bro.createConfigModal(parseBroSettings({version:2,default:{backend:"claude",model:"sonnet",effort:"high"}}), [], async (s: unknown) => {saved.push(s);})({requestRender(){}},{fg: (_: string,s: string)=>s,bold:(s:string)=>s},{},()=>{});
- const openCustom = () => {modal.handleInput("\r"); for(let i=0;i<9;i++) modal.handleInput("\u001b[B"); modal.handleInput("\r");};
- openCustom(); modal.handleInput("grok-custom"); modal.handleInput("\u001b"); assert.equal(saved.length,0);
- openCustom(); modal.handleInput("grok-custom"); modal.handleInput("\r"); await new Promise(r=>setTimeout(r,0));
- assert.equal(saved.length,1); assert.equal(saved[0].backend,"grok"); assert.equal(saved[0].model,"grok-custom"); assert.equal(saved[0].effort,"default");
- assert.doesNotMatch(modal.render(120).join("\n"),/unsupported backend/);
-});
-
 test("Codex all-feature support: selection, efforts, models", () => {
 	assert.deepEqual([...CODEX_EFFORTS], ["low", "medium", "high", "xhigh"]);
 	assert.deepEqual(
@@ -682,17 +718,6 @@ test("Codex default effort omits effort; max rejected, backend-less override sta
 		effort: "high",
 	});
 	assert.deepEqual(pinned.overrides.advisor, { backend: "codex", model: "gpt-5.5", effort: "high" });
-});
-
-test("Codex custom picker cancels atomically and resets cross-backend effort", async () => {
-	const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
-	const saved: any[] = [];
-	const modal = bro.createConfigModal(parseBroSettings({version:2,default:{backend:"claude",model:"sonnet",effort:"high"}}), [], async (s: unknown) => {saved.push(s);})({requestRender(){}},{fg: (_: string,s: string)=>s,bold:(s:string)=>s},{},()=>{});
-	const openCustom = () => {modal.handleInput("\r"); for(let i=0;i<10;i++) modal.handleInput("\u001b[B"); modal.handleInput("\r");};
-	openCustom(); modal.handleInput("codex-custom"); modal.handleInput("\u001b"); assert.equal(saved.length,0);
-	openCustom(); modal.handleInput("codex-custom"); modal.handleInput("\r"); await new Promise(r=>setTimeout(r,0));
-	assert.equal(saved.length,1); assert.equal(saved[0].backend,"codex"); assert.equal(saved[0].model,"codex-custom"); assert.equal(saved[0].effort,"default");
-	assert.doesNotMatch(modal.render(120).join("\n"),/unsupported backend/);
 });
 
 test("Muse all-feature support: selection, efforts, models", () => {
@@ -762,16 +787,50 @@ test("Muse default effort omits effort; none/off rejected, backend-less override
 	assert.deepEqual(pinned.overrides.advisor, { backend: "muse", model: "muse-spark-1.3", effort: "high" });
 });
 
-test("Muse custom picker cancels atomically and resets cross-backend effort", async () => {
-	const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
-	const saved: any[] = [];
-	const modal = bro.createConfigModal(parseBroSettings({version:2,default:{backend:"claude",model:"sonnet",effort:"high"}}), [], async (s: unknown) => {saved.push(s);})({requestRender(){}},{fg: (_: string,s: string)=>s,bold:(s:string)=>s},{},()=>{});
-	const openCustom = () => {modal.handleInput("\r"); for(let i=0;i<11;i++) modal.handleInput("\u001b[B"); modal.handleInput("\r");};
-	openCustom(); modal.handleInput("muse-custom"); modal.handleInput("\u001b"); assert.equal(saved.length,0);
-	openCustom(); modal.handleInput("muse-custom"); modal.handleInput("\r"); await new Promise(r=>setTimeout(r,0));
-	assert.equal(saved.length,1); assert.equal(saved[0].backend,"muse"); assert.equal(saved[0].model,"muse-custom"); assert.equal(saved[0].effort,"default");
-	assert.doesNotMatch(modal.render(120).join("\n"),/unsupported backend/);
-});
+for (const backend of ["claude", "grok", "codex", "muse"] as const) {
+	test(`${EXTERNAL_BACKENDS[backend].label} custom picker cancels atomically and resets cross-backend effort`, async () => {
+		const { initTheme } = await import("@earendil-works/pi-coding-agent");
+		initTheme();
+		const saved: any[] = [];
+		const initialBackend = backend === "claude" ? "agy" : "claude";
+		const initialSettings = parseBroSettings(
+			initialBackend === "agy"
+				? { version: 2, default: { model: "gemini-a", effort: "low" } }
+				: { version: 2, default: { backend: "claude", model: "sonnet", effort: "high" } },
+		);
+		const modal = bro.createConfigModal(
+			initialSettings,
+			[],
+			async (s: unknown) => { saved.push(s); },
+		)({ requestRender() {} }, { fg: (_: string, s: string) => s, bold: (s: string) => s }, {}, () => {});
+
+		const totalModels = Object.values(EXTERNAL_BACKENDS).reduce((acc: number, b: any) => acc + b.models.length, 0);
+		const backendIndex = Object.keys(EXTERNAL_BACKENDS).indexOf(backend);
+		const downArrows = totalModels + backendIndex;
+
+		const openCustom = () => {
+			modal.handleInput("\r");
+			for (let i = 0; i < downArrows; i++) modal.handleInput("\u001b[B");
+			modal.handleInput("\r");
+		};
+
+		openCustom();
+		modal.handleInput(`${backend}-custom`);
+		modal.handleInput("\u001b");
+		assert.equal(saved.length, 0);
+
+		openCustom();
+		modal.handleInput(`${backend}-custom`);
+		modal.handleInput("\r");
+		await new Promise((r) => setTimeout(r, 0));
+
+		assert.equal(saved.length, 1);
+		assert.equal(saved[0].backend, backend);
+		assert.equal(saved[0].model, `${backend}-custom`);
+		assert.equal(saved[0].effort, "default");
+		assert.doesNotMatch(modal.render(120).join("\n"), /unsupported backend/);
+	});
+}
 
 test("BTW backend changes clear native continuation for every backend, same backend preserves them", () => {
 	for (const backend of ["agy", "claude", "grok", "codex", "muse"] as const) {

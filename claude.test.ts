@@ -1,7 +1,8 @@
 import "./test-cli-guard.ts";
+import { withFakeExecutables } from "./test-fake-exec.ts";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync } from "node:fs";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,27 +12,17 @@ const originalPath = process.env.PATH;
 
 // Fake `claude` records argv (one per line), stdin and cwd into $BIN_DIR, then runs `body`.
 async function withFakeClaude(body: string, run: (binDir: string) => Promise<void>): Promise<void> {
-	const binDir = await mkdtemp(join(tmpdir(), "pi-bro-fake-claude-"));
 	const script = `#!/bin/sh
 for arg in "$@"; do printf '%s\\n' "$arg"; done > "$BIN_DIR/args.txt"
 cat > "$BIN_DIR/stdin.txt"
 pwd > "$BIN_DIR/pwd.txt"
 ${body}
 `;
-	await writeFile(join(binDir, "claude"), script);
-	chmodSync(join(binDir, "claude"), 0o755);
-	// A fake agy that only records it ran, so routing mistakes are visible.
-	await writeFile(join(binDir, "agy"), `#!/bin/sh\ntouch "$BIN_DIR/agy-ran"\nprintf '%s\\n' '{"event":"result","result":{"status":"SUCCESS","response":"agy answer"}}'\n`);
-	chmodSync(join(binDir, "agy"), 0o755);
-	process.env.PATH = `${binDir}:${originalPath}`;
-	process.env.BIN_DIR = binDir;
-	try {
-		await run(binDir);
-	} finally {
-		process.env.PATH = originalPath;
-		delete process.env.BIN_DIR;
-		await rm(binDir, { recursive: true, force: true });
-	}
+	await withFakeExecutables({
+		claude: script,
+		// A fake agy that only records it ran, so routing mistakes are visible.
+		agy: `#!/bin/sh\ntouch "$BIN_DIR/agy-ran"\nprintf '%s\\n' '{"event":"result","result":{"status":"SUCCESS","response":"agy answer"}}'\n`,
+	}, run);
 }
 
 const line = (event: unknown) => `printf '%s\\n' '${JSON.stringify(event)}'`;
@@ -194,7 +185,7 @@ test("claude cancel after partial and deadline reuse the attempt lifecycle", asy
 	await withFakeClaude(`${textDelta("Partial")}\ntouch "$BIN_DIR/ready"\nsleep 10`, async (binDir) => {
 		const controller = new AbortController();
 		const timer = setInterval(() => existsSync(join(binDir, "ready")) && controller.abort(), 10);
-		const cancelled = await execute({ feature: "explain", access: "restricted", prompt: "p" }, claude(), controller.signal, undefined, { killEscalationMs: 200 });
+		const cancelled = await execute({ feature: "explain", access: "restricted", prompt: "p" }, claude(), controller.signal, (prog) => { if (prog.kind === "text") controller.abort(); }, { killEscalationMs: 200 });
 		clearInterval(timer);
 		assert.deepEqual(cancelled, { status: "cancelled", message: "Canceled.", partialText: "Partial" });
 		const cwd = (await readFile(join(binDir, "pwd.txt"), "utf8")).trim();

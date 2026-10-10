@@ -1,9 +1,9 @@
 import "./test-cli-guard.ts";
+import { withFakeExecutable } from "./test-fake-exec.ts";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync } from "node:fs";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
+import { readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { PassThrough } from "node:stream";
@@ -18,21 +18,7 @@ import {
 	frameStdoutLines,
 } from "./backend.ts";
 
-const originalPath = process.env.PATH;
-
-async function withFakeAgy(script: string, run: (binDir: string) => Promise<void>): Promise<void> {
-	const binDir = await mkdtemp(join(tmpdir(), "pi-bro-fake-agy-"));
-	const fakeAgyPath = join(binDir, "agy");
-	await writeFile(fakeAgyPath, script);
-	chmodSync(fakeAgyPath, 0o755);
-	process.env.PATH = `${binDir}:${originalPath}`;
-	try {
-		await run(binDir);
-	} finally {
-		process.env.PATH = originalPath;
-		await rm(binDir, { recursive: true, force: true });
-	}
-}
+const withFakeAgy = (script: string, run: (binDir: string) => Promise<void>) => withFakeExecutable("agy", script, run);
 
 test("large multibyte Agy prompts use stdin for explain, show and BTW reseeding", async () => {
  await withFakeAgy(`#!/usr/bin/env node
@@ -627,6 +613,25 @@ test("frameStdoutLines: oversized line fails closed immediately and stops attemp
 	const error = finish();
 	assert.match(error ?? "", /TestBackend emitted a stdout line over 2000000 characters/);
 	assert.equal(received.length, 0);
+
+	// Also test pending buffer overflow without newline
+	let pendingStopCause: string | undefined;
+	const pendingAttempt = {
+		causeOf: () => pendingStopCause as any,
+		stop: (cause: any) => { pendingStopCause ??= cause; },
+		closed: Promise.resolve({ code: 0, exitSignal: null }),
+		dispose: () => {},
+	};
+	const pendingStream = new PassThrough();
+	const finishPending = frameStdoutLines(
+		{ stdout: pendingStream } as any,
+		pendingAttempt,
+		"TestBackend",
+		() => {},
+	);
+	pendingStream.write("b".repeat(MAX_STDOUT_LINE_CHARS + 1));
+	assert.equal(pendingStopCause, "protocol");
+	assert.match(finishPending() ?? "", /TestBackend emitted a stdout line over 2000000 characters/);
 });
 
 test("frameStdoutLines: stream error triggers protocol failure", async () => {
@@ -690,6 +695,8 @@ if (mode === 'split') {
 	}, 20);
 } else if (mode === 'oversized') {
 	process.stdout.write('x'.repeat(2000001) + '\\n');
+} else if (mode === 'oversized_no_newline') {
+	process.stdout.write('x'.repeat(2000001));
 }
 `, async (binDir) => {
 		try {
@@ -719,7 +726,7 @@ if (mode === 'split') {
 			assert.equal(advisorOutcome.text, "advisor answer");
 			assert.equal(activityLabel, "grep_search");
 
-			// 3. Oversized line (> 2MB) fails closed
+			// 3. Oversized line (> 2MB) fails closed for explain and advisor (both newline-terminated and newline-free)
 			process.env.TEST_MODE = "oversized";
 			const overOutcome = await execute(
 				{ feature: "explain", access: "restricted", prompt: "oversized test", cwd: binDir },
@@ -728,6 +735,15 @@ if (mode === 'split') {
 			);
 			assert.equal(overOutcome.status, "failure");
 			assert.match(overOutcome.message, /over 2000000 characters/);
+
+			process.env.TEST_MODE = "oversized_no_newline";
+			const advisorOverOutcome = await execute(
+				{ feature: "advisor", access: "workspace-full", prompt: "advisor oversized test", cwd: binDir },
+				{ model: "gemini-2.5-flash" },
+				new AbortController().signal,
+			);
+			assert.equal(advisorOverOutcome.status, "failure");
+			assert.match(advisorOverOutcome.message, /over 2000000 characters/);
 		} finally {
 			delete process.env.TEST_MODE;
 		}
