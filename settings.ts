@@ -23,13 +23,14 @@ export type GrokEffort = (typeof GROK_EFFORTS)[number];
 export type CodexEffort = (typeof CODEX_EFFORTS)[number];
 export type MuseEffort = (typeof MUSE_EFFORTS)[number];
 
-export const CAPABILITIES = ["explain", "show", "btw", "advisor"] as const;
+export const CAPABILITIES = ["explain", "show", "btw", "advisor", "review"] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 export const CAPABILITY_LABELS: Record<Capability, string> = {
 	explain: "Explain",
 	show: "Show",
 	btw: "Btw",
 	advisor: "Advisor",
+	review: "Guided review",
 };
 
 export type ModelEffortPair = { backend?: BackendName; model: string; effort: BroEffort };

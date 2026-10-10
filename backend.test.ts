@@ -35,6 +35,69 @@ async function withFakeAgy(script: string, run: (binDir: string) => Promise<void
 	}
 }
 
+test("review adapters retain captured cwd without session persistence or native IDs", async () => {
+ const bin = await mkdtemp(join(tmpdir(), 'bro-review-adapters-'));
+ const previous = process.env.PATH;
+ try {
+  for (const backend of ['claude','grok','codex','muse'] as const) {
+   const cli = join(bin, backend);
+   await writeFile(cli, `#!/usr/bin/env node
+const fs=require('node:fs'); fs.readFileSync(0,'utf8');
+const emit=x=>console.log(JSON.stringify(x));
+const name=${JSON.stringify(backend)};
+if(name==='codex') { emit({type:'item.completed',item:{type:'agent_message',text:process.cwd()}}); emit({type:'turn.completed'}); }
+else if(name==='muse') { emit({payload_type:'runtime.command.accepted',payload:{command_id:'cmd'}}); emit({payload_type:'session.run.linked',payload:{command_id:'cmd',run_stream:{kind:'run',id:'run'}}}); emit({payload_type:'run.terminal.completed',payload:{terminal:'completed',text:process.cwd(),run_stream:{kind:'run',id:'run'}}}); }
+else { emit({type:'system',subtype:'init',permissionMode:'bypassPermissions'}); emit({type:'assistant',message:{content:[{type:'text',text:process.cwd()}]}}); emit({type:'result',subtype:'success',is_error:false,result:process.cwd(),stop_reason:'end_turn'}); }
+const args=process.argv.slice(2);
+if(name==='claude'&&!args.includes('--no-session-persistence'))process.exit(9);
+if(name==='codex'&&!args.includes('--ephemeral'))process.exit(9);
+if(name==='muse'&&!args.includes('--no-session-log'))process.exit(9);
+`);
+   chmodSync(cli,0o755);
+   process.env.PATH = `${bin}:${previous}`;
+   const result = await execute({feature:'review',access:'workspace-full',cwd:bin,prompt:'guide'},{backend,model:'test'},new AbortController().signal);
+   assert.equal(result.status,'success',`${backend}: ${JSON.stringify(result)}`);
+   if(result.status==='success') { assert.equal(await realpath(result.text),await realpath(bin)); assert.equal(result.continuation,undefined); }
+  }
+ } finally { process.env.PATH = previous; await rm(bin,{recursive:true,force:true}); }
+});
+
+test('review errors identify Guided Review across all adapters',async()=>{
+ const bin=await mkdtemp(join(tmpdir(),'bro-review-errors-')),previous=process.env.PATH;
+ try {
+  process.env.PATH=`${bin}:${previous}`;
+  for(const backend of ['agy','claude','grok','codex','muse'] as const) {
+   const cli=join(bin,backend);
+   await writeFile(cli,`#!/usr/bin/env node
+const name=${JSON.stringify(backend)};const emit=x=>console.log(JSON.stringify(x));
+if(name==='agy')emit({event:'result',result:{status:'SUCCESS',response:''}});
+else if(name==='codex'){emit({type:'thread.started',thread_id:'review'});emit({type:'turn.completed'});}
+else if(name==='muse'){emit({payload_type:'runtime.command.accepted',stream:{kind:'session',id:'review'},payload:{command_id:'cmd'}});emit({payload_type:'session.run.linked',stream:{kind:'session',id:'review'},payload:{command_id:'cmd',run_stream:{kind:'run',id:'run'}}});emit({payload_type:'run.terminal.completed',payload:{terminal:'completed',text:'',run_stream:{kind:'run',id:'run'}}});}
+else{emit({type:'system',subtype:'init',permissionMode:'bypassPermissions',session_id:'review'});emit({type:'result',subtype:'success',is_error:false,result:'',session_id:'review',stop_reason:'end_turn'});}
+`);chmodSync(cli,0o755);
+   const request={feature:'review' as const,access:'workspace-full' as const,cwd:bin,prompt:'guide'};
+   const selection={backend,model:'test'};
+   const empty=await execute(request,selection,new AbortController().signal);
+   assert.equal(empty.status,'failure',JSON.stringify(empty));assert.match(empty.message,/review/i,`${backend} empty result`);assert.doesNotMatch(empty.message,/side question|side conversation/i);
+   await writeFile(cli,'#!/usr/bin/env node\nsetInterval(()=>{},1000);\n');
+   const timeout=await execute(request,selection,new AbortController().signal,undefined,{deadlineMs:100,killEscalationMs:50});
+   assert.equal(timeout.status,'timeout');assert.match(timeout.message,/review/i,`${backend} timeout`);assert.doesNotMatch(timeout.message,/side question|side conversation/i);
+  }
+ }finally{process.env.PATH=previous;await rm(bin,{recursive:true,force:true});}
+});
+
+test("review runs in captured checkout without continuation and rejects native resume", async () => {
+ await withFakeAgy(`#!/usr/bin/env node
+console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:process.cwd(),conversation_id:'review-1'}}));
+`, async binDir => {
+  const outcome = await execute({feature:'review' as BackendRequest['feature'],access:'workspace-full',cwd:binDir,prompt:'guide'},{model:'test'},new AbortController().signal);
+  assert.equal(outcome.status,'success',JSON.stringify(outcome));
+  if(outcome.status==='success') { assert.equal(await realpath(outcome.text),await realpath(binDir)); assert.equal(outcome.continuation,undefined); }
+  const resume = await execute({feature:'review',access:'workspace-full',cwd:binDir,prompt:'guide',continuation:{id:'review-1'}},{model:'test'},new AbortController().signal);
+  assert.equal(resume.status,'failure');assert.match(resume.message,/Unsupported execution request/);
+ });
+});
+
 test("large multibyte Agy prompts use stdin for explain, show and BTW reseeding", async () => {
  await withFakeAgy(`#!/usr/bin/env node
 const fs=require('node:fs');
