@@ -77,9 +77,9 @@ BTW keeps one in-memory thread bound to a backend and an access mode
   explain, Show, and BTW prompts as a JSON-quoted section and never to the
   advisor. It shapes wording, tone, depth, and answer language and never
   overrides the source rules, Show's hard rules, or BTW access mode. The prompt
-  builders in `prompt.ts` stay pure: blank preferences reproduce the frozen
-  `prompt.fixtures.json` byte for byte, so the benchmark measures the built-in
-  prompts.
+  builders in `prompt.ts` stay pure: blank preferences leave output unchanged,
+  while nonblank preferences add a guarded block. Benchmark manifests freeze
+  the measured prompts; unit tests do not freeze their wording.
 - An explanation's mode and preferences tag belong to its result: **M** and
   **R** re-run with the mode and re-read preferences, and `/bro open` restores
   both without a backend call. Only `/bro mode` and `/bro config` write the

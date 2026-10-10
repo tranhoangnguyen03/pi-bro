@@ -118,3 +118,9 @@ in `/bro config` as the shared default or as the capability under test.
   auth is unverified (no probe exists).
 
 Restore the settings backup afterwards if desired.
+
+## Prompt tests versus quality benchmarks
+
+Unit tests protect structure and safety, not preferred prose. Keep guarded-data boundaries, access restrictions, advisory-only behavior, traceability, preference isolation and section composition checks. Do not freeze whole prompts or assert menu order, tone, audience phrasing or presentation wording. Safety-rule text assertions are intentional tripwires: a safe rewording may need a test update, but deleting the rule must fail.
+
+Reader quality belongs to `benchmark/READER-BENCHMARK.md`. `node benchmark/recompute-reader.ts` checks the committed synthetic evidence and summary offline; CI runs it without credentials or model calls. Live generation/judging remains manual and fingerprint-approved. Fake CLI mode tests identify builder output rather than guessing from phrases.

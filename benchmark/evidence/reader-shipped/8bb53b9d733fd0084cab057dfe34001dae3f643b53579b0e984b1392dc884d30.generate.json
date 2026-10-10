@@ -1,0 +1,1 @@
+{"callId":"8bb53b9d733fd0084cab057dfe34001dae3f643b53579b0e984b1392dc884d30","fixture":"B02","variant":"btw","model":"gemini-3.7-flash","effort":"low","elapsedMs":6183,"outcome":"success","stopReason":"stop","output":"I saved the diagnostic report at `artifacts/typecheck-report.txt`."}

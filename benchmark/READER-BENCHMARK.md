@@ -36,3 +36,13 @@ Never paste keys. With shell tracing off use hidden `read -rs` and unset the var
 ## Approval and evidence
 
 User authorized the baseline execution, now complete: 96 generation outputs and 90 Jev calls. See READER-BASELINE-RESULTS.md. Later corpus runs require their own prepared fingerprint. Each prepared fingerprint exposes exact call ceiling before execution. Previous no-budget-limit experiment permission is not represented as blanket permission to generate all future corpora. Existing production manifests/dependencies unchanged. Tests are offline, including manifest determinism, frozen cross-arm applicability, polarity, missing responses, mechanical failures and regression classification.
+
+## Reproducible synthetic baseline
+
+`evidence/reader-shipped/` contains the frozen manifest, all 96 raw generation records and 96 judge records (six mechanical-only), plus `summary.json`. Run `node benchmark/recompute-reader.ts` offline to validate hashes/identities and recompute the summary byte-for-byte. CI runs this check. `--write` explicitly refreshes the summary after an intentional scoring change; review the diff, never change raw answers to fit a score. Earlier judge-development reports remain historical summaries, not claims that their raw evidence ships here.
+
+Report-only counts cover words (whitespace-delimited including list markers/items), characters (JS string length), sentences (Node 24 English Intl.Segmenter), em-dashes, paired single-line bold markers, ATX headings and bullet/numbered lines. Syntax inside code is counted as written; these are surface counts, not a Markdown parser or readability score. Each output includes source counts and signed deltas. No length cap or automatic adoption rule.
+
+## Other generation backends
+
+Optional fourth prepare argument is a JSON settings file, e.g. `node benchmark/reader.ts prepare RUN candidate generator.json`, containing `{ "backend": "codex", "model": "YOUR_MODEL", "effort": "low", "timeoutMs": 125000 }`. Supported: agy, claude, codex, muse. Grok is excluded because its adapter uses behavioral restriction rather than enforced restricted execution. Non-Agy execution reuses the product restricted explain adapter (also for isolated BTW text generation), no tools/workspace permission is granted by this runner. Settings enter the approval fingerprint and comparison contract. Different generation settings are not a matched prompt comparison. Existing baseline manifests without backend mean Agy. Backend wrappers are tested offline; no new live backend qualification is claimed.

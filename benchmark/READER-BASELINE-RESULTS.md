@@ -25,6 +25,10 @@ Thus 11 of 13 flagged outputs are apparent literal-check false alarms for meanin
 
 Mean words: brief121.0 (28 outputs), balanced82.2 (28), faithful90.1 (24), BTW72.4 (16). Brief/balanced have same case/preference cells, so their contrast is useful descriptively: brief often expands into step-by-step lists and adds a “Here is...” preamble. No word-count gate; fewer words does not prove clearer. Faithful has different applicability/case mix, so not a matched mean comparison.
 
+## Committed reproducibility
+
+The synthetic manifest and all generation/judge records now ship in `benchmark/evidence/reader-shipped/`. `node benchmark/recompute-reader.ts` validates and reproduces the committed summary offline (also run by CI). This covers the current 96-output reader baseline, its 282 decisions, mismatch counts, word means and input-token total. Earlier judge-development experiments remain historical summaries with raw artifacts local; no claim of CI reproduction for those experiments. Original v1 report remains local; current v2 evidence is the published scoring contract.
+
 ## Mechanical v2 offline rescore
 
 Completed without new paid calls. Original report preserved locally as `report-v1.json`; current `report.json` records mechanicalVersion 2. All 96 rows still complete. Required mechanical flags: **0**, compared with 13 affected outputs under v1's mixed literal/fence rules. Format deviations: **2** (indented fences); commands remain intact and ordered. Jev mismatches: unchanged at **2**.

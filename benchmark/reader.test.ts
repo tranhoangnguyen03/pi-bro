@@ -30,8 +30,10 @@ test('mechanical v2 allows ordinary numeric variants but preserves identifiers a
 
 test('saved evidence validates identities, hashes, schemas and frozen instructions',()=>{
  const m=prepare();assert.deepEqual(prepare(),m);const row=m.rows[0];
- const g={outcome:'success',output:'text',callId:row.id,fixture:row.caseId,variant:row.mode,model:m.generator.model,effort:m.generator.effort};
+ const g={generator:m.generator,backend:'agy',outcome:'success',output:'text',callId:row.id,fixture:row.caseId,variant:row.mode,model:m.generator.model,effort:m.generator.effort};
  validateGeneration(row,g,m.generator);
+ assert.throws(()=>validateGeneration(row,{...g,backend:'claude'},m.generator),/backend/);
+ assert.throws(()=>validateGeneration(row,{...g,generator:{...m.generator,timeoutMs:1}},m.generator),/settings/);
  for(const field of ['callId','fixture','variant','model','effort'])assert.throws(()=>validateGeneration(row,{...g,[field]:'wrong'},m.generator));
  assert.throws(()=>validateGeneration(row,{...g,outcome:'started'},m.generator));
  assert.throws(()=>scoreSaved(row,m,g,{outputHash:'bad'}),/hash/);
