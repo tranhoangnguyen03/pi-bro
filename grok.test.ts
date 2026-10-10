@@ -1,7 +1,8 @@
 import "./test-cli-guard.ts";
+import { withFakeExecutables } from "./test-fake-exec.ts";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync } from "node:fs";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,7 +13,6 @@ const originalPath = process.env.PATH;
 // Fake `grok` records argv (one per line), cwd, the --prompt-file path, its contents and its
 // permission bits into $BIN_DIR, then runs `body`.
 async function withFakeGrok(body: string, run: (binDir: string) => Promise<void>): Promise<void> {
-	const binDir = await mkdtemp(join(tmpdir(), "pi-bro-fake-grok-"));
 	const script = `#!/bin/sh
 for arg in "$@"; do printf '%s\\n' "$arg"; done > "$BIN_DIR/args.txt"
 pwd > "$BIN_DIR/pwd.txt"
@@ -27,22 +27,12 @@ for arg in "$@"; do
 done
 ${body}
 `;
-	await writeFile(join(binDir, "grok"), script);
-	chmodSync(join(binDir, "grok"), 0o755);
-	// Fake agy/claude that only record they ran, so routing mistakes are visible.
-	for (const cli of ["agy", "claude"]) {
-		await writeFile(join(binDir, cli), `#!/bin/sh\ntouch "$BIN_DIR/${cli}-ran"\nexit 1\n`);
-		chmodSync(join(binDir, cli), 0o755);
-	}
-	process.env.PATH = `${binDir}:${originalPath}`;
-	process.env.BIN_DIR = binDir;
-	try {
-		await run(binDir);
-	} finally {
-		process.env.PATH = originalPath;
-		delete process.env.BIN_DIR;
-		await rm(binDir, { recursive: true, force: true });
-	}
+	await withFakeExecutables({
+		grok: script,
+		// Fake agy/claude that only record they ran, so routing mistakes are visible.
+		agy: `#!/bin/sh\ntouch "$BIN_DIR/agy-ran"\nexit 1\n`,
+		claude: `#!/bin/sh\ntouch "$BIN_DIR/claude-ran"\nexit 1\n`,
+	}, run);
 }
 
 const line = (event: unknown) => `printf '%s\\n' '${JSON.stringify(event)}'`;

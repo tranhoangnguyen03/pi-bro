@@ -4,6 +4,15 @@ All notable changes to pi-bro are documented here.
 
 ## [0.22.0] - 2026-10-11
 
+### Fixed
+
+- Persist settings with atomic replacement and mode 0o600 (#84):
+  - Replace direct `writeFile` with atomic sibling write (`.tmp`) and `rename` to prevent settings corruption on failure, crash, or disk full (`ENOSPC`).
+  - Flush writes before replacement (`flush: true`) and clean up temporary files on failure.
+  - Enforce `mode: 0o600` on replaced settings files so permissions are never loosened.
+  - Resolve symlinks via lstat and realpath before replacement to preserve dotfile-managed configuration symlinks, and reject if an existing symlink target cannot be resolved.
+  - Align on-disk state with modal rollback behavior in `/bro config`.
+
 ### Added
 
 - Guided Review (#104): open a PR by URL/number in local Pi to automatically get an explanation and quality assessment, captured Git evidence, findings with fix/check suggestions, diffs and optional private questions. Acquisition uses authenticated `gh` outside the active working tree. Findings remain model proposals, not approval or applied changes.
@@ -24,6 +33,12 @@ All notable changes to pi-bro are documented here.
 ### Changed
 
 - Guided Review UX consistency pass: origin-preserving Back, focused-action Enter, topic-filtered findings, pane-aware paging, visible focus/overflow, selected-item previews and compact full-width 36×18 layout. Discussion follows conversation/composer/actions order; save errors have shared retry controls and failed questions have draft-safe explicit edit/resend. Request errors are separate from model answers, streaming follows again at the bottom, and acquisition/resume/close messages give clearer orientation. Current review behavior, controls, access/storage and recovery are documented in the user guide; developer/testing guidance records its implementation rules and verification limits. Review itself has no publication action.
+- Remove dead declarations and stale backend naming (#90):
+  - Enable native TypeScript unused checks (`noUnusedLocals`, `noUnusedParameters`) in `tsconfig.json`.
+  - Remove verified unused declarations across `bro.ts`, `backend.test.ts`, `benchmark/run.ts`, `codex.test.ts`, and `release.test.ts`.
+  - Drop pass-through re-exports from `bro.ts` (`agyFailureMessage`, `agySelection`, `advisorFlagErrorHint`, `parseBtwAgyLine`); tests and consumers import them directly from `backend.ts`.
+  - Rename multi-backend facilities with obsolete Agy prefixes: `runAgyText` -> `runBackendText` in `bro.ts` and `killAgyGroup` -> `killProcessGroup` in `backend.ts`.
+  - Modernize outdated single-backend and pre-extraction comments.
 - Separate Bro responsibilities and unify settings and backend-selection policy (#83):
   - Extract `settings.ts` (schema, typed `EXTERNAL_BACKENDS` metadata, selection policy, pure transitions, and file persistence).
   - Extract `sources.ts` (self-contained document text extraction and public web scraping with SSRF protection).

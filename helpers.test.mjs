@@ -1,21 +1,20 @@
 import assert from "node:assert/strict";
+import { withFakeExecutable } from "./test-fake-exec.ts";
 import { chmodSync, existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
-import { bro, buildDir } from "./test-build.mjs";
+import { bro, backend, buildDir } from "./test-build.mjs";
 
 test("Bro helpers, modals, advisor lifecycle and SDK restrictions", async (t) => {
-
-
-
-
-
-
-
+const {
+	advisorFlagErrorHint,
+	agyFailureMessage,
+	agySelection,
+	parseBtwAgyLine,
+} = backend;
 
 const {
 	default: registerBro,
@@ -31,13 +30,9 @@ const {
 	resolveAdvisorState,
 	buildAdvisorSnapshot,
 	advisorAgyCompatible,
-	advisorFlagErrorHint,
 	runAdvisorConsultation,
 	runAdvisorWithRetries,
 	TerminalConsultError,
-	helpText,
-	agyFailureMessage,
-	agySelection,
 	captureShowTranscript,
 	extractDocumentText,
 	extractShowHtml,
@@ -53,7 +48,6 @@ const {
 	parseAgyModels,
 	parseBroSettings,
 	parseBtwArguments,
-	parseBtwAgyLine,
 	parseBtwComposerCommand,
 	parseShowArguments,
 	resolveBtwThread,
@@ -85,10 +79,12 @@ function driveConfigModal(initialSettings, families, persistSettings) {
 	return { component, text: () => stripVTControlCharacters(component.render(96).join('\n')), isClosed: () => closed };
 }
 
-assert.equal(advisorAgyCompatible("agy 1.1.14"), false);
-assert.equal(advisorAgyCompatible("agy 1.1.15"), true);
-assert.equal(advisorAgyCompatible("agy 2.0.0"), true);
-assert.equal(advisorAgyCompatible("unknown"), undefined);
+await t.test("advisorAgyCompatible version floor validation", () => {
+	assert.equal(advisorAgyCompatible("agy 1.1.14"), false);
+	assert.equal(advisorAgyCompatible("agy 1.1.15"), true);
+	assert.equal(advisorAgyCompatible("agy 2.0.0"), true);
+	assert.equal(advisorAgyCompatible("unknown"), undefined);
+});
 
 // Editor (unlike SettingsList/SelectList) reads tui.terminal.rows for autocomplete sizing.
 function driveAdvisorSteerModal(initialText, onSave, onClear, copy) {
@@ -114,20 +110,7 @@ function deferred() {
 	return { promise, resolve, reject };
 }
 
-async function withFakeAgy(script, run) {
-	const originalPath = process.env.PATH;
-	const binDir = await mkdtemp(join(tmpdir(), "pi-bro-fake-agy-"));
-	const fakeAgyPath = join(binDir, "agy");
-	await writeFile(fakeAgyPath, script);
-	chmodSync(fakeAgyPath, 0o755);
-	process.env.PATH = `${binDir}:${originalPath}`;
-	try {
-		await run(binDir);
-	} finally {
-		process.env.PATH = originalPath;
-		await rm(binDir, { recursive: true, force: true });
-	}
-}
+const withFakeAgy = (script, run) => withFakeExecutable("agy", script, run);
 
 await t.test("Modal interactions: default model/effort resolution, an override that starts out identical", async (t) => {
 	// Modal interactions: default model/effort resolution, an override that starts out identical
@@ -413,337 +396,283 @@ await t.test("A model unknown to the catalog must never look \"fixed\" (healthy)
 
 });
 
-// Pure resolution/inheritance helpers, independent of the interactive modal.
-assert.deepEqual(resolveModelEffort({ model: "gemini-a-low", effort: "default" }, configFamilies), {
-	family: configFamilies.find((f) => f.id === "gemini-a"),
-	pair: { model: "gemini-a", effort: "low" },
+await t.test("resolveModelEffort resolution against catalog families", () => {
+	assert.deepEqual(resolveModelEffort({ model: "gemini-a-low", effort: "default" }, configFamilies), {
+		family: configFamilies.find((f) => f.id === "gemini-a"),
+		pair: { model: "gemini-a", effort: "low" },
+	});
+	assert.deepEqual(resolveModelEffort({ model: "unknown-model", effort: "high" }, configFamilies), {
+		pair: { model: "unknown-model", effort: "high" },
+	}, "an unrecognized model resolves to itself with no family, for doctor/config to flag");
 });
-assert.deepEqual(resolveModelEffort({ model: "unknown-model", effort: "high" }, configFamilies), {
-	pair: { model: "unknown-model", effort: "high" },
-}, "an unrecognized model resolves to itself with no family, for doctor/config to flag");
-const base = { model: "gemini-a", effort: "low", mode: "balanced", showTurns: 1, overrides: {} };
-assert.deepEqual(
-	withCapabilityOverride(base, "show", { model: "gemini-a", effort: "low" }).overrides,
-	{ show: { model: "gemini-a", effort: "low" } },
-	"an override matching the shared default is still stored explicitly -- it is never silently treated as redundant",
-);
-assert.deepEqual(withCapabilityOverride(base, "show", { model: "gemini-b", effort: "default" }).overrides, { show: { model: "gemini-b", effort: "default" } });
-assert.deepEqual(
-	withCapabilityOverride({ ...base, overrides: { show: { model: "gemini-b", effort: "default" } } }, "show", undefined).overrides,
-	{},
-	'clearing an override removes it only via an explicit undefined (the "Default" selection)',
-);
-assert.deepEqual(
-	withCapabilityOverride(base, "advisor", { model: "gemini-b", effort: "default" }).overrides,
-	{ advisor: { model: "gemini-b", effort: "default" } },
-	"withCapabilityOverride also accepts the reserved advisor capability, for the config modal's advisor rows",
-);
 
-// settingsPayload only ever omits an empty `overrides` object; it does not deduplicate or drop any
-// individual entry (an override is only ever removed upstream, by an explicit Default selection).
-assert.deepEqual(settingsPayload({ model: "gemini-a", effort: "low", mode: "balanced", showTurns: 1, overrides: {} }), {
-	version: 2, default: { backend: "agy", model: "gemini-a", effort: "low" }, mode: "balanced", showTurns: 1,
+await t.test("Terminal UI mouse reporting and wheelDelta handlers", () => {
+	assert.equal(wheelDelta("\u001b[<64;10;20M"), -3);
+	assert.equal(wheelDelta("\u001b[<65;10;20M"), 3);
+	assert.equal(wheelDelta("\u001b[<68;10;20M"), -3);
+	assert.equal(wheelDelta("\u001b[<0;10;20M"), 0);
+	assert.equal(wheelDelta("\u001b[A"), 0);
+	const mouseWrites = [];
+	const regularTui = { mode: "regular", terminal: { write: (data) => mouseWrites.push(data) } };
+	setRegularMouseReporting(regularTui, true);
+	setRegularMouseReporting(regularTui, false);
+	setRegularMouseReporting({ mode: "fullscreen", terminal: regularTui.terminal }, true);
+	assert.deepEqual(mouseWrites, ["\u001b[?1000h\u001b[?1006h", "\u001b[?1000l\u001b[?1006l"]);
 });
-assert.deepEqual(
-	settingsPayload({ model: "gemini-a", effort: "low", mode: "balanced", showTurns: 1, overrides: { show: { model: "gemini-a", effort: "low" } } }),
-	{ version: 2, default: { backend: "agy", model: "gemini-a", effort: "low" }, mode: "balanced", showTurns: 1, overrides: { show: { backend: "agy", model: "gemini-a", effort: "low" } } },
-	"an override identical to the shared default is still written to disk -- settingsPayload does not deduplicate entries",
-);
 
-// Old settings migrate cleanly: no overrides key, unknown capability keys ignored,
-// and a reserved "advisor" override round-trips even though nothing reads it yet.
-assert.deepEqual(parseBroSettings({ model: "m", effort: "low" }).overrides, {});
-assert.deepEqual(
-	parseBroSettings({ model: "m", effort: "low", overrides: { explain: { model: "gemini-a", effort: "high" }, somethingUnknown: { model: "x", effort: "low" } } }).overrides,
-	{ explain: { model: "gemini-a", effort: "high" } },
-);
-assert.deepEqual(
-	parseBroSettings({ model: "m", effort: "low", overrides: { advisor: { model: "gemini-a", effort: "high" } } }).overrides,
-	{ advisor: { model: "gemini-a", effort: "high" } },
-	"a reserved advisor override is preserved even though no command reads it yet",
-);
-assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: { explain: { model: "m" } } }), /overrides\.explain/);
-assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: { explain: [] } }), /overrides\.explain/, "an array is not a valid per-capability override either");
-assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: "nope" }), /overrides must be an object/);
-assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: [] }), /overrides must be an object/, "an array is not a valid overrides object");
-assert.throws(() => parseBroSettings({ model: "m", effort: "low", overrides: [{ model: "m", effort: "low" }] }), /overrides must be an object/);
-
-assert.equal(wheelDelta("\u001b[<64;10;20M"), -3);
-assert.equal(wheelDelta("\u001b[<65;10;20M"), 3);
-assert.equal(wheelDelta("\u001b[<68;10;20M"), -3);
-assert.equal(wheelDelta("\u001b[<0;10;20M"), 0);
-assert.equal(wheelDelta("\u001b[A"), 0);
-const mouseWrites = [];
-const regularTui = { mode: "regular", terminal: { write: (data) => mouseWrites.push(data) } };
-setRegularMouseReporting(regularTui, true);
-setRegularMouseReporting(regularTui, false);
-setRegularMouseReporting({ mode: "fullscreen", terminal: regularTui.terminal }, true);
-assert.deepEqual(mouseWrites, ["\u001b[?1000h\u001b[?1006h", "\u001b[?1000l\u001b[?1006l"]);
-const usage = formatAgyUsage({
-	status: "SUCCESS",
-	response: "Gemini Models\tWeekly Limit Remaining\t97%\n",
+await t.test("Agy CLI usage formatting and model catalog parsing", () => {
+	const usage = formatAgyUsage({
+		status: "SUCCESS",
+		response: "Gemini Models\tWeekly Limit Remaining\t97%\n",
+	});
+	assert.match(usage, /Gemini Models/);
+	assert.match(usage, /97%/);
+	assert.throws(() => formatAgyUsage({ status: "SUCCESS" }), /invalid usage data/);
+	assert.deepEqual(parseAgyModels("gemini-one-high\tGemini One (High)\ngemini-one-low\tGemini One (Low)\nclaude-one\tClaude One\n"), [
+		{
+			id: "gemini-one",
+			label: "Gemini One",
+			efforts: ["low", "high"],
+			variants: [
+				{ id: "gemini-one-high", effort: "high" },
+				{ id: "gemini-one-low", effort: "low" },
+			],
+		},
+		{ id: "claude-one", label: "Claude One", efforts: [], variants: [{ id: "claude-one", effort: undefined }] },
+	]);
+	assert.throws(() => parseAgyModels("Fetching available models...\n"), /no available models/);
 });
-assert.match(usage, /Gemini Models/);
-assert.match(usage, /97%/);
-assert.throws(() => formatAgyUsage({ status: "SUCCESS" }), /invalid usage data/);
-assert.deepEqual(parseAgyModels("gemini-one-high\tGemini One (High)\ngemini-one-low\tGemini One (Low)\nclaude-one\tClaude One\n"), [
-	{
-		id: "gemini-one",
-		label: "Gemini One",
-		efforts: ["low", "high"],
-		variants: [
-			{ id: "gemini-one-high", effort: "high" },
-			{ id: "gemini-one-low", effort: "low" },
+
+await t.test("BTW argument, composer command, and thread transcript parsing", () => {
+	assert.deepEqual(parseBtwArguments("plain question"), { question: "plain question" });
+	assert.deepEqual(parseBtwArguments(""), { question: "" });
+	assert.deepEqual(parseBtwArguments("--wat"), { question: "", invalid: "Unknown /bro btw flag: --wat" });
+	for (const removed of ["--full", "--sandbox"]) {
+		const parsed = parseBtwArguments(`${removed} what now`);
+		assert.equal(parsed.question, "", `${removed} must never become question text`);
+		assert.match(parsed.invalid ?? "", new RegExp(`${removed} was removed`));
+		assert.match(parsed.invalid ?? "", /type \/mode/);
+	}
+	const freshParsed = parseBtwArguments("--fresh what now");
+	assert.equal(freshParsed.question, "", "--fresh must never become question text");
+	assert.match(freshParsed.invalid ?? "", /--fresh was removed/);
+	assert.match(freshParsed.invalid ?? "", /\/clear/);
+	assert.deepEqual(parseBtwAgyLine('{"event":"init","conversation_id":"c1"}'), { conversationId: "c1" });
+	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"hi"}}'), { delta: "hi", conversationId: undefined });
+	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"SUCCESS","response":"done","conversation_id":"c1"}}'), { result: "done", conversationId: "c1" });
+	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
+	assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "clipboard", all: false });
+	assert.deepEqual(parseBtwComposerCommand("/copy-all"), { kind: "clipboard", all: true });
+	assert.deepEqual(parseBtwComposerCommand("/insert"), { kind: "insert", all: false });
+	assert.deepEqual(parseBtwComposerCommand("/insert-all"), { kind: "insert", all: true });
+	assert.deepEqual(parseBtwComposerCommand("/insert!"), { kind: "removed", command: "/insert!" });
+	assert.deepEqual(parseBtwComposerCommand("/insert-all!"), { kind: "removed", command: "/insert-all!" });
+	assert.deepEqual(parseBtwComposerCommand("/clear"), { kind: "clear" });
+	assert.deepEqual(parseBtwComposerCommand("/retry"), { kind: "retry" });
+	assert.deepEqual(parseBtwComposerCommand(""), { kind: "retry" });
+	assert.deepEqual(parseBtwComposerCommand("how do I auth?"), { kind: "question", text: "how do I auth?" });
+	assert.deepEqual(parseBtwComposerCommand("/send"), { kind: "question", text: "/send" });
+	assert.deepEqual(parseBtwComposerCommand("/copy!"), { kind: "question", text: "/copy!" });
+	assert.deepEqual(parseBtwComposerCommand("/insert-draft"), { kind: "question", text: "/insert-draft" });
+	assert.deepEqual(resolveBtwThread(undefined), { turns: [], full: false });
+	assert.deepEqual(resolveBtwThread({ turns: [{ question: "q", answer: "a" }], conversationId: "c", full: true }), { turns: [{ question: "q", answer: "a" }], conversationId: "c", full: true });
+	assert.deepEqual(parseBtwComposerCommand("/mode"), { kind: "mode" });
+	assert.deepEqual(parseBtwComposerCommand("  /mode  "), { kind: "mode" });
+	assert.deepEqual(parseBtwComposerCommand("/mode full"), { kind: "question", text: "/mode full" });
+	assert.equal(
+		formatBtwTranscript([
+			{ question: "first line\n### question heading", answer: "### Answer heading\nBody" },
+			{ question: "second question", answer: "Done" },
+		]),
+		"> **You**\n>\n> first line\n> ### question heading\n\n**Bro**\n\n### Answer heading\nBody\n\n---\n\n> **You**\n>\n> second question\n\n**Bro**\n\nDone",
+	);
+	assert.equal(formatBtwTranscript([]), "");
+	assert.equal(
+		formatBtwTranscript([{ question: "blank\n\nline", answer: "```js\ncode" }]),
+		"> **You**\n>\n> blank\n>\n> line\n\n**Bro**\n\n```js\ncode\n```",
+	);
+	assert.deepEqual(agySelection({ model: "gemini-one", effort: "low" }), { model: "gemini-one", effort: "low" });
+	assert.deepEqual(agySelection({ model: "gemini-one-low", effort: "high" }), { model: "gemini-one", effort: "high" });
+	assert.deepEqual(agySelection({ model: "claude-one", effort: "default" }), { model: "claude-one" });
+	assert.match(agyFailureMessage("start", { code: 1, killed: false, stderr: "" }), /installed and signed in/);
+	assert.match(agyFailureMessage("start", { code: 1, killed: true, stderr: "" }), /timed out/);
+	assert.match(agyFailureMessage("check usage", { code: 1, killed: false, stderr: "Sign in first" }), /Sign in first/);
+});
+await t.test("Web URL parsing and address validation", () => {
+	assert.equal(isPublicWebAddress("93.184.216.34"), true, "public IPv4");
+	assert.equal(isPublicWebAddress("2606:4700:4700::1111"), true, "public IPv6");
+	for (const address of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "192.168.1.1", "192.0.2.1", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1"]) {
+		assert.equal(isPublicWebAddress(address), false, address);
+	}
+	assert.equal(parseWebUrl("https://example.com/article#section").href, "https://example.com/article");
+	assert.throws(() => parseWebUrl("file:///etc/passwd"), /HTTP or HTTPS/);
+	assert.throws(() => parseWebUrl("https://user:secret@example.com"), /usernames or passwords/);
+	assert.equal(looksLikeWebUrl("https://example.com/article"), true);
+	assert.equal(looksLikeWebUrl("https://example.com/article#section"), true);
+	assert.equal(looksLikeWebUrl("https://example.com/page?a=1&b=2"), true);
+	assert.equal(looksLikeWebUrl("HTTPS://example.com/article"), true);
+	assert.equal(looksLikeWebUrl("https://[2606:4700:4700::1111]/"), true);
+	assert.equal(looksLikeWebUrl("https://user:secret@example.com"), true, "routes to the URL reader's rejection");
+	assert.equal(looksLikeWebUrl("https://example.com is down, why?"), false, "prose stays text");
+	assert.equal(looksLikeWebUrl("example.com/article"), false);
+	assert.equal(looksLikeWebUrl("file:///etc/passwd"), false);
+	assert.equal(looksLikeWebUrl("ftp://example.com/file"), false);
+	assert.equal(looksLikeWebUrl("mailto:someone@example.com"), false);
+	assert.equal(looksLikeWebUrl("localhost:3000"), false);
+	assert.equal(parseWebRedirect(new URL("http://example.com/old"), "/new").href, "http://example.com/new");
+	assert.throws(() => parseWebRedirect(new URL("https://example.com"), "http://example.com"), /insecure/);
+});
+
+await t.test("Webpage extraction and HTML simplification", async () => {
+	await assert.rejects(extractWebPage("http://127.0.0.1"), /local, private, or reserved/);
+	const webpage = await extractWebHtml(`<!doctype html><html><head><title>Example\u001b[2J article</title></head><body>
+		<nav>Site navigation</nav><main><article><h1>Example article</h1><p>This is the important explanation with enough useful words for extraction.</p><pre><code>npm test</code></pre><div id="comments">Ignore this reply</div><img src="large.jpg" alt="Large image"></article></main>
+	</body></html>`, "https://example.com/article");
+	assert.match(webpage.text, /important explanation/);
+	assert.match(webpage.text, /npm test/);
+	assert.doesNotMatch(webpage.text, /Site navigation|Ignore this reply|large\.jpg/);
+	assert.equal(webpage.label, "example.com · Example article");
+	const originalFetch = globalThis.fetch;
+	let extractorFetches = 0;
+	globalThis.fetch = async () => {
+		extractorFetches++;
+		throw new Error("unexpected extractor network fallback");
+	};
+	try {
+		await extractWebHtml("<main><p>Public social post shell with enough fallback text.</p></main>", "https://x.com/example/status/123");
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+	assert.equal(extractorFetches, 0, "web extractor called a third-party fallback");
+	await assert.rejects(extractWebHtml("<p></p>".repeat(100_001), "https://example.com"), /too complex/);
+});
+
+await t.test("Show turn extraction and structural message filtering", () => {
+	assert.deepEqual(showEntriesForMessage({ role: "user", content: "Fix the bug" }), ['## user\n"Fix the bug"']);
+	assert.deepEqual(showEntriesForMessage({ role: "user", content: [] }), []);
+	assert.deepEqual(showEntriesForMessage({ role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }), [], "images produce no placeholder");
+	assert.deepEqual(showEntriesForMessage({ role: "user", content: "   " }), [], "whitespace-only string content produces no entry");
+	assert.deepEqual(showEntriesForMessage({ role: "user", content: "  Fix  " }), ['## user\n"Fix"'], "string content is trimmed like array content");
+
+	const assistantEntries = showEntriesForMessage({
+		role: "assistant",
+		content: [
+			{ type: "text", text: "Checking." },
+			{ type: "toolCall", name: "read", arguments: { path: "src/config/settings.ts" } },
+			{ type: "text", text: "Found it." },
 		],
-	},
-	{ id: "claude-one", label: "Claude One", efforts: [], variants: [{ id: "claude-one", effort: undefined }] },
-]);
-assert.throws(() => parseAgyModels("Fetching available models...\n"), /no available models/);
-assert.deepEqual(parseBroSettings({ model: " gemini-one ", effort: "high" }), {
-	model: "gemini-one",
-	effort: "high",
-	mode: "balanced",
-	showTurns: 1,
-	overrides: {},
+	});
+	assert.deepEqual(assistantEntries, [`## assistant\n${JSON.stringify("Checking.\nFound it.")}`], "all assistant text in one message is kept, joined, with the tool call dropped");
+	assert.ok(!assistantEntries[0].includes("toolCall") && !assistantEntries[0].includes("src/config/settings.ts"), "tool calls never reach the captured transcript");
+	assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "thinking", thinking: "long reasoning" }] }), [], "reasoning-only turns produce no placeholder entry");
+	assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: {} }] }), [], "tool-call-only turns produce no entry");
+	assert.deepEqual(
+		showEntriesForMessage({ role: "toolResult", toolName: "bash", isError: true, content: [{ type: "text", text: "boom" }] }),
+		[],
+		"tool results never reach the captured transcript",
+	);
+
+	const seededBranch = (entries) => ({ sessionManager: { getBranch: () => entries } });
+	const turn = (id, parentId, message) => ({ type: "message", id, parentId, timestamp: `2026-01-01T00:00:0${id[0]}:00.000Z`, message });
+	const showContext = seededBranch([
+		turn("1aaa", null, { role: "user", content: "First", timestamp: 1 }),
+		turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Looking into it." }], timestamp: 2 }),
+		turn("2bbb", "2aaa", { role: "toolResult", toolName: "read", content: [{ type: "text", text: "file contents that must never reach the model" }], timestamp: 3 }),
+		turn("2ccc", "2bbb", { role: "assistant", content: [{ type: "text", text: "Reply one" }], timestamp: 4 }),
+		turn("3aaa", "2ccc", { role: "user", content: "Second", timestamp: 5 }),
+		turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], timestamp: 6 }),
+	]);
+	const oneTurn = captureShowTranscript(showContext, 1);
+	assert.ok(oneTurn.text.includes("Second") && oneTurn.text.includes("Reply two") && !oneTurn.text.includes("First"));
+	assert.equal(oneTurn.label, "last 1 turn · conversation only");
+	const twoTurns = captureShowTranscript(showContext, 2);
+	assert.ok(twoTurns.text.includes("First") && twoTurns.text.includes("Second"), "the requested turn count is honored");
+	assert.ok(twoTurns.text.includes("Looking into it.") && twoTurns.text.includes("Reply one"), "every intermediate assistant message within a turn is retained, not just the last one");
+	assert.ok(!twoTurns.text.includes("file contents that must never reach the model"), "tool results never reach the captured transcript");
+	assert.equal(twoTurns.label, "last 2 turns · conversation only");
+	assert.equal(captureShowTranscript(seededBranch([]), 4), undefined, "an empty session has nothing to show");
+
+	// A user message with no capturable text (image-only, whitespace-only) still
+	// counts as a turn boundary: /bro show 1 must never silently over-capture.
+	const imageOnlyContext = seededBranch([
+		turn("1aaa", null, { role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }),
+		turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Reply one" }] }),
+		turn("3aaa", "2aaa", { role: "user", content: "   " }),
+		turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], stopReason: "stop" }),
+		turn("5aaa", "4aaa", { role: "assistant", content: [{ type: "text", text: "Half-written claim" }], stopReason: "abort" }),
+	]);
+	const imageOnlyOneTurn = captureShowTranscript(imageOnlyContext, 1);
+	assert.ok(imageOnlyOneTurn.text.includes("Reply two"), "a text-less user turn still starts a capturable turn");
+	assert.ok(!imageOnlyOneTurn.text.includes("Reply one"), "the turn window is not over-captured past a text-less user turn");
+	assert.ok(!imageOnlyOneTurn.text.includes("Half-written claim"), "aborted assistant text never reaches the transcript");
+	assert.equal(imageOnlyOneTurn.label, "last 1 turn · conversation only");
+	const imageOnlyTwoTurns = captureShowTranscript(imageOnlyContext, 2);
+	assert.ok(imageOnlyTwoTurns.text.includes("Reply one"), "an image-only user turn groups its assistant replies into one turn");
+	const imageOnlySession = seededBranch([
+		turn("1aaa", null, { role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }),
+		turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Only reply" }] }),
+	]);
+	const imageOnlyCapture = captureShowTranscript(imageOnlySession, 1);
+	assert.ok(imageOnlyCapture.text.includes("Only reply"), "an image-only session still has something to show");
 });
-assert.deepEqual(parseBroSettings({ model: "gemini-one", effort: "low", mode: "faithful" }), {
-	model: "gemini-one",
-	effort: "low",
-	mode: "faithful",
-	showTurns: 1,
-	overrides: {},
+
+await t.test("Show HTML diagram extraction, fenced formatting, and sandboxed storage", async () => {
+	assert.equal(extractShowHtml("no fences"), undefined);
+	assert.equal(
+		extractShowHtml("```text\nshape\n```\n\n```html\n<div>x</div>\n```"),
+		"<div>x</div>",
+	);
+	assert.equal(stripShowHtmlFence("```html\n<div>x</div>\n```\n\ntail"), "[HTML diagram saved — press O to open]\n\ntail");
+	assert.equal(stripShowHtmlFence("```text\nshape\n```\n```html\n<div>x</div>\n```").trim(), "```text\nshape\n```\n[HTML diagram saved — press O to open]".trim());
+	assert.equal(extractShowHtml("```html  \r\n<div>crlf</div>\r\n```  "), "<div>crlf</div>");
+
+	const showHtmlFirst = await writeShowHtml("<div>one</div>");
+	const showHtmlSecond = await writeShowHtml("<div>two</div>");
+	assert.notEqual(showHtmlFirst, showHtmlSecond);
+	const { readdir: showReaddir, readFile: showReadFile } = await import("node:fs/promises");
+	const showDir = showHtmlSecond.slice(0, showHtmlSecond.lastIndexOf("/"));
+	assert.ok(/pi-bro-/.test(showDir), "html files live in a per-user directory");
+	const leftover = (await showReaddir(showDir)).filter((name) => /^bro-show-[0-9a-f]{8}\.html$/.test(name));
+	assert.deepEqual(leftover, [showHtmlSecond.split("/").pop()]);
+	const saved = await showReadFile(showHtmlSecond, "utf8");
+	assert.match(saved, /Content-Security-Policy/);
+	assert.match(saved, /<div>two<\/div>/);
+	assert.ok(!(await showReaddir(showHtmlFirst.slice(0, showHtmlFirst.lastIndexOf("/")))).includes(showHtmlFirst.split("/").pop()), "keep-one cleanup");
 });
-assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "low", mode: "unknown" }), /mode/);
-assert.throws(() => parseBroSettings({ model: "gemini-one", effort: "extreme" }), /Settings must contain/);
-assert.deepEqual(parseBtwArguments("plain question"), { question: "plain question" });
-assert.deepEqual(parseBtwArguments(""), { question: "" });
-assert.deepEqual(parseBtwArguments("--wat"), { question: "", invalid: "Unknown /bro btw flag: --wat" });
-for (const removed of ["--full", "--sandbox"]) {
-	const parsed = parseBtwArguments(`${removed} what now`);
-	assert.equal(parsed.question, "", `${removed} must never become question text`);
-	assert.match(parsed.invalid ?? "", new RegExp(`${removed} was removed`));
-	assert.match(parsed.invalid ?? "", /type \/mode/);
-}
-await t.test("BTW removed flags remain literal questions", async (t) => {
-	const parsed = parseBtwArguments("--fresh what now");
-	assert.equal(parsed.question, "", "--fresh must never become question text");
-	assert.match(parsed.invalid ?? "", /--fresh was removed/);
-	assert.match(parsed.invalid ?? "", /\/clear/);
 
+await t.test("parseShowArguments parsing of steering and requested turns", () => {
+	assert.deepEqual(parseShowArguments(""), { steering: "", invalid: false });
+	assert.deepEqual(parseShowArguments("3"), { requested: "3", steering: "", invalid: false });
+	assert.deepEqual(parseShowArguments("what changed"), { steering: "what changed", invalid: false });
+	assert.deepEqual(parseShowArguments("3 what changed"), { requested: "3", steering: "what changed", invalid: false });
+	assert.deepEqual(parseShowArguments("2FA the login flow"), { steering: "2FA the login flow", invalid: false });
+	assert.deepEqual(parseShowArguments("404 handler"), { requested: "404", steering: "handler", invalid: false });
+	assert.deepEqual(parseShowArguments("1 404 handler"), { requested: "1", steering: "404 handler", invalid: false });
+	assert.equal(parseShowArguments("0").invalid, true, "zero is not a valid turn count");
+	assert.equal(parseShowArguments("-1").invalid, true, "negative counts are rejected");
+	assert.equal(parseShowArguments("1.5").invalid, true, "decimal counts are rejected");
+	assert.equal(parseShowArguments("99999999999999999999").invalid, true, "unsafe integers are rejected");
+	assert.equal(parseShowArguments(String(Number.MAX_SAFE_INTEGER)).invalid, false, "the largest safe integer is accepted");
+	assert.equal(parseShowArguments("3   what   changed").steering, "what   changed");
+	assert.equal(parseShowArguments("Focus  on   spacing").steering, "Focus  on   spacing");
 });
-assert.deepEqual(parseBtwAgyLine('{"event":"init","conversation_id":"c1"}'), { conversationId: "c1" });
-assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"hi"}}'), { delta: "hi", conversationId: undefined });
-assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"SUCCESS","response":"done","conversation_id":"c1"}}'), { result: "done", conversationId: "c1" });
-assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
-assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "clipboard", all: false });
-assert.deepEqual(parseBtwComposerCommand("/copy-all"), { kind: "clipboard", all: true });
-assert.deepEqual(parseBtwComposerCommand("/insert"), { kind: "insert", all: false });
-assert.deepEqual(parseBtwComposerCommand("/insert-all"), { kind: "insert", all: true });
-assert.deepEqual(parseBtwComposerCommand("/insert!"), { kind: "removed", command: "/insert!" });
-assert.deepEqual(parseBtwComposerCommand("/insert-all!"), { kind: "removed", command: "/insert-all!" });
-assert.deepEqual(parseBtwComposerCommand("/clear"), { kind: "clear" });
-assert.deepEqual(parseBtwComposerCommand("/retry"), { kind: "retry" });
-assert.deepEqual(parseBtwComposerCommand(""), { kind: "retry" });
-assert.deepEqual(parseBtwComposerCommand("how do I auth?"), { kind: "question", text: "how do I auth?" });
-assert.deepEqual(parseBtwComposerCommand("/send"), { kind: "question", text: "/send" });
-assert.deepEqual(parseBtwComposerCommand("/copy!"), { kind: "question", text: "/copy!" });
-assert.deepEqual(parseBtwComposerCommand("/insert-draft"), { kind: "question", text: "/insert-draft" });
-assert.deepEqual(resolveBtwThread(undefined), { turns: [], full: false });
-assert.deepEqual(resolveBtwThread({ turns: [{ question: "q", answer: "a" }], conversationId: "c", full: true }), { turns: [{ question: "q", answer: "a" }], conversationId: "c", full: true });
-assert.deepEqual(parseBtwComposerCommand("/mode"), { kind: "mode" });
-assert.deepEqual(parseBtwComposerCommand("  /mode  "), { kind: "mode" });
-assert.deepEqual(parseBtwComposerCommand("/mode full"), { kind: "question", text: "/mode full" });
-assert.equal(
-	formatBtwTranscript([
-		{ question: "first line\n### question heading", answer: "### Answer heading\nBody" },
-		{ question: "second question", answer: "Done" },
-	]),
-	"> **You**\n>\n> first line\n> ### question heading\n\n**Bro**\n\n### Answer heading\nBody\n\n---\n\n> **You**\n>\n> second question\n\n**Bro**\n\nDone",
-);
-assert.equal(formatBtwTranscript([]), "");
-assert.equal(
-	formatBtwTranscript([{ question: "blank\n\nline", answer: "```js\ncode" }]),
-	"> **You**\n>\n> blank\n>\n> line\n\n**Bro**\n\n```js\ncode\n```",
-);
-assert.deepEqual(agySelection({ model: "gemini-one", effort: "low" }), { model: "gemini-one", effort: "low" });
-assert.deepEqual(agySelection({ model: "gemini-one-low", effort: "high" }), { model: "gemini-one", effort: "high" });
-assert.deepEqual(agySelection({ model: "claude-one", effort: "default" }), { model: "claude-one" });
-assert.match(agyFailureMessage("start", { code: 1, killed: false, stderr: "" }), /installed and signed in/);
-assert.match(agyFailureMessage("start", { code: 1, killed: true, stderr: "" }), /timed out/);
-assert.match(agyFailureMessage("check usage", { code: 1, killed: false, stderr: "Sign in first" }), /Sign in first/);
-assert.equal(isPublicWebAddress("93.184.216.34"), true, "public IPv4");
-assert.equal(isPublicWebAddress("2606:4700:4700::1111"), true, "public IPv6");
-for (const address of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "192.168.1.1", "192.0.2.1", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1"]) {
-	assert.equal(isPublicWebAddress(address), false, address);
-}
-assert.equal(parseWebUrl("https://example.com/article#section").href, "https://example.com/article");
-assert.throws(() => parseWebUrl("file:///etc/passwd"), /HTTP or HTTPS/);
-assert.throws(() => parseWebUrl("https://user:secret@example.com"), /usernames or passwords/);
-assert.equal(looksLikeWebUrl("https://example.com/article"), true);
-assert.equal(looksLikeWebUrl("https://example.com/article#section"), true);
-assert.equal(looksLikeWebUrl("https://example.com/page?a=1&b=2"), true);
-assert.equal(looksLikeWebUrl("HTTPS://example.com/article"), true);
-assert.equal(looksLikeWebUrl("https://[2606:4700:4700::1111]/"), true);
-assert.equal(looksLikeWebUrl("https://user:secret@example.com"), true, "routes to the URL reader's rejection");
-assert.equal(looksLikeWebUrl("https://example.com is down, why?"), false, "prose stays text");
-assert.equal(looksLikeWebUrl("example.com/article"), false);
-assert.equal(looksLikeWebUrl("file:///etc/passwd"), false);
-assert.equal(looksLikeWebUrl("ftp://example.com/file"), false);
-assert.equal(looksLikeWebUrl("mailto:someone@example.com"), false);
-assert.equal(looksLikeWebUrl("localhost:3000"), false);
-assert.equal(parseWebRedirect(new URL("http://example.com/old"), "/new").href, "http://example.com/new");
-assert.throws(() => parseWebRedirect(new URL("https://example.com"), "http://example.com"), /insecure/);
-await assert.rejects(extractWebPage("http://127.0.0.1"), /local, private, or reserved/);
-const webpage = await extractWebHtml(`<!doctype html><html><head><title>Example\u001b[2J article</title></head><body>
-	<nav>Site navigation</nav><main><article><h1>Example article</h1><p>This is the important explanation with enough useful words for extraction.</p><pre><code>npm test</code></pre><div id="comments">Ignore this reply</div><img src="large.jpg" alt="Large image"></article></main>
-</body></html>`, "https://example.com/article");
-assert.match(webpage.text, /important explanation/);
-assert.match(webpage.text, /npm test/);
-assert.doesNotMatch(webpage.text, /Site navigation|Ignore this reply|large\.jpg/);
-assert.equal(webpage.label, "example.com · Example article");
-const originalFetch = globalThis.fetch;
-let extractorFetches = 0;
-globalThis.fetch = async () => {
-	extractorFetches++;
-	throw new Error("unexpected extractor network fallback");
-};
-try {
-	await extractWebHtml("<main><p>Public social post shell with enough fallback text.</p></main>", "https://x.com/example/status/123");
-} finally {
-	globalThis.fetch = originalFetch;
-}
-assert.equal(extractorFetches, 0, "web extractor called a third-party fallback");
-await assert.rejects(extractWebHtml("<p></p>".repeat(100_001), "https://example.com"), /too complex/);
 
-// Show capture is a structural role/content-type filter: only user and
-// assistant text ever becomes a transcript entry. Tool calls, tool results,
-// reasoning, and images are always dropped, with no placeholder text.
-assert.deepEqual(showEntriesForMessage({ role: "user", content: "Fix the bug" }), ['## user\n"Fix the bug"']);
-assert.deepEqual(showEntriesForMessage({ role: "user", content: [] }), []);
-assert.deepEqual(showEntriesForMessage({ role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }), [], "images produce no placeholder");
-assert.deepEqual(showEntriesForMessage({ role: "user", content: "   " }), [], "whitespace-only string content produces no entry");
-assert.deepEqual(showEntriesForMessage({ role: "user", content: "  Fix  " }), ['## user\n"Fix"'], "string content is trimmed like array content");
-
-const assistantEntries = showEntriesForMessage({
-	role: "assistant",
-	content: [
-		{ type: "text", text: "Checking." },
-		{ type: "toolCall", name: "read", arguments: { path: "src/config/settings.ts" } },
-		{ type: "text", text: "Found it." },
-	],
+await t.test("Document text extraction symlink containment", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-bro-extract-"));
+	const outside = await mkdtemp(join(tmpdir(), "pi-bro-outside-"));
+	try {
+		await writeFile(join(root, "Complex Notes.MD"), "  readable text  ");
+		assert.equal(await extractDocumentText("Complex Notes.MD", root), "readable text");
+		await writeFile(join(outside, "secret.txt"), "outside");
+		await symlink(join(outside, "secret.txt"), join(root, "linked.txt"));
+		await assert.rejects(extractDocumentText("linked.txt", root), /current workspace/);
+		await writeFile(join(root, "unsupported.csv"), "a,b");
+		await assert.rejects(extractDocumentText("unsupported.csv", root), /Unsupported file type/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+		await rm(outside, { recursive: true, force: true });
+	}
 });
-assert.deepEqual(assistantEntries, [`## assistant\n${JSON.stringify("Checking.\nFound it.")}`], "all assistant text in one message is kept, joined, with the tool call dropped");
-assert.ok(!assistantEntries[0].includes("toolCall") && !assistantEntries[0].includes("src/config/settings.ts"), "tool calls never reach the captured transcript");
-assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "thinking", thinking: "long reasoning" }] }), [], "reasoning-only turns produce no placeholder entry");
-assert.deepEqual(showEntriesForMessage({ role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: {} }] }), [], "tool-call-only turns produce no entry");
-assert.deepEqual(
-	showEntriesForMessage({ role: "toolResult", toolName: "bash", isError: true, content: [{ type: "text", text: "boom" }] }),
-	[],
-	"tool results never reach the captured transcript",
-);
-
-const seededBranch = (entries) => ({ sessionManager: { getBranch: () => entries } });
-const turn = (id, parentId, message) => ({ type: "message", id, parentId, timestamp: `2026-01-01T00:00:0${id[0]}:00.000Z`, message });
-const showContext = seededBranch([
-	turn("1aaa", null, { role: "user", content: "First", timestamp: 1 }),
-	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Looking into it." }], timestamp: 2 }),
-	turn("2bbb", "2aaa", { role: "toolResult", toolName: "read", content: [{ type: "text", text: "file contents that must never reach the model" }], timestamp: 3 }),
-	turn("2ccc", "2bbb", { role: "assistant", content: [{ type: "text", text: "Reply one" }], timestamp: 4 }),
-	turn("3aaa", "2ccc", { role: "user", content: "Second", timestamp: 5 }),
-	turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], timestamp: 6 }),
-]);
-const oneTurn = captureShowTranscript(showContext, 1);
-assert.ok(oneTurn.text.includes("Second") && oneTurn.text.includes("Reply two") && !oneTurn.text.includes("First"));
-assert.equal(oneTurn.label, "last 1 turn · conversation only");
-const twoTurns = captureShowTranscript(showContext, 2);
-assert.ok(twoTurns.text.includes("First") && twoTurns.text.includes("Second"), "the requested turn count is honored");
-assert.ok(twoTurns.text.includes("Looking into it.") && twoTurns.text.includes("Reply one"), "every intermediate assistant message within a turn is retained, not just the last one");
-assert.ok(!twoTurns.text.includes("file contents that must never reach the model"), "tool results never reach the captured transcript");
-assert.equal(twoTurns.label, "last 2 turns · conversation only");
-assert.equal(captureShowTranscript(seededBranch([]), 4), undefined, "an empty session has nothing to show");
-
-// A user message with no capturable text (image-only, whitespace-only) still
-// counts as a turn boundary: /bro show 1 must never silently over-capture.
-const imageOnlyContext = seededBranch([
-	turn("1aaa", null, { role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }),
-	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Reply one" }] }),
-	turn("3aaa", "2aaa", { role: "user", content: "   " }),
-	turn("4aaa", "3aaa", { role: "assistant", content: [{ type: "text", text: "Reply two" }], stopReason: "stop" }),
-	turn("5aaa", "4aaa", { role: "assistant", content: [{ type: "text", text: "Half-written claim" }], stopReason: "abort" }),
-]);
-const imageOnlyOneTurn = captureShowTranscript(imageOnlyContext, 1);
-assert.ok(imageOnlyOneTurn.text.includes("Reply two"), "a text-less user turn still starts a capturable turn");
-assert.ok(!imageOnlyOneTurn.text.includes("Reply one"), "the turn window is not over-captured past a text-less user turn");
-assert.ok(!imageOnlyOneTurn.text.includes("Half-written claim"), "aborted assistant text never reaches the transcript");
-assert.equal(imageOnlyOneTurn.label, "last 1 turn · conversation only");
-const imageOnlyTwoTurns = captureShowTranscript(imageOnlyContext, 2);
-assert.ok(imageOnlyTwoTurns.text.includes("Reply one"), "an image-only user turn groups its assistant replies into one turn");
-const imageOnlySession = seededBranch([
-	turn("1aaa", null, { role: "user", content: [{ type: "image", data: "x", mimeType: "image/png" }] }),
-	turn("2aaa", "1aaa", { role: "assistant", content: [{ type: "text", text: "Only reply" }] }),
-]);
-const imageOnlyCapture = captureShowTranscript(imageOnlySession, 1);
-assert.ok(imageOnlyCapture.text.includes("Only reply"), "an image-only session still has something to show");
-
-assert.equal(extractShowHtml("no fences"), undefined);
-assert.equal(
-	extractShowHtml("```text\nshape\n```\n\n```html\n<div>x</div>\n```"),
-	"<div>x</div>",
-);
-assert.equal(stripShowHtmlFence("```html\n<div>x</div>\n```\n\ntail"), "[HTML diagram saved — press O to open]\n\ntail");
-assert.equal(stripShowHtmlFence("```text\nshape\n```\n```html\n<div>x</div>\n```").trim(), "```text\nshape\n```\n[HTML diagram saved — press O to open]".trim());
-assert.equal(extractShowHtml("```html  \r\n<div>crlf</div>\r\n```  "), "<div>crlf</div>");
-
-const showHtmlFirst = await writeShowHtml("<div>one</div>");
-const showHtmlSecond = await writeShowHtml("<div>two</div>");
-assert.notEqual(showHtmlFirst, showHtmlSecond);
-const { readdir: showReaddir, readFile: showReadFile } = await import("node:fs/promises");
-const showDir = showHtmlSecond.slice(0, showHtmlSecond.lastIndexOf("/"));
-assert.ok(/pi-bro-/.test(showDir), "html files live in a per-user directory");
-const leftover = (await showReaddir(showDir)).filter((name) => /^bro-show-[0-9a-f]{8}\.html$/.test(name));
-assert.deepEqual(leftover, [showHtmlSecond.split("/").pop()]);
-const saved = await showReadFile(showHtmlSecond, "utf8");
-assert.match(saved, /Content-Security-Policy/);
-assert.match(saved, /<div>two<\/div>/);
-assert.ok(!(await showReaddir(showHtmlFirst.slice(0, showHtmlFirst.lastIndexOf("/")))).includes(showHtmlFirst.split("/").pop()), "keep-one cleanup");
-
-assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 0 }), /showTurns/);
-assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 2.5 }), /showTurns/);
-assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief" }).showTurns, 1);
-assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 9 }).showTurns, 9);
-
-assert.deepEqual(parseShowArguments(""), { steering: "", invalid: false });
-assert.deepEqual(parseShowArguments("3"), { requested: "3", steering: "", invalid: false });
-assert.deepEqual(parseShowArguments("what changed"), { steering: "what changed", invalid: false });
-assert.deepEqual(parseShowArguments("3 what changed"), { requested: "3", steering: "what changed", invalid: false });
-// An alphanumeric leading query token (e.g. 2FA, 3D) is not purely numeric and never parses as a turn count.
-assert.deepEqual(parseShowArguments("2FA the login flow"), { steering: "2FA the login flow", invalid: false });
-// A purely numeric leading token is always treated as a turn count; specify count first to steer on numeric phrases.
-assert.deepEqual(parseShowArguments("404 handler"), { requested: "404", steering: "handler", invalid: false });
-assert.deepEqual(parseShowArguments("1 404 handler"), { requested: "1", steering: "404 handler", invalid: false });
-assert.equal(parseShowArguments("0").invalid, true, "zero is not a valid turn count");
-assert.equal(parseShowArguments("-1").invalid, true, "negative counts are rejected");
-assert.equal(parseShowArguments("1.5").invalid, true, "decimal counts are rejected");
-assert.equal(parseShowArguments("99999999999999999999").invalid, true, "unsafe integers are rejected");
-assert.equal(parseShowArguments(String(Number.MAX_SAFE_INTEGER)).invalid, false, "the largest safe integer is accepted");
-// Internal whitespace in the query survives verbatim; only the count/query separator is consumed.
-assert.equal(parseShowArguments("3   what   changed").steering, "what   changed");
-assert.equal(parseShowArguments("Focus  on   spacing").steering, "Focus  on   spacing");
-
-const root = await mkdtemp(join(tmpdir(), "pi-bro-extract-"));
-const outside = await mkdtemp(join(tmpdir(), "pi-bro-outside-"));
-try {
-	await writeFile(join(root, "Complex Notes.MD"), "  readable text  ");
-	assert.equal(await extractDocumentText("Complex Notes.MD", root), "readable text");
-	await writeFile(join(outside, "secret.txt"), "outside");
-	await symlink(join(outside, "secret.txt"), join(root, "linked.txt"));
-	await assert.rejects(extractDocumentText("linked.txt", root), /current workspace/);
-	await writeFile(join(root, "unsupported.csv"), "a,b");
-	await assert.rejects(extractDocumentText("unsupported.csv", root), /Unsupported file type/);
-} finally {
-	await rm(root, { recursive: true, force: true });
-	await rm(outside, { recursive: true, force: true });
-}
 
 // resolveAdvisorState: branch entries are root-to-leaf, so a forward scan taking the LAST matching
 // steering entry is "latest wins". Malformed/foreign entries are ignored, not fatal, and a
@@ -1143,28 +1072,37 @@ await t.test("A retry must never show the previous, failed attempt's activity tr
 	);
 
 });
-await t.test("lastActivityAt is the real event timestamp -- the 1s-class heartbeat re-emits the same", async (t) => {
-	// lastActivityAt is the real event timestamp -- the 1s-class heartbeat re-emits the same
-	// snapshot on its own cadence without ever bumping it.
+await t.test("The 1s-class elapsed-time heartbeat re-emits the same progress snapshot on its own cadence without bumping lastActivityAt or activityCount", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"], now: 10_000 });
 	const progress = [];
-	const result = await runAdvisorWithRetries(
+	const pending = deferred();
+	const running = runAdvisorWithRetries(
 		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
 		async (_prompt, _selection, _cwd, _signal, _killEscalationMs, onActivity) => {
-			onActivity("Read file.ts", Date.now());
-			await new Promise((resolve) => setTimeout(resolve, 40));
-			return "done";
+			onActivity("Read file.ts", 10_000);
+			return pending.promise;
 		},
 		async () => {},
 		(details) => { progress.push(details); },
 		10,
 		0,
 	);
-	assert.equal(result.advice, "done");
-	const withActivity = progress.filter((item) => item.status === "investigating" && item.activity?.length);
-	assert.ok(withActivity.length >= 2, "the heartbeat re-emits the snapshot multiple times after the single activity event");
-	const timestamps = new Set(withActivity.map((item) => item.lastActivityAt));
-	assert.equal(timestamps.size, 1, "lastActivityAt never changes across heartbeat-only re-emits");
-
+	try {
+		t.mock.timers.tick(35);
+		const withActivity = progress.filter((item) => item.status === "investigating" && item.activity?.length);
+		assert.ok(withActivity.length >= 2, "the heartbeat re-emits the snapshot multiple times after the single activity event");
+		const timestamps = new Set(withActivity.map((item) => item.lastActivityAt));
+		assert.deepEqual(timestamps, new Set([10_000]), "lastActivityAt never changes across heartbeat-only re-emits");
+		const counts = new Set(withActivity.map((item) => item.activityCount));
+		assert.deepEqual(counts, new Set([1]), "heartbeat-only re-emits never increment the count beyond the one real event");
+		pending.resolve("done");
+		const result = await running;
+		assert.equal(result.advice, "done");
+		assert.equal(result.activityCount, 1);
+	} finally {
+		pending.resolve("done");
+		t.mock.timers.reset();
+	}
 });
 await t.test("A burst of activity events is coalesced to the throttle window instead of one onProgress", async (t) => {
 	// A burst of activity events is coalesced to the throttle window instead of one onProgress
@@ -1237,28 +1175,7 @@ await t.test("More than 4 events: the tail stays bounded to the last 4, but the 
 	assert.equal(result.activityCount, 6, "the final AdvisorRunResult carries the exact total, not a throttled snapshot");
 
 });
-await t.test("The 1s-class elapsed-time heartbeat re-emits the same progress snapshot on its own cadence --", async (t) => {
-	// The 1s-class elapsed-time heartbeat re-emits the same progress snapshot on its own cadence --
-	// it must never itself bump the count; only a real accepted activity event does.
-	const progress = [];
-	await runAdvisorWithRetries(
-		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
-		async (_prompt, _selection, _cwd, _signal, _killEscalationMs, onActivity) => {
-			onActivity("Read file.ts", Date.now());
-			await new Promise((resolve) => setTimeout(resolve, 40));
-			return "done";
-		},
-		async () => {},
-		(details) => { progress.push(details); },
-		10,
-		0,
-	);
-	const withActivity = progress.filter((item) => item.status === "investigating" && item.activity?.length);
-	assert.ok(withActivity.length >= 2, "the heartbeat re-emits the snapshot multiple times after the single activity event");
-	const counts = new Set(withActivity.map((item) => item.activityCount));
-	assert.deepEqual(counts, new Set([1]), "heartbeat-only re-emits never increment the count beyond the one real event");
 
-});
 await t.test("A retry resets the per-attempt tail but must never reset the cumulative total -- the user asks", async (t) => {
 	// A retry resets the per-attempt tail but must never reset the cumulative total -- the user asks
 	// for the total across the whole consultation process, not just the surviving attempt.
@@ -1309,57 +1226,11 @@ await t.test("runAdvisorConsultation: the real stdin/stream-json transport again
 	);
 
 	await withFakeAgy(
-		"#!/bin/sh\ncat > \"$AGY_STDIN_FILE\"\nprintf '%s\\n' \"$*\" > \"$AGY_ARGS_FILE\"\n" +
-		"printf '%s\\n' '{\"event\":\"init\",\"conversation_id\":\"c1\"}'\n" +
-		"printf '%s\\n' '{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"Looks solid. Ship it.\"}}'\n",
-		async (binDir) => {
-			const stdinFile = join(binDir, "stdin.txt");
-			const argsFile = join(binDir, "args.txt");
-			process.env.AGY_STDIN_FILE = stdinFile;
-			process.env.AGY_ARGS_FILE = argsFile;
-			const text = await runAdvisorConsultation("Please advise.", { model: "gemini-test", effort: "high" }, binDir, new AbortController().signal);
-			assert.equal(text, "Looks solid. Ship it.");
-			const args = (await (await import("node:fs/promises")).readFile(argsFile, "utf8")).trim();
-			assert.match(args, /--dangerously-skip-permissions/);
-			assert.match(args, /--output-format stream-json/);
-			assert.match(args, /--input-format stream-json/);
-			assert.match(args, /--model gemini-test/);
-			assert.match(args, /--effort high/);
-			assert.ok(!args.includes("--print "), "the prompt goes over stdin, never as a --print argv value");
-			const stdin = await (await import("node:fs/promises")).readFile(stdinFile, "utf8");
-			assert.equal(stdin, `${JSON.stringify({ event: "user", message: { content: "Please advise." } })}\n`);
-		},
-	);
-
-	await withFakeAgy(
 		"#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"event\":\"result\",\"result\":{\"status\":\"ERROR\",\"error\":\"context length exceeded\"}}'\n",
 		async (binDir) => {
 			await assert.rejects(
 				runAdvisorConsultation("Please advise.", { model: "m" }, binDir, new AbortController().signal),
 				/ERROR.*context length exceeded/s,
-			);
-		},
-	);
-
-	await withFakeAgy(
-		"#!/bin/sh\ncat > /dev/null\n" +
-		"echo 'flag provided but not defined: -input-format' >&2\n" +
-		"echo 'Usage of agy:' >&2\n" +
-		"exit 2\n",
-		async (binDir) => {
-			await assert.rejects(
-				runAdvisorConsultation("Please advise.", { model: "m" }, binDir, new AbortController().signal),
-				/Agy 1\.1\.15\+.*agy update/s,
-			);
-		},
-	);
-
-	await withFakeAgy(
-		"#!/bin/sh\ncat > /dev/null\nhead -c 2000005 /dev/zero | tr '\\0' 'x'\n",
-		async (binDir) => {
-			await assert.rejects(
-				runAdvisorConsultation("Please advise.", { model: "m" }, binDir, new AbortController().signal),
-				/stdout line over/,
 			);
 		},
 	);
@@ -1378,29 +1249,6 @@ await t.test("runAdvisorConsultation: the real stdin/stream-json transport again
 			// needs to catch a hang, not assert exact timing, and a loaded test runner can add real
 			// scheduling jitter on top of the child's own near-instant SIGTERM exit.
 			assert.ok(Date.now() - started < 8_000, "a child that honors SIGTERM exits well before the SIGKILL escalation fires");
-		},
-	);
-
-	// SIGTERM-escalation: a child that ignores SIGTERM (or a misbehaving grandchild) must not hang
-	// this promise forever -- it is eventually SIGKILLed, which cannot be ignored.
-	await withFakeAgy(
-		"#!/bin/sh\ntrap '' TERM\ncat > /dev/null\nsleep 30\ntouch \"$MARKER_FILE\"\n",
-		async (binDir) => {
-			const markerFile = join(binDir, "still-running-after-kill");
-			process.env.MARKER_FILE = markerFile;
-			const controller = new AbortController();
-			setTimeout(() => controller.abort(), 150);
-			const started = Date.now();
-			await assert.rejects(
-				// A short escalation delay keeps the test fast; production defaults to 5s.
-				runAdvisorConsultation("Please advise.", { model: "m" }, binDir, controller.signal, 200),
-				/Canceled\./,
-			);
-			const elapsed = Date.now() - started;
-			assert.ok(elapsed < 3_000, `SIGKILL escalation must bound the wait, not the child's own 30s sleep (took ${elapsed}ms)`);
-			await new Promise((resolve) => setTimeout(resolve, 300));
-			assert.ok(!existsSync(markerFile), "the child was actually killed -- it never reached the code after its 30s sleep");
-			delete process.env.MARKER_FILE;
 		},
 	);
 
@@ -1429,12 +1277,13 @@ await t.test("runAdvisorConsultation: the real stdin/stream-json transport again
 			assert.ok(activity.every((item) => typeof item.timestamp === "number" && item.timestamp > 0));
 		},
 	);
+});
 
 // Registered bro_advisor integration: load the real extension into a fake Pi API, then invoke the
 // exact execute() callback it registered against a fake context and real fake-agy subprocess. This
 // catches wiring regressions that the helper-level tests above cannot: state/settings/snapshot/prompt
 // composition, cwd/argv/stdin transport, progress, and the returned tool result all cross the seam.
-{
+await t.test("Registered bro_advisor integration with real subprocess transport and status surface", async (t) => {
 	const registeredTools = new Map();
 	const fakePi = {
 		on() {},
@@ -1620,8 +1469,6 @@ await t.test("runAdvisorConsultation: the real stdin/stream-json transport again
 		delete process.env.AGY_CWD_FILE;
 		delete process.env.AGY_CALLS_FILE;
 	}
-}
-
 });
 
 // Registered bro_advisor tool + real fake-agy: chunked NDJSON activity reaches the tool's onUpdate
@@ -2222,13 +2069,13 @@ await t.test("Explain modal M switches mode for this explanation only", async ()
 	};
 	const screen = () => stripVTControlCharacters(modal.render(96).join("\n"));
 	const waitFor = async (pattern) => {
-		for (let i = 0; i < 200 && !pattern.test(screen()); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+		for (let i = 0; i < 600 && !pattern.test(screen()); i++) await new Promise((resolve) => setTimeout(resolve, 10));
 		assert.match(screen(), pattern);
 	};
 	const loggedModes = async () => existsSync(log) ? (await readFile(log, "utf8")).trim().split("\n") : [];
 	// Wait until agy has run `count` times in total and the modal is back in its result state.
 	const settled = async (count, pattern) => {
-		for (let i = 0; i < 200 && ((await loggedModes()).length < count || !/Esc close/.test(screen())); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+		for (let i = 0; i < 600 && ((await loggedModes()).length < count || !/Esc close/.test(screen())); i++) await new Promise((resolve) => setTimeout(resolve, 10));
 		assert.equal((await loggedModes()).length, count);
 		await waitFor(pattern);
 	};

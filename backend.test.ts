@@ -1,4 +1,5 @@
 import "./test-cli-guard.ts";
+import { withFakeExecutable } from "./test-fake-exec.ts";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync } from "node:fs";
@@ -9,7 +10,6 @@ import test from "node:test";
 import { PassThrough } from "node:stream";
 import {
 	type AgySelection,
-	type BackendOnProgress,
 	type BackendProgress,
 	type BackendRequest,
 	MAX_STDOUT_LINE_CHARS,
@@ -19,21 +19,7 @@ import {
 	frameStdoutLines,
 } from "./backend.ts";
 
-const originalPath = process.env.PATH;
-
-async function withFakeAgy(script: string, run: (binDir: string) => Promise<void>): Promise<void> {
-	const binDir = await mkdtemp(join(tmpdir(), "pi-bro-fake-agy-"));
-	const fakeAgyPath = join(binDir, "agy");
-	await writeFile(fakeAgyPath, script);
-	chmodSync(fakeAgyPath, 0o755);
-	process.env.PATH = `${binDir}:${originalPath}`;
-	try {
-		await run(binDir);
-	} finally {
-		process.env.PATH = originalPath;
-		await rm(binDir, { recursive: true, force: true });
-	}
-}
+const withFakeAgy = (script: string, run: (binDir: string) => Promise<void>) => withFakeExecutable("agy", script, run);
 
 test("review adapters retain captured cwd without session persistence or native IDs", async () => {
  const bin = await mkdtemp(join(tmpdir(), 'bro-review-adapters-'));
@@ -412,7 +398,7 @@ test("timeout, cancel, and unexpected signal handling", async () => {
 cat > /dev/null
 sleep 10
 `,
-		async (binDir) => {
+		async () => {
 			const controller = new AbortController();
 			setTimeout(() => controller.abort(), 100);
 
@@ -435,7 +421,7 @@ sleep 10
 cat > /dev/null
 sleep 10
 `,
-		async (binDir) => {
+		async () => {
 			const outcome = await execute(
 				{ feature: "explain", access: "restricted", prompt: "Explain" },
 				{ model: "gemini-2.5-flash" },
@@ -457,7 +443,7 @@ sleep 10
 cat > /dev/null
 kill -HUP $$
 `,
-		async (binDir) => {
+		async () => {
 			const outcome = await execute(
 				{ feature: "explain", access: "restricted", prompt: "Explain" },
 				{ model: "gemini-2.5-flash" },
@@ -508,7 +494,9 @@ touch "$BIN_DIR/still-running-after-kill.txt"
 			const grandchildPid = Number(await readFile(join(binDir, "grandchild.pid"), "utf8"));
 			// Allow the OS to reap after SIGKILL before probing the process table.
 			await new Promise(resolve => setTimeout(resolve, 100));
-			const state = spawnSync("ps", ["-o", "stat=", "-p", String(grandchildPid)], { encoding: "utf8" }).stdout.trim();
+			const probe = spawnSync("ps", ["-o", "stat=", "-p", String(grandchildPid)], { encoding: "utf8" });
+			assert.equal(probe.error, undefined, probe.error?.message);
+			const state = (probe.stdout ?? "").trim();
 			assert.ok(!state || state.startsWith("Z"), `grandchild must be gone or awaiting reaping, got ${state}`);
 			assert.ok(elapsed < 4_000, `SIGKILL escalation must bound cleanup time (took ${elapsed}ms, expected < 4000ms)`);
 			assert.equal(
@@ -689,6 +677,25 @@ test("frameStdoutLines: oversized line fails closed immediately and stops attemp
 	const error = finish();
 	assert.match(error ?? "", /TestBackend emitted a stdout line over 2000000 characters/);
 	assert.equal(received.length, 0);
+
+	// Also test pending buffer overflow without newline
+	let pendingStopCause: string | undefined;
+	const pendingAttempt = {
+		causeOf: () => pendingStopCause as any,
+		stop: (cause: any) => { pendingStopCause ??= cause; },
+		closed: Promise.resolve({ code: 0, exitSignal: null }),
+		dispose: () => {},
+	};
+	const pendingStream = new PassThrough();
+	const finishPending = frameStdoutLines(
+		{ stdout: pendingStream } as any,
+		pendingAttempt,
+		"TestBackend",
+		() => {},
+	);
+	pendingStream.write("b".repeat(MAX_STDOUT_LINE_CHARS + 1));
+	assert.equal(pendingStopCause, "protocol");
+	assert.match(finishPending() ?? "", /TestBackend emitted a stdout line over 2000000 characters/);
 });
 
 test("frameStdoutLines: stream error triggers protocol failure", async () => {
@@ -752,6 +759,8 @@ if (mode === 'split') {
 	}, 20);
 } else if (mode === 'oversized') {
 	process.stdout.write('x'.repeat(2000001) + '\\n');
+} else if (mode === 'oversized_no_newline') {
+	process.stdout.write('x'.repeat(2000001));
 }
 `, async (binDir) => {
 		try {
@@ -781,7 +790,7 @@ if (mode === 'split') {
 			assert.equal(advisorOutcome.text, "advisor answer");
 			assert.equal(activityLabel, "grep_search");
 
-			// 3. Oversized line (> 2MB) fails closed
+			// 3. Oversized line (> 2MB) fails closed for explain and advisor (both newline-terminated and newline-free)
 			process.env.TEST_MODE = "oversized";
 			const overOutcome = await execute(
 				{ feature: "explain", access: "restricted", prompt: "oversized test", cwd: binDir },
@@ -790,6 +799,15 @@ if (mode === 'split') {
 			);
 			assert.equal(overOutcome.status, "failure");
 			assert.match(overOutcome.message, /over 2000000 characters/);
+
+			process.env.TEST_MODE = "oversized_no_newline";
+			const advisorOverOutcome = await execute(
+				{ feature: "advisor", access: "workspace-full", prompt: "advisor oversized test", cwd: binDir },
+				{ model: "gemini-2.5-flash" },
+				new AbortController().signal,
+			);
+			assert.equal(advisorOverOutcome.status, "failure");
+			assert.match(advisorOverOutcome.message, /over 2000000 characters/);
 		} finally {
 			delete process.env.TEST_MODE;
 		}

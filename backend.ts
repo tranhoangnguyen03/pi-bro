@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // Shared internal execution boundary for explain, show, btw, advisor, and review.
-// This implements docs/plans/2026-09-22-shared-backend-design.md for Agy (all features) and the
-// Claude Code CLI (all features) and the Grok CLI (all features): it owns CLI selection, process invocation, progress/outcome normalization, continuation, and
-// single-attempt cleanup. Feature code (bro.ts) keeps retries, UI, source/session capture and
-// settings.
+// This implements docs/plans/2026-09-22-shared-backend-design.md across all supported backends
+// (Agy, Claude Code, Grok, Codex, Muse): it owns CLI selection, process invocation,
+// progress/outcome normalization, continuation, and single-attempt cleanup. Feature code
+// keeps retries, UI, source/session capture and settings.
 
 export type BackendFeature = "explain" | "show" | "btw" | "advisor" | "review";
 export type BackendAccess = "restricted" | "workspace-full";
@@ -90,8 +90,8 @@ function unexpectedSignalMessage(exitSignal: NodeJS.Signals | null, cli = "Agy")
 }
 
 // Sends to the whole POSIX process group when possible so a misbehaving grandchild dies too, not
-// just the immediate agy process -- child.kill() alone only ever reaches the immediate child.
-function killAgyGroup(child: ChildProcess, signalName: NodeJS.Signals): void {
+// just the immediate child process -- child.kill() alone only ever reaches the immediate child.
+function killProcessGroup(child: ChildProcess, signalName: NodeJS.Signals): void {
 	if (process.platform !== "win32" && typeof child.pid === "number") {
 		try {
 			process.kill(-child.pid, signalName);
@@ -104,7 +104,7 @@ function killAgyGroup(child: ChildProcess, signalName: NodeJS.Signals): void {
 }
 
 // The three causes that stop an in-flight attempt: user cancellation, the host-imposed deadline,
-// and a protocol failure (malformed/inconsistent Agy output). Exactly one is latched -- the first
+// and a protocol failure (malformed/inconsistent backend output). Exactly one is latched -- the first
 // to occur -- and it is never relabeled by a later signal (e.g. a cancel arriving after a deadline
 // already fired stays a timeout, not a cancellation).
 type StopCause = "cancelled" | "timeout" | "protocol";
@@ -139,9 +139,9 @@ export function beginAttempt(child: ChildProcess, signal: AbortSignal, deadlineM
 		if (cause) return; // latched: the first stop cause wins
 		cause = next;
 		if (isClosed) return;
-		killAgyGroup(child, "SIGTERM");
+		killProcessGroup(child, "SIGTERM");
 		killTimer = setTimeout(() => {
-			killAgyGroup(child, "SIGKILL");
+			killProcessGroup(child, "SIGKILL");
 			// Detached descendants (or Windows grandchildren) may retain inherited pipes.
 			// Stop waiting on those pipes after escalation; never promote this stop to success.
 			child.stdin?.destroy();
