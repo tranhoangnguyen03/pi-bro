@@ -518,7 +518,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 			const backend = capabilityBackend(settings, capability);
 			const pair = capabilityPair(settings, capability);
 			const reviewError = capability === "review" ? reviewBackendError(backend) : undefined;
-			if (reviewError) { fail(label, reviewError); continue; }
+			if (reviewError) { lines.push(`- ℹ **${label}:** needs a Claude or Muse override in \`/bro config\` for model calls; saved reviews remain readable.`); continue; }
 			if (backend === "claude") {
 				if (!isClaudeEffort(pair.effort)) {
 					fail(label, `\`${pair.effort}\` is unsupported for claude \`${pair.model}\`. Run \`/bro config\` to fix this.`);

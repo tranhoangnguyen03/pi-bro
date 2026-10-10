@@ -91,7 +91,7 @@ Use Overview → Regenerate guide only when you want a fresh explanation/assessm
 
 Review uses **file-only inspection**, not full-access execution. Claude runs with `--restricted`, Read/Grep/Glob only, `dontAsk`, safe mode and no MCP; Muse disables write, shell and web tools, foreign personal context and native session logs, without trusting repository rules. No model-run project tests, commands, Git or network tools are available. Unsupported/older CLI flags fail visibly; there is no full-access fallback.
 
-Agy, Grok and Codex are not available for review generation/questions: supported controls do not establish equivalent shell-free inspection (Codex read-only sandbox still executes commands). Set the **review** override to Claude or Muse in `/bro config`; shared defaults and other features are unchanged. Saved reviews remain readable without a supported model backend.
+Agy, Grok and Codex are not available for review generation/questions: supported controls do not establish equivalent shell-free inspection (Codex read-only sandbox still executes commands). Set the **review** override to Claude or Muse in `/bro config`; shared defaults and other features are unchanged. Saved reviews remain readable without a supported model backend. Doctor shows the review override requirement as information; it does not make an otherwise healthy installation fail.
 
 These controls reduce malicious-code execution/write risk, but repository content can still manipulate the model's conclusions. Captured content, questions and answers go to the provider; do not use review as a secrets boundary or approval certificate. CLI enforcement and managed host policies remain the backend's responsibility.
 

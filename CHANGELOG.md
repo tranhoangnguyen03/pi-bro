@@ -32,6 +32,7 @@ All notable changes to pi-bro are documented here.
 
 ### Changed
 
+- Doctor treats an unsupported optional review backend as an informational override hint, not a broken installation; healthy Agy/Grok/Codex defaults still report ready.
 - Review is file-only on Claude/Muse: no shell, write or web tools; Agy/Grok/Codex review calls fail closed without switching backend. Other features retain their access behavior.
 - Capture uses depth-1 head/merge-base trees instead of full history; fetch gets a ten-minute bound while evidence stays offline. Interrupted-capture recovery remains.
 - Removed prototype record migrations after one-time backup/normalization of development records; split validation and formatted review modules/tests to the repository tab style.
