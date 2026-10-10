@@ -4,6 +4,15 @@ All notable changes to pi-bro are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Persist settings with atomic replacement and mode 0o600 (#84):
+  - Replace direct `writeFile` with atomic sibling write (`.tmp`) and `rename` to prevent settings corruption on failure, crash, or disk full (`ENOSPC`).
+  - Flush writes before replacement (`flush: true`) and clean up temporary files on failure.
+  - Enforce `mode: 0o600` on replaced settings files so permissions are never loosened.
+  - Resolve symlinks via lstat and realpath before replacement to preserve dotfile-managed configuration symlinks, and reject if an existing symlink target cannot be resolved.
+  - Align on-disk state with modal rollback behavior in `/bro config`.
+
 ### Added
 
 - Durable advisor steering across sessions in `~/.pi/agent/bro-advisor.md` (#97):

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import fsp from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -195,6 +197,243 @@ test("legacy settings migration, capability override persistence, and model/turn
 	assert.throws(() => parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 2.5 }), /showTurns/);
 	assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief" }).showTurns, 1);
 	assert.equal(parseBroSettings({ model: "m", effort: "low", mode: "brief", showTurns: 9 }).showTurns, 9);
+});
+
+test("writeSettings persists valid settings atomically with mode 0o600 and no leftover temp files", async () => {
+	const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-atomic-"));
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = tempDir;
+	try {
+		const target = join(tempDir, "bro-settings.json");
+		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "test-model-1", effort: "low" } });
+		await bro.writeSettings(initial);
+
+		const raw = readFileSync(target, "utf8");
+		assert.ok(raw.endsWith("\n"), "persisted settings must end with newline");
+		const parsed = JSON.parse(raw);
+		assert.equal(parsed.version, 2);
+		assert.equal(parsed.default.model, "test-model-1");
+
+		const readBack = await bro.readSettings();
+		assert.equal(readBack.model, "test-model-1");
+
+		const files = readdirSync(tempDir);
+		assert.deepEqual(files, ["bro-settings.json"], "temporary sibling files must not remain after success");
+
+		if (process.platform !== "win32") {
+			const info = statSync(target);
+			assert.equal(info.mode & 0o777, 0o600, "settings file must be restricted to 0o600");
+		}
+	} finally {
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("writeSettings failure during rename preserves original file and cleans up temp files", async (t) => {
+	const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-rename-fail-"));
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = tempDir;
+	try {
+		const target = join(tempDir, "bro-settings.json");
+		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "initial-model", effort: "low" } });
+		await bro.writeSettings(initial);
+		const initialRaw = readFileSync(target, "utf8");
+
+		t.mock.method(fsp, "rename", async () => {
+			throw Object.assign(new Error("Injected rename failure"), { code: "EIO" });
+		});
+		syncBuiltinESMExports();
+
+		const mutated = parseBroSettings({ version: 2, default: { backend: "agy", model: "mutated-model", effort: "high" } });
+		await assert.rejects(bro.writeSettings(mutated), /Injected rename failure/);
+
+		// Original file remains completely unchanged
+		const currentRaw = readFileSync(target, "utf8");
+		assert.equal(currentRaw, initialRaw);
+		const preserved = await bro.readSettings();
+		assert.equal(preserved.model, "initial-model");
+
+		// Temporary sibling files cleaned up
+		const files = readdirSync(tempDir);
+		assert.deepEqual(files, ["bro-settings.json"]);
+	} finally {
+		t.mock.restoreAll();
+		syncBuiltinESMExports();
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("writeSettings failure during write preserves original file and cleans up temp files", async (t) => {
+	const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-write-fail-"));
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = tempDir;
+	try {
+		const target = join(tempDir, "bro-settings.json");
+		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "initial-model", effort: "low" } });
+		await bro.writeSettings(initial);
+		const initialRaw = readFileSync(target, "utf8");
+
+		t.mock.method(fsp, "writeFile", async () => {
+			throw Object.assign(new Error("Injected write failure (ENOSPC)"), { code: "ENOSPC" });
+		});
+		syncBuiltinESMExports();
+
+		const mutated = parseBroSettings({ version: 2, default: { backend: "agy", model: "mutated-model", effort: "high" } });
+		await assert.rejects(bro.writeSettings(mutated), /Injected write failure/);
+
+		t.mock.restoreAll();
+		syncBuiltinESMExports();
+
+		// Original file remains completely unchanged
+		const currentRaw = readFileSync(target, "utf8");
+		assert.equal(currentRaw, initialRaw);
+		const preserved = await bro.readSettings();
+		assert.equal(preserved.model, "initial-model");
+
+		// Temporary sibling files cleaned up
+		const files = readdirSync(tempDir);
+		assert.deepEqual(files, ["bro-settings.json"]);
+	} finally {
+		t.mock.restoreAll();
+		syncBuiltinESMExports();
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("writeSettings preserves symlinked settings file and updates target file", async (t) => {
+	if (process.platform === "win32") {
+		t.skip("Symlink creation requires elevated privileges on Windows");
+		return;
+	}
+	const agentDir = mkdtempSync(join(tmpdir(), "pi-bro-symlink-agent-"));
+	const targetDir = mkdtempSync(join(tmpdir(), "pi-bro-symlink-target-"));
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+
+	try {
+		const realTarget = join(targetDir, "dotfiles-bro-settings.json");
+		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "symlinked-model-v1", effort: "low" } });
+		writeFileSync(realTarget, `${JSON.stringify(settingsPayload(initial), null, 2)}\n`, { mode: 0o600 });
+
+		const linkPath = join(agentDir, "bro-settings.json");
+		symlinkSync(realTarget, linkPath);
+
+		assert.ok(lstatSync(linkPath).isSymbolicLink(), "precondition: linkPath is a symlink");
+
+		const updated = parseBroSettings({ version: 2, default: { backend: "agy", model: "symlinked-model-v2", effort: "high" } });
+		await bro.writeSettings(updated);
+
+		// linkPath must still be a symlink pointing to realTarget
+		assert.ok(lstatSync(linkPath).isSymbolicLink(), "linkPath must remain a symlink");
+		assert.equal(readlinkSync(linkPath), realTarget, "symlink destination must be preserved");
+
+		// Real target file must be updated
+		const readBack = await bro.readSettings();
+		assert.equal(readBack.model, "symlinked-model-v2");
+		assert.equal(readBack.effort, "high");
+	} finally {
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		rmSync(agentDir, { recursive: true, force: true });
+		rmSync(targetDir, { recursive: true, force: true });
+	}
+});
+
+test("writeSettings rejects and preserves symlink when symlink target disappears", async (t) => {
+	if (process.platform === "win32") {
+		t.skip("Symlink creation requires elevated privileges on Windows");
+		return;
+	}
+	const agentDir = mkdtempSync(join(tmpdir(), "pi-bro-broken-link-agent-"));
+	const targetDir = mkdtempSync(join(tmpdir(), "pi-bro-broken-link-target-"));
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+
+	try {
+		const realTarget = join(targetDir, "dotfiles-bro-settings.json");
+		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "valid-initial", effort: "low" } });
+		writeFileSync(realTarget, `${JSON.stringify(settingsPayload(initial), null, 2)}\n`, { mode: 0o600 });
+
+		const linkPath = join(agentDir, "bro-settings.json");
+		symlinkSync(realTarget, linkPath);
+
+		// 1. Load settings succeeds
+		const loaded = await bro.readSettings();
+		assert.equal(loaded.model, "valid-initial");
+
+		// 2. Remove symlink target (dotfiles target disappears)
+		rmSync(realTarget);
+
+		// 3. Save must reject rather than silently overwriting the symlink with a regular file
+		const updated = parseBroSettings({ version: 2, default: { backend: "agy", model: "attempted-mutation", effort: "high" } });
+		await assert.rejects(bro.writeSettings(updated));
+
+		// 4. Symlink is preserved
+		assert.ok(lstatSync(linkPath).isSymbolicLink(), "linkPath must remain a symlink");
+		assert.equal(readlinkSync(linkPath), realTarget, "symlink destination must be intact");
+
+		// 5. No stray temporary files created
+		const files = readdirSync(agentDir);
+		assert.deepEqual(files, ["bro-settings.json"]);
+	} finally {
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		rmSync(agentDir, { recursive: true, force: true });
+		rmSync(targetDir, { recursive: true, force: true });
+	}
+});
+
+test("modal rollback on persistence failure agrees with on-disk state", async (t) => {
+	const { initTheme } = await import("@earendil-works/pi-coding-agent");
+	initTheme();
+	const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-modal-rollback-"));
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = tempDir;
+	try {
+		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "gemini-3.7-flash", effort: "low" } });
+		await bro.writeSettings(initial);
+
+		// Real writeSettings with injected rename error
+		t.mock.method(fsp, "rename", async () => {
+			throw Object.assign(new Error("Injected rename disk full"), { code: "ENOSPC" });
+		});
+		syncBuiltinESMExports();
+
+		const families = [{ id: "gemini-3.7-flash", label: "Gemini 3.7 Flash", efforts: ["low", "high"] as ("low" | "high")[], variants: [] }];
+		const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+		const modal = bro.createConfigModal(initial, families, bro.writeSettings)({
+			requestRender() {},
+		}, theme, {}, () => {});
+
+		// Trigger an effort change: model is first row, effort is second row
+		modal.handleInput("\u001b[B"); // navigate down to effort
+		modal.handleInput("\r");       // change effort
+		await new Promise((r) => setTimeout(r, 50));
+
+		// Modal UI reflects failure and rollback
+		const rendered = modal.render(120).join("\n");
+		assert.match(rendered, /Could not save settings: Injected rename disk full/);
+		assert.match(rendered, /Reverted to the last saved settings/);
+
+		t.mock.restoreAll();
+		syncBuiltinESMExports();
+
+		// On-disk file strictly matches the rolled-back state
+		const onDisk = await bro.readSettings();
+		assert.equal(onDisk.effort, "low", "on-disk settings must retain initial effort");
+	} finally {
+		t.mock.restoreAll();
+		syncBuiltinESMExports();
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		rmSync(tempDir, { recursive: true, force: true });
+	}
 });
 
 test("v2 settings parse into shared default plus whole overrides", () => {
