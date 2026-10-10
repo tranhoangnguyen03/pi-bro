@@ -6,6 +6,7 @@ All notable changes to pi-bro are documented here.
 
 ### Fixed
 
+- `/bro show` no longer invites Mermaid inside the HTML fence. Bro's HTML page blocks all scripts, so Mermaid could only appear as plain source text. The prompt now asks for hand-rolled HTML and CSS only and says prose subjects never use the HTML fence (#108).
 - Persist settings with atomic replacement and mode 0o600 (#84):
   - Replace direct `writeFile` with atomic sibling write (`.tmp`) and `rename` to prevent settings corruption on failure, crash, or disk full (`ENOSPC`).
   - Flush writes before replacement (`flush: true`) and clean up temporary files on failure.

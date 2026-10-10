@@ -18,7 +18,7 @@ import {
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// Frozen output of the v0.20.0 builders: without preferences, every prompt must stay byte-identical
+// Frozen builder output (v0.20.0; show HTML rule updated in #108): without preferences, every prompt must stay byte-identical
 // so the benchmark keeps measuring the same prompts.
 const fixtures = JSON.parse(readFileSync(new URL("./prompt.fixtures.json", import.meta.url), "utf8")) as {
 	source: string;
@@ -124,7 +124,9 @@ test("show prompt carries the show-me menu, conventions, and hard rules", () => 
 	assert.match(prompt, /Never force a diagram/);
 	assert.match(prompt, /At most one ```html fenced block, only as the very last block of the reply/);
 	assert.match(prompt, /self-contained with no external resources/);
-	assert.match(prompt, /Mermaid syntax only inside that html fence/);
+	assert.match(prompt, /never for prose or outline subjects/);
+	assert.match(prompt, /hand-rolled HTML and CSS only: no scripts and no Mermaid/);
+	assert.doesNotMatch(prompt, /Mermaid syntax only inside that html fence/);
 	assert.match(prompt, /Never wrap identifiers or paths in Markdown links/);
 	assert.match(prompt, /with no fenced code block and no diff/);
 });
