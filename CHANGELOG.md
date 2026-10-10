@@ -6,6 +6,13 @@ All notable changes to pi-bro are documented here.
 
 ### Added
 
+- Reader benchmark for Explain modes, BTW answers, preferences and repeated samples (#110):
+  - Fingerprinted live runs, narrow Jev binary checks, and per-check candidate comparisons.
+  - Report-only reader-visible counts and source deltas, separate from preservation and formatting checks.
+  - Committed synthetic baseline evidence with offline recomputation in CI.
+  - Optional generation through existing Claude, Codex and Muse adapters alongside Agy.
+  - Synthetic coverage and experimental judgments are decision support, not proof of full fidelity or comprehension; production prompts are unchanged.
+
 - Durable advisor steering across sessions in `~/.pi/agent/bro-advisor.md` (#97):
   - Ingest standing priorities from `bro-advisor.md` alongside session steering (`/bro advisor-steer`).
   - Labeled prompt composition in `buildAdvisorPrompt`: standing priorities appear under `### Standing priorities (durable across sessions)` and session priorities under `### Session priorities (this session only)`.
@@ -17,6 +24,8 @@ All notable changes to pi-bro are documented here.
   - Clearing session steering leaves durable steering intact.
 
 ### Changed
+
+- Refocus prompt tests on safety and structure rather than frozen wording or presentation order; identify fake-Agy Explain modes from current prompt builders instead of hardcoded phrases (#110).
 
 - Remove dead declarations and stale backend naming (#90):
   - Enable native TypeScript unused checks (`noUnusedLocals`, `noUnusedParameters`) in `tsconfig.json`.
