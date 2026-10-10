@@ -7,5 +7,5 @@ CI enforces this. Merging a PR that bumps the version tags it, publishes to npm,
 
 ## Docs
 
-- [ ] Changed user-visible behavior is reflected in `README.md`, `/bro help` (in `bro.ts`), and any affected prompt in `prompt.ts`.
-- [ ] Changed architecture, invariants, or manual checks are reflected in `docs/DEVELOPMENT.md` or `docs/TESTING.md`.
+- [ ] Changed user-visible behavior is reflected in `README.md`, `/bro help` (in `bro.ts`), and any affected prompt in `prompt.ts` or `review.ts`. Guided Review details/limits must match `docs/guided-review.md`.
+- [ ] Changed architecture, invariants, or manual checks are reflected in `docs/DEVELOPMENT.md` or `docs/TESTING.md`. Check user/agent documentation links, current labels, access/privacy, storage and verification claims together; historical plans must not contradict current instructions.

@@ -1,7 +1,7 @@
 # Manual end-to-end checklist
 
 `npm test` is fully offline (see [DEVELOPMENT.md](DEVELOPMENT.md)). Run this
-checklist before a release that changes backend, BTW, config, or modal
+checklist before a release that changes backend, BTW, Guided Review, config, or modal
 behavior. It uses real CLIs and your real accounts.
 
 ## Setup
@@ -89,6 +89,38 @@ in `/bro config` as the shared default or as the capability under test.
     7. Make the file longer than 4,000 characters: explain, Show, and BTW stop
        with the limit error, Doctor fails, and `/bro preferences` still opens
        it for trimming. Ctrl+K deletes the file.
+
+## Guided Review
+
+### UI check without model calls
+
+Use an existing saved review, not a new PR. For complete isolation, use a disposable profile with its own capture (initial preparation is a separately budgeted live call). A copied record retains absolute `snapshot.gitDir`/`checkout` paths, and Git worktree metadata also binds the original store: copying records/source does not relocate or fully isolate them. A record-only copy can isolate JSON/UI edits, but still reads original captured objects; do not make live calls or manually remove source through that copy. Otherwise use the existing profile knowing that draft/navigation changes are saved. Never damage original user data to simulate failure. Load this checkout:
+
+```sh
+pi --tui-mode fullscreen --no-extensions -e "$BRO/bro.ts"
+```
+
+1. Open the same saved PR URL. It restores without generation. Bare `/bro guided-review` lists saved reviews; `resume` is an alias. Reopen keeps the capture even if metadata says newer source exists.
+2. Browse Overview, topic, Findings, optional Across, Coverage and Changed files. Explanation, actual code/diff, suggestions and model-reported coverage must be distinct. No findings must not mean approval.
+3. Enter focuses available actions before activation. Empty screens advertise no dead controls. Tab highlight/reading order must match; paging applies to the focused pane without skipping unseen lines.
+4. Topic findings are filtered; Back restores the topic. Questions → discussion → Back restores Questions. Across → finding → Ask → Back twice restores Across and selection.
+5. Create an unsent draft; **do not press Enter in the composer**. Conversation → composer → actions. Close automatically saves; reopen restores draft/context/position. Clearing the last draft must leave a valid/empty list, not a ghost selection.
+6. Copy finding to a scratch editor, not an external service. Check full formatted text and confirmation; copying does not apply/submit. Host clipboard errors must be readable.
+7. Check 132×38, 110×32, 60×20, 36×18 and tiny. Essential exit hints/actions remain visible; 36×18 works. Wheel scrolls the hovered pane/pinned title without moving selection/focus. Physical mouse/terminal behavior is separate from injected-event tests.
+8. Close shows a saved/reopen message. No new backend process should be started by reading/navigation/resume.
+
+### Bounded live checks (not part of npm test)
+
+Current security/capture tests are offline: enforce review flags/no dangerous bypass, reject unsupported adapters before spawn, preserve captured cwd, reconstruct questions, reject prototype formats unchanged, and prove shallow captures omit intermediate commits while old/new evidence remains available. These test adapter contracts, not independently certified CLI enforcement. No additional live calls were authorized for this revision.
+
+With Claude/Muse, new capture/preparation, Send question, Prepare guide, Edit and resend followed by Send, and confirmed Regenerate guide make model calls. Specify backend/model, fixtures and maximum attempts first; never automatically retry. Use isolated source/profile and retain results. Do not post to GitHub or run unknown project code as a test shortcut.
+
+- Known defect: correct scenario, unchanged caller/test investigation when relevant, supported references and useful fix/check—not just valid JSON.
+- Clean change: distinguish present defects from intentional contract questions/speculative advice; zero findings is allowed, not required.
+- Regeneration: decline first to verify navigation without a call; then approve once. Completion must follow observed running state, not the already-ready header. Verify new identities/current replacement, unchanged captured revision, preserved question/draft/original context, clean source, close/resume without another call.
+- Streaming/cancellation and save failures: offline fake-CLI tests cover contracts. Live claims require actual observation; simulate disk errors only in disposable profiles, never by damaging user state.
+
+Historical full-access record (not qualification of the later file-only controls): manual UI accepted; 316 full serial tests passed before final prompt calibration, focused tests/typecheck passed afterward; bounded Agy known-defect and final regeneration checks succeeded. Earlier real PR #102 work also exercised Claude questions/cancellation. This is not an unfamiliar-reader study, private/fork acquisition matrix or live five-backend certification. Live calls are separate from offline documentation/contract checks. See [qualification record](plans/2026-10-10-guided-review-live-qualification.md).
 
 ## Backend specifics
 

@@ -1,14 +1,11 @@
 # pi-bro
 
-Turn a dense AI reply, pasted text, local document, or public webpage into a
-plain-language explanation — or open a separate side conversation with
-`/bro btw` — without adding anything to your main agent's context.
+Turn a dense AI reply, pasted text, document or webpage into a plain-language explanation. Ask side questions with `/bro btw`, or understand and assess a PR with `/bro guided-review`. These windows do not add their discussions to your main agent's context.
 
 `pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
 Experimental [PiG 0.3.0 compatibility](docs/pig-compatibility.md) uses the same npm package and requires Node.js. See the compatibility notes for verified coverage and the PiG RPC tool-exclusion limitation.
 It opens explanations in a separate modal and runs them through a CLI backend
-you already have installed and signed in to. Explain, show, BTW, and the
-advisor all work across five backends:
+you already have installed and signed in to. Explain, show, BTW and advisor use five backend adapters. Guided Review generation/questions require Claude or Muse file-only inspection (live verification varies by feature):
 
 - [Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`) — the default for new settings
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
@@ -75,7 +72,9 @@ text directly captures a new source the same way.
 | `/bro doctor` | Check Bro's settings, preferences, and each selected backend, with the effective backend/model/effort per feature. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro preferences` | View or edit what Bro knows about you and how you like answers; see [Preferences](#preferences). |
-| `/bro config` | Open an interactive settings screen for the shared default backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor) overrides. |
+| `/bro config` | Open settings for the shared backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor/review) overrides. |
+| `/bro guided-review <PR number or URL>` | Automatically explain and assess a captured PR in local Pi, with source evidence and optional private questions. Opening the same PR restores its saved review. |
+| `/bro guided-review` | List saved reviews; `resume` is an alias. |
 | `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; type `/mode` inside to toggle full permission (read and edit the workspace) without losing the thread. |
 | `/bro advisor` | Quick notice of whether the executor's `bro_advisor` tool is available right now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`. |
 | `/bro advisor-steer` | View, edit, save, or clear the one persistent steering brief the advisor always sees. |
@@ -127,6 +126,44 @@ Bro temporarily captures mouse input while its modal is open. Native mouse
 selection may be unavailable or visually extend outside the modal depending on
 your terminal mode; press **C** to copy the complete explanation reliably.
 
+
+## Guided Review
+
+**Open a PR → read and investigate → leave when satisfied.** Bro automatically
+prepares an explanation and quality assessment with captured code, ranked
+findings and suggested fixes/checks. Asking private questions is optional.
+Nothing is automatically applied or posted to GitHub.
+
+```text
+/bro guided-review https://github.com/OWNER/REPO/pull/123
+```
+
+Local Pi interactive mode, Git, authenticated `gh`, and Claude or Muse configured for review
+are required. A new review makes a model call using that backend's account.
+Opening the same PR restores its saved review without another model call.
+Bare `/bro guided-review` lists saved reviews (`resume` is an alias).
+
+Contents holds Overview, topics, Findings, Coverage, Changed files and Your
+questions. Enter opens an item or focuses contextual actions; Enter on a
+highlighted action activates it. Tab changes focus. Esc goes back, then closes
+from Contents. Your work is saved automatically; **Close** leaves normally,
+and **Stop and close** cancels active work before saving and leaving.
+
+Optional conveniences:
+- **Copy finding** copies its text to the system clipboard; nothing is submitted.
+- **Regenerate guide** makes a confirmed model call about the **same captured
+  revision**. Success replaces the guide while retaining original private
+  discussion context; failure keeps it. It does not fetch later commits.
+
+Reopening also keeps the captured revision, even after the author pushes.
+Findings are model suggestions, not approval; citations show real locations,
+not proof of the conclusion. Review uses Claude or Muse file-only inspection: shell, writes and web tools are disabled. Agy/Grok/Codex review requests fail clearly; choose a review override in `/bro config`. Saved reviews remain readable with any selection. Repository text can still mislead the model; tool restrictions are not proof of its conclusions.
+Use `pi --tui-mode fullscreen` for pane-local wheel scrolling.
+
+See the [Guided Review guide](docs/guided-review.md) for controls, calls and
+costs, source freshness, access/privacy, local storage, recovery and current
+scope. Notes, examination tracking, branch/update review and feedback delivery
+are not implemented.
 
 ## Bro btw (side conversation)
 
@@ -720,7 +757,7 @@ succeed.
 ## Settings
 
 Use `/bro config` to review or change the shared default backend/model/effort
-and any per-capability (explain/show/btw/advisor) overrides, the explanation
+and any per-capability (explain/show/btw/advisor/review) overrides, the explanation
 mode, and the default show turn count. Changes save immediately. Esc inside a
 picker cancels that pick; Esc on the settings screen closes it, keeping
 whatever was already saved. A failed save (for example, a read-only file) is
@@ -773,13 +810,13 @@ credentials, and does not copy credentials or rewrite backend configuration.
 Each backend and your model provider may retain sessions, logs, and request
 data under their own settings and policies.
 
-| | Explain / show | BTW conversation-only | BTW full permission | Advisor |
-| --- | --- | --- | --- | --- |
-| **Agy** | Temporary directory, Agy sandbox | Temporary directory, Agy sandbox | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed |
-| **Claude Code** | Scratch directory, tools/MCP/skills disabled, no session persistence | Workspace, tools disabled | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed |
-| **Grok** | Temporary directory, **prompt instruction only** | Workspace, **prompt instruction only** | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed |
-| **Codex** | Scratch directory, read-only sandbox, ephemeral session | Workspace, read-only sandbox | Workspace, approvals and sandbox bypassed | Fresh workspace process, approvals and sandbox bypassed |
-| **Muse** | Scratch directory, approval/write/shell disabled, no session log | Workspace, approval/write/shell disabled | Workspace, permissions bypassed (`--yolo`) | Fresh workspace process, permissions bypassed (`--yolo`) |
+| | Explain / show | BTW conversation-only | BTW full permission | Advisor | Guided Review |
+| --- | --- | --- | --- | --- | --- |
+| **Agy** | Temporary directory, Agy sandbox | Temporary directory, Agy sandbox | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Unavailable; choose Claude/Muse |
+| **Claude Code** | Scratch directory, tools/MCP/skills disabled, no session persistence | Workspace, tools disabled | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Restricted Read/Grep/Glob only; confined checkout, no persistence |
+| **Grok** | Temporary directory, **prompt instruction only** | Workspace, **prompt instruction only** | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Unavailable; choose Claude/Muse |
+| **Codex** | Scratch directory, read-only sandbox, ephemeral session | Workspace, read-only sandbox | Workspace, approvals and sandbox bypassed | Fresh workspace process, approvals and sandbox bypassed | Unavailable; command execution is not allowed for review |
+| **Muse** | Scratch directory, approval/write/shell disabled, no session log | Workspace, approval/write/shell disabled | Workspace, permissions bypassed (`--yolo`) | Fresh workspace process, permissions bypassed (`--yolo`) | Captured checkout; writes/shell/web disabled, no session log |
 
 - Grok always runs with its sandbox off and permissions bypassed; its tools,
   hooks, skills, plugins, and MCP may remain available. "Answer only from the
@@ -808,7 +845,7 @@ data under their own settings and policies.
 ### Configuration precedence
 
 When resolving backend, model, and reasoning effort:
-1. **Per-capability override**: `overrides.<capability>` (`explain`, `show`, `btw`, or `advisor`) pins that capability's complete selection.
+1. **Per-capability override**: `overrides.<capability>` (`explain`, `show`, `btw`, `advisor`, or `review`) pins that capability's complete selection.
 2. **Shared default**: otherwise the capability inherits `default` (root `model`/`effort` in older flat files).
 3. **Agy catalog normalization**: for Agy selections, Bro maps suffixed variant IDs and handles fixed-effort models.
 4. **Initial file creation only**: `PI_BRO_MODEL` has no effect once the settings file exists.
@@ -829,7 +866,7 @@ When shaping an answer, each part has one owner:
 ## Preferences
 
 Tell Bro about yourself and how you like answers. Bro adds what you write to
-every explain, `/bro show`, and `/bro btw` prompt as a labelled section,
+every explain, `/bro show`, `/bro btw`, and Guided Review prompt as a labelled section,
 alongside its own instructions. It never replaces them: modes, **M**, and the
 source rules keep working. The advisor never receives your preferences; use
 `/bro advisor-steer` for it.
@@ -863,11 +900,11 @@ that is set):
 - **What preferences can change**: wording, tone, technical depth, length in
   BTW, and the answer language. If you name a language, code, commands, paths,
   names, and numbers still stay exactly as written. In `/bro show`,
-  preferences only change wording and language. A per-run choice (the mode,
-  **M**, a Show steering query, or what a BTW question asks for) wins over a
+  preferences only change wording and language. Guided Review also receives preferences for explanation/answer wording; they do not override its evidence or review rules. A per-run choice (the mode,
+  **M**, a Show steering query, or what a BTW/review question asks for) wins over a
   standing preference.
 - **Limit**: 4,000 characters, because the text goes with every request. A
-  longer file stops explain, Show, and BTW with an error until you trim it;
+  longer file stops explain, Show, BTW, and Guided Review with an error until you trim it;
   Bro never cuts it silently. `/bro doctor` reports the problem, and the
   editor still opens the file so you can fix it.
 - **BTW threads**: when your preferences change, the next side question starts
@@ -889,8 +926,9 @@ read. Move what you want to keep into `/bro preferences`, and choose
   seeded main-session conversation text (plus earlier turns when a native
   session is reseeded) to the selected backend. In full permission mode the
   side agent can additionally read and edit the workspace.
+- **Guided Review requests**: PR identity/description, captured diff, relevant private discussion and preferences go to the selected backend, which can inspect captured files using Claude/Muse read-only tools. Main-session context is not attached. Review shell/write/web tools are disabled; Claude file tools are confined with `--restricted`, Muse uses workspace-scoped inspection. Prompt injection can still corrupt conclusions or reveal captured content to the provider; this is not a general confidentiality guarantee. See [Guided Review access and storage](docs/guided-review.md#access-privacy-and-storage).
 - **Preferences**: `bro-preferences.md` is sent with every explain, Show,
-  and BTW request to the selected backend. It is never sent to the advisor or
+  BTW, and Guided Review request to the selected backend. It is never sent to the advisor or
   to Pi's main model.
 - **Advisor requests**: `bro_advisor` sends the executor agent's system
   instructions, active tool list (excluding `bro_advisor`), ordered
@@ -907,6 +945,7 @@ read. Move what you want to keep into `/bro preferences`, and choose
   steering brief to Pi's conversation history or main-agent context. BTW text
   reaches the main editor only through `/insert` or `/insert-all`, and advisor
   results appear as normal tool results in the executor's transcript.
+- **Saved reviews**: Guided Review records, questions, drafts and captured Git source persist under the host's `getAgentDir()/bro-reviews/`. No automatic cleanup or sync is provided; see [storage and removal](docs/guided-review.md#access-privacy-and-storage).
 - **Memory**: the latest explanation (for `/bro open`) and the BTW thread live
   only in process memory and clear when you switch Pi sessions, reload
   extensions, or quit Pi. Backend-native sessions can persist independently.
@@ -929,7 +968,7 @@ read. Move what you want to keep into `/bro preferences`, and choose
   Bro writes it to `/tmp/pi-bro-<uid>/bro-show-<hash>.html` with a restrictive
   Content-Security-Policy, and opens it in your browser only when you press
   **O**. **C** copies the full reply, including the HTML.
-- **Clipboard**: **C**, `/copy`, and `/copy-all` copy text to your system
+- **Clipboard**: **C**, `/copy`, `/copy-all`, and Guided Review's Copy finding copy text to your system
   clipboard, where your operating system or clipboard manager may retain it.
 
 ## Troubleshooting and current limits
@@ -957,8 +996,8 @@ tool before giving it to Bro.
 - HTML diagrams open in your default browser; pressing **O** on a remote or
   headless session with no display reports the failure instead of opening
   anything.
-- Keeps only the latest explanation in memory and does not store history or
-  export directly to files.
+- Explain keeps only the latest result in memory and does not export directly to files. Guided Review separately persists review records and captured source.
+- Guided Review is local-Pi interactive only, keeps its captured revision on reopen, and does not publish, review a branch or fetch later PR changes. See [review recovery and limits](docs/guided-review.md#if-something-goes-wrong).
 - Bro temporarily captures mouse input while its modal is open so mouse-wheel
   and trackpad scrolling work in regular and fullscreen modes. Native mouse
   selection may be unavailable or visually extend outside the Bro window;
@@ -972,7 +1011,7 @@ npm test
 pi --tui-mode fullscreen -e ./bro.ts
 ```
 
-`npm test` uses fake `agy`, `claude`, and `grok` executables and never calls an
+`npm test` uses fake `agy`, `claude`, `grok`, `codex`, and `muse` executables and never calls an
 external model. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the code
 map and invariants, [docs/TESTING.md](docs/TESTING.md) for the manual
 end-to-end checklist, and [docs/README.md](docs/README.md) for the docs index.
