@@ -5,7 +5,7 @@ import {READER_CASES} from './reader-corpus.ts';
 import {REAL_CASES} from './reader-real-corpus.ts';
 import {CANDIDATES} from './reader-candidates.ts';
 test('manifest freezes applicability and questions across arms; judge sees no key or source',()=>{
- const a=prepare('shipped'),b=prepare('brief-v1');assert.equal(READER_CASES.length,18);assert.equal(a.rows.length,b.rows.length);assert.notEqual(a.fingerprint,b.fingerprint);
+ const a=prepare('a'),b=prepare('b');assert.equal(READER_CASES.length,18);assert.equal(a.rows.length,b.rows.length);assert.notEqual(a.fingerprint,b.fingerprint);
  for(let i=0;i<a.rows.length;i++){assert.deepEqual(a.rows[i].probes,b.rows[i].probes);const r=request('candidate',a.rows[i].probes);assert.deepEqual(r.state,{output:'candidate'});assert.ok(!JSON.stringify(r).includes('"expected"'));}
 });
 test('polarity, missing answers, code fences, missing cells and regressions',()=>{
@@ -65,14 +65,18 @@ test('real fixtures load with four required and two compared questions',()=>{
   assert.deepEqual(evaluate(c,'faithful',c.source,[],null).mechanical,{});
  }
 });
-test('candidate arm changes only the brief prompt; modes filter rows',()=>{
- const shipped=prepare('shipped'),candidate=prepare('brief-v1');
- for(let i=0;i<shipped.rows.length;i++){
-  const s=shipped.rows[i],c=candidate.rows[i];
-  if(s.mode==='brief'){assert.notEqual(s.prompt,c.prompt);assert.ok(c.prompt.includes(CANDIDATES['brief-v1'].replacement));}
-  else assert.equal(s.prompt,c.prompt);
+test('candidate arm changes only the target mode prompt; modes filter rows',()=>{
+ CANDIDATES['test-brief']={mode:'brief',shipped:'So, please ELI-simpleton, and try not to go overboard with the forced analogies.',replacement:'Test replacement.'};
+ try {
+  const shipped=prepare('shipped'),candidate=prepare('test-brief');
+  for(let i=0;i<shipped.rows.length;i++){
+   const s=shipped.rows[i],c=candidate.rows[i];
+   if(s.mode==='brief'){assert.notEqual(s.prompt,c.prompt);assert.ok(c.prompt.includes('Test replacement.'));}
+   else assert.equal(s.prompt,c.prompt);
+  }
+ } finally {
+  delete CANDIDATES['test-brief'];
  }
- assert.throws(()=>prepare('unknown'));
  assert.throws(()=>prepare('shipped',undefined,['tiny']));
  const brief=prepare('shipped',undefined,['brief']);
  assert.ok(brief.rows.every(r=>r.mode==='brief'));

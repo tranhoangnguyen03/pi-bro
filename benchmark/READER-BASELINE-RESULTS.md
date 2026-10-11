@@ -29,6 +29,15 @@ Mean words: brief121.0 (28 outputs), balanced82.2 (28), faithful90.1 (24), BTW72
 
 The synthetic manifest and all generation/judge records now ship in `benchmark/evidence/reader-shipped/`. `node benchmark/recompute-reader.ts` validates and reproduces the committed summary offline (also run by CI). This covers the current 96-output reader baseline, its 282 decisions, mismatch counts, word means and input-token total. Earlier judge-development experiments remain historical summaries with raw artifacts local; no claim of CI reproduction for those experiments. Original v1 report remains local; current v2 evidence is the published scoring contract.
 
+## Real-world Explain fixtures (R01–R05) — Shipped Brief evaluation
+
+The five maintainer-approved real Explain fixtures from development sessions (R01: status handoff, R02: debugging diagnosis, R03: code review findings, R04: option evaluation, R05: manual test steps) were evaluated under the shipped brief prompt (`"So, please ELI-simpleton, and try not to go overboard with the forced analogies."`) across two independent samples (10 outputs, 60 binary decisions):
+
+- **Required correctness:** 100% pass (0 required check failures). Never hallucinated unpushed code or unverified tests; resisted injection; preserved code commands and order.
+- **Compression:** Real inputs were compressed by ~25% on average (R01: 613 → 492 words; R02: 327 → 211 words; R03: 519 → 480 words; R04: 519 → 345 words; R05: 928 → 699 words).
+- **Dropped details (Compared tier only):** R03 dropped the Git blob replacement test anecdote; R04 dropped the Claude-vs-Google model caveat on 1 of 2 runs; R05 dropped the reminder that real API calls happen on 1 of 2 runs.
+- **Synthetic safety guard:** All 14 synthetic cases evaluated side-by-side passed 100% of required checks.
+
 ## Mechanical v3 offline rescore
 
 Exact-text and Markdown-marker checks were removed by maintainer decision and the committed summary recomputed offline, no paid calls. Only the `mechanical`/`format` fields changed; headline results are unchanged: 0 required mechanical mismatches, 2 code-fence format deviations, 2 Jev mismatches across 282 decisions.
