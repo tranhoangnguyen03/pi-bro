@@ -26,6 +26,7 @@ export const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 export async function extractDocumentText(input: string, cwd: string, signal?: AbortSignal): Promise<string> {
 	const requested = unquote(input.trim());
 	if (!requested) throw new Error("Use /bro file <path>.");
+	if (signal?.aborted) throw new Error("Canceled.");
 
 	let root: string;
 	let path: string;
@@ -73,9 +74,11 @@ export async function extractDocumentText(input: string, cwd: string, signal?: A
 			throw new Error("Unsupported file type. Use .md, .markdown, .txt, .pdf, or .docx.");
 		}
 	} catch (error) {
+		if (signal?.aborted) throw new Error("Canceled.");
 		if (error instanceof Error && error.message.startsWith("Unsupported file type.")) throw error;
 		throw new Error(`Could not extract text from ${requested}: ${errorMessage(error)}`);
 	}
+	if (signal?.aborted) throw new Error("Canceled.");
 
 	text = text.trim();
 	if (!text) throw new Error("No readable text found. Scanned PDFs need OCR, which Bro does not support.");

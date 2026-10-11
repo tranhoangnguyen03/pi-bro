@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
 import { withFakeExecutable } from "./test-fake-exec.ts";
 import { chmodSync, existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
-import { bro, backend, buildDir } from "./test-build.mjs";
+import mammoth from "mammoth";
+import { bro, backend, sources, buildDir } from "./test-build.mjs";
 
 test("Bro helpers, modals, advisor lifecycle and SDK restrictions", async (t) => {
+const repoDir = dirname(fileURLToPath(import.meta.url));
+const documentFixturesDir = join(repoDir, "fixtures", "documents");
+const { isWorkspaceFile } = sources;
 const {
 	advisorFlagErrorHint,
 	agyFailureMessage,
@@ -657,18 +662,195 @@ await t.test("parseShowArguments parsing of steering and requested turns", () =>
 	assert.equal(parseShowArguments("Focus  on   spacing").steering, "Focus  on   spacing");
 });
 
-await t.test("Document text extraction symlink containment", async () => {
+await t.test("Document text extraction: formats, failure boundaries, containment, and cancellation (#87)", async (t) => {
 	const root = await mkdtemp(join(tmpdir(), "pi-bro-extract-"));
 	const outside = await mkdtemp(join(tmpdir(), "pi-bro-outside-"));
+	const origMammothExtract = mammoth.extractRawText;
 	try {
-		await writeFile(join(root, "Complex Notes.MD"), "  readable text  ");
-		assert.equal(await extractDocumentText("Complex Notes.MD", root), "readable text");
-		await writeFile(join(outside, "secret.txt"), "outside");
-		await symlink(join(outside, "secret.txt"), join(root, "linked.txt"));
-		await assert.rejects(extractDocumentText("linked.txt", root), /current workspace/);
+		// Advertised formats (.md, .markdown, .txt, real .pdf via unpdf, real .docx via mammoth)
+		await writeFile(join(root, "notes.md"), "# Heading\nReadable markdown text");
+		assert.equal(await extractDocumentText("notes.md", root), "# Heading\nReadable markdown text");
+
+		await writeFile(join(root, "notes.markdown"), "Markdown text variant");
+		assert.equal(await extractDocumentText("notes.markdown", root), "Markdown text variant");
+
+		await writeFile(join(root, "plain.txt"), "Plain text content");
+		assert.equal(await extractDocumentText("plain.txt", root), "Plain text content");
+
+		await copyFile(join(documentFixturesDir, "sample.pdf"), join(root, "sample.pdf"));
+		assert.equal(await extractDocumentText("sample.pdf", root), "PDF_FIXTURE_TEXT");
+
+		await copyFile(join(documentFixturesDir, "sample.docx"), join(root, "sample.docx"));
+		assert.equal(await extractDocumentText("sample.docx", root), "DOCX_FIXTURE_TEXT");
+
+		// Failure boundaries: empty output and OCR warning
+		await copyFile(join(documentFixturesDir, "empty.pdf"), join(root, "empty.pdf"));
+		await assert.rejects(
+			extractDocumentText("empty.pdf", root),
+			/No readable text found\. Scanned PDFs need OCR/
+		);
+
+		await writeFile(join(root, "empty.txt"), "   \n\t  ");
+		await assert.rejects(
+			extractDocumentText("empty.txt", root),
+			/No readable text found/
+		);
+
+		await copyFile(join(documentFixturesDir, "empty.docx"), join(root, "empty.docx"));
+		await assert.rejects(
+			extractDocumentText("empty.docx", root),
+			/No readable text found/
+		);
+
+		// Failure boundaries: malformed UTF-8 in text formats
+		await writeFile(join(root, "bad-utf8.txt"), Buffer.from([0xff, 0xfe]));
+		await assert.rejects(
+			extractDocumentText("bad-utf8.txt", root),
+			/Could not extract text from bad-utf8\.txt: The encoded data was not valid for encoding utf-8/
+		);
+
+		// Failure boundaries: corrupted / zero-byte binaries
+		await writeFile(join(root, "zero.pdf"), Buffer.alloc(0));
+		await assert.rejects(
+			extractDocumentText("zero.pdf", root),
+			/Could not extract text from zero\.pdf: The PDF file is empty/
+		);
+
+		await writeFile(join(root, "corrupted.pdf"), Buffer.from("%PDF-corrupted-bytes"));
+		const origWarn = console.warn;
+		console.warn = () => {};
+		try {
+			await assert.rejects(
+				extractDocumentText("corrupted.pdf", root),
+				/Could not extract text from corrupted\.pdf: Invalid PDF structure/
+			);
+		} finally {
+			console.warn = origWarn;
+		}
+
+		await writeFile(join(root, "corrupted.docx"), Buffer.from("PK-corrupted-zip"));
+		await assert.rejects(
+			extractDocumentText("corrupted.docx", root),
+			/Could not extract text from corrupted\.docx: /
+		);
+
+		// Limits: file size (10 MiB limit via stat.size)
+		await writeFile(join(root, "oversized.txt"), "x");
+		await truncate(join(root, "oversized.txt"), 10 * 1024 * 1024 + 1);
+		await assert.rejects(
+			extractDocumentText("oversized.txt", root),
+			/File is larger than Bro's 10 MiB limit\./
+		);
+
+		// Limits: text length (100,000 characters)
+		await writeFile(join(root, "exact100k.txt"), "a".repeat(100_000));
+		assert.equal((await extractDocumentText("exact100k.txt", root)).length, 100_000);
+
+		await writeFile(join(root, "padded100k.txt"), "  \n  " + "a".repeat(100_000) + "\n\t  ");
+		assert.equal((await extractDocumentText("padded100k.txt", root)).length, 100_000);
+
+		await writeFile(join(root, "over100k.txt"), "a".repeat(100_001));
+		await assert.rejects(
+			extractDocumentText("over100k.txt", root),
+			/Extracted text is longer than Bro's 100,000-character limit\./
+		);
+
+		// Filesystem validation: directories, non-existent, unsupported types, empty input
+		await mkdir(join(root, "directory.pdf"));
+		await assert.rejects(
+			extractDocumentText("directory.pdf", root),
+			/Not a regular file: directory\.pdf/
+		);
+
+		await assert.rejects(
+			extractDocumentText("missing.pdf", root),
+			/File not found: missing\.pdf/
+		);
+
 		await writeFile(join(root, "unsupported.csv"), "a,b");
-		await assert.rejects(extractDocumentText("unsupported.csv", root), /Unsupported file type/);
+		await assert.rejects(
+			extractDocumentText("unsupported.csv", root),
+			/Unsupported file type\. Use \.md, \.markdown, \.txt, \.pdf, or \.docx\./
+		);
+
+		await assert.rejects(
+			extractDocumentText("   ", root),
+			/Use \/bro file <path>\./
+		);
+
+		// Quoting and workspace containment (preserving existing regressions)
+		await writeFile(join(root, "spaced notes.txt"), "spaced text");
+		assert.equal(await extractDocumentText('"spaced notes.txt"', root), "spaced text");
+		assert.equal(await extractDocumentText("'spaced notes.txt'", root), "spaced text");
+
+		await writeFile(join(outside, "secret.txt"), "outside");
+		const relativeOutside = relative(root, join(outside, "secret.txt"));
+		await assert.rejects(
+			extractDocumentText(relativeOutside, root),
+			/Bro can read only files inside the current workspace\./
+		);
+
+		await symlink(join(outside, "secret.txt"), join(root, "linked.txt"));
+		await assert.rejects(
+			extractDocumentText("linked.txt", root),
+			/Bro can read only files inside the current workspace\./
+		);
+
+		// Cancellation: pre-aborted signal (on both existing and missing paths)
+		const preAborted = new AbortController();
+		preAborted.abort();
+		await assert.rejects(
+			extractDocumentText("plain.txt", root, preAborted.signal),
+			/^Error: Canceled\.$/
+		);
+		await assert.rejects(
+			extractDocumentText("does-not-exist.txt", root, preAborted.signal),
+			/^Error: Canceled\.$/
+		);
+
+		// Cancellation: abort during asynchronous parser resolution
+		const resolveAbortController = new AbortController();
+		mammoth.extractRawText = async () => {
+			resolveAbortController.abort();
+			return { value: "parsed text" };
+		};
+		try {
+			await assert.rejects(
+				extractDocumentText("sample.docx", root, resolveAbortController.signal),
+				/^Error: Canceled\.$/
+			);
+		} finally {
+			mammoth.extractRawText = origMammothExtract;
+		}
+
+		// Cancellation: abort during asynchronous parser rejection
+		const rejectAbortController = new AbortController();
+		mammoth.extractRawText = async () => {
+			rejectAbortController.abort();
+			throw new Error("corrupted zip stream");
+		};
+		try {
+			await assert.rejects(
+				extractDocumentText("sample.docx", root, rejectAbortController.signal),
+				/^Error: Canceled\.$/
+			);
+		} finally {
+			mammoth.extractRawText = origMammothExtract;
+		}
+
+		// isWorkspaceFile sniffing helper table-driven tests
+		assert.equal(await isWorkspaceFile("notes.md", root), true);
+		assert.equal(await isWorkspaceFile("sample.pdf", root), true);
+		assert.equal(await isWorkspaceFile("sample.docx", root), true);
+		await writeFile(join(root, "CAPITAL.DOCX"), "docx content");
+		assert.equal(await isWorkspaceFile("CAPITAL.DOCX", root), true);
+		assert.equal(await isWorkspaceFile("unsupported.csv", root), false);
+		assert.equal(await isWorkspaceFile("directory.pdf", root), false);
+		assert.equal(await isWorkspaceFile(relativeOutside, root), false);
+		assert.equal(await isWorkspaceFile("missing.docx", root), false);
+		assert.equal(await isWorkspaceFile("linked.txt", root), false);
 	} finally {
+		mammoth.extractRawText = origMammothExtract;
 		await rm(root, { recursive: true, force: true });
 		await rm(outside, { recursive: true, force: true });
 	}

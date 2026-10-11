@@ -4,6 +4,10 @@ All notable changes to pi-bro are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Honor cancellation signals arriving during asynchronous document parsing in `extractDocumentText` (#87).
+
 ### Added
 
 - Reader benchmark for Explain modes, BTW answers, preferences and repeated samples (#110):
