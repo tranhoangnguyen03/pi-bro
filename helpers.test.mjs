@@ -2046,11 +2046,19 @@ await t.test("Explain modal M switches mode for this explanation only", async ()
 		"#!/bin/sh",
 		"prompt=''",
 		"while [ $# -gt 0 ]; do [ \"$1\" = --print ] && { shift; prompt=$1; }; shift; done",
-		"case $prompt in *'Preserve every single claim'*) m=faithful;; *'ELI-simpleton'*) m=brief;; *) m=balanced;; esac",
+		`m=$(node '${join(binDir, "identify-mode.mjs")}' "$prompt") || exit 1`,
 		`printf '%s' "$prompt" > '${join(binDir, "last-prompt")}'`,
 		`echo $m >> '${log}'`,
 		"printf '{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"%s explanation\"}}\\n' $m",
 	].join("\n"));
+	await writeFile(join(binDir, "identify-mode.mjs"), `
+import { buildDefaultPrompt, BRO_MODES } from ${JSON.stringify(new URL(`file://${join(buildDir, 'prompt.js')}`).href)};
+const actual = process.argv[2];
+const preferences = ['', 'PREFS_MARKER: answer in Vietnamese.', 'x'.repeat(4000)];
+const mode = BRO_MODES.find(mode => preferences.some(prefs => buildDefaultPrompt('hello there', mode, prefs) === actual));
+if (!mode) process.exit(1);
+console.log(mode);
+`);
 	chmodSync(join(binDir, "agy"), 0o755);
 	process.env.PATH = `${binDir}:${originalPath}`;
 

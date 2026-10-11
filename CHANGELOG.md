@@ -2,6 +2,21 @@
 
 All notable changes to pi-bro are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Reader benchmark for Explain modes, BTW answers, preferences and repeated samples (#110):
+  - Fingerprinted live runs, narrow Jev binary checks, and per-check candidate comparisons.
+  - Report-only reader-visible counts and source deltas, separate from preservation and formatting checks.
+  - Committed synthetic baseline evidence with offline recomputation in CI.
+  - Optional generation through existing Claude, Codex and Muse adapters alongside Agy.
+  - Synthetic coverage and experimental judgments are decision support, not proof of full fidelity or comprehension; production prompts are unchanged.
+
+### Changed
+
+- Refocus prompt tests on safety and structure rather than frozen wording or presentation order; identify fake-Agy Explain modes from current prompt builders instead of hardcoded phrases (#110).
+
 ## [0.22.0] - 2026-10-11
 
 ### Fixed

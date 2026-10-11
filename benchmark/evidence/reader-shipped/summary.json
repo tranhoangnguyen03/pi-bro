@@ -1,0 +1,4431 @@
+{
+  "fingerprint": "1233bbc30b23eea049c30916fcfc69b6d8c188c8eda2347d04c815032a956d78",
+  "outputs": 96,
+  "decisions": 282,
+  "mechanicalMismatchOutputs": 0,
+  "formatDeviationOutputs": 2,
+  "judgeMismatchDecisions": 2,
+  "inputTokens": 76685,
+  "meanWords": {
+    "brief": 121,
+    "balanced": 82.2,
+    "faithful": 90.1,
+    "btw": 72.4
+  },
+  "rows": [
+    {
+      "caseId": "backup-cliche",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "restore": true,
+        "failure": true
+      },
+      "descriptive": {
+        "words": 108,
+        "characters": 613,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 5,
+        "headers": 0,
+        "bulletLines": 5,
+        "source": {
+          "words": 66,
+          "characters": 366,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 42,
+          "characters": 247,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 5,
+          "headers": 0,
+          "bulletLines": 5
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "backup-cliche",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "restore": true,
+        "failure": true
+      },
+      "descriptive": {
+        "words": 77,
+        "characters": 453,
+        "sentences": 5,
+        "emDashes": 0,
+        "boldSpans": 4,
+        "headers": 0,
+        "bulletLines": 4,
+        "source": {
+          "words": 66,
+          "characters": 366,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 11,
+          "characters": 87,
+          "sentences": 1,
+          "emDashes": 0,
+          "boldSpans": 4,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "backup-cliche",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "restore": true,
+        "failure": true
+      },
+      "descriptive": {
+        "words": 56,
+        "characters": 323,
+        "sentences": 4,
+        "emDashes": 1,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 66,
+          "characters": 366,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -10,
+          "characters": -43,
+          "sentences": 0,
+          "emDashes": 1,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "backup-cliche",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "restore": true,
+        "failure": true
+      },
+      "descriptive": {
+        "words": 61,
+        "characters": 344,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 66,
+          "characters": 366,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -5,
+          "characters": -22,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "backup-cliche",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "restore": true,
+        "failure": true
+      },
+      "descriptive": {
+        "words": 79,
+        "characters": 414,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 66,
+          "characters": 366,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 13,
+          "characters": 48,
+          "sentences": 2,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "backup-cliche",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "restore": true,
+        "failure": true
+      },
+      "descriptive": {
+        "words": 66,
+        "characters": 365,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 66,
+          "characters": 366,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 0,
+          "characters": -1,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "inflated-prose",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "commitment": true
+      },
+      "descriptive": {
+        "words": 76,
+        "characters": 461,
+        "sentences": 5,
+        "emDashes": 0,
+        "boldSpans": 4,
+        "headers": 0,
+        "bulletLines": 4,
+        "source": {
+          "words": 59,
+          "characters": 470,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 17,
+          "characters": -9,
+          "sentences": 2,
+          "emDashes": 0,
+          "boldSpans": 4,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "inflated-prose",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "commitment": true
+      },
+      "descriptive": {
+        "words": 89,
+        "characters": 511,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 3,
+        "headers": 0,
+        "bulletLines": 3,
+        "source": {
+          "words": 59,
+          "characters": 470,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 30,
+          "characters": 41,
+          "sentences": 1,
+          "emDashes": 0,
+          "boldSpans": 3,
+          "headers": 0,
+          "bulletLines": 3
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "inflated-prose",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "commitment": true
+      },
+      "descriptive": {
+        "words": 53,
+        "characters": 334,
+        "sentences": 3,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 59,
+          "characters": 470,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -6,
+          "characters": -136,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "inflated-prose",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "commitment": true
+      },
+      "descriptive": {
+        "words": 51,
+        "characters": 327,
+        "sentences": 3,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 59,
+          "characters": 470,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -8,
+          "characters": -143,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "inflated-prose",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "commitment": true
+      },
+      "descriptive": {
+        "words": 68,
+        "characters": 419,
+        "sentences": 3,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 59,
+          "characters": 470,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 9,
+          "characters": -51,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "inflated-prose",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "commitment": true
+      },
+      "descriptive": {
+        "words": 74,
+        "characters": 434,
+        "sentences": 3,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 59,
+          "characters": 470,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 15,
+          "characters": -36,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "clear-control",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "rollback": true
+      },
+      "descriptive": {
+        "words": 93,
+        "characters": 520,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 6,
+        "headers": 0,
+        "bulletLines": 6,
+        "source": {
+          "words": 66,
+          "characters": 370,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 27,
+          "characters": 150,
+          "sentences": 2,
+          "emDashes": 0,
+          "boldSpans": 6,
+          "headers": 0,
+          "bulletLines": 6
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "clear-control",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "rollback": true
+      },
+      "descriptive": {
+        "words": 110,
+        "characters": 613,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 6,
+        "headers": 0,
+        "bulletLines": 6,
+        "source": {
+          "words": 66,
+          "characters": 370,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 44,
+          "characters": 243,
+          "sentences": 2,
+          "emDashes": 0,
+          "boldSpans": 6,
+          "headers": 0,
+          "bulletLines": 6
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "clear-control",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "rollback": true
+      },
+      "descriptive": {
+        "words": 67,
+        "characters": 370,
+        "sentences": 12,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 6,
+        "source": {
+          "words": 66,
+          "characters": 370,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 1,
+          "characters": 0,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 6
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "clear-control",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "rollback": true
+      },
+      "descriptive": {
+        "words": 71,
+        "characters": 383,
+        "sentences": 12,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 6,
+        "source": {
+          "words": 66,
+          "characters": 370,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 5,
+          "characters": 13,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 6
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "clear-control",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "rollback": true
+      },
+      "descriptive": {
+        "words": 68,
+        "characters": 372,
+        "sentences": 5,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 66,
+          "characters": 370,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 2,
+          "characters": 2,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "clear-control",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "rollback": true
+      },
+      "descriptive": {
+        "words": 68,
+        "characters": 373,
+        "sentences": 5,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 66,
+          "characters": 370,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 2,
+          "characters": 3,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "technical-literals",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "stop": true
+      },
+      "descriptive": {
+        "words": 71,
+        "characters": 420,
+        "sentences": 11,
+        "emDashes": 0,
+        "boldSpans": 5,
+        "headers": 0,
+        "bulletLines": 5,
+        "source": {
+          "words": 55,
+          "characters": 341,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 16,
+          "characters": 79,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 5,
+          "headers": 0,
+          "bulletLines": 5
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "technical-literals",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "stop": true
+      },
+      "descriptive": {
+        "words": 65,
+        "characters": 400,
+        "sentences": 10,
+        "emDashes": 0,
+        "boldSpans": 4,
+        "headers": 0,
+        "bulletLines": 4,
+        "source": {
+          "words": 55,
+          "characters": 341,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 10,
+          "characters": 59,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 4,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "technical-literals",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "stop": true
+      },
+      "descriptive": {
+        "words": 47,
+        "characters": 278,
+        "sentences": 9,
+        "emDashes": 1,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 4,
+        "source": {
+          "words": 55,
+          "characters": 341,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -8,
+          "characters": -63,
+          "sentences": 5,
+          "emDashes": 1,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "technical-literals",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "stop": true
+      },
+      "descriptive": {
+        "words": 54,
+        "characters": 330,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 55,
+          "characters": 341,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -1,
+          "characters": -11,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "technical-literals",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "stop": true
+      },
+      "descriptive": {
+        "words": 56,
+        "characters": 333,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 55,
+          "characters": 341,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 1,
+          "characters": -8,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "technical-literals",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "stop": true
+      },
+      "descriptive": {
+        "words": 56,
+        "characters": 343,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 55,
+          "characters": 341,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 1,
+          "characters": 2,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "markdown-code",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true,
+        "codeContent1": true
+      },
+      "format": {
+        "exactFences": false
+      },
+      "checks": {
+        "retry": true
+      },
+      "descriptive": {
+        "words": 63,
+        "characters": 365,
+        "sentences": 16,
+        "emDashes": 0,
+        "boldSpans": 5,
+        "headers": 1,
+        "bulletLines": 7,
+        "source": {
+          "words": 51,
+          "characters": 281,
+          "sentences": 11,
+          "emDashes": 0,
+          "boldSpans": 1,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "delta": {
+          "words": 12,
+          "characters": 84,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 4,
+          "headers": 1,
+          "bulletLines": 3
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "markdown-code",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true,
+        "codeContent1": true
+      },
+      "format": {
+        "exactFences": false
+      },
+      "checks": {
+        "retry": true
+      },
+      "descriptive": {
+        "words": 64,
+        "characters": 369,
+        "sentences": 15,
+        "emDashes": 0,
+        "boldSpans": 4,
+        "headers": 0,
+        "bulletLines": 7,
+        "source": {
+          "words": 51,
+          "characters": 281,
+          "sentences": 11,
+          "emDashes": 0,
+          "boldSpans": 1,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "delta": {
+          "words": 13,
+          "characters": 88,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 3,
+          "headers": 0,
+          "bulletLines": 3
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "markdown-code",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true,
+        "codeContent1": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "retry": true
+      },
+      "descriptive": {
+        "words": 48,
+        "characters": 267,
+        "sentences": 11,
+        "emDashes": 0,
+        "boldSpans": 1,
+        "headers": 0,
+        "bulletLines": 4,
+        "source": {
+          "words": 51,
+          "characters": 281,
+          "sentences": 11,
+          "emDashes": 0,
+          "boldSpans": 1,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "delta": {
+          "words": -3,
+          "characters": -14,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "markdown-code",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true,
+        "codeContent1": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "retry": true
+      },
+      "descriptive": {
+        "words": 49,
+        "characters": 268,
+        "sentences": 11,
+        "emDashes": 0,
+        "boldSpans": 1,
+        "headers": 0,
+        "bulletLines": 4,
+        "source": {
+          "words": 51,
+          "characters": 281,
+          "sentences": 11,
+          "emDashes": 0,
+          "boldSpans": 1,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "delta": {
+          "words": -2,
+          "characters": -13,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "markdown-code",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true,
+        "codeContent1": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "retry": true
+      },
+      "descriptive": {
+        "words": 52,
+        "characters": 285,
+        "sentences": 11,
+        "emDashes": 0,
+        "boldSpans": 1,
+        "headers": 0,
+        "bulletLines": 4,
+        "source": {
+          "words": 51,
+          "characters": 281,
+          "sentences": 11,
+          "emDashes": 0,
+          "boldSpans": 1,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "delta": {
+          "words": 1,
+          "characters": 4,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "markdown-code",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true,
+        "codeContent1": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "retry": true
+      },
+      "descriptive": {
+        "words": 52,
+        "characters": 285,
+        "sentences": 11,
+        "emDashes": 0,
+        "boldSpans": 1,
+        "headers": 0,
+        "bulletLines": 4,
+        "source": {
+          "words": 51,
+          "characters": 281,
+          "sentences": 11,
+          "emDashes": 0,
+          "boldSpans": 1,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "delta": {
+          "words": 1,
+          "characters": 4,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "target-injection",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "pause": true,
+        "workaround": true
+      },
+      "descriptive": {
+        "words": 96,
+        "characters": 537,
+        "sentences": 8,
+        "emDashes": 0,
+        "boldSpans": 4,
+        "headers": 0,
+        "bulletLines": 7,
+        "source": {
+          "words": 82,
+          "characters": 501,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 14,
+          "characters": 36,
+          "sentences": 2,
+          "emDashes": 0,
+          "boldSpans": 4,
+          "headers": 0,
+          "bulletLines": 7
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "target-injection",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "pause": true,
+        "workaround": true
+      },
+      "descriptive": {
+        "words": 108,
+        "characters": 611,
+        "sentences": 17,
+        "emDashes": 0,
+        "boldSpans": 6,
+        "headers": 0,
+        "bulletLines": 12,
+        "source": {
+          "words": 82,
+          "characters": 501,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 26,
+          "characters": 110,
+          "sentences": 11,
+          "emDashes": 0,
+          "boldSpans": 6,
+          "headers": 0,
+          "bulletLines": 12
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "target-injection",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "pause": true,
+        "workaround": true
+      },
+      "descriptive": {
+        "words": 68,
+        "characters": 421,
+        "sentences": 5,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 82,
+          "characters": 501,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -14,
+          "characters": -80,
+          "sentences": -1,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "target-injection",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "pause": true,
+        "workaround": true
+      },
+      "descriptive": {
+        "words": 72,
+        "characters": 441,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 3,
+        "source": {
+          "words": 82,
+          "characters": 501,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -10,
+          "characters": -60,
+          "sentences": 1,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 3
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "target-injection",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "pause": true,
+        "workaround": true
+      },
+      "descriptive": {
+        "words": 84,
+        "characters": 485,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 82,
+          "characters": 501,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 2,
+          "characters": -16,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "target-injection",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "pause": true,
+        "workaround": true
+      },
+      "descriptive": {
+        "words": 92,
+        "characters": 512,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 82,
+          "characters": 501,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 10,
+          "characters": 11,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "mixed-language",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {},
+      "descriptive": {
+        "words": 80,
+        "characters": 481,
+        "sentences": 15,
+        "emDashes": 0,
+        "boldSpans": 4,
+        "headers": 0,
+        "bulletLines": 10,
+        "source": {
+          "words": 51,
+          "characters": 302,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 29,
+          "characters": 179,
+          "sentences": 11,
+          "emDashes": 0,
+          "boldSpans": 4,
+          "headers": 0,
+          "bulletLines": 10
+        },
+        "unchanged": false
+      },
+      "unmeasured": [
+        "Italian meaning and language quality"
+      ],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "mixed-language",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {},
+      "descriptive": {
+        "words": 69,
+        "characters": 415,
+        "sentences": 13,
+        "emDashes": 0,
+        "boldSpans": 3,
+        "headers": 0,
+        "bulletLines": 8,
+        "source": {
+          "words": 51,
+          "characters": 302,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 18,
+          "characters": 113,
+          "sentences": 9,
+          "emDashes": 0,
+          "boldSpans": 3,
+          "headers": 0,
+          "bulletLines": 8
+        },
+        "unchanged": false
+      },
+      "unmeasured": [
+        "Italian meaning and language quality"
+      ],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "mixed-language",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {},
+      "descriptive": {
+        "words": 43,
+        "characters": 263,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 51,
+          "characters": 302,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -8,
+          "characters": -39,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [
+        "Italian meaning and language quality"
+      ],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "mixed-language",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {},
+      "descriptive": {
+        "words": 45,
+        "characters": 257,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 4,
+        "source": {
+          "words": 51,
+          "characters": 302,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -6,
+          "characters": -45,
+          "sentences": 2,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "unchanged": false
+      },
+      "unmeasured": [
+        "Italian meaning and language quality"
+      ],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "mixed-language",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {},
+      "descriptive": {
+        "words": 52,
+        "characters": 290,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 51,
+          "characters": 302,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 1,
+          "characters": -12,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [
+        "Italian meaning and language quality"
+      ],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "mixed-language",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {},
+      "descriptive": {
+        "words": 48,
+        "characters": 285,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 51,
+          "characters": 302,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -3,
+          "characters": -17,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [
+        "Italian meaning and language quality"
+      ],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "long-document",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "duplicate": true,
+        "skip": true,
+        "start": true,
+        "healthy": true
+      },
+      "descriptive": {
+        "words": 268,
+        "characters": 1623,
+        "sentences": 23,
+        "emDashes": 0,
+        "boldSpans": 11,
+        "headers": 4,
+        "bulletLines": 17,
+        "source": {
+          "words": 260,
+          "characters": 1682,
+          "sentences": 19,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 8,
+          "characters": -59,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 11,
+          "headers": 4,
+          "bulletLines": 17
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "long-document",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true
+      },
+      "checks": {
+        "duplicate": true,
+        "skip": true,
+        "start": true,
+        "healthy": true
+      },
+      "descriptive": {
+        "words": 282,
+        "characters": 1678,
+        "sentences": 27,
+        "emDashes": 0,
+        "boldSpans": 14,
+        "headers": 4,
+        "bulletLines": 17,
+        "source": {
+          "words": 260,
+          "characters": 1682,
+          "sentences": 19,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 22,
+          "characters": -4,
+          "sentences": 8,
+          "emDashes": 0,
+          "boldSpans": 14,
+          "headers": 4,
+          "bulletLines": 17
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "long-document",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "duplicate": true,
+        "skip": true,
+        "start": true,
+        "healthy": true
+      },
+      "descriptive": {
+        "words": 225,
+        "characters": 1404,
+        "sentences": 22,
+        "emDashes": 0,
+        "boldSpans": 8,
+        "headers": 0,
+        "bulletLines": 15,
+        "source": {
+          "words": 260,
+          "characters": 1682,
+          "sentences": 19,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -35,
+          "characters": -278,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 8,
+          "headers": 0,
+          "bulletLines": 15
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "long-document",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "duplicate": true,
+        "skip": true,
+        "start": true,
+        "healthy": true
+      },
+      "descriptive": {
+        "words": 220,
+        "characters": 1347,
+        "sentences": 25,
+        "emDashes": 0,
+        "boldSpans": 9,
+        "headers": 0,
+        "bulletLines": 15,
+        "source": {
+          "words": 260,
+          "characters": 1682,
+          "sentences": 19,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -40,
+          "characters": -335,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 9,
+          "headers": 0,
+          "bulletLines": 15
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "long-document",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "duplicate": true,
+        "skip": true,
+        "start": true,
+        "healthy": true
+      },
+      "descriptive": {
+        "words": 276,
+        "characters": 1585,
+        "sentences": 19,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 260,
+          "characters": 1682,
+          "sentences": 19,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 16,
+          "characters": -97,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "long-document",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "literals": true,
+        "injection": true
+      },
+      "format": {
+        "exactFences": true,
+        "markers": true
+      },
+      "checks": {
+        "duplicate": true,
+        "skip": true,
+        "start": true,
+        "healthy": true
+      },
+      "descriptive": {
+        "words": 281,
+        "characters": 1674,
+        "sentences": 18,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 260,
+          "characters": 1682,
+          "sentences": 19,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 21,
+          "characters": -8,
+          "sentences": -1,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "jargon-dense",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "new_key": true,
+        "stale": true,
+        "cancel": true,
+        "term": true
+      },
+      "descriptive": {
+        "words": 139,
+        "characters": 813,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 6,
+        "headers": 0,
+        "bulletLines": 6,
+        "source": {
+          "words": 74,
+          "characters": 480,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 65,
+          "characters": 333,
+          "sentences": 1,
+          "emDashes": 0,
+          "boldSpans": 6,
+          "headers": 0,
+          "bulletLines": 6
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "jargon-dense",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "new_key": true,
+        "stale": true,
+        "cancel": true,
+        "term": true
+      },
+      "descriptive": {
+        "words": 135,
+        "characters": 757,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 6,
+        "headers": 0,
+        "bulletLines": 6,
+        "source": {
+          "words": 74,
+          "characters": 480,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 61,
+          "characters": 277,
+          "sentences": 1,
+          "emDashes": 0,
+          "boldSpans": 6,
+          "headers": 0,
+          "bulletLines": 6
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "jargon-dense",
+      "mode": "brief",
+      "audience": "product",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "new_key": true,
+        "stale": true,
+        "cancel": true,
+        "term": true
+      },
+      "descriptive": {
+        "words": 184,
+        "characters": 1161,
+        "sentences": 7,
+        "emDashes": 1,
+        "boldSpans": 9,
+        "headers": 0,
+        "bulletLines": 6,
+        "source": {
+          "words": 74,
+          "characters": 480,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 110,
+          "characters": 681,
+          "sentences": 1,
+          "emDashes": 1,
+          "boldSpans": 9,
+          "headers": 0,
+          "bulletLines": 6
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "jargon-dense",
+      "mode": "brief",
+      "audience": "product",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "new_key": true,
+        "stale": true,
+        "cancel": true,
+        "term": true
+      },
+      "descriptive": {
+        "words": 163,
+        "characters": 1105,
+        "sentences": 8,
+        "emDashes": 1,
+        "boldSpans": 13,
+        "headers": 0,
+        "bulletLines": 4,
+        "source": {
+          "words": 74,
+          "characters": 480,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 89,
+          "characters": 625,
+          "sentences": 2,
+          "emDashes": 1,
+          "boldSpans": 13,
+          "headers": 0,
+          "bulletLines": 4
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "jargon-dense",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "new_key": true,
+        "stale": true,
+        "cancel": true,
+        "term": false
+      },
+      "descriptive": {
+        "words": 74,
+        "characters": 456,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 74,
+          "characters": 480,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 0,
+          "characters": -24,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "jargon-dense",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "new_key": true,
+        "stale": true,
+        "cancel": true,
+        "term": true
+      },
+      "descriptive": {
+        "words": 79,
+        "characters": 488,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 74,
+          "characters": 480,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 5,
+          "characters": 8,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "jargon-dense",
+      "mode": "balanced",
+      "audience": "product",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "new_key": true,
+        "stale": true,
+        "cancel": true,
+        "term": true
+      },
+      "descriptive": {
+        "words": 109,
+        "characters": 647,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 5,
+        "source": {
+          "words": 74,
+          "characters": 480,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 35,
+          "characters": 167,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 5
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "jargon-dense",
+      "mode": "balanced",
+      "audience": "product",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "new_key": true,
+        "stale": true,
+        "cancel": true,
+        "term": true
+      },
+      "descriptive": {
+        "words": 96,
+        "characters": 601,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 74,
+          "characters": 480,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 22,
+          "characters": 121,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "jargon-dense",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "new_key": true,
+        "stale": true,
+        "cancel": true
+      },
+      "descriptive": {
+        "words": 91,
+        "characters": 523,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 74,
+          "characters": 480,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 17,
+          "characters": 43,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "jargon-dense",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "new_key": true,
+        "stale": true,
+        "cancel": true
+      },
+      "descriptive": {
+        "words": 83,
+        "characters": 501,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 74,
+          "characters": 480,
+          "sentences": 6,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 9,
+          "characters": 21,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "trailing-condition",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "delete_yes": true,
+        "delete_no": true,
+        "retry_yes": true,
+        "retry_applied": true,
+        "retry_unknown": true,
+        "retry_checksum": true,
+        "warning": true
+      },
+      "descriptive": {
+        "words": 93,
+        "characters": 548,
+        "sentences": 11,
+        "emDashes": 0,
+        "boldSpans": 6,
+        "headers": 0,
+        "bulletLines": 9,
+        "source": {
+          "words": 69,
+          "characters": 425,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 24,
+          "characters": 123,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 6,
+          "headers": 0,
+          "bulletLines": 9
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "trailing-condition",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "delete_yes": true,
+        "delete_no": true,
+        "retry_yes": true,
+        "retry_applied": true,
+        "retry_unknown": true,
+        "retry_checksum": true,
+        "warning": true
+      },
+      "descriptive": {
+        "words": 101,
+        "characters": 553,
+        "sentences": 9,
+        "emDashes": 0,
+        "boldSpans": 5,
+        "headers": 0,
+        "bulletLines": 8,
+        "source": {
+          "words": 69,
+          "characters": 425,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 32,
+          "characters": 128,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 5,
+          "headers": 0,
+          "bulletLines": 8
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "trailing-condition",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "delete_yes": true,
+        "delete_no": true,
+        "retry_yes": true,
+        "retry_applied": true,
+        "retry_unknown": true,
+        "retry_checksum": true,
+        "warning": true
+      },
+      "descriptive": {
+        "words": 69,
+        "characters": 425,
+        "sentences": 5,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 69,
+          "characters": 425,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 0,
+          "characters": 0,
+          "sentences": 1,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "trailing-condition",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "delete_yes": true,
+        "delete_no": true,
+        "retry_yes": true,
+        "retry_applied": true,
+        "retry_unknown": true,
+        "retry_checksum": true,
+        "warning": true
+      },
+      "descriptive": {
+        "words": 71,
+        "characters": 428,
+        "sentences": 5,
+        "emDashes": 0,
+        "boldSpans": 3,
+        "headers": 0,
+        "bulletLines": 3,
+        "source": {
+          "words": 69,
+          "characters": 425,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 2,
+          "characters": 3,
+          "sentences": 1,
+          "emDashes": 0,
+          "boldSpans": 3,
+          "headers": 0,
+          "bulletLines": 3
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "trailing-condition",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "delete_yes": true,
+        "delete_no": true,
+        "retry_yes": true,
+        "retry_applied": true,
+        "retry_unknown": true,
+        "retry_checksum": true,
+        "warning": true
+      },
+      "descriptive": {
+        "words": 69,
+        "characters": 425,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 69,
+          "characters": 425,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 0,
+          "characters": 0,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "trailing-condition",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "retire_yes": true,
+        "retire_no": true,
+        "delete_yes": true,
+        "delete_no": true,
+        "retry_yes": true,
+        "retry_applied": true,
+        "retry_unknown": true,
+        "retry_checksum": true,
+        "warning": true
+      },
+      "descriptive": {
+        "words": 70,
+        "characters": 429,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 69,
+          "characters": 425,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 1,
+          "characters": 4,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "diagnostic-uncertainty",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "deployed": true,
+        "integration": true,
+        "concurrent": true,
+        "next": true
+      },
+      "descriptive": {
+        "words": 104,
+        "characters": 631,
+        "sentences": 8,
+        "emDashes": 0,
+        "boldSpans": 5,
+        "headers": 0,
+        "bulletLines": 5,
+        "source": {
+          "words": 81,
+          "characters": 497,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 23,
+          "characters": 134,
+          "sentences": 1,
+          "emDashes": 0,
+          "boldSpans": 5,
+          "headers": 0,
+          "bulletLines": 5
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "diagnostic-uncertainty",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "deployed": true,
+        "integration": true,
+        "concurrent": true,
+        "next": true
+      },
+      "descriptive": {
+        "words": 120,
+        "characters": 801,
+        "sentences": 11,
+        "emDashes": 0,
+        "boldSpans": 4,
+        "headers": 0,
+        "bulletLines": 8,
+        "source": {
+          "words": 81,
+          "characters": 497,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 39,
+          "characters": 304,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 4,
+          "headers": 0,
+          "bulletLines": 8
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "diagnostic-uncertainty",
+      "mode": "brief",
+      "audience": "product",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "deployed": true,
+        "integration": true,
+        "concurrent": true,
+        "next": true
+      },
+      "descriptive": {
+        "words": 163,
+        "characters": 984,
+        "sentences": 12,
+        "emDashes": 0,
+        "boldSpans": 4,
+        "headers": 0,
+        "bulletLines": 9,
+        "source": {
+          "words": 81,
+          "characters": 497,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 82,
+          "characters": 487,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 4,
+          "headers": 0,
+          "bulletLines": 9
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "diagnostic-uncertainty",
+      "mode": "brief",
+      "audience": "product",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "deployed": true,
+        "integration": true,
+        "concurrent": true,
+        "next": true
+      },
+      "descriptive": {
+        "words": 187,
+        "characters": 1150,
+        "sentences": 14,
+        "emDashes": 0,
+        "boldSpans": 5,
+        "headers": 0,
+        "bulletLines": 5,
+        "source": {
+          "words": 81,
+          "characters": 497,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 106,
+          "characters": 653,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 5,
+          "headers": 0,
+          "bulletLines": 5
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "diagnostic-uncertainty",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "deployed": true,
+        "integration": true,
+        "concurrent": true,
+        "next": true
+      },
+      "descriptive": {
+        "words": 81,
+        "characters": 482,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 81,
+          "characters": 497,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 0,
+          "characters": -15,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "diagnostic-uncertainty",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "deployed": true,
+        "integration": true,
+        "concurrent": true,
+        "next": true
+      },
+      "descriptive": {
+        "words": 77,
+        "characters": 463,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 81,
+          "characters": 497,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -4,
+          "characters": -34,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "diagnostic-uncertainty",
+      "mode": "balanced",
+      "audience": "product",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "deployed": true,
+        "integration": true,
+        "concurrent": true,
+        "next": true
+      },
+      "descriptive": {
+        "words": 119,
+        "characters": 732,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 81,
+          "characters": 497,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 38,
+          "characters": 235,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "diagnostic-uncertainty",
+      "mode": "balanced",
+      "audience": "product",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "deployed": true,
+        "integration": true,
+        "concurrent": true,
+        "next": true
+      },
+      "descriptive": {
+        "words": 96,
+        "characters": 586,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 81,
+          "characters": 497,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 15,
+          "characters": 89,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "diagnostic-uncertainty",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "deployed": true,
+        "integration": true,
+        "concurrent": true,
+        "next": true
+      },
+      "descriptive": {
+        "words": 81,
+        "characters": 485,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 81,
+          "characters": 497,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 0,
+          "characters": -12,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "diagnostic-uncertainty",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "deployed": true,
+        "integration": true,
+        "concurrent": true,
+        "next": true
+      },
+      "descriptive": {
+        "words": 81,
+        "characters": 479,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 81,
+          "characters": 497,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 0,
+          "characters": -18,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "tradeoff-recommendation",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "recommend": true,
+        "permissions": true,
+        "fresh": true,
+        "revisit": true
+      },
+      "descriptive": {
+        "words": 137,
+        "characters": 833,
+        "sentences": 13,
+        "emDashes": 1,
+        "boldSpans": 6,
+        "headers": 0,
+        "bulletLines": 11,
+        "source": {
+          "words": 102,
+          "characters": 620,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 35,
+          "characters": 213,
+          "sentences": 8,
+          "emDashes": 1,
+          "boldSpans": 6,
+          "headers": 0,
+          "bulletLines": 11
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "tradeoff-recommendation",
+      "mode": "brief",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "recommend": true,
+        "permissions": true,
+        "fresh": true,
+        "revisit": true
+      },
+      "descriptive": {
+        "words": 142,
+        "characters": 871,
+        "sentences": 9,
+        "emDashes": 0,
+        "boldSpans": 6,
+        "headers": 0,
+        "bulletLines": 5,
+        "source": {
+          "words": 102,
+          "characters": 620,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 40,
+          "characters": 251,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 6,
+          "headers": 0,
+          "bulletLines": 5
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "tradeoff-recommendation",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "recommend": true,
+        "permissions": true,
+        "fresh": true,
+        "revisit": true
+      },
+      "descriptive": {
+        "words": 97,
+        "characters": 572,
+        "sentences": 5,
+        "emDashes": 1,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 102,
+          "characters": 620,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -5,
+          "characters": -48,
+          "sentences": 0,
+          "emDashes": 1,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "tradeoff-recommendation",
+      "mode": "balanced",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "recommend": true,
+        "permissions": true,
+        "fresh": true,
+        "revisit": true
+      },
+      "descriptive": {
+        "words": 104,
+        "characters": 660,
+        "sentences": 8,
+        "emDashes": 0,
+        "boldSpans": 6,
+        "headers": 0,
+        "bulletLines": 2,
+        "source": {
+          "words": 102,
+          "characters": 620,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 2,
+          "characters": 40,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 6,
+          "headers": 0,
+          "bulletLines": 2
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "tradeoff-recommendation",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "recommend": true,
+        "permissions": true,
+        "fresh": true,
+        "revisit": true
+      },
+      "descriptive": {
+        "words": 109,
+        "characters": 626,
+        "sentences": 5,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 102,
+          "characters": 620,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 7,
+          "characters": 6,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "tradeoff-recommendation",
+      "mode": "faithful",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "recommend": true,
+        "permissions": true,
+        "fresh": true,
+        "revisit": true
+      },
+      "descriptive": {
+        "words": 107,
+        "characters": 611,
+        "sentences": 6,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 102,
+          "characters": 620,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 5,
+          "characters": -9,
+          "sentences": 1,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B01",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "drop": true,
+        "pause": true,
+        "deadline": true
+      },
+      "descriptive": {
+        "words": 65,
+        "characters": 433,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 3,
+        "headers": 0,
+        "bulletLines": 2,
+        "source": {
+          "words": 27,
+          "characters": 184,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 38,
+          "characters": 249,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 3,
+          "headers": 0,
+          "bulletLines": 2
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B01",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "drop": true,
+        "pause": true,
+        "deadline": true
+      },
+      "descriptive": {
+        "words": 58,
+        "characters": 403,
+        "sentences": 8,
+        "emDashes": 1,
+        "boldSpans": 3,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 27,
+          "characters": 184,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 31,
+          "characters": 219,
+          "sentences": 4,
+          "emDashes": 1,
+          "boldSpans": 3,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B01",
+      "mode": "btw",
+      "audience": "product",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "drop": true,
+        "pause": true,
+        "deadline": true
+      },
+      "descriptive": {
+        "words": 78,
+        "characters": 486,
+        "sentences": 8,
+        "emDashes": 0,
+        "boldSpans": 3,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 27,
+          "characters": 184,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 51,
+          "characters": 302,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 3,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B01",
+      "mode": "btw",
+      "audience": "product",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "drop": true,
+        "pause": true,
+        "deadline": true
+      },
+      "descriptive": {
+        "words": 104,
+        "characters": 643,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 4,
+        "headers": 1,
+        "bulletLines": 2,
+        "source": {
+          "words": 27,
+          "characters": 184,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 77,
+          "characters": 459,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 4,
+          "headers": 1,
+          "bulletLines": 2
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B02",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "path": true
+      },
+      "format": {},
+      "checks": {
+        "path": true,
+        "fixed": true
+      },
+      "descriptive": {
+        "words": 7,
+        "characters": 66,
+        "sentences": 1,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 24,
+          "characters": 199,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -17,
+          "characters": -133,
+          "sentences": -2,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B02",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "path": true
+      },
+      "format": {},
+      "checks": {
+        "path": true,
+        "fixed": true
+      },
+      "descriptive": {
+        "words": 7,
+        "characters": 66,
+        "sentences": 1,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 24,
+          "characters": 199,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -17,
+          "characters": -133,
+          "sentences": -2,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B03",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "allowed": true,
+        "reason": true
+      },
+      "descriptive": {
+        "words": 46,
+        "characters": 301,
+        "sentences": 4,
+        "emDashes": 0,
+        "boldSpans": 1,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 19,
+          "characters": 143,
+          "sentences": 2,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 27,
+          "characters": 158,
+          "sentences": 2,
+          "emDashes": 0,
+          "boldSpans": 1,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B03",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "allowed": true,
+        "reason": true
+      },
+      "descriptive": {
+        "words": 38,
+        "characters": 258,
+        "sentences": 7,
+        "emDashes": 0,
+        "boldSpans": 2,
+        "headers": 0,
+        "bulletLines": 2,
+        "source": {
+          "words": 19,
+          "characters": 143,
+          "sentences": 2,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 19,
+          "characters": 115,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 2,
+          "headers": 0,
+          "bulletLines": 2
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B04",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "known": true,
+        "undeployed": true
+      },
+      "descriptive": {
+        "words": 27,
+        "characters": 181,
+        "sentences": 3,
+        "emDashes": 0,
+        "boldSpans": 1,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 18,
+          "characters": 125,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 9,
+          "characters": 56,
+          "sentences": 0,
+          "emDashes": 0,
+          "boldSpans": 1,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B04",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "known": true,
+        "undeployed": true
+      },
+      "descriptive": {
+        "words": 41,
+        "characters": 276,
+        "sentences": 4,
+        "emDashes": 1,
+        "boldSpans": 1,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 18,
+          "characters": 125,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 23,
+          "characters": 151,
+          "sentences": 1,
+          "emDashes": 1,
+          "boldSpans": 1,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B05",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "choice": true,
+        "reason": true,
+        "change": true,
+        "implemented": true
+      },
+      "descriptive": {
+        "words": 141,
+        "characters": 956,
+        "sentences": 9,
+        "emDashes": 1,
+        "boldSpans": 6,
+        "headers": 2,
+        "bulletLines": 5,
+        "source": {
+          "words": 43,
+          "characters": 291,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 98,
+          "characters": 665,
+          "sentences": 4,
+          "emDashes": 1,
+          "boldSpans": 6,
+          "headers": 2,
+          "bulletLines": 5
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B05",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "choice": true,
+        "reason": true,
+        "change": true,
+        "implemented": true
+      },
+      "descriptive": {
+        "words": 162,
+        "characters": 1051,
+        "sentences": 12,
+        "emDashes": 0,
+        "boldSpans": 8,
+        "headers": 2,
+        "bulletLines": 6,
+        "source": {
+          "words": 43,
+          "characters": 291,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 119,
+          "characters": 760,
+          "sentences": 7,
+          "emDashes": 0,
+          "boldSpans": 8,
+          "headers": 2,
+          "bulletLines": 6
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B05",
+      "mode": "btw",
+      "audience": "product",
+      "repeat": 1,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "choice": true,
+        "reason": true,
+        "change": true,
+        "implemented": true
+      },
+      "descriptive": {
+        "words": 156,
+        "characters": 1023,
+        "sentences": 9,
+        "emDashes": 0,
+        "boldSpans": 7,
+        "headers": 2,
+        "bulletLines": 5,
+        "source": {
+          "words": 43,
+          "characters": 291,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 113,
+          "characters": 732,
+          "sentences": 4,
+          "emDashes": 0,
+          "boldSpans": 7,
+          "headers": 2,
+          "bulletLines": 5
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B05",
+      "mode": "btw",
+      "audience": "product",
+      "repeat": 2,
+      "mechanical": {},
+      "format": {},
+      "checks": {
+        "choice": true,
+        "reason": true,
+        "change": true,
+        "implemented": false
+      },
+      "descriptive": {
+        "words": 201,
+        "characters": 1315,
+        "sentences": 10,
+        "emDashes": 0,
+        "boldSpans": 8,
+        "headers": 2,
+        "bulletLines": 6,
+        "source": {
+          "words": 43,
+          "characters": 291,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": 158,
+          "characters": 1024,
+          "sentences": 5,
+          "emDashes": 0,
+          "boldSpans": 8,
+          "headers": 2,
+          "bulletLines": 6
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B06",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 1,
+      "mechanical": {
+        "injection": true
+      },
+      "format": {},
+      "checks": {
+        "approval": true
+      },
+      "descriptive": {
+        "words": 15,
+        "characters": 86,
+        "sentences": 1,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 25,
+          "characters": 163,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -10,
+          "characters": -77,
+          "sentences": -2,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    },
+    {
+      "caseId": "B06",
+      "mode": "btw",
+      "audience": "default",
+      "repeat": 2,
+      "mechanical": {
+        "injection": true
+      },
+      "format": {},
+      "checks": {
+        "approval": true
+      },
+      "descriptive": {
+        "words": 13,
+        "characters": 75,
+        "sentences": 1,
+        "emDashes": 0,
+        "boldSpans": 0,
+        "headers": 0,
+        "bulletLines": 0,
+        "source": {
+          "words": 25,
+          "characters": 163,
+          "sentences": 3,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "delta": {
+          "words": -12,
+          "characters": -88,
+          "sentences": -2,
+          "emDashes": 0,
+          "boldSpans": 0,
+          "headers": 0,
+          "bulletLines": 0
+        },
+        "unchanged": false
+      },
+      "unmeasured": [],
+      "label": "sampled proxies; a mismatch may be a rewrite defect or judge error"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# Approved delivery contract
+
+User approved benchmark-only PR: corpus, runner, tests, documentation, baseline evidence. No production prompt changes. Synthetic-only corpus and missing real E13 do not block; disclose limits. Saved data first; bounded necessary live verification allowed, no new model sweep/tuning. One parallel Claude+Codex integrated review authorized, fixes and verification by lead, no automatic further review rounds. Local scoped commits authorized; push/PR creation require final user approval. Preserve unrelated files and history. Continue autonomously until missing credentials, material scope decision, irreversible/public action or PR-ready.
+
+Finish: fix mechanical false alarms/version and rescore saved output; distinct code/judge/unstable/unmeasured reporting; offline validation incl missing results, schema, polarity, applicability/repeats; maintainable integration; baseline evidence and PR notes. Known limitations: Jev proxies not full meaning equivalence, synthetic corpus, no Italian semantics/comprehension/tone qualification.
