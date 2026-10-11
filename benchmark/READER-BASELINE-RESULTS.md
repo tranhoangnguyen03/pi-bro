@@ -29,7 +29,11 @@ Mean words: brief121.0 (28 outputs), balanced82.2 (28), faithful90.1 (24), BTW72
 
 The synthetic manifest and all generation/judge records now ship in `benchmark/evidence/reader-shipped/`. `node benchmark/recompute-reader.ts` validates and reproduces the committed summary offline (also run by CI). This covers the current 96-output reader baseline, its 282 decisions, mismatch counts, word means and input-token total. Earlier judge-development experiments remain historical summaries with raw artifacts local; no claim of CI reproduction for those experiments. Original v1 report remains local; current v2 evidence is the published scoring contract.
 
-## Mechanical v2 offline rescore
+## Mechanical v3 offline rescore
+
+Exact-text and Markdown-marker checks were removed by maintainer decision and the committed summary recomputed offline, no paid calls. Only the `mechanical`/`format` fields changed; headline results are unchanged: 0 required mechanical mismatches, 2 code-fence format deviations, 2 Jev mismatches across 282 decisions.
+
+## Mechanical v2 offline rescore (historical)
 
 Completed without new paid calls. Original report preserved locally as `report-v1.json`; current `report.json` records mechanicalVersion 2. All 96 rows still complete. Required mechanical flags: **0**, compared with 13 affected outputs under v1's mixed literal/fence rules. Format deviations: **2** (indented fences); commands remain intact and ordered. Jev mismatches: unchanged at **2**.
 

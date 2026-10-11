@@ -21,7 +21,6 @@ export const REAL_CASES: ReaderCase[] = [
 			compared("tests_passed", "Does the output report that the full test suite passed on the most recent runs?", true),
 			compared("flaky", "Does the output warn that an existing test may fail intermittently in CI?", true),
 		],
-		faithfulLiterals: ["c2ed95e", "feat/issue-94-preferences", ".worktrees/issue-94", "bro-preferences.md", "bro-prompt.md", "4,000", "241/241", "0.21.0", "/bro preferences", "docs/TESTING.md"],
 	},
 	{
 		id: "R02",
@@ -36,7 +35,6 @@ export const REAL_CASES: ReaderCase[] = [
 			compared("retry_fix", "Does the output say the release step now keeps checking npm for up to 60 seconds?", true),
 			compared("stale_branch", "Does the output mention that a fix was first branched from an outdated main and had to be rebased?", true),
 		],
-		faithfulLiterals: ["npm publish", "07:44:44", "npm view", "npm does not have 0.10.1; not creating a GitHub release", "exit code 1", "287495d", "60s", "v0.10.1", "package-lock.json", "compare/v0.10.0...v0.10.1"],
 	},
 	{
 		id: "R03",
@@ -51,7 +49,6 @@ export const REAL_CASES: ReaderCase[] = [
 			compared("tiers", "Does the output distinguish must-fix issues from should-fix issues?", true),
 			compared("forged", "Does the output report that a test showed captured evidence displaying altered content?", true),
 		],
-		faithfulLiterals: ["review-source.ts:59", "review.ts:77–81", "review-source.ts:52", "review.ts:25–29", "review-modal.ts:256", "review-modal.ts:310–312", "bro.ts:361–365", "readEvidence", "listReviews", "overview:reading:", "503", "20 passed"],
 	},
 	{
 		id: "R04",
@@ -66,7 +63,6 @@ export const REAL_CASES: ReaderCase[] = [
 			compared("jargon", "Does the output recommend defining jargon briefly the first time it appears?", true),
 			compared("list_cap", "Does the output warn that list items must count toward any future length cap?", true),
 		],
-		faithfulLiterals: ["evals/results/WHY-USELESS-2026-09-02.md", "prompt.ts:103", "prompt.ts:20-24", "benchmark/run.ts", "npm run benchmark:dry-run", "32 calls", "Claude Sonnet 4.6", "idempotent (safe to run twice)"],
 	},
 	{
 		id: "R05",
@@ -82,6 +78,5 @@ export const REAL_CASES: ReaderCase[] = [
 			compared("canary", "Does the output have the reader confirm afterwards that canary.txt still contains \"Leave this file unchanged\"?", true),
 			compared("report_back", "Does the output ask the reader to report backend/model, terminal size, steps, expected vs actual behavior, and a screenshot or error text?", true),
 		],
-		faithfulLiterals: ["mktemp -d /tmp/bro-guided-review.XXXXXX", "pi --no-extensions", "-e \"$BRO/bro.ts\"", "--no-context-files", "gh auth status", "/bro guided-review https://github.com/tranhoangnguyen03/pi-bro/pull/102", "/bro guided-review resume", "Leave this file unchanged", "110 columns × 32 rows", "git status --short", "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/bro-reviews/"],
 	},
 ];

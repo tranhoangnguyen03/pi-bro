@@ -19,7 +19,7 @@ Pinned judge: jev-1.13.0. Evidence remains in promptfoo-spike/ reports and ignor
 
 ## What we will build around
 
-Small source-specific questions; positive and negative operational controls; fixed interpretation of complete prerequisites; expected vectors outside inference; explicit warning coverage; deterministic literals/fences/canaries; separate descriptive and experimental communication checks. Missing API evidence is incomplete, not a semantic fail. Mismatches can be rewrite errors OR judge errors.
+Small source-specific questions; positive and negative operational controls; fixed interpretation of complete prerequisites; expected vectors outside inference; explicit warning coverage; deterministic fences/ordered commands/canaries; separate descriptive and experimental communication checks. Missing API evidence is incomplete, not a semantic fail. Mismatches can be rewrite errors OR judge errors.
 
 Do not use Jev as a general proof of equivalence, readability, user comprehension, tone, or safety. No exact evidence-span contract: Choice does not supply it. Keep original P06 as stretch evidence, not core benchmark gate. Never rewrite historical labels/results to improve scores.
 

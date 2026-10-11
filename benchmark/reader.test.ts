@@ -18,16 +18,18 @@ test('polarity, missing answers, code fences, missing cells and regressions',()=
  const f=READER_CASES.find(c=>c.id==='markdown-code')!;assert.equal(evaluate(f,'brief','',[],null).format.exactFences,false);
 });
 
-test('mechanical v2 allows ordinary numeric variants but preserves identifiers and code',()=>{
+test('mechanical v3 has no exact-text or marker checks but preserves ordered commands',()=>{
  const c=READER_CASES.find(c=>c.id==='clear-control')!;
- assert.equal(evaluate(c,'brief',c.source.replace('seven days','7 days'),[],null).mechanical.literals,true);
- assert.equal(evaluate(c,'faithful',c.source.replace('seven days','7 days'),[],null).mechanical.literals,false);
- assert.equal(evaluate(c,'brief',c.source.replace('seven days','six days'),[],null).mechanical.literals,false);
+ const e=evaluate(c,'faithful',c.source.replace('seven days','six days'),[],null);
+ assert.equal('literals' in e.mechanical,false);assert.equal('markers' in e.format,false);
  const f=READER_CASES.find(c=>c.id==='markdown-code')!;
  const indented=f.source.replaceAll('\n','\n   ');
- const e=evaluate(f,'brief',indented,[],null);
- assert.equal(e.mechanical.codeContent1,true);assert.equal(e.format.exactFences,false);
+ const i=evaluate(f,'brief',indented,[],null);
+ assert.equal(i.mechanical.codeContent1,true);assert.equal(i.format.exactFences,false);
  assert.equal(evaluate(f,'brief',indented.replace('--mode safe','--mode unsafe'),[],null).mechanical.codeContent1,false);
+ const reordered=f.source.replace("release-check --mode safe\nprintf 'done\\n'","printf 'done\\n'\nrelease-check --mode safe");
+ assert.notEqual(reordered,f.source);
+ assert.equal(evaluate(f,'brief',reordered,[],null).mechanical.codeContent1,false);
 });
 
 test('saved evidence validates identities, hashes, schemas and frozen instructions',()=>{
@@ -55,14 +57,12 @@ test('compare rejects invalid repeats and exposes format regressions, fixed and 
  assert.throws(()=>compare(pair(r),pair({...r,required:['term']})),/applicability/);
 });
 
-test('real fixtures: exact text is checked in faithful mode only',()=>{
+test('real fixtures load with four required and two compared questions',()=>{
  assert.equal(REAL_CASES.length,5);
  for(const c of REAL_CASES){
-  assert.ok(c.faithfulLiterals!.every(l=>c.source.includes(l)),c.id);
+  assert.ok(c.source.trim().length>0,c.id);
   assert.deepEqual(c.probes.map(p=>p.tier),['required','required','required','required','compared','compared']);
-  assert.equal(evaluate(c,'faithful',c.source,[],null).mechanical.literals,true);
-  assert.equal(evaluate(c,'faithful',c.source.replace(c.faithfulLiterals![0],'changed'),[],null).mechanical.literals,false);
-  assert.equal('literals' in evaluate(c,'brief','short summary',[],null).mechanical,false);
+  assert.deepEqual(evaluate(c,'faithful',c.source,[],null).mechanical,{});
  }
 });
 test('candidate arm changes only the brief prompt; modes filter rows',()=>{

@@ -6,6 +6,8 @@ All notable changes to pi-bro are documented here.
 
 ### Added
 
+- Reader benchmark: five real, maintainer-approved Explain fixtures and a brief-mode candidate arm for shipped-vs-candidate comparisons. Exact-text and Markdown-marker checks removed; meaning is checked by the yes/no questions (#101).
+
 - Reader benchmark for Explain modes, BTW answers, preferences and repeated samples (#110):
   - Fingerprinted live runs, narrow Jev binary checks, and per-check candidate comparisons.
   - Report-only reader-visible counts and source deltas, separate from preservation and formatting checks.
