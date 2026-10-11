@@ -54,6 +54,13 @@ test("frames the source as guarded JSON data", () => {
 	assert.match(prompt, new RegExp(escapeRegExp(JSON.stringify(source))));
 });
 
+test("show does not fall back to prose solely because code structure is absent", () => {
+	const prompt = buildShowPrompt("x");
+	// Regression guard: non-code subjects can still have meaningful flow/state shapes.
+	assert.match(prompt, /valid shape on its own even when the session has no code structure at all/);
+	assert.doesNotMatch(prompt, /If the session has no code structure to draw, reply with a plain outline/);
+});
+
 test("show prompt retains traceability and safe HTML rendering contracts", () => {
 	const prompt = buildShowPrompt("x");
 

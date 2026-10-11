@@ -5,19 +5,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateReader, generatorSettings } from './reader-backend.ts';
 import { prepare } from './reader.ts';
-test('Claude adapter executes once, maps success/failure, and stops on timeout or active cancellation',async()=>{
+test('Claude adapter does not retry, maps success/failure, and stops on timeout or cancellation',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'reader-fake-'));const old=process.env.PATH;process.env.PATH=dir+':'+old;
  try{
   for(const mode of ['success','error','timeout','cancel']){
    const log=join(dir,'calls');await writeFile(log,'');
    const body=mode==='success'?`printf '%s\\n' '${JSON.stringify({type:'result',subtype:'success',is_error:false,stop_reason:'end_turn',terminal_reason:'completed',result:'answer'})}'`:mode==='error'?'echo failure >&2; exit 1':'sleep 10';
    await writeFile(join(dir,'claude'),`#!/bin/sh\necho call >> '${log}'\n${body}\n`);await chmod(join(dir,'claude'),0o755);
-   const c=new AbortController();const pending=generateReader({...row,timeoutMs:mode==='timeout'?100:2000},'hello',c.signal,'claude');
-   let timer:ReturnType<typeof setTimeout>|undefined;if(mode==='cancel')timer=setTimeout(()=>c.abort(),100);
+   const c=new AbortController();const pending=generateReader({...row,timeoutMs:mode==='timeout'?100:10000},'hello',c.signal,'claude');
+   let timer:ReturnType<typeof setTimeout>|undefined;if(mode==='cancel')timer=setTimeout(()=>c.abort(),50);
    const result=await pending;if(timer)clearTimeout(timer);
    assert.equal(result.outcome,mode==='cancel'?'cancelled':mode);assert.equal(result.backend,'claude');assert.equal(result.callId,row.callId);
    if(mode==='success')assert.equal(result.output,'answer');
-   assert.equal((await readFile(log,'utf8')).trim(),'call');
+   const calls=(await readFile(log,'utf8')).trim();
+   // A deadline or cancellation may win before the child logs startup; neither may retry.
+   if(mode==='timeout'||mode==='cancel')assert.ok(calls===''||calls==='call',`unexpected calls: ${calls}`);
+   else assert.equal(calls,'call');
   }
  }finally{process.env.PATH=old;await rm(dir,{recursive:true,force:true});}
 });
