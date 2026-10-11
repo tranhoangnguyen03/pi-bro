@@ -24,3 +24,19 @@ export function unquote(value: string): string {
 	}
 	return value;
 }
+
+// Bro renders only multi-party sequence diagrams; everything else stays as text (#108).
+// shortcut: counts participant/actor declarations and simple `a->>b:` message ends, upgrade if
+// Mermaid's box/create syntax starts appearing in show replies.
+export function isRenderableSequence(source: string): boolean {
+	const lines = source.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("%%"));
+	if (lines[0] !== "sequenceDiagram") return false;
+	const names = new Set<string>();
+	for (const line of lines) {
+		const declared = line.match(/^(?:participant|actor)\s+(\S+)/);
+		if (declared) names.add(declared[1]!);
+		const message = line.match(/^([^\s:;<>-]+)\s*<?-{1,2}(?:>>|>|x|\))[+-]?\s*([^\s:;]+)\s*:/);
+		if (message) names.add(message[1]!).add(message[2]!);
+	}
+	return names.size >= 3;
+}

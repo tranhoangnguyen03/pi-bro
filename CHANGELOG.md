@@ -4,6 +4,10 @@ All notable changes to pi-bro are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `/bro show` can end a reply with one Mermaid `sequenceDiagram` for interactions among three or more participants (#108). The modal keeps the diagram's source readable and **O** opens a rendered version. Bro builds that page itself: it inlines a vendored Mermaid 12.1.0, allows only its own two scripts by hash, runs Mermaid with `securityLevel: "strict"` and no HTML labels, and inserts the model's text as escaped source. Any other Mermaid stays in the modal as plain text. If the diagram file cannot be written, the reply is kept and a warning is shown.
+
 ### Changed
 
 - Runtime source moved into `src/`; the extension entry is now `src/bro.ts`. Installs are unaffected. The package also sets a pi.dev gallery preview image (#116).

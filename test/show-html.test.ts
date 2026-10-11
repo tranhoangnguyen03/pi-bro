@@ -208,7 +208,9 @@ test("a Mermaid page runs only Bro's two hash-pinned scripts and keeps model sou
 	assert.equal(scripts.length, 2, "only the library and the init script");
 	assert.equal((page.match(/<script/gi) ?? []).length, 2, "model text cannot open a script element");
 	assert.equal((page.match(/<\/script/gi) ?? []).length, 2, "the inlined library cannot close its element early");
-	assert.ok(!scripts[0]!.includes("<!--"), "the inlined library cannot start an HTML comment");
+	assert.ok(!/<!--|<\/?script/i.test(scripts[0]!), "the inlined library cannot open a comment or a script element");
+	const { Script } = await import("node:vm");
+	assert.doesNotThrow(() => new Script(scripts[0]!), "the rewritten library still parses as JavaScript");
 	assert.match(scripts[1]!, /securityLevel:"strict"/);
 	const csp = page.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)![1]!;
 	const hashes = scripts.map((script) => `'sha256-${createHash("sha256").update(script).digest("base64")}'`);

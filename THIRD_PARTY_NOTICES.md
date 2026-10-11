@@ -67,6 +67,35 @@ HTML parsing uses [LinkeDOM](https://github.com/WebReflection/linkedom),
 copyright (c) 2021 Andrea Giammarchi (@WebReflection), licensed under the ISC
 License. Its complete license is distributed with the LinkeDOM npm package.
 
+## Mermaid
+
+`vendor/mermaid.min.js` is the unmodified `dist/mermaid.min.js` from the
+[mermaid](https://github.com/mermaid-js/mermaid) npm package, version 12.1.0
+(sha256 `6484afc32872a3aa16cac9a76ba1816a1ed4cc870a6593cc2e17757750f518b2`).
+`/bro show` inlines it into the diagram page it writes. Licensed under the MIT License:
+
+The MIT License (MIT)
+
+Copyright (c) 2014 - 2022 Knut Sveidqvist
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 ## show-me
 
 The experimental show prompt's form menu, diff grammar, and example

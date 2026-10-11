@@ -17,7 +17,7 @@ import {
 	type BackendProgress,
 	type BackendSelection,
 } from "./backend.ts";
-import { isRecord, errorMessage, withDoctor, unquote } from "./util.ts";
+import { isRecord, errorMessage, withDoctor, unquote, isRenderableSequence } from "./util.ts";
 import {
 	type BackendName,
 	type BroSettings,
@@ -767,13 +767,17 @@ const SHOW_DIAGRAM_FENCE = /^```(html|mermaid)[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\
 
 export function extractShowDiagram(text: string): ShowDiagram | undefined {
 	const last = [...text.matchAll(SHOW_DIAGRAM_FENCE)].at(-1);
-	return last ? { kind: last[1] as ShowDiagram["kind"], source: last[2]!.trim() } : undefined;
+	if (!last) return undefined;
+	const diagram = { kind: last[1] as ShowDiagram["kind"], source: last[2]!.trim() };
+	// Any other Mermaid stays in the modal as a plain text block, visible rather than hidden.
+	return diagram.kind === "html" || isRenderableSequence(diagram.source) ? diagram : undefined;
 }
 
 export function stripShowDiagramFence(text: string): string {
 	const last = [...text.matchAll(SHOW_DIAGRAM_FENCE)].at(-1);
 	if (!last || last.index === undefined) return text;
-	return text.slice(0, last.index) + "[HTML diagram saved — press O to open]" + text.slice(last.index + last[0].length);
+	const shown = last[1] === "mermaid" ? `${last[0]}\n[Diagram saved — press O to render]` : "[HTML diagram saved — press O to open]";
+	return text.slice(0, last.index) + shown + text.slice(last.index + last[0].length);
 }
 
 export function showHtmlDirectory(): string {
@@ -835,6 +839,17 @@ export async function writeShowDiagram(diagram: ShowDiagram): Promise<string> {
 	const path = join(directory, `bro-show-${slug}.html`);
 	await writeFile(path, `${page}\n`, "utf8");
 	return path;
+}
+
+// A diagram that cannot be written must not cost the reply: keep the text and warn instead.
+async function showDiagramPath(text: string, warn: (message: string) => void): Promise<string | undefined> {
+	const diagram = extractShowDiagram(text);
+	if (!diagram) return undefined;
+	try { return await writeShowDiagram(diagram); }
+	catch (error) {
+		warn(`Diagram file unavailable: ${errorMessage(error)}`);
+		return undefined;
+	}
 }
 
 function openShowHtml(path: string): boolean {
@@ -2726,8 +2741,8 @@ export default async function bro(pi: ExtensionAPI) {
 					} catch (error) {
 						throw new Error(withDoctor(error));
 					}
-					const diagram = extractShowDiagram(result.text);
-					return { source: captured, ...result, ...(diagram ? { htmlPath: await writeShowDiagram(diagram) } : {}) };
+					const htmlPath = await showDiagramPath(result.text, (message) => ctx.ui.notify(message, "warning"));
+					return { source: captured, ...result, ...(htmlPath ? { htmlPath } : {}) };
 				};
 				try {
 					await showBroModal(ctx, {
@@ -2961,15 +2976,8 @@ export default async function bro(pi: ExtensionAPI) {
 
 				const steering = lastShowSteering;
 				if (steering !== undefined) {
-					const diagram = extractShowDiagram(lastResult.text);
 					// Temp files may have been cleaned by the OS or another Bro session.
-					if (diagram && ctx.mode === "tui") {
-						try { lastResult.htmlPath = await writeShowDiagram(diagram); }
-						catch (error) {
-							lastResult.htmlPath = undefined;
-							ctx.ui.notify(`Diagram file unavailable: ${errorMessage(error)}`, "warning");
-						}
-					}
+					if (ctx.mode === "tui") lastResult.htmlPath = await showDiagramPath(lastResult.text, (message) => ctx.ui.notify(message, "warning"));
 				}
 				await showBroModal(ctx, {
 					result: lastResult,
@@ -2978,8 +2986,8 @@ export default async function bro(pi: ExtensionAPI) {
 					run: steering === undefined ? run : async (signal, source, onProgress) => {
 						if (!source) throw new Error("No captured Show source.");
 						const result = await runShowExplanation(source.text, steering, signal, await readSettings(), onProgress);
-						const diagram = extractShowDiagram(result.text);
-						return { source, ...result, ...(diagram ? { htmlPath: await writeShowDiagram(diagram) } : {}) };
+						const htmlPath = await showDiagramPath(result.text, (message) => ctx.ui.notify(message, "warning"));
+						return { source, ...result, ...(htmlPath ? { htmlPath } : {}) };
 					},
 					onResult: (result) => remember(result, steering),
 				});

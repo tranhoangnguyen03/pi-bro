@@ -40,6 +40,7 @@ const {
 	captureShowTranscript,
 	extractDocumentText,
 	extractShowDiagram,
+	isRenderableSequence,
 	stripShowDiagramFence,
 	showEntriesForMessage,
 	writeShowDiagram,
@@ -630,11 +631,20 @@ await t.test("Show HTML diagram extraction, fenced formatting, and sandboxed sto
 	assert.equal(stripShowDiagramFence("```text\nshape\n```\n```html\n<div>x</div>\n```").trim(), "```text\nshape\n```\n[HTML diagram saved — press O to open]".trim());
 	assert.deepEqual(extractShowDiagram("```html  \r\n<div>crlf</div>\r\n```  "), { kind: "html", source: "<div>crlf</div>" });
 	assert.deepEqual(
-		extractShowDiagram("```html\n<div>x</div>\n```\n\n```mermaid\nflowchart LR\n  n1 --> n2\n```"),
-		{ kind: "mermaid", source: "flowchart LR\n  n1 --> n2" },
+		extractShowDiagram("```html\n<div>x</div>\n```\n\n```mermaid\nsequenceDiagram\n  participant b as Browser\n  b->>a: GET /login\n  a-->>i: redirect\n```"),
+		{ kind: "mermaid", source: "sequenceDiagram\n  participant b as Browser\n  b->>a: GET /login\n  a-->>i: redirect" },
 		"the last diagram fence wins",
 	);
-	assert.equal(stripShowDiagramFence("intro\n\n```mermaid\nflowchart LR\n```"), "intro\n\n[HTML diagram saved — press O to open]");
+	for (const other of ["flowchart LR\n  n1 --> n2", "stateDiagram-v2\n  a --> b", "sequenceDiagram\n  a->>b: only two"]) {
+		assert.equal(extractShowDiagram(`\`\`\`mermaid\n${other}\n\`\`\``), undefined, `${other} stays as text`);
+	}
+	assert.equal(isRenderableSequence("%% note\nsequenceDiagram\n  participant a\n  actor b\n  a-)c: async"), true);
+	assert.equal(isRenderableSequence("sequenceDiagram\n  a->>+b: x\n  b--x-a: y"), false, "activation markers do not add participants");
+	assert.equal(
+		stripShowDiagramFence("intro\n\n```mermaid\nsequenceDiagram\n  participant b as Browser\n  b->>a: GET /login\n  a-->>i: redirect\n```"),
+		"intro\n\n```mermaid\nsequenceDiagram\n  participant b as Browser\n  b->>a: GET /login\n  a-->>i: redirect\n```\n[Diagram saved — press O to render]",
+		"the sequence source stays readable in the modal",
+	);
 
 	const showHtmlFirst = await writeShowDiagram({ kind: "html", source: "<div>one</div>" });
 	const showHtmlSecond = await writeShowDiagram({ kind: "html", source: "<div>two</div>" });

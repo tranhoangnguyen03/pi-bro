@@ -70,8 +70,10 @@ test("show prompt retains traceability and safe HTML rendering contracts", () =>
 	assert.match(prompt, /At most one diagram fence — one ```mermaid block or one ```html block, never both — and only as the very last block of the reply/);
 	assert.match(prompt, /self-contained with no external resources/);
 	assert.match(prompt, /Never use either for prose or outline subjects/);
-	assert.match(prompt, /Use ```mermaid for a user flow, data flow, state diagram, or sequence/);
-	assert.match(prompt, /No styling, classes, links, click handlers, or HTML in labels/);
+	assert.match(prompt, /Use ```mermaid only for a sequenceDiagram: messages exchanged among three or more participants/);
+	assert.match(prompt, /Draw only messages the transcript states/);
+	assert.match(prompt, /Keep every reported failure or rule/);
+	assert.doesNotMatch(prompt, /next step not stated/);
 	assert.match(prompt, /hand-rolled HTML and CSS, self-contained with no external resources, and no scripts or Mermaid/);
 	assert.doesNotMatch(prompt, /Mermaid syntax only inside that html fence/);
 	assert.match(prompt, /Never wrap identifiers or paths in Markdown links/);
