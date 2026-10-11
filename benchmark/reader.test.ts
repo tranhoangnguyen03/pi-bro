@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {prepare,request,evaluate,compare,JUDGE,scoreSaved,validateGeneration} from './reader.ts';
 import {READER_CASES} from './reader-corpus.ts';
+import {REAL_CASES} from './reader-real-corpus.ts';
+import {CANDIDATES} from './reader-candidates.ts';
 test('manifest freezes applicability and questions across arms; judge sees no key or source',()=>{
- const a=prepare('a'),b=prepare('b');assert.equal(READER_CASES.length,18);assert.equal(a.rows.length,b.rows.length);assert.notEqual(a.fingerprint,b.fingerprint);
+ const a=prepare('shipped'),b=prepare('brief-v1');assert.equal(READER_CASES.length,18);assert.equal(a.rows.length,b.rows.length);assert.notEqual(a.fingerprint,b.fingerprint);
  for(let i=0;i<a.rows.length;i++){assert.deepEqual(a.rows[i].probes,b.rows[i].probes);const r=request('candidate',a.rows[i].probes);assert.deepEqual(r.state,{output:'candidate'});assert.ok(!JSON.stringify(r).includes('"expected"'));}
 });
 test('polarity, missing answers, code fences, missing cells and regressions',()=>{
@@ -51,4 +53,28 @@ test('compare rejects invalid repeats and exposes format regressions, fixed and 
  assert.equal(compare(pair(r),[r,{...changed(false),repeat:2}])[0].status,'inconclusive');
  assert.equal(compare([{...r,repeat:3},{...r,repeat:4}],pair(r))[0].status,'incomplete');
  assert.throws(()=>compare(pair(r),pair({...r,required:['term']})),/applicability/);
+});
+
+test('real fixtures: exact text is checked in faithful mode only',()=>{
+ assert.equal(REAL_CASES.length,5);
+ for(const c of REAL_CASES){
+  assert.ok(c.faithfulLiterals!.every(l=>c.source.includes(l)),c.id);
+  assert.deepEqual(c.probes.map(p=>p.tier),['required','required','required','required','compared','compared']);
+  assert.equal(evaluate(c,'faithful',c.source,[],null).mechanical.literals,true);
+  assert.equal(evaluate(c,'faithful',c.source.replace(c.faithfulLiterals![0],'changed'),[],null).mechanical.literals,false);
+  assert.equal('literals' in evaluate(c,'brief','short summary',[],null).mechanical,false);
+ }
+});
+test('candidate arm changes only the brief prompt; modes filter rows',()=>{
+ const shipped=prepare('shipped'),candidate=prepare('brief-v1');
+ for(let i=0;i<shipped.rows.length;i++){
+  const s=shipped.rows[i],c=candidate.rows[i];
+  if(s.mode==='brief'){assert.notEqual(s.prompt,c.prompt);assert.ok(c.prompt.includes(CANDIDATES['brief-v1'].replacement));}
+  else assert.equal(s.prompt,c.prompt);
+ }
+ assert.throws(()=>prepare('unknown'));
+ assert.throws(()=>prepare('shipped',undefined,['tiny']));
+ const brief=prepare('shipped',undefined,['brief']);
+ assert.ok(brief.rows.every(r=>r.mode==='brief'));
+ assert.equal(brief.rows.length,(12+2+5)*2);
 });
