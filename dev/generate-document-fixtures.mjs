@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoDir = join(dirname(fileURLToPath(import.meta.url)), "..");
-const fixturesDir = join(repoDir, "fixtures", "documents");
+const fixturesDir = join(repoDir, "test", "fixtures", "documents");
 
 function buildMinimalPdf(text) {
 	const streamContent = text ? `BT /F1 12 Tf 72 712 Td (${text}) Tj ET` : "";

@@ -11,8 +11,7 @@ import mammoth from "mammoth";
 import { bro, backend, sources, buildDir } from "./test-build.mjs";
 
 test("Bro helpers, modals, advisor lifecycle and SDK restrictions", async (t) => {
-const repoDir = dirname(fileURLToPath(import.meta.url));
-const documentFixturesDir = join(repoDir, "fixtures", "documents");
+const documentFixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "documents");
 const { isWorkspaceFile } = sources;
 const {
 	advisorFlagErrorHint,
