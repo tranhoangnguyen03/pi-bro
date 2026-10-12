@@ -11,7 +11,7 @@ import {
 	type WebTransport,
 	MAX_WEB_BYTES,
 	MAX_WEB_REDIRECTS,
-} from "./sources.ts";
+} from "../sources.ts";
 
 type FakeResponse = {
 	statusCode?: number;

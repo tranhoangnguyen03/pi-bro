@@ -17,6 +17,8 @@ All notable changes to pi-bro are documented here.
 
 ### Changed
 
+- The README is now a short overview (install, try it, requirements, what leaves your machine, limits). The full reference moved to `docs/user-guide.md`, and `/bro help` links there (#116).
+- Added `SECURITY.md`, `CONTRIBUTING.md`, issue forms and `docs/PUBLIC-PRESENTATION.md`, the presentation standard for pi-* repos (#116).
 - Refocus prompt tests on safety and structure rather than frozen wording or presentation order; identify fake-Agy Explain modes from current prompt builders instead of hardcoded phrases (#110).
 
 ## [0.22.1] - 2026-10-12
@@ -26,7 +28,7 @@ All notable changes to pi-bro are documented here.
 - Public-web transport safety boundaries and offline qualification (#86):
   - Block IPv4-compatible IPv6 (`::/96`) and Site-Local IPv6 (`fec0::/10`) in `NON_PUBLIC_ADDRESSES` to prevent SSRF bypasses via mapped loopback and cloud metadata targets on dual-stack hosts.
   - Disable HTTP socket connection pooling (`agent: false`) on web requests so keep-alive socket reuse cannot bypass address pinning (`lookup`).
-  - Add offline test coverage in `sources.test.ts` for mixed DNS answers, address pinning, private redirects, HTTPS downgrade, loops, hop bounds, payload limits, encoding, and cancellation.
+  - Add offline test coverage in `test/sources.test.ts` for mixed DNS answers, address pinning, private redirects, HTTPS downgrade, loops, hop bounds, payload limits, encoding, and cancellation.
 
 ### Fixed
 
