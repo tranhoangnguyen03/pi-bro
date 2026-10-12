@@ -31,7 +31,7 @@ Bro follows the host's `getAgentDir()`: normally `~/.pi/agent` on Pi and `~/.pig
 
 ```sh
 npm test
-PIG_BIN=/absolute/path/to/pig sh pig-test.sh
+PIG_BIN=/absolute/path/to/pig sh test/pig-test.sh
 ```
 
 The PiG lane checks the exact binary version, real host settings isolation, advisor snapshot compaction/branch projection, and the existing fake-backend RPC smoke suite. Existing Node tests cover backend cancellation/process cleanup and modal geometry, but are not substitutes for real-host interactive tests.

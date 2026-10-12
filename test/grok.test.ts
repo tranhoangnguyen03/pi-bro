@@ -6,7 +6,7 @@ import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { type BackendProgress, type BackendRequest, type BackendSelection, GROK_EFFORTS, execute } from "./backend.ts";
+import { type BackendProgress, type BackendRequest, type BackendSelection, GROK_EFFORTS, execute } from "../backend.ts";
 
 const originalPath = process.env.PATH;
 

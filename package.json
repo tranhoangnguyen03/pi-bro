@@ -63,7 +63,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && node .github/scripts/release-utils.mjs selftest && node --test review-ux.test.mjs review-doctor.test.mjs review-versions.test.mjs review-regeneration.test.mjs review-modal.test.mjs review.test.ts review-ui.test.mjs review-session.test.mjs helpers.test.mjs prompt.test.ts backend.test.ts claude.test.ts grok.test.ts codex.test.ts muse.test.ts settings.test.ts release.test.ts show-html.test.ts smoke-rpc.test.ts ui-capabilities.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
+    "test": "npm run typecheck && node .github/scripts/release-utils.mjs selftest && node --test test/review-ux.test.mjs test/review-doctor.test.mjs test/review-versions.test.mjs test/review-regeneration.test.mjs test/review-modal.test.mjs test/review.test.ts test/review-ui.test.mjs test/review-session.test.mjs test/helpers.test.mjs test/prompt.test.ts test/backend.test.ts test/claude.test.ts test/grok.test.ts test/codex.test.ts test/muse.test.ts test/settings.test.ts test/release.test.ts test/show-html.test.ts test/smoke-rpc.test.ts test/ui-capabilities.test.ts benchmark/*.test.ts && sh ./test/smoke-test.sh",
     "benchmark:dry-run": "node benchmark/run.ts dry-run",
     "benchmark:run": "node benchmark/run.ts run",
     "benchmark:report": "node benchmark/run.ts report",

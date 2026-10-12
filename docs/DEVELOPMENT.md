@@ -129,11 +129,13 @@ during a fake in-flight consultation and assert no delayed child activity.
 ## Tests
 
 ```sh
-npm test                                   # typecheck, node tests, smoke-test.sh
+npm test                                   # typecheck, node tests, test/smoke-test.sh
 npm pack --dry-run                         # published file list
 node .github/scripts/release-utils.mjs selftest
 npm run benchmark:dry-run                  # manual live benchmark: see benchmark/README.md
 ```
+
+All tests and their helpers live in `test/`; CI runs them on Node 24 and the `engines` floor (22.19.0) on Linux, and on macOS.
 
 Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs` and `review-ux.test.mjs` (rendering/interaction), `review-session.test.mjs` and `review-regeneration.test.mjs` (fake-CLI controller/save/recovery), `review-versions.test.mjs` (single-guide/current validation and rejected prototype schemas), `review-ui.test.mjs` (evidence/save presentation), `review-doctor.test.mjs` (review-only backend selection). Adapter tests keep BTW/native-session behavior separate from stateless review. Add regressions to the existing owner; do not create another generic harness.
 

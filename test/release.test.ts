@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 // @ts-ignore Pure release validation rules module
-import { getShippedFiles, isShippedFile, classify, isDocOrLegal } from "./.github/scripts/release-rules.mjs";
+import { getShippedFiles, isShippedFile, classify, isDocOrLegal } from "../.github/scripts/release-rules.mjs";
 
-const repoDir = dirname(fileURLToPath(import.meta.url));
+const repoDir = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export function collectLocalImports(
 	entryPoints: string[],
