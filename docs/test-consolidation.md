@@ -93,3 +93,19 @@ Same local Node environment, one full run each (not a benchmark claim):
 - Before #89: 264 Node tests; 51.27s wall time.
 - After #89: 274 Node tests; 20.95s wall time (domain subtest naming increases reported count while removing redundant subprocess invocations and real-time sleeps). The Explain modal M-switch poll limit was extended from 200 to 600 iterations (up to 6s) to ensure resilience against scheduling jitter under concurrent test-runner load.
 
+## Issue #86 — public-web transport safety boundaries offline
+
+### Organization
+
+Domain-specific web transport tests live in `sources.test.ts`, isolating transport double mechanics and keeping `helpers.test.mjs` bounded. The test suite exercises all SSRF protections, DNS pinning hooks, and transport limits offline using standard-library in-memory streams (`Readable.from()`) without network access or third-party mocking libraries.
+
+### Security fixes & surviving coverage
+
+| Change | Rationale / Invariant Verified |
+| --- | --- |
+| `NON_PUBLIC_ADDRESSES` blocks `::/96` and `fec0::/10` | Eliminates SSRF filter bypasses on IPv4-compatible IPv6 addresses (e.g. `::127.0.0.1`, `::169.254.169.254`) and Site-Local IPv6 unicast. |
+| Single-use socket enforcement (`agent: false`) | Guarantees that Node connection pooling (`keepAlive`) cannot reuse an existing socket and bypass the pinned `lookup` callback on subsequent requests. |
+| `WebTransport` seam in `sources.ts` | Minimal optional dependency parameters on `resolvePublicAddress`, `requestWebPage`, `fetchPublicHtml`, and `extractWebPage` defaulting to native `lookup`, `httpRequest`, and `httpsRequest`. |
+| 18 offline transport tests in `sources.test.ts` | Covers mixed DNS answers (fails closed), socket lookup pinning, private IP/hostname redirects (no private destinations contacted), HTTPS-to-HTTP downgrade rejection, protocol smuggling rejection, redirect loops and hop counts (bounded at 5), advertised Content-Length limit (> 5 MiB), streamed chunk limits (> 5 MiB), exact 5 MiB boundaries, unsupported Content-Encoding/Content-Type, status codes, and cancellation. |
+
+

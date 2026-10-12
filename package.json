@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "version": "0.22.0",
+  "version": "0.22.1",
   "description": "An Earendil Pi extension for plain-language explanations, conversation diagrams, side questions, guided PR understanding and assessment, and a second-opinion advisor tool.",
   "type": "module",
   "license": "MIT",
@@ -63,7 +63,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && node .github/scripts/release-utils.mjs selftest && node --test review-ux.test.mjs review-doctor.test.mjs review-versions.test.mjs review-regeneration.test.mjs review-modal.test.mjs review.test.ts review-ui.test.mjs review-session.test.mjs helpers.test.mjs prompt.test.ts backend.test.ts claude.test.ts grok.test.ts codex.test.ts muse.test.ts settings.test.ts release.test.ts show-html.test.ts smoke-rpc.test.ts ui-capabilities.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
+    "test": "npm run typecheck && node .github/scripts/release-utils.mjs selftest && node --test review-ux.test.mjs review-doctor.test.mjs review-versions.test.mjs review-regeneration.test.mjs review-modal.test.mjs review.test.ts review-ui.test.mjs review-session.test.mjs helpers.test.mjs prompt.test.ts backend.test.ts claude.test.ts grok.test.ts codex.test.ts muse.test.ts settings.test.ts sources.test.ts release.test.ts show-html.test.ts smoke-rpc.test.ts ui-capabilities.test.ts benchmark/*.test.ts && sh ./smoke-test.sh",
     "benchmark:dry-run": "node benchmark/run.ts dry-run",
     "benchmark:run": "node benchmark/run.ts run",
     "benchmark:report": "node benchmark/run.ts report",
