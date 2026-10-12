@@ -6,7 +6,7 @@ All notable changes to pi-bro are documented here.
 
 ### Fixed
 
-- Honor cancellation signals arriving during asynchronous document parsing in `extractDocumentText` (#87).
+- Make cancellation consistent across synchronous reading and asynchronous parsing in `extractDocumentText` (#87).
 
 ### Added
 

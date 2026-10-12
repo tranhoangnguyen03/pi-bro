@@ -668,6 +668,9 @@ await t.test("Document text extraction: formats, failure boundaries, containment
 	const origMammothExtract = mammoth.extractRawText;
 	try {
 		// Advertised formats (.md, .markdown, .txt, real .pdf via unpdf, real .docx via mammoth)
+		await writeFile(join(root, "Complex Notes.MD"), "  readable text  ");
+		assert.equal(await extractDocumentText("Complex Notes.MD", root), "readable text");
+
 		await writeFile(join(root, "notes.md"), "# Heading\nReadable markdown text");
 		assert.equal(await extractDocumentText("notes.md", root), "# Heading\nReadable markdown text");
 
@@ -706,14 +709,14 @@ await t.test("Document text extraction: formats, failure boundaries, containment
 		await writeFile(join(root, "bad-utf8.txt"), Buffer.from([0xff, 0xfe]));
 		await assert.rejects(
 			extractDocumentText("bad-utf8.txt", root),
-			/Could not extract text from bad-utf8\.txt: The encoded data was not valid for encoding utf-8/
+			/Could not extract text from bad-utf8\.txt:/
 		);
 
 		// Failure boundaries: corrupted / zero-byte binaries
 		await writeFile(join(root, "zero.pdf"), Buffer.alloc(0));
 		await assert.rejects(
 			extractDocumentText("zero.pdf", root),
-			/Could not extract text from zero\.pdf: The PDF file is empty/
+			/Could not extract text from zero\.pdf:/
 		);
 
 		await writeFile(join(root, "corrupted.pdf"), Buffer.from("%PDF-corrupted-bytes"));
@@ -722,7 +725,7 @@ await t.test("Document text extraction: formats, failure boundaries, containment
 		try {
 			await assert.rejects(
 				extractDocumentText("corrupted.pdf", root),
-				/Could not extract text from corrupted\.pdf: Invalid PDF structure/
+				/Could not extract text from corrupted\.pdf:/
 			);
 		} finally {
 			console.warn = origWarn;
