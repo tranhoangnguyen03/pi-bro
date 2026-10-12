@@ -8,13 +8,18 @@ updates:
       actions:
         patterns: ["*"]
     labels: [release:none]
-  # Monthly and grouped to keep the PR count low for one maintainer. Runtime
-  # dependency bumps ship with the next release; merging still needs a human.
+  # Monthly and grouped to keep the PR count low for one maintainer. No release
+  # label: you decide per PR whether runtime bumps need a release or release:none.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: monthly
+    # Pinned to the minimum Pi the README promises, so CI keeps testing it.
+    ignore:
+      - dependency-name: "@earendil-works/*"
+      - dependency-name: typebox
     groups:
-      npm:
-        patterns: ["*"]
-    labels: [release:none]
+      runtime:
+        dependency-type: production
+      dev:
+        dependency-type: development
