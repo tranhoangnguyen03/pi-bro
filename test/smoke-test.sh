@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 pi_bin=${PI_BIN:-"$repo_dir/node_modules/.bin/pi"}
 test_dir=$(mktemp -d)
 # All Node tmpdir() consumers, including diagram cleanup, stay inside this run.
@@ -40,7 +40,7 @@ fi
 # Serialize RPC requests by their acknowledgements, not machine-speed-dependent sleeps.
 # Keep stdin open until the final response; Pi exits on EOF even with work in flight.
 export BRO_SMOKE_PI_BIN="$pi_bin"
-export BRO_SMOKE_RPC="$repo_dir/smoke-rpc.mjs"
+export BRO_SMOKE_RPC="$repo_dir/test/smoke-rpc.mjs"
 cat > "$test_dir/pi-rpc" <<'RPC'
 #!/bin/sh
 exec node "$BRO_SMOKE_RPC" "$@"

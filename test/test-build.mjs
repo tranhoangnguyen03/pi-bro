@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { after } from 'node:test';
-const repoDir = dirname(fileURLToPath(import.meta.url));
+const repoDir = dirname(dirname(fileURLToPath(import.meta.url)));
 export const buildDir = mkdtempSync(join(tmpdir(), 'pi-bro-test-build-'));
 const previousTmp = process.env.TMPDIR;
 process.env.TMPDIR = join(buildDir, 'tmp');

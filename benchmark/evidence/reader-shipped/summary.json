@@ -19,7 +19,6 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -66,7 +65,6 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -113,12 +111,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "restore": true,
@@ -161,12 +157,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "restore": true,
@@ -209,12 +203,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "restore": true,
@@ -257,12 +249,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "restore": true,
@@ -305,7 +295,6 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -351,7 +340,6 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -397,12 +385,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "commitment": true
@@ -444,12 +430,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "commitment": true
@@ -491,12 +475,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "commitment": true
@@ -538,12 +520,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "commitment": true
@@ -585,7 +565,6 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -633,7 +612,6 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -681,12 +659,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "retire_yes": true,
@@ -730,12 +706,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "retire_yes": true,
@@ -779,12 +753,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "retire_yes": true,
@@ -828,12 +800,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "retire_yes": true,
@@ -877,7 +847,6 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -923,7 +892,6 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -969,12 +937,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "stop": true
@@ -1016,12 +982,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "stop": true
@@ -1063,12 +1027,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "stop": true
@@ -1110,12 +1072,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "stop": true
@@ -1157,7 +1117,6 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true,
         "codeContent1": true
       },
@@ -1204,7 +1163,6 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true,
         "codeContent1": true
       },
@@ -1251,13 +1209,11 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true,
         "codeContent1": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "retry": true
@@ -1299,13 +1255,11 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true,
         "codeContent1": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "retry": true
@@ -1347,13 +1301,11 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true,
         "codeContent1": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "retry": true
@@ -1395,13 +1347,11 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true,
         "codeContent1": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "retry": true
@@ -1443,7 +1393,6 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -1490,7 +1439,6 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -1537,12 +1485,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "pause": true,
@@ -1585,12 +1531,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "pause": true,
@@ -1633,12 +1577,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "pause": true,
@@ -1681,12 +1623,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "pause": true,
@@ -1729,7 +1669,6 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -1775,7 +1714,6 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -1821,12 +1759,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {},
       "descriptive": {
@@ -1868,12 +1804,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {},
       "descriptive": {
@@ -1915,12 +1849,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {},
       "descriptive": {
@@ -1962,12 +1894,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {},
       "descriptive": {
@@ -2009,7 +1939,6 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -2058,7 +1987,6 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
@@ -2107,12 +2035,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "duplicate": true,
@@ -2157,12 +2083,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "duplicate": true,
@@ -2207,12 +2131,10 @@
       "audience": "default",
       "repeat": 1,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "duplicate": true,
@@ -2257,12 +2179,10 @@
       "audience": "default",
       "repeat": 2,
       "mechanical": {
-        "literals": true,
         "injection": true
       },
       "format": {
-        "exactFences": true,
-        "markers": true
+        "exactFences": true
       },
       "checks": {
         "duplicate": true,
@@ -3914,9 +3834,7 @@
       "mode": "btw",
       "audience": "default",
       "repeat": 1,
-      "mechanical": {
-        "path": true
-      },
+      "mechanical": {},
       "format": {},
       "checks": {
         "path": true,
@@ -3958,9 +3876,7 @@
       "mode": "btw",
       "audience": "default",
       "repeat": 2,
-      "mechanical": {
-        "path": true
-      },
+      "mechanical": {},
       "format": {},
       "checks": {
         "path": true,

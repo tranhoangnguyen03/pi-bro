@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-const modulePath = "./review.ts";
-const sourcePath = "./review-source.ts";
+const modulePath = "../review.ts";
+const sourcePath = "../review-source.ts";
 const newReviewView = () => ({
 	selected: "overview",
 	screen: "reading",

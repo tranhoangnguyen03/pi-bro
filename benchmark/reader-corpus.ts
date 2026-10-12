@@ -1,7 +1,7 @@
 import { BENCHMARK_CORPUS } from './corpus.ts';
 import type { BenchmarkFixture } from './corpus.ts';
 export type Probe = { id:string; question:string; expected:boolean; tier:'required'|'compared'; modes?:string[] };
-export type ReaderCase = { id:string; track:'explain'|'btw'; source:string; question?:string; probes:Probe[]; mechanical?:BenchmarkFixture; unmeasured?:string[] };
+export type ReaderCase = { id:string; track:'explain'|'btw'; source:string; question?:string; probes:Probe[]; mechanical?:BenchmarkFixture; unmeasured?:string[]; origin?:string };
 const q=(id:string,question:string,expected=true,tier:'required'|'compared'='required'):Probe=>({id,question,expected,tier});
 const checks:Record<string,Probe[]>={
  'backup-cliche':[q('restore','Does the output instruct testing that a backup can actually be restored?'),q('failure','A backup restore test fails. Does the output allow proceeding to release without fixing the backup process?',false)],

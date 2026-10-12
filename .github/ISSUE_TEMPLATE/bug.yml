@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in Bro does not work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. /bro config → backend claude
+        2. /bro file docs/report.pdf
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`/bro doctor` output"
+      description: Run `/bro doctor`, press C to copy, and paste it here. It has no source text but may show file paths; remove anything private.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      placeholder: pi-bro 0.22.0 · Pi 0.84.2 · Node 22.19.0
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      options: [agy, claude, grok, codex, muse, not sure]
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS, Linux, Windows, other]
+    validations:
+      required: true

@@ -1567,7 +1567,7 @@ export function helpText(settings?: BroSettings, settingsError?: string, prefere
 		: `Bro could not read its settings: ${settingsError}\n\nRun \`/bro doctor\` for setup help.`;
 	return `# Bro
 
-Quick reference. The README is the full user guide: https://github.com/tranhoangnguyen03/pi-bro#readme
+Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/user-guide.md
 
 ## Explain and show
 
@@ -1633,7 +1633,7 @@ The mode decides how much of the source to keep; your preferences decide who it'
 
 ## Privacy
 
-Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, and Guided Review request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you insert it. Access controls differ by backend; see the README.`;
+Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, and Guided Review request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you insert it, except advisor answers, which return to the agent as tool results. Access controls differ by backend; see the user guide.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.

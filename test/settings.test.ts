@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const repoDir = dirname(fileURLToPath(import.meta.url));
+const repoDir = dirname(dirname(fileURLToPath(import.meta.url)));
 // @ts-ignore Shared JavaScript test harness; compiled Bro intentionally exposes dynamic test types.
 import { bro, backend } from "./test-build.mjs";
 test('simplify is discoverable and follows bare Bro without treating the alias as source text', async () => {
@@ -73,7 +73,7 @@ test("bounded transcripts keep newest turns and valid quoted tails", () => {
 
 test("published manifest includes release and runtime documentation", () => {
  const manifest = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8"));
- for (const file of ["README.md", "CHANGELOG.md"]) {
+ for (const file of ["README.md", "CHANGELOG.md", "docs/user-guide.md"]) {
   assert.ok(manifest.files.includes(file), `${file} must ship`);
   assert.ok(readFileSync(join(repoDir, file), "utf8").trim());
  }
@@ -913,13 +913,13 @@ test("help drops removed /bro model, /bro effort, --fresh, and forced inserts", 
 	assert.match(text, /\/bro config/);
 });
 
-test("help is a concise reference: no removed BTW flags, /mode documented, README pointer", () => {
+test("help is a concise reference: no removed BTW flags, /mode documented, user guide pointer", () => {
 	for (const backend of ["agy", "claude", "grok"] as const) {
 		const text = helpText(parseBroSettings({ version: 2, default: { backend, model: "m", effort: "default" } }));
 		assert.doesNotMatch(text, /--(full|sandbox|fresh)\b/);
 		assert.doesNotMatch(text, /--dangerously|--permission-mode|--resume|--conversation/);
 		assert.match(text, /`\/mode`/);
-		assert.match(text, /README/);
+		assert.match(text, /docs\/user-guide\.md/);
 		assert.match(text, /brief —/);
 		assert.ok(text.length < 6000, `help is ${text.length} chars`);
 	}
