@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const repoDir = dirname(fileURLToPath(import.meta.url));
+const repoDir = dirname(dirname(fileURLToPath(import.meta.url)));
 // @ts-ignore Shared JavaScript test harness; compiled Bro intentionally exposes dynamic test types.
 import { bro, backend } from "./test-build.mjs";
 test('simplify is discoverable and follows bare Bro without treating the alias as source text', async () => {

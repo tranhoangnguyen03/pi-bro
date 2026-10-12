@@ -24,4 +24,4 @@ jobs:
           grep ' pig-0.3.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
           tar -xzf pig-0.3.0-linux-amd64.tar.gz
           echo "PIG_BIN=$RUNNER_TEMP/pig-release/pig-0.3.0-linux-amd64/pig" >> "$GITHUB_ENV"
-      - run: sh pig-test.sh
+      - run: sh test/pig-test.sh

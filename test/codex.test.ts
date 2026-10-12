@@ -11,7 +11,7 @@ import {
 	type BackendSelection,
 	CODEX_EFFORTS,
 	execute,
-} from "./backend.ts";
+} from "../backend.ts";
 
 const originalPath = process.env.PATH;
 
