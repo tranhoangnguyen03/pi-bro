@@ -1,7 +1,7 @@
 {
   "name": "pi-bro",
   "version": "0.22.0",
-  "description": "A sidekick for you and your Pi agent: plain-language explanations, side questions, diagrams, PR review and second opinions, all kept out of the agent's context.",
+  "description": "A sidekick for you and your Pi agent: plain-language explanations, side questions, diagrams, PR review and second opinions, without cluttering the agent's context.",
   "type": "module",
   "license": "MIT",
   "author": "Tran Hoang Nguyen",

@@ -21,8 +21,9 @@ manual end-to-end checklist for changes the offline tests cannot cover.
 - If the PR changes a shipped runtime file, `package.json` or
   `package-lock.json`, bump the version with
   `npm version patch|minor|major --no-git-tag-version` and add a
-  `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md`. Otherwise label it
-  `release:none`. CI checks this, and merging a version bump publishes it.
+  `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md`, or label it
+  `release:none` to ship it with a later release. CI checks this, and merging
+  a version bump publishes it.
 - Start each version's changelog section with `### Highlights`: 2–4
   plain-language bullets on what users can now do. It becomes the top of
   the GitHub release.

@@ -2,10 +2,13 @@
 
 - [ ] If this PR changes any shipped runtime module (`package.json#files` excluding docs), `package.json`, or `package-lock.json`: bumped the version with `npm version patch|minor|major --no-git-tag-version` and added a `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md`.
 - [ ] Otherwise: labelled `release:none` if no release is intended.
+
+CI enforces the two items above. Merging a PR that bumps the version tags it, publishes to npm, and creates the GitHub release automatically.
+
+Checked in review, not by CI:
+
 - [ ] A version section opens with `### Highlights`: 2–4 plain-language bullets on what users can now do. The release workflow copies the section into the GitHub release as-is.
 - [ ] Anything that breaks existing commands or settings is listed under `### Breaking` in `CHANGELOG.md`, with migration steps.
-
-CI enforces this. Merging a PR that bumps the version tags it, publishes to npm, and creates the GitHub release automatically.
 
 ## Docs
 

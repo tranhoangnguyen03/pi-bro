@@ -73,7 +73,7 @@ test("bounded transcripts keep newest turns and valid quoted tails", () => {
 
 test("published manifest includes release and runtime documentation", () => {
  const manifest = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8"));
- for (const file of ["README.md", "CHANGELOG.md"]) {
+ for (const file of ["README.md", "CHANGELOG.md", "docs/user-guide.md"]) {
   assert.ok(manifest.files.includes(file), `${file} must ship`);
   assert.ok(readFileSync(join(repoDir, file), "utf8").trim());
  }

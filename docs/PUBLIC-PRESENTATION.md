@@ -35,10 +35,11 @@ run.
 ### A. Discovery: GitHub About and npm metadata
 
 - **MUST** The About description matches the `package.json` description and
-  the README tagline (same sentence, at most about 150 characters). It says it
-  is a Pi extension and names the benefit.
-- **MUST** Topics: `pi-package`, `pi-extension`, `pi-coding-agent`, plus 2–5
-  domain topics. `package.json#keywords` contains the same set.
+  the README tagline: the same sentence, readable at a glance (aim for about
+  160 characters or fewer). It names Pi and the benefit, and every claim in it
+  is true for every feature it lists.
+- **MUST** Topics: `pi-package`, `pi-extension`, `pi-coding-agent`, plus a few
+  domain topics (about 10 in total). `package.json#keywords` includes them.
 - **MUST** Homepage is set: the npm package page, or a docs site if one exists.
 - **SHOULD** A custom social preview image (1280×640) with the name, the
   tagline and one product visual.
@@ -48,6 +49,9 @@ run.
 - **MUST** In this order: name, badge row, one-line tagline, one sentence
   explaining what Pi is (linked), a hero visual, the install command, and a
   2–5 command "try it" block.
+- **MUST** Every command on the first screen runs exactly as copied: no
+  inline annotations in code blocks (put descriptions in a separate column),
+  and placeholders are labelled as such.
 - **MUST** The badge row has 3–5 badges: npm version, CI status, license, and
   (if published with provenance) npm provenance or Node version. No vanity
   badges.
@@ -64,10 +68,11 @@ run.
 - **MUST** The README stays at or under about 300 lines. Reference material
   (full command options, settings schema, precedence rules, per-backend
   detail, long examples) lives in `docs/` with a `docs/README.md` index.
-- **MUST** Each feature gets a short block: what it does, one example, and a
-  link to its doc.
+- **MUST** Each feature gets a short block or table row: what it does and a
+  link to its own section of the docs. Runnable examples live in "Try it".
 - **MUST** Prerequisites list each required or optional external CLI with an
-  install link, minimum version, and which one is the default.
+  install link, its minimum version where known, and which one is the
+  default. Supported operating systems are stated.
 - **MUST** If a feature needs a non-default setup (e.g. a specific backend),
   say so in that feature's README block, not only in deep docs.
 - **SHOULD** Limits are one section of at most about 10 bullets, each written
@@ -80,10 +85,12 @@ run.
 
 - **MUST** A "What leaves your machine" section: per feature, what is sent, to
   which backend or provider, and what persists where (workspace, `~/.pi/…`,
-  temp, none). The first screen links to it.
+  temp, none). The first screen links to it. Say which credentials the
+  external CLI may use (its own sign-in, or API keys in your environment).
 - **MUST** Any mode that bypasses a backend's permissions or sandbox is
-  flagged in a visible callout where that feature is introduced, not only in
-  a table.
+  flagged in a visible callout, and marked (e.g. ⚠️ with a link) where that
+  feature is introduced. Say plainly whether the mode is *meant* to edit or
+  only *told* not to.
 - **MUST** State plainly the difference between prompt instructions and
   enforced restrictions.
 - **SHOULD** The diagnostic command is documented: what it checks, and that
@@ -115,7 +122,8 @@ run.
 - **SHOULD** A macOS job when the tool spawns processes, uses the clipboard,
   or calls PATH CLIs.
 - **SHOULD** Dependabot (or Renovate) for `github-actions` and `npm`, run
-  weekly and grouped.
+  weekly or monthly and grouped. Keep pinned host versions (e.g. the minimum
+  Pi version you promise) out of automatic updates, so CI keeps testing them.
 - **SHOULD** Third-party actions are pinned to commit SHAs.
 - **SHOULD** Keep npm trusted publishing with `--provenance`.
 - **NICE** CodeQL default setup and the OpenSSF Scorecard action and badge.
@@ -163,8 +171,11 @@ run.
 
 ### J. Family consistency
 
-- **MUST** Every pi-* repo follows the README skeleton below and the
-  tagline formula: *"<Name> — <what it does for you> in Pi, <key difference>."*
+- **MUST** Every pi-* repo follows the README skeleton below. Its tagline
+  says what it does for you in Pi and its key difference. Example (pi-bro):
+  *"A sidekick for you and your Pi agent: plain-language explanations, side
+  questions, diagrams, PR review and second opinions, without cluttering the
+  agent's context."*
 - **MUST** Every pi-* repo has a description, the shared base topics, a
   license, and a homepage.
 - **SHOULD** All repos use the same license unless there is a reason not to.
@@ -193,13 +204,13 @@ pi install npm:<name>      # then /reload
 <first-run diagnostic, if any>
 
 ## Try it
-<2–5 commands>
+<2–5 commands in a table: command | what happens>
 
 ## What it does
 <one short block per feature + link to docs/<feature>.md>
 
 ## Requirements
-<host versions; external CLIs with links, min versions, default>
+<host versions; OS support; external CLIs with links, min versions, default>
 
 ## What leaves your machine
 <short summary + link to full table>

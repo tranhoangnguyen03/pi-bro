@@ -6,13 +6,14 @@
 [![license](https://img.shields.io/npm/l/pi-bro)](LICENSE)
 
 A sidekick for you and your Pi agent: plain-language explanations, side
-questions, diagrams, PR review and second opinions, all kept out of the
+questions, diagrams, PR review and second opinions, without cluttering the
 agent's context.
 
 `pi-bro` is an extension for [Pi](https://github.com/earendil-works/pi), a
 terminal coding agent. Bro opens its answers in a separate window and runs
 them through an AI coding CLI you already have and are signed in to, so your
-main agent's conversation stays clean.
+main agent's conversation stays clean. Before you install, see
+[what leaves your machine](#what-leaves-your-machine).
 
 <p align="center">
   <a href="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png">
@@ -37,24 +38,24 @@ GitHub, use `pi install git:github.com/tranhoangnguyen03/pi-bro`.
 
 ## Try it
 
-```text
-/bro                                   explain the agent's last reply
-/bro file docs/report.pdf              explain a document
-/bro url https://example.com/article   explain a webpage
-/bro btw "what file defines this route?"
-/bro show                              draw the last turn as a diagram
-```
+| Type this in Pi | What happens |
+| --- | --- |
+| `/bro` | Explains the agent's last reply |
+| `/bro file docs/report.pdf` | Explains a document (use your own path) |
+| `/bro url https://example.com/article` | Explains a webpage (use your own link) |
+| `/bro btw "what file defines this route?"` | Asks a side question |
+| `/bro show` | Draws the last turn as a diagram |
 
 ## What it does
 
 | Command | What you get |
 | --- | --- |
-| `/bro`, `/bro text`, `/bro file`, `/bro url` | **Explain.** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
-| `/bro show` | **Show.** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, or an HTML diagram) instead of prose. |
-| `/bro btw` | **Side questions.** A separate conversation seeded with recent context, so you can ask without interrupting the agent. |
-| `/bro guided-review <PR>` | **Guided Review.** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Needs the Claude or Muse backend. |
-| `bro_advisor` tool | **Second opinion.** A tool your agent can call mid-task; a fresh backend process investigates and returns advice. |
-| `/bro config`, `/bro preferences` | Pick the backend, model and effort per feature, and tell Bro how you like answers. |
+| `/bro`, `/bro text`, `/bro file`, `/bro url` | **[Explain](docs/user-guide.md#what-bro-can-explain).** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
+| `/bro show` | **[Show](docs/user-guide.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, or an HTML diagram) instead of prose. |
+| `/bro btw` | **[Side questions](docs/user-guide.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
+| `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Needs the Claude or Muse backend. |
+| `bro_advisor` tool | **[Second opinion](docs/user-guide.md#bro-advisor).** A tool your agent can call mid-task; a fresh backend process investigates and returns advice to the agent. ⚠️ [Runs with permissions bypassed](#what-leaves-your-machine). |
+| `/bro config`, `/bro preferences` | **[Settings](docs/user-guide.md#settings) and [preferences](docs/user-guide.md#preferences).** Pick the backend, model and effort per feature, and tell Bro how you like answers. |
 
 Every command, control and setting is in the **[user guide](docs/user-guide.md)**.
 Guided Review has its own [guide](docs/guided-review.md).
@@ -62,6 +63,8 @@ Guided Review has its own [guide](docs/guided-review.md).
 ## Requirements
 
 - Pi `>=0.84.2 <1` and Node.js `>=22.19.0`.
+- macOS or Linux. Windows is untested; there, cancelling stops only the
+  backend's direct process, not anything it started.
 - At least one backend CLI on your `PATH`, signed in once from your terminal.
   You only need the one you use:
 
@@ -79,20 +82,35 @@ Guided Review has its own [guide](docs/guided-review.md).
 
 ## What leaves your machine
 
-Bro sends what you ask it to explain (the agent's reply, your text, extracted
-document or page text, or recent conversation text) to the backend you chose
-and its model provider. Bro uses that CLI's own account; it never reads Pi's
-provider credentials. Nothing Bro produces is added to Pi's conversation
-unless you insert it, and the advisor's answer comes back as a normal tool
-result.
+Each feature sends data to the backend you chose and its model provider,
+which may keep it under their own policies. Paths below are under
+`~/.pi/agent/` (or `$PI_CODING_AGENT_DIR`).
+
+| Feature | What is sent | What Bro keeps on disk |
+| --- | --- | --- |
+| Explain | The agent's last reply, your pasted text, or text extracted from your file or webpage, plus your preferences | Nothing; the last result stays in memory |
+| Show | User and assistant text from recent turns (no tool calls, tool results, reasoning or images), plus your preferences | HTML diagrams in `pi-bro-<uid>/` in your system temp folder |
+| Side questions | Your questions and up to the last 8 turns of conversation text, plus your preferences | Nothing; the thread stays in memory |
+| Guided Review | The PR description and diff, the files the backend reads, your questions, plus your preferences | Reviews and captured source in `bro-reviews/`, with no automatic cleanup |
+| Advisor | The agent's system instructions, tool list and whole conversation, including tool calls and results (reasoning and images omitted), plus your steering | Steering in `bro-advisor.md` and the session file |
+
+`/bro url` also connects straight to the website, which sees your IP address.
+Bro runs each CLI as you, with your environment. It never reads or copies Pi's
+provider credentials, but the CLI signs in its own way, which can include API
+keys set in your environment. Nothing Bro produces enters Pi's conversation
+unless you insert it, except advisor answers, which return to the agent as
+tool results.
 
 > [!WARNING]
-> Two modes run the backend in your workspace with its permission checks
-> bypassed: the **advisor** and **BTW full-permission mode** (turned on with
-> `/mode` inside BTW). Their "advise, don't edit" limits are instructions,
-> not a sandbox.
+> These run the backend in your workspace with its permission checks bypassed:
+> - **Advisor:** it can read, edit and run commands. "Advise, don't edit" is
+>   only an instruction.
+> - **BTW full-permission mode** (turned on with `/mode` inside BTW): it is
+>   meant to edit files and run commands.
+> - **Grok, wherever you use it:** its sandbox is always off. "Answer only from
+>   the supplied context" is only an instruction.
 
-How each backend is restricted, and what is stored where:
+Details per backend:
 [Backends: access and retention](docs/user-guide.md#backends-access-and-retention)
 and [Privacy and safety](docs/user-guide.md#privacy-and-safety).
 
@@ -122,7 +140,7 @@ release is published to npm from CI with
 ## Contributing
 
 ```sh
-npm install
+npm ci
 npm test        # offline: uses fake backend CLIs, never calls a model
 pi --tui-mode fullscreen -e ./bro.ts
 ```

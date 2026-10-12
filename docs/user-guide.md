@@ -1,8 +1,8 @@
 # pi-bro user guide
 
 The full reference for every Bro command. Start with the
-[README](../README.md) for install and a quick tour; come back here for
-details.
+[README](../README.md) for requirements, install and a quick tour; come back
+here for details.
 
 **Contents:**
 [What Bro can explain](#what-bro-can-explain) ·
@@ -946,7 +946,7 @@ read. Move what you want to keep into `/bro preferences`, and choose
   including links preserved in that text, to the selected backend; it does not
   separately send the requested URL or raw page HTML.
 - **Show diagrams**: When a show reply ends in one self-contained HTML block,
-  Bro writes it to `/tmp/pi-bro-<uid>/bro-show-<hash>.html` with a restrictive
+  Bro writes it to `pi-bro-<uid>/bro-show-<hash>.html` in your system temp folder with a restrictive
   Content-Security-Policy, and opens it in your browser only when you press
   **O**. **C** copies the full reply, including the HTML.
 - **Clipboard**: **C**, `/copy`, `/copy-all`, and Guided Review's Copy finding copy text to your system
