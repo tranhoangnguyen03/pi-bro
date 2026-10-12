@@ -1,7 +1,7 @@
 {
   "name": "pi-bro",
   "version": "0.22.0",
-  "description": "An Earendil Pi extension for plain-language explanations, conversation diagrams, side questions, guided PR understanding and assessment, and a second-opinion advisor tool.",
+  "description": "A sidekick for you and your Pi agent: plain-language explanations, side questions, diagrams, PR review and second opinions, without cluttering the agent's context.",
   "type": "module",
   "license": "MIT",
   "author": "Tran Hoang Nguyen",
@@ -33,7 +33,12 @@
     "advisor",
     "second-opinion",
     "codex",
-    "muse"
+    "muse",
+    "coding-agent",
+    "ai-agents",
+    "cli",
+    "developer-tools",
+    "code-review"
   ],
   "files": [
     "bro.ts",
@@ -52,6 +57,7 @@
     "CHANGELOG.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
+    "docs/user-guide.md",
     "docs/pig-compatibility.md",
     "docs/guided-review.md"
   ],
