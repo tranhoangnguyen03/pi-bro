@@ -1,1024 +1,135 @@
 # pi-bro
 
-Turn a dense AI reply, pasted text, document or webpage into a plain-language explanation. Ask side questions with `/bro btw`, or understand and assess a PR with `/bro guided-review`. These windows do not add their discussions to your main agent's context.
+[![npm](https://img.shields.io/npm/v/pi-bro)](https://www.npmjs.com/package/pi-bro)
+[![tests](https://img.shields.io/github/actions/workflow/status/tranhoangnguyen03/pi-bro/publish.yml?branch=main&label=tests)](https://github.com/tranhoangnguyen03/pi-bro/actions/workflows/publish.yml)
+[![node](https://img.shields.io/node/v/pi-bro)](package.json)
+[![license](https://img.shields.io/npm/l/pi-bro)](LICENSE)
 
-`pi-bro` is an extension for [Earendil Pi](https://github.com/earendil-works/pi).
-Experimental [PiG 0.3.0 compatibility](docs/pig-compatibility.md) uses the same npm package and requires Node.js. See the compatibility notes for verified coverage and the PiG RPC tool-exclusion limitation.
-It opens explanations in a separate modal and runs them through a CLI backend
-you already have installed and signed in to. Explain, show, BTW and advisor use five backend adapters. Guided Review generation/questions require Claude or Muse file-only inspection (live verification varies by feature):
+A sidekick for you and your Pi agent: plain-language explanations, side
+questions, diagrams, PR review and second opinions, all kept out of the
+agent's context.
 
-- [Google Antigravity CLI](https://antigravity.google/docs/cli-install) (`agy`) — the default for new settings
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
-- Grok Build (`grok`)
-- [Codex CLI](https://github.com/openai/codex) (`codex`)
-- Meta Muse Code (`muse`)
+`pi-bro` is an extension for [Pi](https://github.com/earendil-works/pi), a
+terminal coding agent. Bro opens its answers in a separate window and runs
+them through an AI coding CLI you already have and are signed in to, so your
+main agent's conversation stays clean.
 
-You only need the backend(s) you select; Agy is the default, not a requirement.
+<p align="center">
+  <a href="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png">
+    <img alt="A dense agent reply explained in plain language in the Bro window" src="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png" width="820">
+  </a>
+</p>
 
-## Quick start
-
-You need Earendil Pi `>=0.84.2 <1`, Node.js `>=22.19.0`, and at least one
-backend CLI on your `PATH`, signed in once from your terminal (`agy >=1.1.15`
-for the default). Then install Bro:
+## Install
 
 ```sh
 pi install npm:pi-bro
 ```
 
-Restart Pi or run `/reload`. If you use Claude Code, Grok, Codex, or Muse instead of Agy,
-choose it in `/bro config` (for everything, or per feature). Then try:
+Then restart Pi or run `/reload`, and check your setup:
 
 ```text
-/bro
-/bro text Paste text here
-/bro file docs/report.pdf
-/bro url https://example.com/article
+/bro doctor
+```
+
+To try Bro without installing it, run `pi -e npm:pi-bro`. To install from
+GitHub, use `pi install git:github.com/tranhoangnguyen03/pi-bro`.
+
+## Try it
+
+```text
+/bro                                   explain the agent's last reply
+/bro file docs/report.pdf              explain a document
+/bro url https://example.com/article   explain a webpage
 /bro btw "what file defines this route?"
+/bro show                              draw the last turn as a diagram
 ```
 
-Run `/bro doctor` after installation or whenever Bro is not working.
+## What it does
 
-To install from GitHub instead, use
-`pi install git:github.com/tranhoangnguyen03/pi-bro`. To try Bro without
-installing it, use `pi -e npm:pi-bro`.
+| Command | What you get |
+| --- | --- |
+| `/bro`, `/bro text`, `/bro file`, `/bro url` | **Explain.** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
+| `/bro show` | **Show.** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, or an HTML diagram) instead of prose. |
+| `/bro btw` | **Side questions.** A separate conversation seeded with recent context, so you can ask without interrupting the agent. |
+| `/bro guided-review <PR>` | **Guided Review.** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Needs the Claude or Muse backend. |
+| `bro_advisor` tool | **Second opinion.** A tool your agent can call mid-task; a fresh backend process investigates and returns advice. |
+| `/bro config`, `/bro preferences` | Pick the backend, model and effort per feature, and tell Bro how you like answers. |
 
-## What Bro can explain
+Every command, control and setting is in the **[user guide](docs/user-guide.md)**.
+Guided Review has its own [guide](docs/guided-review.md).
 
-| Source | Command | What Bro does |
+## Requirements
+
+- Pi `>=0.84.2 <1` and Node.js `>=22.19.0`.
+- At least one backend CLI on your `PATH`, signed in once from your terminal.
+  You only need the one you use:
+
+| Backend | CLI | Notes |
 | --- | --- | --- |
-| Latest assistant reply | `/bro` | Explains the latest completed reply without adding the result to the conversation. |
-| Pasted text | `/bro text <text>` | Explains text supplied directly in the command. |
-| Local document | `/bro file <path>` | Extracts text from a workspace-local Markdown, text, PDF, or DOCX file. |
-| Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
-| Recent session turns | `/bro show` | Draws the last turns' conversation text as shapes instead of prose (tool calls, tool results, reasoning, and images are omitted). |
-| Any of the above, auto-detected | `/bro <input>` | Routes a lone URL to the webpage reader, an existing workspace file with a supported extension to the document reader, and anything else to pasted text. |
-
-Pressing **R** simplifies the captured source again in the mode shown, and
-**M** re-simplifies it in the next mode. These commands capture a
-new source: `/bro text`, `/bro file`, `/bro url`, and `/bro show`. Giving `/bro` a URL, path, or
-text directly captures a new source the same way.
-
-## Commands
-
-| Command | Description |
-| --- | --- |
-| `/bro`, `/bro simplify`, or `/bro text` | Explain the latest completed assistant response. |
-| `/bro text <text>` | Explain pasted text. |
-| `/bro <input>` | Explain it directly: a lone URL runs the webpage reader, an existing workspace file with a supported extension runs the document reader, and anything else is pasted text. A quoted path with spaces is routed too when the file exists. |
-| `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
-| `/bro url <url>` | Explain one public, text-based webpage. |
-| `/bro open` | Reopen the latest explanation without calling the simplifier again. |
-| `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
-| `/bro doctor` | Check Bro's settings, preferences, and each selected backend, with the effective backend/model/effort per feature. |
-| `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
-| `/bro preferences` | View or edit what Bro knows about you and how you like answers; see [Preferences](#preferences). |
-| `/bro config` | Open settings for the shared backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor/review) overrides. |
-| `/bro guided-review <PR number or URL>` | Automatically explain and assess a captured PR in local Pi, with source evidence and optional private questions. Opening the same PR restores its saved review. |
-| `/bro guided-review` | List saved reviews; `resume` is an alias. |
-| `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; type `/mode` inside to toggle full permission (read and edit the workspace) without losing the thread. |
-| `/bro advisor` | Quick notice of whether the executor's `bro_advisor` tool is available right now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`. |
-| `/bro advisor-steer` | View, edit, save, or clear the one persistent steering brief the advisor always sees. |
-| `/bro help` | Open the built-in quick reference. |
-
-Giving `/bro` the input directly works the same way:
-
-```text
-/bro https://example.com/article
-/bro docs/report.pdf
-/bro any other text is explained as pasted text
-```
-
-## Explanation modes
-
-Bro treats the source as data, rejects embedded instructions, preserves its
-language (unless your [preferences](#preferences) name another), and avoids
-adding facts, advice, or conclusions in every mode. Choose
-a persistent mode with `/bro mode`, or press **M** in an explanation to try the
-next mode without saving it:
-
-- **`brief`**: Uses the original audience-led ELI-simpleton prompt with no fixed
-  word target.
-- **`balanced`**: The default. Keeps important details, conditions, warnings,
-  context, code, and formatting while trimming fluff and repetition.
-- **`faithful`**: Simplifies the language while preserving every claim,
-  qualification, warning, number, command, code block, and formatting choice.
-
-### Modal controls
-
-- **Mouse wheel / trackpad**: Scroll in regular or fullscreen mode
-- **↑ / ↓**: Scroll in any mode
-- **C**: Copy the complete explanation
-- **R**: Simplify the captured source again in the mode shown, or run the
-  current Doctor check again
-- **M**: Re-simplify the captured source in the next mode (brief → balanced →
-  faithful → brief). It applies to this explanation only and does not change
-  the mode saved by `/bro mode`; pressing it again while Bro is working skips
-  ahead
-- **O**: Open the HTML diagram when a show reply contains one
-- **Esc**: Close the modal, or cancel while Bro is working
-
-The modal header shows the model and reasoning effort the explanation or
-drawing used (`default` when the model's own effort applies), followed by the
-explanation mode, and `prefs` when your [preferences](#preferences) shaped the
-result; `/bro open` keeps the original labels, mode, and tag.
-
-Bro temporarily captures mouse input while its modal is open. Native mouse
-selection may be unavailable or visually extend outside the modal depending on
-your terminal mode; press **C** to copy the complete explanation reliably.
-
-
-## Guided Review
-
-**Open a PR → read and investigate → leave when satisfied.** Bro automatically
-prepares an explanation and quality assessment with captured code, ranked
-findings and suggested fixes/checks. Asking private questions is optional.
-Nothing is automatically applied or posted to GitHub.
-
-```text
-/bro guided-review https://github.com/OWNER/REPO/pull/123
-```
-
-Local Pi interactive mode, Git, authenticated `gh`, and Claude or Muse configured for review
-are required. A new review makes a model call using that backend's account.
-Opening the same PR restores its saved review without another model call.
-Bare `/bro guided-review` lists saved reviews (`resume` is an alias).
-
-Contents holds Overview, topics, Findings, Coverage, Changed files and Your
-questions. Enter opens an item or focuses contextual actions; Enter on a
-highlighted action activates it. Tab changes focus. Esc goes back, then closes
-from Contents. Your work is saved automatically; **Close** leaves normally,
-and **Stop and close** cancels active work before saving and leaving.
-
-Optional conveniences:
-- **Copy finding** copies its text to the system clipboard; nothing is submitted.
-- **Regenerate guide** makes a confirmed model call about the **same captured
-  revision**. Success replaces the guide while retaining original private
-  discussion context; failure keeps it. It does not fetch later commits.
-
-Reopening also keeps the captured revision, even after the author pushes.
-Findings are model suggestions, not approval; citations show real locations,
-not proof of the conclusion. Review uses Claude or Muse file-only inspection: shell, writes and web tools are disabled. Agy/Grok/Codex review requests fail clearly; choose a review override in `/bro config`. Saved reviews remain readable with any selection. Repository text can still mislead the model; tool restrictions are not proof of its conclusions.
-Use `pi --tui-mode fullscreen` for pane-local wheel scrolling.
-
-See the [Guided Review guide](docs/guided-review.md) for controls, calls and
-costs, source freshness, access/privacy, local storage, recovery and current
-scope. Notes, examination tracking, branch/update review and feedback delivery
-are not implemented.
-
-## Bro btw (side conversation)
-
-`/bro btw` opens a separate multi-turn conversation in a modal, so you can ask
-a quick side question while the main agent keeps working. It runs through the
-selected backend and never adds anything to Pi's conversation unless you
-explicitly insert it into the editor. Bro writes for a tired reader: the point
-first, in plain words, at a length that fits the question, in the language you
-asked in.
-
-- `/bro btw <question>` asks immediately; `/bro btw` opens an empty thread.
-  Reopening keeps the thread and its mode.
-- **Two modes, toggled with `/mode`**: a new thread starts
-  **conversation-only**; type `/mode` in the modal to switch to **full
-  permission** (read and edit the workspace, run commands) and again to switch
-  back. The conversation is kept across switches. How conversation-only is
-  enforced depends on the backend — see
-  [Backends: access and retention](#backends-access-and-retention).
-- Every new or cleared thread is seeded with up to the last 8 turns of
-  main-session user/assistant conversation text (40,000 characters max, with a
-  truncation notice). Later turns continue the backend's native session; in
-  full permission mode the side agent can also read the repo itself.
-- **In the modal**: type a question and press Enter (empty Enter re-asks the
-  last question). Composer actions trigger only on these exact commands:
-  - `/mode`: toggles conversation-only / full permission, keeping the thread
-  - `/copy`: copies the latest answer to the system clipboard
-  - `/copy-all`: copies the full thread to the system clipboard
-  - `/insert`: inserts the latest answer into the main editor without submitting
-  - `/insert-all`: inserts the full thread into the main editor without submitting
-  - `/retry`: re-asks the last question (empty Enter does the same)
-  - `/clear`: resets the thread
-
-  `/insert` and `/insert-all` never replace an existing main-editor draft:
-  edit or clear it first. Any other text, including other slash-prefixed input
-  such as `/send`, is sent as a question. Esc closes the modal (or cancels a
-  running turn). The header shows the model and reasoning effort the latest
-  turn used (`default` when the model's own effort applies) and the current
-  mode.
-- A turn is capped at 2 minutes in conversation-only mode and 10 minutes in
-  full permission mode.
-- Bro's thread lives in memory only — it clears when you switch Pi sessions,
-  reload extensions, or quit Pi. Changing the BTW backend starts a fresh
-  thread; native session IDs never cross backends.
-
-## Bro advisor
-
-`bro_advisor` is a tool the **executor agent** — not you — can voluntarily
-call mid-task for a second opinion. Unlike `/bro btw`, which is a side
-conversation for you, `bro_advisor` is a tool for the model you're working
-with; it shows up as a normal tool call/result in the transcript, not a
-modal. It is registered like any other tool when the extension loads and has
-no on/off switch of its own — whether the executor can actually call it
-depends entirely on this host's own tool restrictions.
-
-`/bro advisor` is a quick notice of whether `bro_advisor` is available right
-now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`.
-`/bro doctor` has the full diagnostic: whether this host exposes and
-activates `bro_advisor`, its resolved backend/model/effort, steering
-presence, and backend compatibility (for Agy, a minimum CLI version with an
-`agy update` action when it is too old).
-
-- **Automatic context, no prep needed**: the executor never assembles a
-  summary. Bro captures a harness-neutral snapshot — the executor's system
-  instructions, its active tools, and the conversation so far including tool
-  calls and results — and sends it, along with an optional `question` the
-  executor may pass, to a **fresh, standalone process of the selected
-  backend** for every consultation. Nothing is resumed or reused across calls,
-  including retries.
-- **Instructed to investigate, not implement**: the advisor process has real
-  tool access in the workspace with permissions auto-approved — there is no
-  enforced read-only isolation. It is instructed to verify claims itself and
-  return advice, leaving edits to the executor, but that boundary is a
-  behavioral prompt instruction rather than an enforced sandbox constraint, so
-  treat its findings as advice to verify, not a guaranteed hands-off review.
-- **Steering**: The advisor reads standing priorities from `~/.pi/agent/bro-advisor.md`
-  and session-specific priorities from `/bro advisor-steer`.
-  `/bro advisor-steer` opens an editor for one session steering brief — e.g. "quick
-  prototype; keep A and B careful, everything else minimal". Session steering takes
-  precedence over durable standing defaults where they conflict.
-  **Ctrl+S** saves and keeps the editor open; **Enter** or **Shift+Enter** inserts
-  a newline; **Ctrl+K** clears both the saved session brief and draft while staying open;
-  **Ctrl+C** copies the entire current draft, including unsaved edits; and **Esc**
-  closes without saving unsaved edits. Neither steering source is **ever added to Pi's
-  conversation or sent to the main model** — the advisor is the only thing that reads them.
-- **Persistence**: standing defaults persist across all sessions in `~/.pi/agent/bro-advisor.md`.
-  The session steering brief persists with the Pi session as custom extension data in the
-  session file (`bro-advisor-steering`) and is restored on resume or reload. Forking a
-  session inherits session steering; edits made after the fork are independent of the
-  original branch. Clearing session steering leaves durable steering intact.
-- **Retries**: on an invocation failure (not a completed answer — "I need
-  more evidence" is a normal result, not a failure), Bro retries with the
-  identical snapshot, steering, and question: once after 5 seconds, once more
-  after 10 seconds, then returns the backend's own diagnostic — including a
-  context-length error, verbatim — as the failure. Host-imposed deadlines and
-  cancellation are terminal: neither starts another attempt or a backoff wait.
-  The advisor CLI is asked to stop at 10 minutes; Bro's host deadline is 610
-  seconds plus bounded process cleanup. A CLI-reported error before that host
-  deadline remains an invocation failure and can be retried.
-  Cancelling the tool call skips any pending retry wait.
-- **Progress and provenance**: while an attempt is running, Bro shows the last
-  thing the advisor actually reported — a tool name or a user-facing response
-  line, never hidden reasoning — and how long ago it arrived, e.g. `last
-  reported: Read src/app.ts (2s ago)`, or "awaiting first activity" before
-  anything arrives. Expanding a running consultation shows up to the last 4
-  reported activity lines; each retry starts the trail over. The returned
-  answer starts with backend, model, effort, attempt count, duration,
-  workspace, steering presence, snapshot size, and known omission/compaction
-  notes; the advisor's complete answer follows unchanged.
-- **Model/effort**: resolved the same way as explain/show/btw, through
-  `/bro config` (shared default or per-capability override).
-
-## Bro show
-
-Where the explanation modes rewrite dense prose in simpler words, `/bro show`
-changes the form: it draws what you and the assistant said in the last few
-session turns as a shape instead of paragraphs. Capture keeps only user and
-assistant conversation text, including every intermediate assistant message in
-a turn — tool calls, tool results, reasoning, and images never leave the
-session. It runs the same backend-specific model call and shows the result
-in the same modal, never touching your conversation. `/bro show` uses its own
-draw prompt; the explanation modes do not affect it. Your
-[preferences](#preferences) can change only its wording and language, never
-which shapes it draws or its rules.
-
-Because the draw model only ever sees conversation text, its shapes reflect
-what was *reported* in the conversation — what the assistant said it did or
-found — not an independent check against the actual code or system state.
-
-Shapes are terminal-first: pseudocode, call trees, file trees, component
-trees, diffs, and types and signatures. Bro picks the shape from what
-happened in the session; there is no flag to request a specific one. When the source has no code structure
-to draw, Bro falls back to a plain outline instead of forcing a diagram. A
-reply that ends in one self-contained HTML block — layout, a state comparison,
-anything where position itself carries meaning — is written to a file and
-opened with **O**.
-
-Pressing **R** redraws the same captured turns; running `/bro show` again
-captures the latest turns afresh. `/bro show <n-turns>` overrides the default turn
-count for a single run.
-
-Add a query to steer what the shapes focus on, either after a turn count or on
-its own: `/bro show what changed in the auth flow`, or `/bro show 3 what
-changed in the auth flow`. The query is used as a lens on the captured turns,
-not as additional evidence, and its casing is preserved as typed. Pressing
-**R** retries with the same turn count and query.
-
-Any leading whitespace-delimited word that looks like a number is treated as the
-requested turn count: for example, `/bro show 3 what changed` captures 3 turns
-and steers on "what changed", while `/bro show 404 handler` parses "404" as the
-turn count and "handler" as the steering query. To steer on a phrase that starts
-with digits while choosing a turn count, specify the turn count explicitly
-first: `/bro show 1 404 handler` captures 1 turn and steers on "404 handler".
-If the first word is not a number, the whole input is treated as the steering
-query using the saved `showTurns` default.
-
-### A slow session-create, traced
-
-The agent followed a two-second delay from the handler down to the worker.
-`/bro show` drew the chain:
-
-```text
-handleCreateSession(req)
-├── validateRequest(req)
-├── SessionStore.insert(req.body)
-└── publish('session.created')
-    └── AgentWorker.run(sessionId)
-        ├── loadContext(sessionId)
-        ├── callModel(context)
-        └── persistResult(sessionId, result)
-```
-
-### The shape of code before it exists
-
-A design discussion agreed on the data model ahead of implementation. `/bro
-show` kept just the shape:
-
-```typescript
-interface Item { id: ItemId; parentId: ItemId | null }
-interface Cursor { position: ItemId; direction: 'up' | 'down' }
-function resolveTarget(items: Item[], cursor: Cursor): ItemId | null
-```
-
-### A layout that collapses at narrow widths
-
-Text can't show a before/after layout change at a glance, so Bro ends with one
-self-contained HTML block and **O** opens it (the terminal first shows
-`[HTML diagram saved — press O to open]`):
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-show-layout.png">
-    <img alt="A before/after dashboard grid" src="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-show-layout.png" width="720">
-  </a>
-</p>
-
-<details>
-<summary><strong>More shapes</strong></summary>
-
-**Diff** — what changed in the save handler:
-
-```diff
- on(save)
--  write content
-+  if content is unchanged
-+    return cached result
-+  write new content
-+  invalidate cache
-```
-
-**File layout** — where everything lives, for a refactor:
-
-```text
-src/
-├── commands/           # user intents
-│   ├── registry.ts
-│   └── show-me.ts
-├── sessions/           # state and lifecycle
-│   ├── events.ts
-│   ├── store.ts
-│   └── worker.ts
-├── transport/          # API
-│   ├── client.ts
-│   └── stream.ts
-└── config.ts           # root config
-```
-
-**Component tree** — what the session page renders:
-
-```text
-SessionPage (apps/example/src/routes/session.tsx)
-├── [hook] useSessionEvents
-├── SessionToolbar (packages/ui)
-│   └── RunSkillButton
-└── SessionTimeline (packages/ui)
-    └── SkillResultCard
-```
-
-**Pseudocode** — how scroll capture and restore work:
-
-```text
-capture(blocks, targetRect, scrollRect) -> Snapshot:
-  target = focusedBlock ?? firstBlockIntersectingViewportTop(blocks)
-  anchor = wholeBlockAnchor(blocks, target)
-  offset = targetRect.top - scrollRect.top
-  return { anchor, offset, scrollTop, revision + 1 }
-
-restore(snapshot, blocks) -> number:
-  placement = resolveAnchor(blocks, snapshot.anchor)
-  if placement: return scrollRect.top + targetRect.top - snapshot.offset
-  return snapshot.scrollTop
-```
-
-</details>
-
-Prose in, outline out: a purely conversational session with no code to draw
-degrades to a plain outline of the discussion — never a forced diagram.
-
-## Bro in action
-
-### Assistant response
-
-**Before `/bro`: the original agent response**
-
-[![A dense assistant response before Bro](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-before.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-before.png)
-
-**After `/bro`: the plain-language explanation**
-
-[![The assistant response explained in the Bro modal](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png)
-
-### Local document
-
-**Before: a complex PDF**
-
-[![A complex PDF before Bro](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-before.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-before.png)
-
-**After `/bro file <path>`**
-
-[![The PDF explained in the Bro modal](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-after.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-after.png)
-
-Bro optimizes for understanding, not simply for fewer words. The written
-examples below are synthetic and were run through Bro's default prompt. Click
-a screenshot to see it at full size.
-
-<details>
-<summary><strong>Short:</strong> TypeScript says a value is <code>never</code></summary>
-
-### Before
-
-> The diagnostic is not evidence that `result` is intrinsically uninhabitable; it is an artifact of TypeScript's intraprocedural control-flow graph. Because `result` is initialized to `null` and only assigned inside the `forEach` callback, the outer scope does not model that callback as definitely executing. After `if (!result) return`, the remaining branch therefore collapses to `never`, producing the property-access error. Replace the callback-driven mutation with a control-flow-visible loop: `for (const item of items) { if (matches(item)) { result = item; break; } }`. Alternatively, derive the value expressionally with `const result = items.find(matches);` and guard `if (!result) return;` before dereferencing it. Avoid an `as Result` assertion; it suppresses the symptom while preserving the unsound state transition that caused the narrowing anomaly.
-
-### After `/bro`
-
-#### What happened
-
-TypeScript showed an error saying your variable `result` cannot be used or
-accessed.
-
-This happened because `result` was set to `null` outside a `forEach` loop and
-then modified inside the loop's helper function (callback). TypeScript tracks
-code line by line. It cannot guarantee that code inside a `forEach` callback
-will actually run.
-
-#### What it means
-
-Because TypeScript assumes the loop's callback might not run:
-
-1. It believes `result` might still be `null`.
-2. When you check `if (!result) return`, TypeScript thinks `result` can never
-   hold a valid value after that check.
-3. It sets the type of `result` to `never` (a special type meaning "impossible
-   value") and blocks you from reading its properties.
-
-The error is a limitation in how TypeScript analyzes loops with callbacks.
-
-#### What you should do next
-
-Choose one of these two fixes:
-
-**Option 1: Use a standard `for...of` loop**
-
-```ts
-for (const item of items) {
-  if (matches(item)) {
-    result = item;
-    break;
-  }
-}
-```
-
-**Option 2: Use `Array.prototype.find`**
-
-```ts
-const result = items.find(matches);
-if (!result) return;
-```
-
-Avoid using a type assertion like `as Result`. It only hides the warning
-without fixing the underlying tracking issue.
-
-</details>
-
-<details>
-<summary><strong>Medium:</strong> Login succeeds, but the user is still logged out</summary>
-
-### Before
-
-> What you're observing is almost certainly not an authentication failure in the credential-validation layer; it is a post-authentication session persistence failure caused by an environment-dependent mismatch between Express's transport-security inference and the TLS termination topology in production.
->
-> Locally, Express sees the request as plain HTTP and your development cookie configuration probably permits a non-secure session cookie. In production, however, the browser connects over HTTPS to Nginx, a load balancer, or an ingress controller, which terminates TLS and forwards the request to Node over HTTP. Unless Express trusts that intermediary, `req.secure` remains `false`, even when the proxy sends `X-Forwarded-Proto: https`. With `cookie.secure: true`, `express-session` can consequently decline to emit the cookie because it believes the originating request was insecure. The login route may still return `200`, making the credentials appear accepted, but the next request has no session identifier and is treated as anonymous.
->
-> Configure proxy trust before registering session middleware, and make the cookie policy reflect whether the frontend and API are same-site or genuinely cross-site:
->
-> ```js
-> app.set("trust proxy", 1);
->
-> app.use(session({
->   secret: process.env.SESSION_SECRET,
->   resave: false,
->   saveUninitialized: false,
->   proxy: true,
->   cookie: {
->     httpOnly: true,
->     secure: true,
->     sameSite: "lax",
->     maxAge: 1000 * 60 * 60 * 24
->   }
-> }));
-> ```
->
-> Use `sameSite: "none"` instead of `"lax"` only when the browser must send the cookie in a cross-site context, such as a frontend and API on unrelated registrable domains. Browsers require `Secure` when `SameSite=None`, so that combination must remain HTTPS-only. Separate subdomains such as `app.example.com` and `api.example.com` are usually same-site, though they are still cross-origin.
->
-> Also verify that the proxy explicitly forwards `X-Forwarded-Proto`, that the browser receives a `Set-Cookie` response header, and that frontend requests use `credentials: "include"` when crossing origins. If CORS is involved, the server must return the exact allowed origin plus `Access-Control-Allow-Credentials: true`; a wildcard origin is incompatible with credentialed requests.
->
-> Avoid setting a cookie `domain` unless sharing across subdomains is intentional. A host-only cookie is safer and eliminates another production-only failure mode.
-
-### After `/bro`
-
-#### What happened
-
-Your username and password check succeeded, and the login route returned `200
-OK`. However, the browser did not receive or return a usable session cookie in
-production.
-
-#### What it means
-
-In production, secure web traffic (HTTPS) hits an intermediary, such as a load
-balancer or Nginx, before reaching your Node/Express app as plain HTTP.
-
-Because your session cookie requires HTTPS (`secure: true`), Express may withhold
-it when it does not trust the proxy forwarding the request. The exact trust
-setting must match your deployment's proxy topology.
-
-#### What you should do next
-
-1. Configure Express to trust only your actual proxy topology. Put this before
-   the session setup. For example, use `1` only when there is exactly one trusted
-   proxy hop:
-
-   ```js
-   app.set("trust proxy", 1);
-
-   app.use(session({
-     secret: process.env.SESSION_SECRET,
-     resave: false,
-     saveUninitialized: false,
-     cookie: {
-       httpOnly: true,
-       secure: true,
-       sameSite: "lax",
-       maxAge: 1000 * 60 * 60 * 24
-     }
-   }));
-   ```
-
-2. Check your cookie settings:
-   - Keep `sameSite: "lax"` if your frontend and backend share the same main
-     domain, such as `app.example.com` and `api.example.com`.
-   - Use `sameSite: "none"` only when the cookie must be sent cross-site.
-     Browsers require `secure: true` with this setting.
-   - Avoid defining a custom cookie `domain` unless you deliberately need to
-     share cookies across subdomains.
-
-3. Verify the proxy, browser, and CORS settings:
-   - Ensure the proxy forwards the `X-Forwarded-Proto` header.
-   - Check that the response contains a `Set-Cookie` header.
-   - Include `credentials: "include"` in cross-origin frontend requests.
-   - Return the exact allowed origin with
-     `Access-Control-Allow-Credentials: true`. Do not use a wildcard (`*`) for
-     credentialed requests.
-
-</details>
-
-<details>
-<summary><strong>Long:</strong> A CI build fails only when its cache is restored</summary>
-
-### Before
-
-> The failure is not a nondeterministic pnpm installation problem, despite the misleading first error being emitted from the test runner immediately after dependency hydration. It is a state-contamination problem at the intersection of the repository cache, the package export map, and an incorrectly scoped cache key. The decisive observation is that the same commit succeeds in a clean checkout and in CI when cache restoration is disabled, but fails when the pre-build workspace cache is restored. That isolates the variable to files materialized outside Git rather than source, Node, or runner image drift.
->
-> The affected package, `@acme/config`, was recently migrated from a dual CommonJS/ESM build to an ESM-oriented TypeScript output. Its root `package.json` declares `"type": "module"` and maps the `import` condition to `./dist/index.js`, while the legacy `require` condition still maps to `./dist/index.cjs`. The current compiler emits `index.js` but does not remove the previous build directory first. An older cached `dist` directory therefore contributes two files that no longer belong to the current build graph: `dist/index.cjs` and `dist/package.json`, the latter declaring `"type": "commonjs"`. The new compiler overlays `dist/index.js` but leaves both obsolete files intact. Because nested package boundaries override the root package type, Node interprets the newly emitted ESM `index.js` as CommonJS in that restored workspace and reports `Unexpected token 'export'`. Test processes entering through `require()` instead resolve the obsolete `index.cjs`, which references a removed chunk and can instead produce `MODULE_NOT_FOUND`. These apparently different errors are two projections of the same dirty-output condition.
->
-> The cache configuration makes that contaminated state persistent. The workflow computes the key with `hashFiles('packages/**/pnpm-lock.yaml')`, but this workspace has only the root-level `pnpm-lock.yaml`. GitHub Actions consequently evaluates the hash expression to an empty value, yielding a key equivalent to `Linux-node20-workspace-`. A broad restore key then permits an archive produced before the module-format migration to satisfy the lookup. That archive combines the pnpm content-addressable store, Turborepo metadata, and every package's `dist` directory. Those data classes do not share valid invalidation semantics: pnpm store entries are immutable by content, Turborepo artifacts are task-hash addressed, and arbitrary build directories are mutable snapshots whose correctness depends on complete deletion or exact provenance. Treating them as one cache effectively elevates obsolete untracked files into undeclared build inputs.
->
-> The evidence is visible by comparing the restored and clean workspaces before compilation. In the failing job, `packages/config/dist/package.json` exists with `"type":"commonjs"` and `packages/config/dist/index.cjs` has a timestamp and checksum predating the current commit. Neither file appears after `git clean -ffdx` followed by installation and build. The Actions cache log also shows the truncated key without a lockfile digest, while `git diff` remains empty because the problematic files are ignored. Finally, deleting only `packages/config/dist` before rerunning the unchanged test command converts the failure to a pass, which excludes dependency resolution and network variability as primary causes.
->
-> The minimal durable remediation has three parts. First, stop caching package output directories. Cache the pnpm store separately, using a key that includes the actual root lockfile:
->
-> ```yaml
-> key: ${{ runner.os }}-node20-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-> restore-keys: |
->   ${{ runner.os }}-node20-pnpm-
-> ```
->
-> A broad fallback is acceptable for the pnpm store because pnpm validates content-addressed entries; it is not acceptable for mutable `dist` snapshots. If remote or local Turborepo caching is retained, cache only `.turbo` and allow Turbo's task hash to govern artifact reuse rather than wrapping raw workspace outputs in a generic archive.
->
-> Second, make every package build replace, rather than merge into, its output directory. `@acme/config` should delete `dist` before invoking `tsc`, `tsup`, or the existing bundler. The CI workflow should also run the repository's recursive clean target before the first build as a defense against future cache or runner reuse. This is not a substitute for fixing cache scope, but it restores the invariant that generated output is a function of the checked-out sources and declared toolchain.
->
-> Third, make the export contract agree with emitted files. If `@acme/config` is intentionally ESM-only, remove the `require` condition and the obsolete CommonJS metadata. If CommonJS consumers remain supported, restore an explicit CJS build that deterministically emits `dist/index.cjs`; do not let a historical artifact impersonate that support. In either case, package publication should reject export targets that do not exist.
->
-> Verification should exercise both cache states and both module entry paths. Run the full pipeline once with no cache, save only the corrected caches, and rerun the identical commit expecting a cache hit and the same result. Inspect the built package to confirm the nested CommonJS `package.json` and legacy chunks are absent unless intentionally generated. Add a lightweight smoke check using dynamic `import('@acme/config')`; if CommonJS remains supported, add a second check through `createRequire`. Finally, change the root lockfile and confirm the logged cache key changes. That matrix validates clean-build reproducibility, restored-cache reproducibility, export-map coherence, and dependency-cache invalidation independently rather than relying on a single green run.
-
-### After `/bro`
-
-#### What happened
-
-Your build failed because old files were left behind by a broken cache (a saved
-snapshot of previous build files).
-
-The package `@acme/config` recently switched its module format to modern
-JavaScript (ESM). However, the build process did not delete the old output
-folder (`dist`) before creating new files.
-
-Because the GitHub Actions setting searches the wrong path
-(`hashFiles('packages/**/pnpm-lock.yaml')`), GitHub could not find the root
-`pnpm-lock.yaml`. It restored an outdated cache containing `dist/index.cjs` and
-a `dist/package.json` configured for older JavaScript (CommonJS). The new build
-wrote some files but left the old ones behind, confusing Node and causing errors
-such as `Unexpected token 'export'` and `MODULE_NOT_FOUND`.
-
-A clean checkout without the cache succeeds. This proves the problem is old
-cached files, not your source code or dependencies.
-
-#### What it means
-
-- **Cache contamination:** The CI workflow restores mutable `dist` folders
-  alongside package-manager files, mixing obsolete files into new builds.
-- **Mismatched module settings:** The package says it supports both modern
-  (`import`) and legacy (`require`) formats, but it only builds the modern one
-  while relying on leftover cached files for the legacy one.
-
-#### What you should do next
-
-1. **Fix the GitHub Actions cache:** Stop caching `dist` folders. Cache only the
-   pnpm store, using the root lockfile:
-
-   ```yaml
-   key: ${{ runner.os }}-node20-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-   restore-keys: |
-     ${{ runner.os }}-node20-pnpm-
-   ```
-
-   If you use Turborepo, cache only `.turbo`.
-
-2. **Clean output folders before building:** Make `@acme/config` delete `dist`
-   before running `tsc`, `tsup`, or the bundler. Run the repository's recursive
-   clean command before CI builds.
-
-3. **Update the package exports:**
-   - If `@acme/config` is ESM-only, remove the `require` entry and old CommonJS
-     metadata.
-   - If CommonJS is still needed, add a real build step for `dist/index.cjs`.
-
-4. **Verify the fix:**
-   - Delete the generated `packages/config/dist` folder, then run a clean build.
-     Do not use `git clean -ffdx` in a working copy with files you need.
-   - Run the workflow without a cache, save the new cache, and rerun the same
-     commit to verify that a cache hit also passes.
-   - Test `import('@acme/config')`, and test `createRequire` if CommonJS is
-     supported.
-
-</details>
-
-## Explain pasted text
-
-Paste text directly after the command:
-
-```text
-/bro text OAuth refresh tokens are rotated after every successful use.
-```
-
-Bro explains the pasted text instead of the latest assistant reply. With no text
-after `/bro text`, it falls back to the latest completed reply. Press **R**
-to simplify the same captured text again.
-
-## Explain a document
-
-Use a path relative to Pi's current workspace, or an absolute path inside it:
-
-```text
-/bro file "docs/incident review.pdf"
-```
-
-Paths may contain spaces; matching single or double quotes are also accepted.
-Bro extracts text locally, then sends that text through the same explanation
-flow used by `/bro`. Pressing **R** retries the extracted snapshot; running a
-new `/bro file <path>` command reads the file again.
-
-Files are limited to 10 MiB and 100,000 extracted characters. Scanned PDFs are
-not supported because Bro does not perform OCR.
-
-## Explain a webpage
-
-Pass one public HTTP or HTTPS page:
-
-```text
-/bro url https://example.com/complicated-article
-```
-
-Bro fetches the page, extracts its main readable text locally, and sends only
-that text through the existing explanation flow. The completed modal shows the
-final website and page title. Pressing **R** retries the captured page without
-fetching again; running a new `/bro url <url>` command fetches a fresh copy.
-
-The first version is intentionally limited to one public, text-based page. It
-does not use browser cookies, sign in, run page JavaScript, bypass paywalls or
-bot protection, load complete discussion threads, follow pagination, or
-understand images and video. Pages that depend on those features may fail.
-
-If Bro cannot read a page, copy its content into a `.txt` or `.md` file, or save
-it as a PDF, then use `/bro file <path>`.
-
-
-## Check your setup
-
-Run `/bro doctor` when Bro is newly installed or something is not working. It
-checks Bro's settings and preferences, then probes only the backends some feature
-actually selects, and reports the effective backend/model/effort for each
-feature. Failed checks explain what to fix.
-
-- **Agy**: installed version, model catalog, and account access.
-- **Claude Code**: installed version and configured authentication.
-- **Grok**: installed version only; authentication and connectivity are not
-  verified.
-- **Codex**: installed version and configured authentication.
-- **Muse**: installed version only; authentication and connectivity are not
-  verified.
-
-Doctor never sends source text or runs a model completion. A successful check
-confirms the setup but cannot guarantee that a later provider request will
-succeed.
-
-## Settings
-
-Use `/bro config` to review or change the shared default backend/model/effort
-and any per-capability (explain/show/btw/advisor/review) overrides, the explanation
-mode, and the default show turn count. Changes save immediately. Esc inside a
-picker cancels that pick; Esc on the settings screen closes it, keeping
-whatever was already saved. A failed save (for example, a read-only file) is
-shown inline. `/bro mode` changes the mode directly (**M** in an explanation
-tries another mode without saving it), and `/bro help` shows the active settings
-and file path.
-
-Settings live in this user-editable file, created when the extension loads
-(under `$PI_CODING_AGENT_DIR` instead when that is set):
-
-```text
-~/.pi/agent/bro-settings.json
-```
-
-```json
-{
-  "version": 2,
-  "default": { "backend": "agy", "model": "gemini-3.7-flash", "effort": "low" },
-  "mode": "balanced",
-  "showTurns": 1,
-  "overrides": {
-    "explain": { "backend": "claude", "model": "sonnet", "effort": "medium" },
-    "advisor": { "backend": "grok", "model": "grok-4.7", "effort": "high" }
-  }
-}
-```
-
-Bro reads the file again before each request, so manual edits apply next time.
-
-- Each selection is one atomic backend/model/effort choice. An override pins
-  its own complete selection and ignores the shared default, even when it
-  happens to match it; select **Default** in `/bro config` to inherit again.
-  Omitted overrides inherit `default`.
-- `effort` must be one the backend offers (`default` omits it and lets the
-  model decide). Agy selections are normalized against Agy's installed model
-  catalog. Claude, Grok, Codex, and Muse accept seeded or custom model IDs; a model/effort
-  combination the account does not support fails with the backend's own error
-  instead of silently falling back.
-- `mode` is `brief`, `balanced` (the default), or `faithful`. `showTurns` is
-  the default number of turns `/bro show` draws (default 1); `/bro show
-  <n-turns>` overrides it for one run.
-- `PI_BRO_MODEL` picks the initial Agy model only when Bro creates a missing
-  settings file, for example `PI_BRO_MODEL=gemini-3.7-flash-low pi`.
-- Older flat settings files (root `model`/`effort`) still load and mean Agy.
-
-## Backends: access and retention
-
-Bro uses each CLI's own account and billing route, never Pi provider
-credentials, and does not copy credentials or rewrite backend configuration.
-Each backend and your model provider may retain sessions, logs, and request
-data under their own settings and policies.
-
-| | Explain / show | BTW conversation-only | BTW full permission | Advisor | Guided Review |
-| --- | --- | --- | --- | --- | --- |
-| **Agy** | Temporary directory, Agy sandbox | Temporary directory, Agy sandbox | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Unavailable; choose Claude/Muse |
-| **Claude Code** | Scratch directory, tools/MCP/skills disabled, no session persistence | Workspace, tools disabled | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Restricted Read/Grep/Glob only; confined checkout, no persistence |
-| **Grok** | Temporary directory, **prompt instruction only** | Workspace, **prompt instruction only** | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Unavailable; choose Claude/Muse |
-| **Codex** | Scratch directory, read-only sandbox, ephemeral session | Workspace, read-only sandbox | Workspace, approvals and sandbox bypassed | Fresh workspace process, approvals and sandbox bypassed | Unavailable; command execution is not allowed for review |
-| **Muse** | Scratch directory, approval/write/shell disabled, no session log | Workspace, approval/write/shell disabled | Workspace, permissions bypassed (`--yolo`) | Fresh workspace process, permissions bypassed (`--yolo`) | Captured checkout; writes/shell/web disabled, no session log |
-
-- Grok always runs with its sandbox off and permissions bypassed; its tools,
-  hooks, skills, plugins, and MCP may remain available. "Answer only from the
-  supplied context" is a request, not an enforced restriction.
-- Codex's read-only sandbox is not a tool-free mode: workspace reads and
-  sandboxed commands remain available. Bro does not disable configured MCP
-  servers or web search; their access is governed by Codex configuration.
-- Muse's restricted mode disables write and shell tools and approval prompts,
-  not all tools: workspace reads and web tools remain available without approval.
-  It is not a tool-free or network-isolated mode.
-- Claude's restrictions are tool/configuration settings (with safe mode), not
-  an OS sandbox; built-in and managed Claude behavior can remain. Running a
-  permission-bypassing mode as root may be rejected by Claude.
-- BTW continues natively: Agy by conversation ID, Claude and Grok by
-  `--resume`, Codex by `resume`, and Muse by `--session-id` of the same session,
-  including across `/mode` switches. An Agy conversation stays bound to the
-  workspace it started in, so after a `/mode` switch — or whenever a thread
-  has turns but no native session ID — Bro starts a fresh native session
-  seeded with the main-session context and every earlier turn.
-- Cancellation, deadlines, and invalid output streams stop the backend's
-  process group on POSIX, escalating after a five-second grace period. On
-  Windows only the direct child is targeted. Detached shell work or external
-  services a backend started are not contained. Bro removes its private
-  temporary prompt files.
-
-### Configuration precedence
-
-When resolving backend, model, and reasoning effort:
-1. **Per-capability override**: `overrides.<capability>` (`explain`, `show`, `btw`, `advisor`, or `review`) pins that capability's complete selection.
-2. **Shared default**: otherwise the capability inherits `default` (root `model`/`effort` in older flat files).
-3. **Agy catalog normalization**: for Agy selections, Bro maps suffixed variant IDs and handles fixed-effort models.
-4. **Initial file creation only**: `PI_BRO_MODEL` has no effect once the settings file exists.
-
-When resolving turn count for `/bro show`:
-1. **Command argument**: an explicit count like `/bro show 3` or `/bro show 1 query` overrides for that run.
-2. **Saved setting**: `showTurns` (defaults to 1).
-
-When shaping an answer, each part has one owner:
-
-| Part | Decided by |
-| --- | --- |
-| Bro's source rules: quoted source treated as data, no added facts, Show's traceability rules, BTW access mode | Built in; nothing overrides them |
-| How much of the source an explanation keeps | The mode: **M** for one explanation, otherwise the saved `mode` |
-| What a Show drawing focuses on | The steering query |
-| Who the answer is for: wording, tone, depth, and answer language | Your [preferences](#preferences), otherwise Bro's built-in defaults |
-
-## Preferences
-
-Tell Bro about yourself and how you like answers. Bro adds what you write to
-every explain, `/bro show`, `/bro btw`, and Guided Review prompt as a labelled section,
-alongside its own instructions. It never replaces them: modes, **M**, and the
-source rules keep working. The advisor never receives your preferences; use
-`/bro advisor-steer` for it.
-
-Run `/bro preferences` to edit them: **Ctrl+S** saves, **Ctrl+K** deletes the
-file, **Ctrl+C** copies, and **Esc** closes without saving. The first time,
-the editor opens with this starter text, which is not saved until you press
-**Ctrl+S**:
-
-```md
-## About me
-I'm an overworked white-collar worker, and so are my colleagues. By the end of a
-hard day our brains are fried and we can only handle simple language, no matter
-how sharp we are at our best.
-
-## How I like answers
-- Explain it like I'm a simpleton: plain, everyday words.
-- Go easy on analogies. No forced ones.
-```
-
-You can also edit the file directly (under `$PI_CODING_AGENT_DIR` instead when
-that is set):
-
-```text
-~/.pi/agent/bro-preferences.md
-```
-
-- **Free-form**: no placeholder or structure is required. Bro re-reads the
-  file on every request, so edits apply next time. A missing or empty file
-  means no preferences, and Bro's prompts are then exactly the built-in ones.
-- **What preferences can change**: wording, tone, technical depth, length in
-  BTW, and the answer language. If you name a language, code, commands, paths,
-  names, and numbers still stay exactly as written. In `/bro show`,
-  preferences only change wording and language. Guided Review also receives preferences for explanation/answer wording; they do not override its evidence or review rules. A per-run choice (the mode,
-  **M**, a Show steering query, or what a BTW/review question asks for) wins over a
-  standing preference.
-- **Limit**: 4,000 characters, because the text goes with every request. A
-  longer file stops explain, Show, BTW, and Guided Review with an error until you trim it;
-  Bro never cuts it silently. `/bro doctor` reports the problem, and the
-  editor still opens the file so you can fix it.
-- **BTW threads**: when your preferences change, the next side question starts
-  a fresh backend session that is caught up on the thread, so old preferences
-  don't linger.
-
-`bro-prompt.md`, the full prompt template from earlier versions, is no longer
-read. Move what you want to keep into `/bro preferences`, and choose
-`/bro mode brief` for the original ELI-simpleton instruction.
-
-
-## Privacy and safety
-
-- **External requests**: Bro sends the latest completed assistant response,
-  pasted text, extracted document text, extracted webpage text, or recent
-  session conversation text (tool calls, tool results, reasoning, and images
-  omitted) to the selected backend and its configured model provider.
-- **Side conversation requests**: `/bro btw` sends your side questions and the
-  seeded main-session conversation text (plus earlier turns when a native
-  session is reseeded) to the selected backend. In full permission mode the
-  side agent can additionally read and edit the workspace.
-- **Guided Review requests**: PR identity/description, captured diff, relevant private discussion and preferences go to the selected backend, which can inspect captured files using Claude/Muse read-only tools. Main-session context is not attached. Review shell/write/web tools are disabled; Claude file tools are confined with `--restricted`, Muse uses workspace-scoped inspection. Prompt injection can still corrupt conclusions or reveal captured content to the provider; this is not a general confidentiality guarantee. See [Guided Review access and storage](docs/guided-review.md#access-privacy-and-storage).
-- **Preferences**: `bro-preferences.md` is sent with every explain, Show,
-  BTW, and Guided Review request to the selected backend. It is never sent to the advisor or
-  to Pi's main model.
-- **Advisor requests**: `bro_advisor` sends the executor agent's system
-  instructions, active tool list (excluding `bro_advisor`), ordered
-  conversation history including tool calls and tool results (unlike Show,
-  which omits them), your steering brief, and the executor's optional question
-  to the selected backend. Reasoning and image bodies are omitted with explicit
-  markers (`[reasoning omitted]`, `[image omitted]`). The advisor process runs
-  in your workspace with auto-approved permissions; its instruction to only
-  advise is behavioral, not an enforced boundary.
-- **Access enforcement** differs by backend; see
-  [Backends: access and retention](#backends-access-and-retention). Prompt
-  instructions are not access enforcement.
-- **Context isolation**: Bro does not add explanations, BTW answers, or the
-  steering brief to Pi's conversation history or main-agent context. BTW text
-  reaches the main editor only through `/insert` or `/insert-all`, and advisor
-  results appear as normal tool results in the executor's transcript.
-- **Saved reviews**: Guided Review records, questions, drafts and captured Git source persist under the host's `getAgentDir()/bro-reviews/`. No automatic cleanup or sync is provided; see [storage and removal](docs/guided-review.md#access-privacy-and-storage).
-- **Memory**: the latest explanation (for `/bro open`) and the BTW thread live
-  only in process memory and clear when you switch Pi sessions, reload
-  extensions, or quit Pi. Backend-native sessions can persist independently.
-  Standing advisor priorities are stored in `~/.pi/agent/bro-advisor.md`, and
-  the session steering brief is stored as session-scoped extension data
-  (`bro-advisor-steering`) in the session file.
-- **File safety**: `/bro file` reads only regular files whose resolved path is
-  inside Pi's current workspace, including after resolving symlinks. Bro's
-  extractor does not modify them.
-- **Web requests**: `/bro url` connects directly to the target website. The site
-  sees your IP address and Bro's user agent. Bro sends no browser cookies,
-  authorization, or referrer information, and it refuses local, private, and
-  reserved network destinations, including redirects. Avoid private or signed
-  URLs whose query string contains secrets.
-- **Web extraction**: Bro parses downloaded HTML locally without executing page
-  scripts or loading page subresources. It sends the extracted readable text,
-  including links preserved in that text, to the selected backend; it does not
-  separately send the requested URL or raw page HTML.
-- **Show diagrams**: When a show reply ends in one self-contained HTML block,
-  Bro writes it to `/tmp/pi-bro-<uid>/bro-show-<hash>.html` with a restrictive
-  Content-Security-Policy, and opens it in your browser only when you press
-  **O**. **C** copies the full reply, including the HTML.
-- **Clipboard**: **C**, `/copy`, `/copy-all`, and Guided Review's Copy finding copy text to your system
-  clipboard, where your operating system or clipboard manager may retain it.
-
-## Troubleshooting and current limits
-
-If an explanation fails, run `/bro doctor` first. If a webpage cannot be
-extracted, copy its content into a supported text file or save it as a PDF and
-use `/bro file`. If a PDF contains only scanned images, run OCR with another
-tool before giving it to Bro.
-
-- An unsupported model, effort, or missing backend fails with that backend's
-  diagnostic; Bro never falls back to another backend.
-- Document input supports `.md`, `.markdown`, `.txt`, `.pdf`, and `.docx` only;
-  it does not perform OCR.
-- Webpage input supports one public HTML page, up to 5 MiB downloaded and
-  100,000 extracted characters. JavaScript-only, authenticated, paywalled,
-  blocked, paginated, and media-first pages are not supported.
-- Direct webpage fetching does not currently use `HTTP_PROXY`, `HTTPS_PROXY`,
-  or other proxy environment variables.
-- `/bro btw` threads are memory-only and do not survive reloads or restarts.
-- The Agy advisor requires Agy CLI `>=1.1.15`.
-- Show captures only the conversation text of what already happened in the
-  current session — the last few turns' user and assistant messages, with
-  tool calls, tool results, reasoning, and images always omitted; its shapes
-  reflect what was reported in the conversation, not independent verification.
-- HTML diagrams open in your default browser; pressing **O** on a remote or
-  headless session with no display reports the failure instead of opening
-  anything.
-- Explain keeps only the latest result in memory and does not export directly to files. Guided Review separately persists review records and captured source.
-- Guided Review is local-Pi interactive only, keeps its captured revision on reopen, and does not publish, review a branch or fetch later PR changes. See [review recovery and limits](docs/guided-review.md#if-something-goes-wrong).
-- Bro temporarily captures mouse input while its modal is open so mouse-wheel
-  and trackpad scrolling work in regular and fullscreen modes. Native mouse
-  selection may be unavailable or visually extend outside the Bro window;
-  press **C** to copy the full explanation instead.
-
-## Development
+| [Google Antigravity](https://antigravity.google/docs/cli-install) | `agy` | Default for new settings. Needs `>=1.1.15`. Not for Guided Review. |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `claude` | Works for every feature, including Guided Review. |
+| [Grok Build](https://docs.x.ai/build/overview) | `grok` | Not for Guided Review. |
+| [Codex CLI](https://github.com/openai/codex) | `codex` | Not for Guided Review. |
+| [Muse Code](https://dev.meta.ai/docs/muse-code) | `muse` | Works for every feature, including Guided Review. |
+
+- Guided Review also needs Git and an authenticated [`gh`](https://cli.github.com/).
+  Choose Claude or Muse for it in `/bro config`.
+- [PiG](docs/pig-compatibility.md) support is experimental.
+
+## What leaves your machine
+
+Bro sends what you ask it to explain (the agent's reply, your text, extracted
+document or page text, or recent conversation text) to the backend you chose
+and its model provider. Bro uses that CLI's own account; it never reads Pi's
+provider credentials. Nothing Bro produces is added to Pi's conversation
+unless you insert it, and the advisor's answer comes back as a normal tool
+result.
+
+> [!WARNING]
+> Two modes run the backend in your workspace with its permission checks
+> bypassed: the **advisor** and **BTW full-permission mode** (turned on with
+> `/mode` inside BTW). Their "advise, don't edit" limits are instructions,
+> not a sandbox.
+
+How each backend is restricted, and what is stored where:
+[Backends: access and retention](docs/user-guide.md#backends-access-and-retention)
+and [Privacy and safety](docs/user-guide.md#privacy-and-safety).
+
+## Limits
+
+- Documents: `.md`, `.markdown`, `.txt`, `.pdf`, `.docx` only, no OCR, up to 10 MiB.
+  → Run OCR elsewhere first.
+- Webpages: one public HTML page; no logins, paywalls, page JavaScript or
+  proxy settings. → Save the page as PDF or text and use `/bro file`.
+- No fallback: if the chosen backend, model or effort fails, Bro shows that
+  backend's error instead of switching. → Run `/bro doctor`.
+- BTW threads and the last explanation live in memory only and clear on
+  reload or restart.
+- Guided Review runs in local interactive Pi only and does not post to
+  GitHub.
+
+Full list: [Troubleshooting and current limits](docs/user-guide.md#troubleshooting-and-current-limits).
+
+## Stability
+
+Bro is `0.x`: a minor version can change commands or settings. Breaking
+changes are listed under **Breaking** in the [changelog](CHANGELOG.md) and the
+[release notes](https://github.com/tranhoangnguyen03/pi-bro/releases). Each
+release is published to npm from CI with
+[provenance](https://docs.npmjs.com/generating-provenance-statements).
+
+## Contributing
 
 ```sh
 npm install
-npm test
+npm test        # offline: uses fake backend CLIs, never calls a model
 pi --tui-mode fullscreen -e ./bro.ts
 ```
 
-`npm test` uses fake `agy`, `claude`, `grok`, `codex`, and `muse` executables and never calls an
-external model. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the code
-map and invariants, [docs/TESTING.md](docs/TESTING.md) for the manual
-end-to-end checklist, and [docs/README.md](docs/README.md) for the docs index.
-
-The prompt benchmark is manual and makes live Agy calls. Read
-[`benchmark/README.md`](benchmark/README.md) before running it; it is never part
-of `npm test`.
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [code map](docs/DEVELOPMENT.md)
+and the [docs index](docs/README.md). Report security problems privately as
+described in [SECURITY.md](SECURITY.md).
 
 ## License
 

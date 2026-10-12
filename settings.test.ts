@@ -913,13 +913,13 @@ test("help drops removed /bro model, /bro effort, --fresh, and forced inserts", 
 	assert.match(text, /\/bro config/);
 });
 
-test("help is a concise reference: no removed BTW flags, /mode documented, README pointer", () => {
+test("help is a concise reference: no removed BTW flags, /mode documented, user guide pointer", () => {
 	for (const backend of ["agy", "claude", "grok"] as const) {
 		const text = helpText(parseBroSettings({ version: 2, default: { backend, model: "m", effort: "default" } }));
 		assert.doesNotMatch(text, /--(full|sandbox|fresh)\b/);
 		assert.doesNotMatch(text, /--dangerously|--permission-mode|--resume|--conversation/);
 		assert.match(text, /`\/mode`/);
-		assert.match(text, /README/);
+		assert.match(text, /docs\/user-guide\.md/);
 		assert.match(text, /brief —/);
 		assert.ok(text.length < 6000, `help is ${text.length} chars`);
 	}
