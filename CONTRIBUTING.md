@@ -23,6 +23,9 @@ manual end-to-end checklist for changes the offline tests cannot cover.
   `npm version patch|minor|major --no-git-tag-version` and add a
   `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md`. Otherwise label it
   `release:none`. CI checks this, and merging a version bump publishes it.
+- Start each version's changelog section with `### Highlights`: 2–4
+  plain-language bullets on what users can now do. It becomes the top of
+  the GitHub release.
 - Mark anything that breaks existing commands or settings under
   `### Breaking`, with migration steps.
 - Update the [user guide](docs/user-guide.md) and `/bro help` when
