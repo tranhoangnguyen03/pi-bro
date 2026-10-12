@@ -11,6 +11,23 @@ permissions:
 jobs:
   pig:
     uses: ./.github/workflows/pig.yml
+  # The main test job runs on the newest Node; these cover the engines floor and macOS.
+  compat:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, node: 22.19.0 }
+          - { os: macos-latest, node: 24 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
   test:
     runs-on: ubuntu-latest
     steps:
@@ -23,6 +40,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Recompute synthetic reader benchmark (offline)
+        run: node benchmark/recompute-reader.ts
       - name: Release metadata
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

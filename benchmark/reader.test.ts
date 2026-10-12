@@ -1,0 +1,84 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {prepare,request,evaluate,compare,JUDGE,scoreSaved,validateGeneration} from './reader.ts';
+import {READER_CASES} from './reader-corpus.ts';
+import {REAL_CASES} from './reader-real-corpus.ts';
+import {CANDIDATES} from './reader-candidates.ts';
+test('manifest freezes applicability and questions across arms; judge sees no key or source',()=>{
+ const a=prepare('a'),b=prepare('b');assert.equal(READER_CASES.length,18);assert.equal(a.rows.length,b.rows.length);assert.notEqual(a.fingerprint,b.fingerprint);
+ for(let i=0;i<a.rows.length;i++){assert.deepEqual(a.rows[i].probes,b.rows[i].probes);const r=request('candidate',a.rows[i].probes);assert.deepEqual(r.state,{output:'candidate'});assert.ok(!JSON.stringify(r).includes('"expected"'));}
+});
+test('polarity, missing answers, code fences, missing cells and regressions',()=>{
+ const c=READER_CASES.find(c=>c.id==='trailing-condition')!;const answers=Object.fromEntries(c.probes.map(p=>[p.id,{type:'choice',choice:p.expected?'pass':'fail'}]));
+ const e=evaluate(c,'balanced',c.source,c.probes,{model:JUDGE,answers});assert.ok(Object.values(e.checks).every(Boolean));
+ assert.throws(()=>evaluate(c,'balanced',c.source,c.probes,{model:JUDGE,answers:{}}));
+ const row={repeat:1,caseId:c.id,mode:'balanced',audience:'default',status:'complete',required:['retry_unknown'],evaluation:e};
+ const bad=structuredClone(row);bad.evaluation.checks.retry_unknown=false;
+ assert.equal(compare([row,{...row,repeat:2}],[bad,{...bad,repeat:2}])[0].status,'candidate-proxy-mismatch');assert.equal(compare([row],[])[0].status,'incomplete');
+ const f=READER_CASES.find(c=>c.id==='markdown-code')!;assert.equal(evaluate(f,'brief','',[],null).format.exactFences,false);
+});
+
+test('mechanical v3 has no exact-text or marker checks but preserves ordered commands',()=>{
+ const c=READER_CASES.find(c=>c.id==='clear-control')!;
+ const e=evaluate(c,'faithful',c.source.replace('seven days','six days'),[],null);
+ assert.equal('literals' in e.mechanical,false);assert.equal('markers' in e.format,false);
+ const f=READER_CASES.find(c=>c.id==='markdown-code')!;
+ const indented=f.source.replaceAll('\n','\n   ');
+ const i=evaluate(f,'brief',indented,[],null);
+ assert.equal(i.mechanical.codeContent1,true);assert.equal(i.format.exactFences,false);
+ assert.equal(evaluate(f,'brief',indented.replace('--mode safe','--mode unsafe'),[],null).mechanical.codeContent1,false);
+ const reordered=f.source.replace("release-check --mode safe\nprintf 'done\\n'","printf 'done\\n'\nrelease-check --mode safe");
+ assert.notEqual(reordered,f.source);
+ assert.equal(evaluate(f,'brief',reordered,[],null).mechanical.codeContent1,false);
+});
+
+test('saved evidence validates identities, hashes, schemas and frozen instructions',()=>{
+ const m=prepare();assert.deepEqual(prepare(),m);const row=m.rows[0];
+ const g={generator:m.generator,backend:'agy',outcome:'success',output:'text',callId:row.id,fixture:row.caseId,variant:row.mode,model:m.generator.model,effort:m.generator.effort};
+ validateGeneration(row,g,m.generator);
+ assert.throws(()=>validateGeneration(row,{...g,backend:'claude'},m.generator),/backend/);
+ assert.throws(()=>validateGeneration(row,{...g,generator:{...m.generator,timeoutMs:1}},m.generator),/settings/);
+ for(const field of ['callId','fixture','variant','model','effort'])assert.throws(()=>validateGeneration(row,{...g,[field]:'wrong'},m.generator));
+ assert.throws(()=>validateGeneration(row,{...g,outcome:'started'},m.generator));
+ assert.throws(()=>scoreSaved(row,m,g,{outputHash:'bad'}),/hash/);
+ const c=READER_CASES[0];const good={model:JUDGE,answers:Object.fromEntries(row.probes.map(p=>[p.id,{type:'choice',choice:p.expected?'pass':'fail'}]))};
+ for(const changed of [{...good,model:'wrong'},{...good,answers:{}},{...good,answers:{...good.answers,extra:{type:'choice',choice:'pass'}}}])assert.throws(()=>evaluate(c,row.mode,'text',row.probes,changed));
+ const first=row.probes[0].id;
+ for(const a of [{type:'other',choice:'pass'},{type:'choice',choice:'maybe'}])assert.throws(()=>evaluate(c,row.mode,'text',row.probes,{...good,answers:{...good.answers,[first]:a}}));
+ const negative=row.probes.find(p=>!p.expected)!;assert.equal(evaluate(c,row.mode,'text',row.probes,{...good,answers:{...good.answers,[negative.id]:{type:'choice',choice:'pass'}}}).checks[negative.id],false);
+});
+test('compare rejects invalid repeats and exposes format regressions, fixed and unstable checks',()=>{
+ const r={caseId:'x',mode:'brief',audience:'default',repeat:1,status:'complete',required:[],evaluation:{mechanical:{},format:{fence:true},checks:{term:true}}};
+ const pair=(x:any)=>[x,{...x,repeat:2}];const changed=(term:boolean,fence=true)=>({...r,evaluation:{mechanical:{},format:{fence},checks:{term}}});
+ assert.equal(compare(pair(r),pair(changed(true,false)))[0].status,'regressed');
+ assert.equal(compare(pair(changed(false)),pair(r))[0].status,'improved-on-measured-checks');
+ assert.equal(compare(pair(r),[r,{...changed(false),repeat:2}])[0].status,'inconclusive');
+ assert.equal(compare([{...r,repeat:3},{...r,repeat:4}],pair(r))[0].status,'incomplete');
+ assert.throws(()=>compare(pair(r),pair({...r,required:['term']})),/applicability/);
+});
+
+test('real fixtures load with four required and two compared questions',()=>{
+ assert.equal(REAL_CASES.length,5);
+ for(const c of REAL_CASES){
+  assert.ok(c.source.trim().length>0,c.id);
+  assert.deepEqual(c.probes.map(p=>p.tier),['required','required','required','required','compared','compared']);
+  assert.deepEqual(evaluate(c,'faithful',c.source,[],null).mechanical,{});
+ }
+});
+test('candidate arm changes only the target mode prompt; modes filter rows',()=>{
+ CANDIDATES['test-brief']={mode:'brief',shipped:'So, please ELI-simpleton, and try not to go overboard with the forced analogies.',replacement:'Test replacement.'};
+ try {
+  const shipped=prepare('shipped'),candidate=prepare('test-brief');
+  for(let i=0;i<shipped.rows.length;i++){
+   const s=shipped.rows[i],c=candidate.rows[i];
+   if(s.mode==='brief'){assert.notEqual(s.prompt,c.prompt);assert.ok(c.prompt.includes('Test replacement.'));}
+   else assert.equal(s.prompt,c.prompt);
+  }
+ } finally {
+  delete CANDIDATES['test-brief'];
+ }
+ assert.throws(()=>prepare('shipped',undefined,['tiny']));
+ const brief=prepare('shipped',undefined,['brief']);
+ assert.ok(brief.rows.every(r=>r.mode==='brief'));
+ assert.equal(brief.rows.length,(12+2+5)*2);
+});

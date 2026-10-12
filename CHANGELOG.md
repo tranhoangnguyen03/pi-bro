@@ -2,11 +2,33 @@
 
 All notable changes to pi-bro are documented here.
 
-## [0.22.1] - 2026-10-11
+## [0.22.1] - 2026-10-12
+
+### Highlights
+
+- Get `/bro show` pages built from plain HTML and CSS, without Mermaid source that could never render; prose answers stay as text.
+- Get started from a short README, and find the full reference in `docs/user-guide.md` (linked from `/bro help`).
 
 ### Fixed
 
 - `/bro show` no longer invites Mermaid inside the HTML fence. Bro's HTML page blocks all scripts, so Mermaid could only appear as plain source text. The prompt now asks for hand-rolled HTML and CSS only and says prose subjects never use the HTML fence (#108).
+
+### Added
+
+- Reader benchmark: five real, maintainer-approved Explain fixtures and a brief-mode candidate arm for shipped-vs-candidate comparisons. Exact-text and Markdown-marker checks removed; meaning is checked by the yes/no questions (#101).
+
+- Reader benchmark for Explain modes, BTW answers, preferences and repeated samples (#110):
+  - Fingerprinted live runs, narrow Jev binary checks, and per-check candidate comparisons.
+  - Report-only reader-visible counts and source deltas, separate from preservation and formatting checks.
+  - Committed synthetic baseline evidence with offline recomputation in CI.
+  - Optional generation through existing Claude, Codex and Muse adapters alongside Agy.
+  - Synthetic coverage and experimental judgments are decision support, not proof of full fidelity or comprehension; production prompts are unchanged.
+
+### Changed
+
+- The README is now a short overview (install, try it, requirements, what leaves your machine, limits). The full reference moved to `docs/user-guide.md`, and `/bro help` links there (#116).
+- Added `SECURITY.md`, `CONTRIBUTING.md`, issue forms and `docs/PUBLIC-PRESENTATION.md`, the presentation standard for pi-* repos (#116).
+- Refocus prompt tests on safety and structure rather than frozen wording or presentation order; identify fake-Agy Explain modes from current prompt builders instead of hardcoded phrases (#110).
 
 ## [0.22.0] - 2026-10-11
 

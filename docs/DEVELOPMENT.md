@@ -1,6 +1,7 @@
 # Developing pi-bro
 
-The user guide is the [README](../README.md). This page is the short map for
+The user guide is [user-guide.md](user-guide.md); the [README](../README.md) is
+the short overview. This page is the short map for
 changing the code. Read the code before trusting any plan in `docs/plans/`;
 those are historical records.
 
@@ -83,9 +84,9 @@ BTW keeps one in-memory thread bound to a backend and an access mode
   explain, Show, BTW, and review prompts as a JSON-quoted section and never to the
   advisor. It shapes wording, tone, depth, and answer language and never
   overrides the source rules, Show's hard rules, or BTW access mode. The prompt
-  builders in `prompt.ts` stay pure: blank preferences reproduce the frozen
-  `prompt.fixtures.json` byte for byte, so the benchmark measures the built-in
-  prompts.
+  builders in `prompt.ts` stay pure: blank preferences leave output unchanged,
+  while nonblank preferences add a guarded block. Benchmark manifests freeze
+  the measured prompts; unit tests do not freeze their wording.
 - An explanation's mode and preferences tag belong to its result: **M** and
   **R** re-run with the mode and re-read preferences, and `/bro open` restores
   both without a backend call. Only `/bro mode` and `/bro config` write the
@@ -129,11 +130,13 @@ during a fake in-flight consultation and assert no delayed child activity.
 ## Tests
 
 ```sh
-npm test                                   # typecheck, node tests, smoke-test.sh
+npm test                                   # typecheck, node tests, test/smoke-test.sh
 npm pack --dry-run                         # published file list
 node .github/scripts/release-utils.mjs selftest
 npm run benchmark:dry-run                  # manual live benchmark: see benchmark/README.md
 ```
+
+Extension tests and their helpers live in `test/`; benchmark tests stay in `benchmark/`. CI runs `npm test` on Linux with Node 24 and Node 22.19.0 (the `engines` floor), and on macOS with Node 24.
 
 Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs` and `review-ux.test.mjs` (rendering/interaction), `review-session.test.mjs` and `review-regeneration.test.mjs` (fake-CLI controller/save/recovery), `review-versions.test.mjs` (single-guide/current validation and rejected prototype schemas), `review-ui.test.mjs` (evidence/save presentation), `review-doctor.test.mjs` (review-only backend selection). Adapter tests keep BTW/native-session behavior separate from stateless review. Add regressions to the existing owner; do not create another generic harness.
 
@@ -142,7 +145,7 @@ Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs`
 pure helpers; `helpers.test.mjs` contains sequential modal/advisor checks and Pi SDK
 integration checks formerly embedded in the shell suite. `test-build.mjs` provides
 isolated compilation for these tests, settings, and Show HTML tests.
-`smoke-test.sh` drives Pi offline over RPC with a fake `agy`.
+`test/smoke-test.sh` drives Pi offline over RPC with a fake `agy`.
 See [test-consolidation.md](test-consolidation.md) for the #74 coverage ledger,
 throttle mutation check, and before/after timings.
 The smoke suite isolates its temporary root, including generated diagrams. Backend tests
