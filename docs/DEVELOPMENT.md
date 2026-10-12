@@ -1,6 +1,7 @@
 # Developing pi-bro
 
-The user guide is the [README](../README.md). This page is the short map for
+The user guide is [user-guide.md](user-guide.md); the [README](../README.md) is
+the short overview. This page is the short map for
 changing the code. Read the code before trusting any plan in `docs/plans/`;
 those are historical records.
 
