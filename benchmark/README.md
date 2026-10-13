@@ -76,7 +76,8 @@ transcript fixtures through `SHOW_PROMPT` and grades selection semantics
 (traceability of identifiers, fence shape, diff markers) rather than prose
 preservation. The corpus carries one fixture per show-me form — call tree,
 pseudocode, component tree, file layout, types and signatures, diff, HTML
-layout, and prose degradation. Its manifest, fingerprint, and results are
+layout, and prose degradation — plus a state machine, a branching user flow,
+and a multi-party sequence, where a rendered Mermaid diagram should beat text. Its manifest, fingerprint, and results are
 independent of the modes matrix:
 
 ```sh

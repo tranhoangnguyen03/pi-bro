@@ -2,10 +2,22 @@
 
 All notable changes to pi-bro are documented here.
 
-## [Unreleased]
+## [0.23.0] - 2026-10-13
+
+### Highlights
+
+- `/bro show` can draw a real sequence diagram when a conversation traces messages among three or more parts of a system. Press **O** to see it rendered in your browser.
+- Bro is now tested on Pi 1.2 as well as Pi 0.84.2, and the README says so.
+- pi-bro has a preview card in the pi.dev package gallery.
+
+### Added
+
+- `/bro show` can end a reply with one Mermaid `sequenceDiagram` for interactions among three or more participants (#108). The modal keeps the diagram's source readable and **O** opens a rendered version. Bro builds that page itself: it inlines a vendored Mermaid 12.1.0, allows only its own two scripts by hash, runs Mermaid with `securityLevel: "strict"` and no HTML labels, and inserts the model's text as escaped source. Any other Mermaid stays in the modal as plain text. If the diagram file cannot be written, the reply is kept and a warning is shown.
 
 ### Changed
 
+- Tested on Pi 1.2.0 (development pin) with a CI job that keeps Pi 0.84.2 covered; the README's Pi range now reads `>=0.84.2` (#130).
+- The package now bundles Mermaid 12.1.0 for sequence diagrams, so it grows from about 0.5 MB to 6 MB unpacked (#108).
 - Runtime source moved into `src/`; the extension entry is now `src/bro.ts`. Installs are unaffected. The package also sets a pi.dev gallery preview image (#116).
 
 ## [0.22.2] - 2026-10-13

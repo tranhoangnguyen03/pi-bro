@@ -9,6 +9,7 @@
 // Facts that used to come from a tool result (a file's contents, a command's
 // output) now appear only if the assistant reports them in conversation text.
 import { FENCED_BLOCK_PATTERN } from "./corpus.ts";
+import { isRenderableSequence } from "../src/util.ts";
 
 export type ShowExpectations = {
 	requiredTokens: readonly string[];
@@ -86,6 +87,48 @@ const HTML_TRANSCRIPT = serializeTranscript([
 	["## assistant", "Fixed: below max-width: 640px, grid-template-columns is now a single column with chart, alerts, activity, and status stacked in that order."],
 ]);
 
+const STATE_MACHINE_TRANSCRIPT = serializeTranscript([
+	["## user", "Uploads sometimes end up stuck. What states can an upload job be in, and how does it move between them now?"],
+	["## assistant", "An upload job starts in queued. A worker moves it to uploading. When the upload finishes it goes to verifying, and a passing checksum moves it to done."],
+	["## assistant", "If uploading hits a network error, the job goes to retrying, waits, and goes back to uploading. After 3 failed tries, retrying moves it to failed instead."],
+	["## assistant", "The stuck jobs were cancellations: a user cancel from queued or uploading set a flag but never changed the state. Fixed: cancel now moves the job from queued or uploading to cancelled. A cancel during verifying is ignored, as before."],
+]);
+
+const USER_FLOW_TRANSCRIPT = serializeTranscript([
+	["## user", "Walk me through what a user goes through to sign in now that MFA and lockout are both in."],
+	["## assistant", "The user enters an email, then a password. A wrong password shows an error and lets them try again; after 5 wrong passwords the account is locked for 15 minutes."],
+	["## assistant", "With a correct password, users without MFA go straight to the dashboard. Users with MFA get a code prompt. A wrong code lets them try again, and a right code takes them to the dashboard."],
+	["## assistant", "If the user ticked remember this device on an earlier sign-in, the code prompt is skipped for 30 days on that device."],
+]);
+
+const SEQUENCE_TRANSCRIPT = serializeTranscript([
+	["## user", "I keep losing track of the OAuth login. Who talks to whom, in what order?"],
+	["## assistant", "The browser calls GET /login on the app server. The app server stores a random state value and redirects the browser to the identity provider's /authorize with that state."],
+	["## assistant", "After the user consents, the identity provider redirects the browser to /callback with a code and the same state. The app server checks the state; if it does not match, it returns 400 and stops."],
+	["## assistant", "On a match, the app server sends the code to the identity provider's /token endpoint and gets tokens back. It then sets a session cookie and redirects the browser to /dashboard."],
+]);
+
+const WEBHOOK_TRANSCRIPT = serializeTranscript([
+	["## user", "Orders were getting updated twice after payments. What actually happens when a payment event arrives now?"],
+	["## assistant", "The payment provider POSTs the event to /webhooks/payments. The endpoint checks the signature; a bad signature gets 401 and nothing is queued."],
+	["## assistant", "With a good signature, the endpoint puts the event on the jobs queue and answers 200 right away. The worker takes the job from the queue and updates the order."],
+	["## assistant", "The double updates came from the old design: the endpoint updated the order inline and often took longer than 10 seconds, so the provider treated it as failed and retried. The provider retries any non-200 answer up to 5 times."],
+]);
+
+const CACHE_FILL_TRANSCRIPT = serializeTranscript([
+	["## user", "Product pages hammer the database on a cold cache. Trace a product request through the cache now."],
+	["## assistant", "A client calls GET /products/42 on the API. The API looks the product up in Redis; on a hit it returns the cached product."],
+	["## assistant", "On a miss, the API reads the product from Postgres, writes it to Redis with a 300-second TTL, and returns it to the client."],
+	["## assistant", "Fixed: two misses at once used to both read Postgres. Now the first miss takes a lock key in Redis, and a second request that finds the lock waits up to 50 ms and reads Redis again instead of Postgres."],
+]);
+
+const CI_DEPLOY_TRANSCRIPT = serializeTranscript([
+	["## user", "A rollback put the broken build back last week. How does a push get to production now?"],
+	["## assistant", "A push to main starts CI. CI runs the tests; if a test fails, the pipeline stops and nothing is built."],
+	["## assistant", "When the tests pass, CI builds the image and pushes it to the registry tagged with the commit SHA. CI then calls the deploy service with that tag, and the deploy service tells the cluster to roll out the new image."],
+	["## assistant", "If the health check fails within 2 minutes, the deploy service rolls the cluster back to the previous tag. The rollback bug: CI used to push only the latest tag, so rolling back redeployed the broken image."],
+]);
+
 const DEGRADATION_TRANSCRIPT = serializeTranscript([
 	["## user", "Our CTO says we should adopt trunk-based development instead of release branches. What changes day to day, and what risks should we plan for?"],
 	["## assistant", "Trunk-based development means merging small changes directly to main several times a day. Day to day, branches live hours not weeks, feature flags hide unfinished work, and CI must pass before every merge, so test speed becomes the first bottleneck. The main risks are integration surprises moving to every day, incomplete features reaching main behind flags that never get cleaned up, and rollback discipline replacing the safety of not merging a bad branch."],
@@ -102,7 +145,7 @@ export const SHOW_CORPUS: readonly ShowFixture[] = [
 		target: DEBUG_SESSION_RESTORE_TRANSCRIPT,
 		expectations: {
 			requiredTokens: ["src/config/settings.ts", "restoreSession", "loadConfig", "timeoutMs"],
-			forbiddenText: ["Sure", "Here is", "I'll explain"],
+			forbiddenText: ["Sure", "Here is", "I'll explain", "```mermaid"],
 		},
 	},
 	{
@@ -185,6 +228,60 @@ export const SHOW_CORPUS: readonly ShowFixture[] = [
 		},
 	},
 	{
+		id: "show-state-machine",
+		description: "State diagram: upload job states with a retry loop and a fixed cancel transition",
+		target: STATE_MACHINE_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["queued", "uploading", "verifying", "done", "retrying", "failed", "cancelled"],
+			forbiddenText: ["Sure", "Here is", "file:///", "```mermaid"],
+		},
+	},
+	{
+		id: "show-user-flow",
+		description: "User flow: sign-in with lockout, MFA, and remember-this-device branches",
+		target: USER_FLOW_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["email", "password", "15 minutes", "dashboard", "code", "30 days"],
+			forbiddenText: ["Sure", "Here is", "file:///", "```mermaid"],
+		},
+	},
+	{
+		id: "show-sequence",
+		description: "Sequence: OAuth login across browser, app server, and identity provider",
+		target: SEQUENCE_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["/login", "/authorize", "/callback", "/token", "/dashboard", "state", "400"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
+		id: "show-webhook",
+		description: "Sequence: payment webhook through endpoint, queue, and worker, with signature and retry rules",
+		target: WEBHOOK_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["/webhooks/payments", "401", "200", "10 seconds", "5 times"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
+		id: "show-cache-fill",
+		description: "Sequence: product request through API, Redis, and Postgres, with the cold-cache lock",
+		target: CACHE_FILL_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["/products/42", "Redis", "Postgres", "300-second", "50 ms"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
+		id: "show-ci-deploy",
+		description: "Sequence: push through CI, registry, deploy service, and cluster, with failure and rollback",
+		target: CI_DEPLOY_TRANSCRIPT,
+		expectations: {
+			requiredTokens: ["main", "commit SHA", "2 minutes", "previous tag", "latest"],
+			forbiddenText: ["Sure", "Here is", "file:///"],
+		},
+	},
+	{
 		id: "show-degradation",
 		description: "Prose-only session: must degrade to an outline, never force a diagram",
 		target: DEGRADATION_TRANSCRIPT,
@@ -206,6 +303,8 @@ const IDENTIFIER_TOKEN_PATTERN =
 const BACKTICKED_TOKEN_PATTERN = /`([^`\n]+)`/g;
 const EXTERNAL_RESOURCE_PATTERN = /(?:src|href)\s*=\s*["']https?:|@import|url\(\s*["']?https?:/i;
 const UNTAGGED_MERMAID_PATTERN = /^(?:sequenceDiagram|graph (?:TD|LR)|flowchart|stateDiagram|erDiagram)/m;
+const MERMAID_STYLING_PATTERN = /(?:^|;)\s*(?:style|classDef|class|click|linkStyle)\b|<[a-z/]/im;
+const MERMAID_TYPE_LINE_PATTERN = /^\s*(?:sequenceDiagram|stateDiagram-v2|(?:flowchart|graph)\s+(?:TD|LR|TB|RL|BT))\s*;?\s*$/gm;
 
 export function checkShowOutput(fixture: ShowFixture, output: string): ShowChecks {
 	const lowercase = output.toLowerCase();
@@ -224,7 +323,9 @@ function extractShowTokens(output: string): string[] {
 	const cleaned = output.replace(DIFF_HEADER_PATTERN, "");
 	const tokens = new Set<string>();
 	for (const block of cleaned.matchAll(FENCED_BLOCK_PATTERN)) {
-		for (const match of block[0].matchAll(IDENTIFIER_TOKEN_PATTERN)) tokens.add(match[0]);
+		// A mermaid fence's diagram type and direction lines are syntax, not identifiers.
+		const text = block[1].toLowerCase() === "mermaid" ? block[0].replace(MERMAID_TYPE_LINE_PATTERN, "").replace(/^\s*direction \w+$/gm, "") : block[0];
+		for (const match of text.matchAll(IDENTIFIER_TOKEN_PATTERN)) tokens.add(match[0]);
 	}
 	const withoutFences = cleaned.replace(FENCED_BLOCK_PATTERN, "");
 	for (const match of withoutFences.matchAll(BACKTICKED_TOKEN_PATTERN)) {
@@ -237,15 +338,18 @@ function findShowFenceViolations(output: string): string[] {
 	const violations: string[] = [];
 	if ((output.match(/^```/gm) ?? []).length % 2 !== 0) violations.push("unbalanced fences");
 	const blocks = [...output.matchAll(FENCED_BLOCK_PATTERN)].map((match) => ({ language: match[1].toLowerCase(), text: match[0] }));
-	const htmlBlocks = blocks.filter((block) => block.language === "html");
-	if (htmlBlocks.length > 1) violations.push("more than one html fence");
-	if (htmlBlocks.length === 1) {
-		if (blocks[blocks.length - 1]!.language !== "html") violations.push("html fence is not the last fenced block");
-		if (output.slice(output.lastIndexOf("```") + 3).trim()) violations.push("trailing content after the html fence");
-		if (EXTERNAL_RESOURCE_PATTERN.test(htmlBlocks[0]!.text)) violations.push("html fence references external resources");
+	const diagrams = blocks.filter((block) => block.language === "html" || block.language === "mermaid");
+	if (diagrams.length > 1) violations.push("more than one diagram fence");
+	if (diagrams.length === 1) {
+		const language = diagrams[0]!.language;
+		if (blocks[blocks.length - 1]!.language !== language) violations.push(`${language} fence is not the last fenced block`);
+		if (output.slice(output.lastIndexOf("```") + 3).trim()) violations.push(`trailing content after the ${language} fence`);
 	}
 	for (const block of blocks) {
-		if (block.language === "mermaid") violations.push("bare mermaid fence");
+		if (block.language === "html" && EXTERNAL_RESOURCE_PATTERN.test(block.text)) violations.push("html fence references external resources");
+		if (block.language === "html" && (/<script/i.test(block.text) || UNTAGGED_MERMAID_PATTERN.test(block.text))) violations.push("script or mermaid inside the html fence");
+		if (block.language === "mermaid" && !isRenderableSequence(block.text.replace(/^```mermaid[^\n]*\n|```$/g, ""))) violations.push("mermaid is not a sequence with three or more participants");
+		if (block.language === "mermaid" && MERMAID_STYLING_PATTERN.test(block.text)) violations.push("mermaid styling, links, or html labels");
 		if (!block.language && UNTAGGED_MERMAID_PATTERN.test(block.text)) violations.push("untagged mermaid-like fence");
 	}
 	return [...new Set(violations)];

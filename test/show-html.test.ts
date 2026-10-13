@@ -5,7 +5,7 @@ import test from "node:test";
 
 // @ts-ignore Shared JavaScript test harness.
 import { bro, buildDir } from "./test-build.mjs";
-const { default: registerBro, showHtmlDirectory, writeShowHtml } = bro;
+const { default: registerBro, showHtmlDirectory, writeShowDiagram } = bro;
 
 test("Show reopen restores diagrams and retries Show; Explain still retries Explain", async () => {
 	const { initTheme } = await import("@earendil-works/pi-coding-agent");
@@ -156,7 +156,7 @@ const BRO_CSP =
 	'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:;">';
 
 async function saved(html: string): Promise<string> {
-	const path = await writeShowHtml(html);
+	const path = await writeShowDiagram({ kind: "html", source: html });
 	assert.ok(path.startsWith(join(buildDir, "tmp")), `wrote outside the isolated TMPDIR: ${path}`);
 	assert.ok(path.startsWith(showHtmlDirectory()));
 	return readFileSync(path, "utf8");
@@ -196,4 +196,24 @@ test("leading comments stay ahead of the doctype so the page keeps standards mod
 	const body = "<html><head></head><body>x</body></html>";
 	const out = await saved(`<!-- generated -->\n<!DOCTYPE html>\n${body}`);
 	assert.equal(out, `<!-- generated -->\n<!DOCTYPE html>\n\n${BRO_CSP}\n${body}\n`);
+});
+
+test("a Mermaid page runs only Bro's two hash-pinned scripts and keeps model source as text", async () => {
+	const { createHash } = await import("node:crypto");
+	const source = 'flowchart LR\n  n1["</pre><script>alert(1)</script>"] --> n2["a & b"]';
+	const path = await writeShowDiagram({ kind: "mermaid", source });
+	assert.ok(path.startsWith(showHtmlDirectory()));
+	const page = readFileSync(path, "utf8");
+	const scripts = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]!);
+	assert.equal(scripts.length, 2, "only the library and the init script");
+	assert.equal((page.match(/<script/gi) ?? []).length, 2, "model text cannot open a script element");
+	assert.equal((page.match(/<\/script/gi) ?? []).length, 2, "the inlined library cannot close its element early");
+	assert.ok(!/<!--|<\/?script/i.test(scripts[0]!), "the inlined library cannot open a comment or a script element");
+	const { Script } = await import("node:vm");
+	assert.doesNotThrow(() => new Script(scripts[0]!), "the rewritten library still parses as JavaScript");
+	assert.match(scripts[1]!, /securityLevel:"strict"/);
+	const csp = page.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)![1]!;
+	const hashes = scripts.map((script) => `'sha256-${createHash("sha256").update(script).digest("base64")}'`);
+	assert.equal(csp, `default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src ${hashes.join(" ")}`);
+	assert.ok(page.includes("n1[&#34;&#60;/pre&#62;&#60;script&#62;alert(1)&#60;/script&#62;&#34;] --&#62; n2[&#34;a &#38; b&#34;]"));
 });

@@ -17,7 +17,7 @@ import {
 	type BackendProgress,
 	type BackendSelection,
 } from "./backend.ts";
-import { isRecord, errorMessage, withDoctor, unquote } from "./util.ts";
+import { isRecord, errorMessage, withDoctor, unquote, isRenderableSequence } from "./util.ts";
 import {
 	type BackendName,
 	type BroSettings,
@@ -762,16 +762,22 @@ export function parseShowArguments(value: string): ParsedShowArguments {
 	return { requested: valid ? firstToken : undefined, steering, invalid: !valid };
 }
 
-export function extractShowHtml(text: string): string | undefined {
-	const fences = [...text.matchAll(/^```html[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\r\n]*$/gm)];
-	return fences.at(-1)?.[1]?.trim();
+export type ShowDiagram = { kind: "html" | "mermaid"; source: string };
+const SHOW_DIAGRAM_FENCE = /^```(html|mermaid)[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\r\n]*$/gm;
+
+export function extractShowDiagram(text: string): ShowDiagram | undefined {
+	const last = [...text.matchAll(SHOW_DIAGRAM_FENCE)].at(-1);
+	if (!last) return undefined;
+	const diagram = { kind: last[1] as ShowDiagram["kind"], source: last[2]!.trim() };
+	// Any other Mermaid stays in the modal as a plain text block, visible rather than hidden.
+	return diagram.kind === "html" || isRenderableSequence(diagram.source) ? diagram : undefined;
 }
 
-export function stripShowHtmlFence(text: string): string {
-	const matches = [...text.matchAll(/^```html[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\r\n]*$/gm)];
-	const last = matches.at(-1);
+export function stripShowDiagramFence(text: string): string {
+	const last = [...text.matchAll(SHOW_DIAGRAM_FENCE)].at(-1);
 	if (!last || last.index === undefined) return text;
-	return text.slice(0, last.index) + "[HTML diagram saved — press O to open]" + text.slice(last.index + last[0].length);
+	const shown = last[1] === "mermaid" ? `${last[0]}\n[Diagram saved — press O to render]` : "[HTML diagram saved — press O to open]";
+	return text.slice(0, last.index) + shown + text.slice(last.index + last[0].length);
 }
 
 export function showHtmlDirectory(): string {
@@ -790,16 +796,60 @@ function withShowCsp(html: string): string {
 	return html.replace(/^(\s*(?:<!--[^<>]*-->\s*)*(?:<!doctype[^>]*>\s*)?)/i, `$1\n${meta}\n`);
 }
 
-export async function writeShowHtml(html: string): Promise<string> {
-	const slug = createHash("sha256").update(html).digest("hex").slice(0, 8);
+// Bro, not the model, owns every script on a Mermaid page: the CSP allows only these two exact
+// scripts by hash, and the model's source is inserted as escaped text that Mermaid parses itself.
+const MERMAID_INIT = 'mermaid.initialize({startOnLoad:true,securityLevel:"strict",htmlLabels:false,flowchart:{htmlLabels:false}});';
+
+async function vendoredMermaid(): Promise<string> {
+	const library = await readFile(new URL("./vendor/mermaid.min.js", import.meta.url), "utf8");
+	// Inlined in <script>: "<!--" or "<script" would change how HTML parses the element. Every
+	// occurrence sits inside a JS string or regex literal, where \x3C is the same character.
+	return library.replace(/<(?=!--|\/?script)/gi, "\\x3C");
+}
+
+function escapeHtml(text: string): string {
+	return text.replace(/[&<>"]/g, (character) => `&#${character.charCodeAt(0)};`);
+}
+
+export async function mermaidShowPage(source: string): Promise<string> {
+	const library = await vendoredMermaid();
+	const hash = (script: string) => `'sha256-${createHash("sha256").update(script).digest("base64")}'`;
+	const escaped = escapeHtml(source);
+	return `<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src ${hash(library)} ${hash(MERMAID_INIT)}">
+<title>Bro diagram</title>
+<body style="margin:16px;font-family:system-ui,sans-serif">
+<style>pre.mermaid svg{max-height:calc(100vh - 64px)}</style>
+<pre class="mermaid">${escaped}</pre>
+<details><summary>Diagram source</summary><pre>${escaped}</pre></details>
+<script>${library}</script>
+<script>${MERMAID_INIT}</script>
+</body>`;
+}
+
+export async function writeShowDiagram(diagram: ShowDiagram): Promise<string> {
+	const page = diagram.kind === "mermaid" ? await mermaidShowPage(diagram.source) : withShowCsp(diagram.source);
+	const slug = createHash("sha256").update(page).digest("hex").slice(0, 8);
 	const directory = showHtmlDirectory();
 	await mkdir(directory, { recursive: true, mode: 0o700 });
 	for (const name of await readdir(directory)) {
 		if (SHOW_HTML_FILE_PATTERN.test(name)) await rm(join(directory, name), { force: true });
 	}
 	const path = join(directory, `bro-show-${slug}.html`);
-	await writeFile(path, `${withShowCsp(html)}\n`, "utf8");
+	await writeFile(path, `${page}\n`, "utf8");
 	return path;
+}
+
+// A diagram that cannot be written must not cost the reply: keep the text and warn instead.
+async function showDiagramPath(text: string, warn: (message: string) => void): Promise<string | undefined> {
+	const diagram = extractShowDiagram(text);
+	if (!diagram) return undefined;
+	try { return await writeShowDiagram(diagram); }
+	catch (error) {
+		warn(`Diagram file unavailable: ${errorMessage(error)}`);
+		return undefined;
+	}
 }
 
 function openShowHtml(path: string): boolean {
@@ -1628,7 +1678,7 @@ The mode decides how much of the source to keep; your preferences decide who it'
 - **C** — copy the full explanation
 - **R** — repeat the current action (an explanation keeps its mode)
 - **M** — re-simplify in the next mode (brief → balanced → faithful); not saved
-- **O** — open the HTML diagram when a show reply contains one
+- **O** — open the diagram (HTML layout or sequence diagram) when a show reply contains one
 - **Esc** — close, or cancel while Bro is working
 
 ## Privacy
@@ -1924,7 +1974,7 @@ async function showBroModal(ctx: ExtensionCommandContext, options: BroModalOptio
 			);
 
 			const present = (result: ModalResult, notice = "") => {
-				const display = result.htmlPath ? stripShowHtmlFence(result.text) : result.text;
+				const display = result.htmlPath ? stripShowDiagramFence(result.text) : result.text;
 				modal.setResult(display, options.retryable ?? Boolean(options.run), notice, result.source?.label, result.text, result.model);
 				modal.setHtmlPath(result.htmlPath ?? "");
 				modal.setMode(result.mode);
@@ -2691,8 +2741,8 @@ export default async function bro(pi: ExtensionAPI) {
 					} catch (error) {
 						throw new Error(withDoctor(error));
 					}
-					const html = extractShowHtml(result.text);
-					return { source: captured, ...result, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
+					const htmlPath = await showDiagramPath(result.text, (message) => ctx.ui.notify(message, "warning"));
+					return { source: captured, ...result, ...(htmlPath ? { htmlPath } : {}) };
 				};
 				try {
 					await showBroModal(ctx, {
@@ -2926,15 +2976,8 @@ export default async function bro(pi: ExtensionAPI) {
 
 				const steering = lastShowSteering;
 				if (steering !== undefined) {
-					const html = extractShowHtml(lastResult.text);
 					// Temp files may have been cleaned by the OS or another Bro session.
-					if (html && ctx.mode === "tui") {
-						try { lastResult.htmlPath = await writeShowHtml(html); }
-						catch (error) {
-							lastResult.htmlPath = undefined;
-							ctx.ui.notify(`Diagram file unavailable: ${errorMessage(error)}`, "warning");
-						}
-					}
+					if (ctx.mode === "tui") lastResult.htmlPath = await showDiagramPath(lastResult.text, (message) => ctx.ui.notify(message, "warning"));
 				}
 				await showBroModal(ctx, {
 					result: lastResult,
@@ -2943,8 +2986,8 @@ export default async function bro(pi: ExtensionAPI) {
 					run: steering === undefined ? run : async (signal, source, onProgress) => {
 						if (!source) throw new Error("No captured Show source.");
 						const result = await runShowExplanation(source.text, steering, signal, await readSettings(), onProgress);
-						const html = extractShowHtml(result.text);
-						return { source, ...result, ...(html ? { htmlPath: await writeShowHtml(html) } : {}) };
+						const htmlPath = await showDiagramPath(result.text, (message) => ctx.ui.notify(message, "warning"));
+						return { source, ...result, ...(htmlPath ? { htmlPath } : {}) };
 					},
 					onResult: (result) => remember(result, steering),
 				});

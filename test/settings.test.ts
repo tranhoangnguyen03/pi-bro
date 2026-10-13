@@ -414,7 +414,8 @@ test("modal rollback on persistence failure agrees with on-disk state", async (t
 		// Trigger an effort change: model is first row, effort is second row
 		modal.handleInput("\u001b[B"); // navigate down to effort
 		modal.handleInput("\r");       // change effort
-		await new Promise((r) => setTimeout(r, 50));
+		// The save is queued asynchronously; wait for its outcome rather than a fixed delay.
+		for (let i = 0; i < 500 && !modal.render(120).join("\n").includes("Could not save settings"); i++) await new Promise((r) => setTimeout(r, 10));
 
 		// Modal UI reflects failure and rollback
 		const rendered = modal.render(120).join("\n");

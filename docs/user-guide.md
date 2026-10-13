@@ -95,7 +95,7 @@ next mode without saving it:
   faithful → brief). It applies to this explanation only and does not change
   the mode saved by `/bro mode`; pressing it again while Bro is working skips
   ahead
-- **O**: Open the HTML diagram when a show reply contains one
+- **O**: Open the diagram (an HTML layout or a rendered sequence diagram) when a show reply contains one
 - **Esc**: Close the modal, or cancel while Bro is working
 
 The modal header shows the model and reasoning effort the explanation or
@@ -280,6 +280,12 @@ to draw, Bro falls back to a plain outline instead of forcing a diagram. A
 reply that ends in one self-contained HTML block — layout, a state comparison,
 anything where position itself carries meaning — is written to a file and
 opened with **O**.
+
+When the turns describe messages passing among three or more participants in
+a set order (for example browser → API → database), a reply can instead end in
+one Mermaid `sequenceDiagram`. The modal keeps its source visible with
+`[Diagram saved — press O to render]`; **O** opens a page that draws it with
+the Mermaid copy bundled in Bro. Any other Mermaid stays plain text.
 
 Pressing **R** redraws the same captured turns; running `/bro show` again
 captures the latest turns afresh. `/bro show <n-turns>` overrides the default turn
@@ -945,10 +951,14 @@ read. Move what you want to keep into `/bro preferences`, and choose
   scripts or loading page subresources. It sends the extracted readable text,
   including links preserved in that text, to the selected backend; it does not
   separately send the requested URL or raw page HTML.
-- **Show diagrams**: When a show reply ends in one self-contained HTML block,
-  Bro writes it to `pi-bro-<uid>/bro-show-<hash>.html` in your system temp folder with a restrictive
-  Content-Security-Policy, and opens it in your browser only when you press
-  **O**. **C** copies the full reply, including the HTML.
+- **Show diagrams**: When a show reply ends in one self-contained HTML block
+  or one Mermaid sequence diagram, Bro writes a page to
+  `pi-bro-<uid>/bro-show-<hash>.html` in your system temp folder with a
+  restrictive Content-Security-Policy, and opens it in your browser only when
+  you press **O**. HTML pages run no scripts. Sequence-diagram pages run only
+  Bro's bundled Mermaid and its fixed setup script; the model's diagram text is
+  inserted as escaped text and nothing is loaded from the network. **C**
+  copies the full reply, including the diagram source.
 - **Clipboard**: **C**, `/copy`, `/copy-all`, and Guided Review's Copy finding copy text to your system
   clipboard, where your operating system or clipboard manager may retain it.
 
@@ -974,7 +984,7 @@ tool before giving it to Bro.
   current session — the last few turns' user and assistant messages, with
   tool calls, tool results, reasoning, and images always omitted; its shapes
   reflect what was reported in the conversation, not independent verification.
-- HTML diagrams open in your default browser; pressing **O** on a remote or
+- Diagrams open in your default browser; pressing **O** on a remote or
   headless session with no display reports the failure instead of opening
   anything.
 - Explain keeps only the latest result in memory and does not export directly to files. Guided Review separately persists review records and captured source.

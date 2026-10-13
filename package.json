@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "version": "0.22.2",
+  "version": "0.23.0",
   "description": "A sidekick for you and your Pi agent: plain-language explanations, side questions, diagrams, PR review and second opinions, without cluttering the agent's context.",
   "type": "module",
   "license": "MIT",
@@ -53,6 +53,7 @@
     "src/ui-capabilities.ts",
     "src/backend.ts",
     "src/prompt.ts",
+    "src/vendor/mermaid.min.js",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
