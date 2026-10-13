@@ -42,6 +42,11 @@
   ],
   "files": [
     "src/bro.ts",
+    "src/doctor.ts",
+    "src/show.ts",
+    "src/advisor.ts",
+    "src/btw.ts",
+    "src/explain-modal.ts",
     "src/review.ts",
     "src/review-source.ts",
     "src/review-ui.ts",

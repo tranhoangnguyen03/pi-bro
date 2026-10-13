@@ -1423,3 +1423,38 @@ export async function execute(
 	}
 	return executeArgvPrint(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
 }
+
+// Thin presentation-boundary wrapper around the shared backend: coalesces raw text progress to the
+// existing 75ms cadence and translates the backend's tagged outcome back into this function's
+// existing throw-on-failure contract.
+export async function runBackendText(
+	prompt: string,
+	selection: BackendSelection,
+	signal: AbortSignal,
+	onProgress?: (text: string) => void,
+	feature: "explain" | "show" = "explain",
+): Promise<string> {
+	let updateTimer: ReturnType<typeof setTimeout> | undefined;
+	let latest: string | undefined;
+	const throttledProgress = onProgress
+		? (progress: BackendProgress) => {
+				if (progress.kind !== "text") return;
+				latest = progress.text;
+				if (!updateTimer) {
+					updateTimer = setTimeout(() => {
+						updateTimer = undefined;
+						if (!signal.aborted && latest !== undefined) onProgress(latest);
+					}, 75);
+				}
+			}
+		: undefined;
+
+	try {
+		const outcome = await execute({ feature, prompt, access: "restricted" }, selection, signal, throttledProgress);
+		if (outcome.status === "success") return outcome.text;
+		throw new Error(outcome.message);
+	} finally {
+		if (updateTimer) clearTimeout(updateTimer);
+	}
+}
+
