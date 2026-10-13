@@ -156,6 +156,7 @@ console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,resul
 		}
 		throw Error("Timed out waiting for saved review");
 	};
+	const ready = () => /✓ Review ready/.test(component.render(103).join("\n"));
 	const ctx = {
 		mode: "tui",
 		ui: {
@@ -175,6 +176,8 @@ console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,resul
 						component.handleInput("\r");
 						component.handleInput("\r");
 						await waitFor(async () => Boolean((await loadReview(root, id)).guide));
+						// The file is written before the run settles; keys sent while still busy hit busy-only actions.
+						await waitFor(() => ready());
 						component.handleInput("\x1b");
 						component.handleInput("\x1b[B");
 						component.handleInput("\x1b[B");
@@ -191,6 +194,7 @@ console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,resul
 						component.handleInput("Why this behavior?");
 						component.handleInput("\r");
 						await waitFor(async () => (await loadReview(root, id)).turns[0]?.status === "complete");
+						await waitFor(() => ready());
 						component.handleInput("\x1b");
 						component.handleInput("\x1b");
 						component.handleInput("\x1b");
@@ -204,7 +208,6 @@ console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,resul
 	try {
 		await openGuidedReview(ctx, "resume", "Reader prefs");
 		if (capturedError) throw capturedError;
-		component.dispose();
 		const saved = await loadReview(root, id);
 		assert.equal(saved.guide.summary, "Captured purpose");
 		assert.equal(saved.turns[0].answer, "A contextual answer");
@@ -238,6 +241,8 @@ console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,resul
 			},
 		};
 		await openGuidedReview(reopen, "resume", "Reader prefs");
+		// dispose() saves without returning its promise; disposing earlier lets that write land over the edited view above.
+		component.dispose();
 		assert.equal(
 			(await readFile(calls, "utf8")).trim().split("\n").length,
 			2,

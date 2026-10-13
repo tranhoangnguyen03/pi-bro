@@ -13,6 +13,10 @@ All notable changes to pi-bro are documented here.
 
 - `/bro show` no longer invites Mermaid inside the HTML fence. Bro's HTML page blocks all scripts, so Mermaid could only appear as plain source text. The prompt now asks for hand-rolled HTML and CSS only and says prose subjects never use the HTML fence (#108).
 
+### Fixed
+
+- Make cancellation consistent across synchronous reading and asynchronous parsing in `extractDocumentText` (#87).
+
 ### Added
 
 - Reader benchmark: five real, maintainer-approved Explain fixtures and a brief-mode candidate arm for shipped-vs-candidate comparisons. Exact-text and Markdown-marker checks removed; meaning is checked by the yes/no questions (#101).
@@ -29,6 +33,19 @@ All notable changes to pi-bro are documented here.
 - The README is now a short overview (install, try it, requirements, what leaves your machine, limits). The full reference moved to `docs/user-guide.md`, and `/bro help` links there (#116).
 - Added `SECURITY.md`, `CONTRIBUTING.md`, issue forms and `docs/PUBLIC-PRESENTATION.md`, the presentation standard for pi-* repos (#116).
 - Refocus prompt tests on safety and structure rather than frozen wording or presentation order; identify fake-Agy Explain modes from current prompt builders instead of hardcoded phrases (#110).
+
+## [0.22.1] - 2026-10-12
+
+### Security
+
+- Public-web transport safety boundaries and offline qualification (#86):
+  - Block IPv4-compatible IPv6 (`::/96`) and Site-Local IPv6 (`fec0::/10`) in `NON_PUBLIC_ADDRESSES` to prevent SSRF bypasses via mapped loopback and cloud metadata targets on dual-stack hosts.
+  - Disable HTTP socket connection pooling (`agent: false`) on web requests so keep-alive socket reuse cannot bypass address pinning (`lookup`).
+  - Add offline test coverage in `test/sources.test.ts` for mixed DNS answers, address pinning, private redirects, HTTPS downgrade, loops, hop bounds, payload limits, encoding, and cancellation.
+
+### Fixed
+
+- Interrupt stalled DNS lookups immediately when an abort or timeout signal fires during web ingestion (#86).
 
 ## [0.22.0] - 2026-10-11
 

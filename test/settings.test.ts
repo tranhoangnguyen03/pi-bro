@@ -959,7 +959,8 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'AN
  const originalPath = process.env.PATH;
  process.env.PATH = `${bin}:${originalPath}`;
  let command: any, modal: any;
- const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]) : [];
+ // Only newline-terminated lines: polling can catch the fake mid-append, even with an empty file.
+ const calls = () => existsSync(log) ? readFileSync(log, "utf8").split("\n").slice(0, -1).map((line) => JSON.parse(line) as string[]) : [];
  const prompt = (argv: string[]) => argv[argv.indexOf("--print") + 1]!;
  const ask = async (question: string) => {
   const before = calls().length;
