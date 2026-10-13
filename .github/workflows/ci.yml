@@ -28,6 +28,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+  # Dev dependencies pin the newest Pi; this keeps the oldest supported Pi (README) tested.
+  pi-floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save @earendil-works/pi-coding-agent@0.84.2 @earendil-works/pi-tui@0.84.2 typebox@1.3.7
+      - run: npm test
   test:
     runs-on: ubuntu-latest
     steps:
