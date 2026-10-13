@@ -16,9 +16,7 @@ main agent's conversation stays clean. Before you install, see
 [what leaves your machine](#what-leaves-your-machine).
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png">
-    <img alt="A dense agent reply explained in plain language in the Bro window" src="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png" width="820">
-  </a>
+  <img alt="Bro explains a dense agent reply in plain language, then answers a side question" src="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-demo.gif" width="820">
 </p>
 
 ## Install

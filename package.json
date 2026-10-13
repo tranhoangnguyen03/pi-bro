@@ -79,7 +79,7 @@
     "extensions": [
       "./src/bro.ts"
     ],
-    "image": "https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png"
+    "image": "https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/social-preview.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
