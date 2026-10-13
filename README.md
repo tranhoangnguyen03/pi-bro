@@ -16,9 +16,7 @@ main agent's conversation stays clean. Before you install, see
 [what leaves your machine](#what-leaves-your-machine).
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png">
-    <img alt="A dense agent reply explained in plain language in the Bro window" src="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png" width="820">
-  </a>
+  <img alt="Bro explains a dense agent reply in plain language, then answers a side question" src="https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-demo.gif" width="820">
 </p>
 
 ## Install
@@ -62,7 +60,7 @@ Guided Review has its own [guide](docs/guided-review.md).
 
 ## Requirements
 
-- Pi `>=0.84.2 <1` and Node.js `>=22.19.0`.
+- Pi `>=0.84.2` (tested on 0.84.2 and 1.2) and Node.js `>=22.19.0`.
 - macOS or Linux. Windows is untested; there, cancelling stops only the
   backend's direct process, not anything it started.
 - At least one backend CLI on your `PATH`, signed in once from your terminal.

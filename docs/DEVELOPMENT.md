@@ -136,7 +136,7 @@ node .github/scripts/release-utils.mjs selftest
 npm run benchmark:dry-run                  # manual live benchmark: see benchmark/README.md
 ```
 
-Extension tests and their helpers live in `test/`; benchmark tests stay in `benchmark/`. CI runs `npm test` on Linux with Node 24 and Node 22.19.0 (the `engines` floor), and on macOS with Node 24.
+Extension tests and their helpers live in `test/`; benchmark tests stay in `benchmark/`. CI runs `npm test` on Linux with Node 24 and Node 22.19.0 (the `engines` floor), and on macOS with Node 24, all with the pinned Pi (1.2.0). The `pi-floor` job reruns it with Pi 0.84.2, the oldest supported version.
 
 Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs` and `review-ux.test.mjs` (rendering/interaction), `review-session.test.mjs` and `review-regeneration.test.mjs` (fake-CLI controller/save/recovery), `review-versions.test.mjs` (single-guide/current validation and rejected prototype schemas), `review-ui.test.mjs` (evidence/save presentation), `review-doctor.test.mjs` (review-only backend selection). Adapter tests keep BTW/native-session behavior separate from stateless review. Add regressions to the existing owner; do not create another generic harness.
 

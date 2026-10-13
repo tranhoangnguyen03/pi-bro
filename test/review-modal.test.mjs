@@ -639,7 +639,8 @@ test("replacement drafts remain reachable in Questions without a sent turn", () 
 	modal.handleInput(enter);
 	assert.equal(modal.view.target, "old-topic");
 	assert.equal(modal.view.screen, "discussion");
-	assert.match(stripVTControlCharacters(modal.render(103).join("\n")), /half typed/);
+	// Pi >= 1.x marks the editor cursor with APC sequences (ESC _ … BEL) that stripVTControlCharacters keeps.
+	assert.match(stripVTControlCharacters(modal.render(103).join("\n")).replace(/\x1b_[^\x07]*\x07/g, ""), /half typed/);
 });
 
 test("finding detail keeps its title while scrolling and coverage uses spaced lists", () => {

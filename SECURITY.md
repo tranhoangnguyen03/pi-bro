@@ -8,7 +8,7 @@ Only the latest published `0.x` minor version receives fixes.
 
 Please report privately through GitHub:
 **Security → [Report a vulnerability](https://github.com/tranhoangnguyen03/pi-bro/security/advisories/new)**.
-Do not open a public issue. I aim to reply within 7 days.
+Do not open a public issue.
 
 Useful details: pi-bro and Pi versions, the backend you selected, your OS, and
 steps to reproduce.

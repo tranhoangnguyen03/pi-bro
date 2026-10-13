@@ -152,14 +152,12 @@ run.
   `main` and active PRs or spikes.
 - **MUST** Open issues read as user-facing problems or requests. Internal work
   items carry a label (e.g. `maintenance`). Shipped issues are closed.
-- **SHOULD** Pin one "Roadmap" issue.
-- **SHOULD** Give 1–3 issues the `good first issue` label, or delete the label.
 
 ### I. Community files
 
 - **MUST** `SECURITY.md`: how to report (with GitHub private vulnerability
-  reporting turned on), supported versions (e.g. latest 0.x minor) and
-  expected response time.
+  reporting turned on) and supported versions (e.g. latest 0.x minor).
+  No response-time promise unless you can keep it.
 - **MUST** Issue forms: `bug.yml` (asks for extension version, Pi version,
   backend, OS, Node and diagnostic output), `feature.yml`, and `config.yml`
   (links for questions).
