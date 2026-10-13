@@ -1,6 +1,6 @@
 import { readFile, stat, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, extname, sep } from "node:path";
-import { request as httpRequest, type IncomingMessage } from "node:http";
+import { request as httpRequest, type IncomingMessage, type ClientRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
@@ -122,6 +122,7 @@ for (const [network, prefix] of [
 	NON_PUBLIC_ADDRESSES.addSubnet(network, prefix, "ipv4");
 }
 for (const [network, prefix] of [
+	["::", 96],
 	["::", 128],
 	["::1", 128],
 	["64:ff9b::", 96],
@@ -134,6 +135,7 @@ for (const [network, prefix] of [
 	["5f00::", 16],
 	["fc00::", 7],
 	["fe80::", 10],
+	["fec0::", 10],
 	["ff00::", 8],
 ] as const) {
 	NON_PUBLIC_ADDRESSES.addSubnet(network, prefix, "ipv6");
@@ -187,18 +189,53 @@ export function parseWebRedirect(current: URL, location: string): URL {
 	return next;
 }
 
+export type WebDnsLookup = (
+	hostname: string,
+	options: { all: true; verbatim: true },
+) => Promise<Array<{ address: string; family: number }>>;
+
+export type WebHttpDispatch = (
+	url: URL | string,
+	options: any,
+	callback?: (res: IncomingMessage) => void,
+) => ClientRequest;
+
+export type WebTransport = {
+	// Injectable for offline tests only -- production always uses native Node dns/http/https modules.
+	lookup?: WebDnsLookup;
+	httpRequest?: WebHttpDispatch;
+	httpsRequest?: WebHttpDispatch;
+};
+
 function headerValue(value: string | string[] | undefined): string {
 	return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
-async function resolvePublicAddress(hostname: string): Promise<{ address: string; family: 4 | 6 }> {
+async function resolvePublicAddress(
+	hostname: string,
+	signal?: AbortSignal,
+	dnsLookup: WebDnsLookup = lookup as unknown as WebDnsLookup,
+): Promise<{ address: string; family: 4 | 6 }> {
+	if (signal?.aborted) throw new Error("Canceled.");
 	const host = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
 	let addresses: Array<{ address: string; family: number }>;
 	try {
-		addresses = await lookup(host, { all: true, verbatim: true });
+		const lookupPromise = dnsLookup(host, { all: true, verbatim: true });
+		if (signal) {
+			addresses = await Promise.race([
+				lookupPromise,
+				new Promise<never>((_, reject) => {
+					signal.addEventListener("abort", () => reject(new Error("Canceled.")), { once: true });
+				}),
+			]);
+		} else {
+			addresses = await lookupPromise;
+		}
 	} catch (error) {
+		if (signal?.aborted) throw new Error("Canceled.");
 		throw new Error(`Could not resolve webpage host: ${errorMessage(error)}`);
 	}
+	if (signal?.aborted) throw new Error("Canceled.");
 	if (!addresses.length) throw new Error("The webpage host has no network address.");
 	if (addresses.some((item) => !isPublicWebAddress(item.address))) {
 		throw new Error("Bro cannot connect to local, private, or reserved network addresses.");
@@ -206,19 +243,27 @@ async function resolvePublicAddress(hostname: string): Promise<{ address: string
 	return { address: addresses[0].address, family: addresses[0].family === 6 ? 6 : 4 };
 }
 
-function requestWebPage(url: URL, address: { address: string; family: 4 | 6 }, signal: AbortSignal): Promise<IncomingMessage> {
+function requestWebPage(
+	url: URL,
+	address: { address: string; family: 4 | 6 },
+	signal: AbortSignal,
+	requestFn?: WebHttpDispatch,
+): Promise<IncomingMessage> {
+	const defaultRequest = (url.protocol === "https:" ? httpsRequest : httpRequest) as unknown as WebHttpDispatch;
+	const execute = requestFn ?? defaultRequest;
 	return new Promise((resolveResponse, rejectResponse) => {
-		const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+		const request = execute(
 			url,
 			{
 				method: "GET",
 				signal,
+				agent: false,
 				headers: {
 					Accept: "text/html,application/xhtml+xml",
 					"Accept-Encoding": "identity",
 					"User-Agent": "pi-bro URL reader (+https://github.com/tranhoangnguyen03/pi-bro)",
 				},
-				lookup: (_hostname, options, callback) => {
+				lookup: (_hostname: string, options: any, callback: any) => {
 					if (options.all) callback(null, [address]);
 					else callback(null, address.address, address.family);
 				},
@@ -283,17 +328,22 @@ function assertWebElementLimit(html: string): void {
 	}
 }
 
-async function fetchPublicHtml(startUrl: URL, signal: AbortSignal): Promise<{ html: string; url: URL }> {
+export async function fetchPublicHtml(
+	startUrl: URL,
+	signal: AbortSignal,
+	transport?: WebTransport,
+): Promise<{ html: string; url: URL }> {
 	let url = startUrl;
 	const visited = new Set<string>();
 
 	for (let redirects = 0; ; redirects++) {
 		if (visited.has(url.href)) throw new Error("Webpage redirect loop detected.");
 		visited.add(url.href);
-		const address = await resolvePublicAddress(url.hostname);
+		const address = await resolvePublicAddress(url.hostname, signal, transport?.lookup);
 		let response: IncomingMessage;
 		try {
-			response = await requestWebPage(url, address, signal);
+			const requestFn = url.protocol === "https:" ? transport?.httpsRequest : transport?.httpRequest;
+			response = await requestWebPage(url, address, signal, requestFn);
 		} catch (error) {
 			throw new Error(`Could not fetch webpage: ${errorMessage(error)}`);
 		}
@@ -353,11 +403,15 @@ export async function extractWebHtml(html: string, url: string): Promise<BroSour
 	return { text, label: [parsedUrl.hostname, title].filter(Boolean).join(" · ") };
 }
 
-export async function extractWebPage(input: string, signal?: AbortSignal): Promise<BroSource> {
+export async function extractWebPage(
+	input: string,
+	signal?: AbortSignal,
+	transport?: WebTransport,
+): Promise<BroSource> {
 	const timeout = AbortSignal.timeout(WEB_TIMEOUT_MS);
 	const combinedSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
 	try {
-		const fetched = await fetchPublicHtml(parseWebUrl(input), combinedSignal);
+		const fetched = await fetchPublicHtml(parseWebUrl(input), combinedSignal, transport);
 		return await extractWebHtml(fetched.html, fetched.url.href);
 	} catch (error) {
 		if (signal?.aborted) throw new Error("Canceled.");
