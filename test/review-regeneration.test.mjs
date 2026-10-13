@@ -129,11 +129,14 @@ require('node:fs').writeFileSync(${JSON.stringify(validating)},'yes');setTimeout
 		panel.handleInput(down);
 		panel.handleInput(enter);
 	};
+	// Closing already saves. dispose() saves again without returning its promise, so a closed panel
+	// disposed mid-test can overwrite the next step's edits; dispose them all at the end instead.
+	const closed = [];
 	const close = async (opened) => {
 		panel.handleInput(esc);
 		panel.handleInput(esc);
 		await opened;
-		panel.dispose();
+		closed.push(panel);
 	};
 	try {
 		let opened = open();
@@ -164,7 +167,7 @@ require('node:fs').writeFileSync(${JSON.stringify(validating)},'yes');setTimeout
 		panel.handleInput(esc);
 		panel.handleInput(esc);
 		await opened;
-		panel.dispose();
+		closed.push(panel);
 		// Malformed regeneration leaves both good versions untouched.
 		saved = await loadReview(root, id);
 		saved.ui.selected = "overview";
@@ -223,6 +226,7 @@ require('node:fs').writeFileSync(${JSON.stringify(validating)},'yes');setTimeout
 		process.env.PATH = oldPath;
 		resolveOpen?.();
 		panel?.dispose();
+		for (const spent of closed) if (spent !== panel) spent.dispose();
 		try {
 			await readFile(root);
 			await rm(root);
