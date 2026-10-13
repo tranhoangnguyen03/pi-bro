@@ -4,6 +4,10 @@ All notable changes to pi-bro are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Make cancellation consistent across synchronous reading and asynchronous parsing in `extractDocumentText` (#87).
+
 ### Added
 
 - Reader benchmark: five real, maintainer-approved Explain fixtures and a brief-mode candidate arm for shipped-vs-candidate comparisons. Exact-text and Markdown-marker checks removed; meaning is checked by the yes/no questions (#101).
