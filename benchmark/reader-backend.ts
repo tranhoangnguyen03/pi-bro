@@ -1,4 +1,4 @@
-import { execute, CLAUDE_EFFORTS, CODEX_EFFORTS, MUSE_EFFORTS, type BackendSelection } from '../backend.ts';
+import { execute, CLAUDE_EFFORTS, CODEX_EFFORTS, MUSE_EFFORTS, type BackendSelection } from '../src/backend.ts';
 import { executeIsolatedCall, type ManifestRow, type BenchmarkResult } from './run.ts';
 
 export function generatorSettings(value:any) {

@@ -3,7 +3,7 @@
 The simulated `/review-demo` launcher has been retired. Use the production command:
 
 ```sh
-pi --tui-mode fullscreen --no-extensions -e ./bro.ts
+pi --tui-mode fullscreen --no-extensions -e ./src/bro.ts
 ```
 
 Then `/bro guided-review https://github.com/tranhoangnguyen03/pi-bro/pull/102`.

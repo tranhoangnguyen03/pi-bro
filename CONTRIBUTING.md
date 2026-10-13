@@ -8,7 +8,7 @@ For bigger changes, open an issue first so we can agree on the shape.
 ```sh
 npm ci
 npm test        # typecheck + offline tests with fake backend CLIs; never calls a model
-pi --tui-mode fullscreen -e ./bro.ts
+pi --tui-mode fullscreen -e ./src/bro.ts
 ```
 
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) is the code map and lists the

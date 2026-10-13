@@ -1,6 +1,6 @@
 // Candidate prompts measured against the shipped builders. A candidate rewrites one exact part of
 // the shipped prompt, so a run shows the effect of that change alone. Nothing here ships to users.
-import { buildDefaultPrompt, type BroMode } from "../prompt.ts";
+import { buildDefaultPrompt, type BroMode } from "../src/prompt.ts";
 
 type Candidate = { mode: BroMode; shipped: string; replacement: string };
 

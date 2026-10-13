@@ -89,7 +89,7 @@ test("collectLocalImports resolves nested relative paths and cycles accurately",
 
 test("package.json files declares every locally imported module from pi.extensions", () => {
 	const manifest = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8"));
-	const entryPoints: string[] = manifest.pi?.extensions ?? ["./bro.ts"];
+	const entryPoints: string[] = manifest.pi?.extensions ?? ["./src/bro.ts"];
 	const localImports = collectLocalImports(entryPoints, repoDir);
 
 	const declaredFiles = new Set((manifest.files ?? []).map((f: string) => f.replace(/^\.\//, "")));

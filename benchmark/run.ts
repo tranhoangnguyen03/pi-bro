@@ -1,4 +1,4 @@
-import { beginAttempt } from "../backend.ts";
+import { beginAttempt } from "../src/backend.ts";
 import { spawn } from "node:child_process";
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { BRO_MODES, buildDefaultPrompt, buildShowPrompt, type BroMode } from "../prompt.ts";
+import { BRO_MODES, buildDefaultPrompt, buildShowPrompt, type BroMode } from "../src/prompt.ts";
 import { buildBaselinePrompt } from "./baseline.ts";
 import { BENCHMARK_CORPUS, checkOutput, type BenchmarkFixture } from "./corpus.ts";
 import { SHOW_CORPUS, checkShowOutput, type ShowFixture } from "./show-corpus.ts";

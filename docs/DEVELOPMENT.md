@@ -7,7 +7,7 @@ those are historical records.
 
 ## Files
 
-Production is published as TypeScript source (no build step):
+Production code lives in `src/` and is published as TypeScript source (no build step):
 
 - **`bro.ts`** — the Pi extension entry point and wiring. Owns the `/bro` command and completion,
   `/bro doctor`, `/bro help`, the BTW thread and composer, the `bro_advisor` tool

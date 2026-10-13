@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { openGuidedReview } from "../review-ui.ts";
+import { openGuidedReview } from "../src/review-ui.ts";
 
 // Development entry uses the production controller, not simulated answers.
 export default function (pi: ExtensionAPI) {

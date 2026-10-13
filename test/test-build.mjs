@@ -17,7 +17,7 @@ after(() => {
  rmSync(buildDir, { recursive: true, force: true });
 });
 execFileSync(process.execPath, [join(repoDir, 'node_modules', 'typescript', 'bin', 'tsc'),
- '--ignoreConfig', join(repoDir, 'bro.ts'), '--target', 'ES2022', '--module', 'NodeNext',
+ '--ignoreConfig', join(repoDir, 'src', 'bro.ts'), '--target', 'ES2022', '--module', 'NodeNext',
  '--moduleResolution', 'NodeNext', '--strict', '--allowImportingTsExtensions',
  '--rewriteRelativeImportExtensions', '--skipLibCheck', '--types', 'node', '--outDir', buildDir,
 ], { stdio: 'pipe' });

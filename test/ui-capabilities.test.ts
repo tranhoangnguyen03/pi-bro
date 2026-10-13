@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasBroCustomUi, broModalRows, canBroInsertIntoEditor, insertBroDesktopText } from "../ui-capabilities.ts";
+import { hasBroCustomUi, broModalRows, canBroInsertIntoEditor, insertBroDesktopText } from "../src/ui-capabilities.ts";
 
 test('atomic insertion requires capability and method and preserves structured outcomes', async () => {
   let calls=0;

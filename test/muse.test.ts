@@ -11,7 +11,7 @@ import {
 	type BackendSelection,
 	MUSE_EFFORTS,
 	execute,
-} from "../backend.ts";
+} from "../src/backend.ts";
 
 const originalPath = process.env.PATH;
 

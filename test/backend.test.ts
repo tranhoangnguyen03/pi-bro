@@ -16,7 +16,7 @@ import {
 	beginAttempt,
 	execute,
 	frameStdoutLines,
-} from "../backend.ts";
+} from "../src/backend.ts";
 
 const withFakeAgy = (script: string, run: (binDir: string) => Promise<void>) => withFakeExecutable("agy", script, run);
 

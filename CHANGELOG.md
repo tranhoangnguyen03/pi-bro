@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Runtime source moved into `src/`; the extension entry is now `src/bro.ts`. Installs are unaffected. The package also sets a pi.dev gallery preview image (#116).
+
 ## [0.22.2] - 2026-10-13
 
 ### Highlights
