@@ -1678,7 +1678,7 @@ The mode decides how much of the source to keep; your preferences decide who it'
 - **C** — copy the full explanation
 - **R** — repeat the current action (an explanation keeps its mode)
 - **M** — re-simplify in the next mode (brief → balanced → faithful); not saved
-- **O** — open the HTML diagram when a show reply contains one
+- **O** — open the diagram (HTML layout or sequence diagram) when a show reply contains one
 - **Esc** — close, or cancel while Bro is working
 
 ## Privacy
