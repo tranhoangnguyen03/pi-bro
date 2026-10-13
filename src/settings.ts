@@ -1,6 +1,6 @@
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	type BackendSelection,
@@ -10,8 +10,8 @@ import {
 	CODEX_EFFORTS,
 	MUSE_EFFORTS,
 } from "./backend.ts";
-import { type BroMode, DEFAULT_BRO_MODE, parseBroMode } from "./prompt.ts";
-import { isRecord } from "./util.ts";
+import { type BroMode, DEFAULT_BRO_MODE, MAX_PREFERENCES_CHARS, parseBroMode } from "./prompt.ts";
+import { errorMessage, isRecord } from "./util.ts";
 
 export const EFFORTS = ["default", "low", "medium", "high"] as const;
 export const BACKENDS = ["agy", "claude", "grok", "codex", "muse"] as const;
@@ -503,3 +503,45 @@ export async function writeSettings(settings: BroSettings): Promise<void> {
 		throw error;
 	}
 }
+
+export const PREFERENCES_FILE = join(getAgentDir(), "bro-preferences.md");
+// Larger files are rejected before reading, even by the editor; the prompt limit is MAX_PREFERENCES_CHARS.
+export const MAX_PREFERENCES_FILE_BYTES = 64 * 1024;
+
+// Raw file text for the editor, undefined when there is no file: never rejects for length, so an
+// oversize file can be opened and trimmed.
+export async function readPreferencesRaw(): Promise<string | undefined> {
+	let size: number;
+	try {
+		size = (await stat(PREFERENCES_FILE)).size;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw new Error(`Cannot read ${PREFERENCES_FILE}: ${errorMessage(error)}`);
+	}
+	if (size > MAX_PREFERENCES_FILE_BYTES) throw new Error(`${PREFERENCES_FILE} is larger than 64 KB. Edit or delete it directly.`);
+	try {
+		return (await readFile(PREFERENCES_FILE, "utf8")).replace(/^\uFEFF/, "");
+	} catch (error) {
+		throw new Error(`Cannot read ${PREFERENCES_FILE}: ${errorMessage(error)}`);
+	}
+}
+
+// Preferences for prompts: "" when absent or blank. Re-read on every request. An oversize file stops
+// the request before any backend call instead of being silently truncated.
+export async function readPreferences(): Promise<string> {
+	const text = ((await readPreferencesRaw()) ?? "").trim();
+	if (text.length > MAX_PREFERENCES_CHARS) {
+		throw new Error(`${PREFERENCES_FILE} is ${text.length.toLocaleString("en-US")} characters; keep it under ${MAX_PREFERENCES_CHARS.toLocaleString("en-US")} (it's sent with every request). Use /bro preferences to trim it.`);
+	}
+	return text;
+}
+
+// Saves and deletes run one at a time, even across a closed and reopened editor, so a slow delete
+// from an earlier editor can never remove a file saved by a later one.
+let preferencesWrites: Promise<void> = Promise.resolve();
+export function queuePreferencesWrite(write: () => Promise<void>): Promise<void> {
+	const next = preferencesWrites.then(write);
+	preferencesWrites = next.catch(() => {});
+	return next;
+}
+

@@ -33,3 +33,19 @@ export async function insertBroDesktopText(ctx: UiContext, text: string): Promis
 
 /** Only terminal mode uses synchronous insertion; Desktop uses insertBroDesktopText instead. */
 export function canBroInsertIntoEditor(ctx: UiContext): boolean { return ctx.mode === "tui"; }
+
+export function wheelDelta(data: string): number {
+	const match = /^\x1b\[<(\d+);\d+;\d+[Mm]$/.exec(data);
+	if (!match) return 0;
+	const button = Number.parseInt(match[1], 10);
+	if ((button & 64) === 0) return 0;
+	return (button & 3) === 0 ? -3 : (button & 3) === 1 ? 3 : 0;
+}
+
+export function setRegularMouseReporting(
+	tui: { readonly mode: "regular" | "fullscreen"; readonly terminal?: { write?: (data: string) => void } },
+	enabled: boolean,
+): void {
+	if (tui.mode === "regular") tui.terminal?.write?.(`\x1b[?1000${enabled ? "h" : "l"}\x1b[?1006${enabled ? "h" : "l"}`);
+}
+

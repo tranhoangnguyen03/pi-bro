@@ -9,16 +9,19 @@ those are historical records.
 
 Production code lives in `src/` and is published as TypeScript source (no build step):
 
-- **`bro.ts`** — the Pi extension entry point and wiring. Owns the `/bro` command and completion,
-  `/bro doctor`, `/bro help`, the BTW thread and composer, the `bro_advisor` tool
-  (snapshot, retries, progress), and advisor steering state.
+- **`bro.ts`** — the Pi extension entry point, `/bro` command routing and completion, session lifecycle wiring, and barrel re-exports.
+- **`doctor.ts`** — `/bro doctor` diagnostics, CLI version/auth probes, Agy model catalog/usage parsing, and `/bro config` modal launch wiring.
+- **`show.ts`** — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.
+- **`advisor.ts`** — the `bro_advisor` tool registration, context snapshot builder, session/durable steering state, and retry/progress orchestration.
+- **`btw.ts`** — the `/bro btw` side conversation thread state, native continuation/reseed policy, composer command parsing, and `BtwModal`.
+- **`explain-modal.ts`** — `BroModal` (explain/show/doctor/help result overlay), `simplify`, `createTextEditorModal` (`/bro preferences` and `/bro advisor-steer` editors), and `/bro help` text.
 - **`review.ts`** — Guided Review schema/validation, atomic records, guide replacement and prompt construction.
 - **`review-source.ts`** — explicit GitHub identity through `gh`, managed Git capture and protected blob evidence reads.
 - **`review-ui.ts`** — acquisition, backend execution, streaming/cancellation, serialized saves, evidence hydration and host UI lifecycle.
 - **`review-modal.ts`** — renderer, focus/navigation, discussion composer, paging/wheel and contextual controls. No Git/model execution.
 - Current review scope and user behavior: [guided-review.md](guided-review.md). Historical plans are not implementation instructions.
 - **`settings.ts`** — settings schema, validation, backend metadata table,
-  selection policy, pure model/effort transitions, and file persistence.
+  selection policy, pure model/effort transitions, and settings/preferences file persistence.
 - **`sources.ts`** — self-contained document text extraction (PDF, DOCX) and public webpage
   scraping with SSRF protection.
 - **`config-ui.ts`** — the `/bro config` modal, settings items, model pickers, and
@@ -32,7 +35,7 @@ Production code lives in `src/` and is published as TypeScript source (no build 
 - **`prompt.ts`** — pure prompt builders: explain modes, show, BTW (reader guidance, access mode, and reseeded history), and the
   advisor. Prompts are backend-neutral; backend differences belong in
   `backend.ts`, not in prompt text.
-- **`ui-capabilities.ts`** — environment UI capability probes (interactive TUI, virtual viewport, Desktop panels).
+- **`ui-capabilities.ts`** — environment UI capability probes (interactive TUI, virtual viewport, Desktop panels) and terminal mouse-reporting helpers.
 - **`dev/`** — manual review launcher and recorded #102 source fixture, not shipped or included in the normal typecheck. `review-live.ts` uses the production controller but omits preferences; use `bro.ts` for a production-equivalent journey. The JSON fixture is kept as historical acquisition/rendering source data, not an automated test or generated-answer substitute.
 
 ## Settings

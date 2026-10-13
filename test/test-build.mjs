@@ -29,3 +29,9 @@ export const settings = await import(pathToFileURL(join(buildDir, 'settings.js')
 export const sources = await import(pathToFileURL(join(buildDir, 'sources.js')).href);
 export const configUi = await import(pathToFileURL(join(buildDir, 'config-ui.js')).href);
 export const util = await import(pathToFileURL(join(buildDir, 'util.js')).href);
+export const doctor = await import(pathToFileURL(join(buildDir, 'doctor.js')).href);
+export const show = await import(pathToFileURL(join(buildDir, 'show.js')).href);
+export const advisor = await import(pathToFileURL(join(buildDir, 'advisor.js')).href);
+export const btw = await import(pathToFileURL(join(buildDir, 'btw.js')).href);
+export const explainModal = await import(pathToFileURL(join(buildDir, 'explain-modal.js')).href);
+
