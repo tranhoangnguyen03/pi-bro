@@ -13,7 +13,7 @@ import {
 	buildShowPrompt,
 	BTW_PROMPT,
 	parseBroMode,
-} from "../prompt.ts";
+} from "../src/prompt.ts";
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 

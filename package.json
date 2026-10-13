@@ -41,18 +41,18 @@
     "code-review"
   ],
   "files": [
-    "bro.ts",
-    "review.ts",
-    "review-source.ts",
-    "review-ui.ts",
-    "review-modal.ts",
-    "util.ts",
-    "settings.ts",
-    "sources.ts",
-    "config-ui.ts",
-    "ui-capabilities.ts",
-    "backend.ts",
-    "prompt.ts",
+    "src/bro.ts",
+    "src/review.ts",
+    "src/review-source.ts",
+    "src/review-ui.ts",
+    "src/review-modal.ts",
+    "src/util.ts",
+    "src/settings.ts",
+    "src/sources.ts",
+    "src/config-ui.ts",
+    "src/ui-capabilities.ts",
+    "src/backend.ts",
+    "src/prompt.ts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -77,8 +77,9 @@
   },
   "pi": {
     "extensions": [
-      "./bro.ts"
-    ]
+      "./src/bro.ts"
+    ],
+    "image": "https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-response-after.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

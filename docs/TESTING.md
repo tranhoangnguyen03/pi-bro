@@ -14,7 +14,7 @@ BRO="/path/to/your/pi-bro/checkout"
 TEST="$(mktemp -d /tmp/bro-e2e.XXXXXX)"
 printf 'WORKSPACE_CANARY_6248\n' > "$TEST/sample.txt"
 cd "$TEST"
-pi --no-extensions -e "$BRO/bro.ts" --no-skills --no-prompt-templates --no-context-files --session "$TEST/session.jsonl"
+pi --no-extensions -e "$BRO/src/bro.ts" --no-skills --no-prompt-templates --no-context-files --session "$TEST/session.jsonl"
 ```
 
 Run the shared steps once per backend (Agy, Claude Code, Grok, Codex, Muse), selecting it
@@ -97,7 +97,7 @@ in `/bro config` as the shared default or as the capability under test.
 Use an existing saved review, not a new PR. For complete isolation, use a disposable profile with its own capture (initial preparation is a separately budgeted live call). A copied record retains absolute `snapshot.gitDir`/`checkout` paths, and Git worktree metadata also binds the original store: copying records/source does not relocate or fully isolate them. A record-only copy can isolate JSON/UI edits, but still reads original captured objects; do not make live calls or manually remove source through that copy. Otherwise use the existing profile knowing that draft/navigation changes are saved. Never damage original user data to simulate failure. Load this checkout:
 
 ```sh
-pi --tui-mode fullscreen --no-extensions -e "$BRO/bro.ts"
+pi --tui-mode fullscreen --no-extensions -e "$BRO/src/bro.ts"
 ```
 
 1. Open the same saved PR URL. It restores without generation. Bare `/bro guided-review` lists saved reviews; `resume` is an alias. Reopen keeps the capture even if metadata says newer source exists.

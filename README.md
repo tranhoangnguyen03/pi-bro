@@ -142,7 +142,7 @@ release is published to npm from CI with
 ```sh
 npm ci
 npm test        # offline: uses fake backend CLIs, never calls a model
-pi --tui-mode fullscreen -e ./bro.ts
+pi --tui-mode fullscreen -e ./src/bro.ts
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), the [code map](docs/DEVELOPMENT.md)

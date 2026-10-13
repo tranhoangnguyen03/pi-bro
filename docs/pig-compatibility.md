@@ -12,7 +12,7 @@ Install the PiG binary from https://github.com/MichaelKinsy/PiG/releases/tag/v0.
 pig install npm:pi-bro
 ```
 
-That command installs the published Bro version; these compatibility changes take effect only after a Bro release containing them. To test this checkout now, install dependencies and use `pig -e ./bro.ts`.
+That command installs the published Bro version; these compatibility changes take effect only after a Bro release containing them. To test this checkout now, install dependencies and use `pig -e ./src/bro.ts`.
 
 At initial verification, `@pi-in-go/pig@0.3.0` was not available from npm. CI therefore downloads the pinned GitHub binary and verifies its published SHA-256 checksum.
 

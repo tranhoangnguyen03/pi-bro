@@ -3,7 +3,7 @@ import { readerCounts } from './reader-counts.ts';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildBtwPrompt, BRO_MODES } from '../prompt.ts';
+import { buildBtwPrompt, BRO_MODES } from '../src/prompt.ts';
 import { buildArmPrompt } from './reader-candidates.ts';
 import { REAL_CASES } from './reader-real-corpus.ts';
 import { generateReader, generatorSettings } from './reader-backend.ts';

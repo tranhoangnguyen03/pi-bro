@@ -12,7 +12,7 @@ try {
  await mkdir(piDir); await mkdir(pigDir);
  const probe = join(root,'probe.ts'); const result = join(root,'snapshot.json');
  await writeFile(probe, `import {writeFileSync} from 'node:fs';
- import {buildAdvisorSnapshot} from ${JSON.stringify(resolve('bro.ts'))};
+ import {buildAdvisorSnapshot} from ${JSON.stringify(resolve('src/bro.ts'))};
  export default function(pi) { pi.registerCommand('snapshot-probe',{handler:(_,ctx)=>writeFileSync(${JSON.stringify(result)},JSON.stringify(buildAdvisorSnapshot(ctx,pi)))}); }`);
  const session = join(root,'session.jsonl');
  const message = (id,parentId,text) => ({type:'message',id,parentId,timestamp:new Date().toISOString(),message:{role:'user',content:text,timestamp:Date.now()}});
@@ -22,7 +22,7 @@ try {
   {type:'compaction',id:'compact',parentId:'kept',timestamp:new Date().toISOString(),summary:'SUMMARY_CANARY',firstKeptEntryId:'kept',tokensBefore:100},
   message('last','compact','LAST_CANARY')
  ].map(x=>JSON.stringify(x)).join('\n')+'\n');
- const child = spawn(process.env.PIG_BIN || 'pig', ['--offline', '--mode', 'rpc', '--session',session, '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '-e', resolve('bro.ts'), '-e',probe], {
+ const child = spawn(process.env.PIG_BIN || 'pig', ['--offline', '--mode', 'rpc', '--session',session, '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '-e', resolve('src/bro.ts'), '-e',probe], {
   env: {...process.env, PIG_HOME:join(root,'home'), PIG_CODING_AGENT_DIR:pigDir, PI_CODING_AGENT_DIR:piDir, PIG_USE_PI_DIRS:'0'}, stdio:['pipe','pipe','pipe']
  });
  let stderr=''; child.stderr.on('data', x => stderr += x);

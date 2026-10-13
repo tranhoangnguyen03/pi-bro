@@ -154,7 +154,7 @@ output=$(
 		printf '%s\n' '{"id":"bro-show-query-only","type":"prompt","message":"/bro show Explain The Auth Redirect"}'
 		printf '%s\n' '{"id":"bro-show-invalid","type":"prompt","message":"/bro show 0"}'
 		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
-	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_SHOW_PROMPTS="$show_prompts_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_SHOW_PROMPTS="$show_prompts_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts"
 )
 
 success_count=$(printf '%s\n' "$output" | grep -c '"success":true' || true)
@@ -291,7 +291,7 @@ missing_output=$(
 		printf '%s\n' '{"id":"missing-route-url","type":"prompt","message":"/bro https://user:secret@example.com/doc"}'
 		printf '%s\n' '{"id":"missing-latest","type":"prompt","message":"/bro"}'
 		printf '%s\n' '{"id":"missing-help","type":"prompt","message":"/bro help"}'
-	} | PATH="$test_dir:$PATH" BRO_AGY_FAILURE=1 PI_CODING_AGENT_DIR="$missing_config" "$pi_bin" --offline --mode rpc --session "$missing_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+	} | PATH="$test_dir:$PATH" BRO_AGY_FAILURE=1 PI_CODING_AGENT_DIR="$missing_config" "$pi_bin" --offline --mode rpc --session "$missing_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts"
 )
 
 missing_success_count=$(printf '%s\n' "$missing_output" | grep -c '"success":true' || true)
@@ -331,7 +331,7 @@ broken_output=$(
 		node -e 'console.log(JSON.stringify({type:"smoke-write",path:process.argv[1],text:JSON.stringify({model:"gemini-3.7-flash",effort:"low"})})); console.log(JSON.stringify({type:"smoke-write",path:process.argv[2],text:"x".repeat(4001)}))' "$broken_settings" "$broken_preferences"
 		printf '%s\n' '{"id":"broken-preferences-doctor","type":"prompt","message":"/bro doctor"}'
 		printf '%s\n' '{"id":"broken-preferences-latest","type":"prompt","message":"/bro"}'
-	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$broken_config" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$broken_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts" 2>&1
+	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$broken_config" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$broken_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts" 2>&1
 )
 
 broken_success_count=$(printf '%s\n' "$broken_output" | grep -c '"success":true' || true)
@@ -397,7 +397,7 @@ override_output=$(
 	{
 		printf '%s\n' '{"id":"override-explain","type":"prompt","message":"/bro"}'
 		printf '%s\n' '{"id":"override-show","type":"prompt","message":"/bro show"}'
-	} | PATH="$test_dir/override-bin:$PATH" PI_CODING_AGENT_DIR="$override_config" OVERRIDE_ARGS="$override_args_file" "$pi_bin" --offline --mode rpc --session "$override_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+	} | PATH="$test_dir/override-bin:$PATH" PI_CODING_AGENT_DIR="$override_config" OVERRIDE_ARGS="$override_args_file" "$pi_bin" --offline --mode rpc --session "$override_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts"
 )
 
 override_success_count=$(printf '%s\n' "$override_output" | grep -c '"success":true' || true)
@@ -432,7 +432,7 @@ advisor_output_1=$(
 		printf '%s\n' '{"id":"advisor-old-on","type":"prompt","message":"/bro advisor on"}'
 		printf '%s\n' '{"id":"advisor-old-status","type":"prompt","message":"/bro advisor status"}'
 		printf '%s\n' '{"id":"advisor-bare","type":"prompt","message":"/bro advisor"}'
-	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$advisor_config" "$pi_bin" --offline --mode rpc --session "$advisor_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$advisor_config" "$pi_bin" --offline --mode rpc --session "$advisor_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts"
 )
 
 advisor_success_1=$(printf '%s\n' "$advisor_output_1" | grep -c '"success":true' || true)
@@ -455,7 +455,7 @@ cp "$session_file" "$advisor_excluded_session"
 advisor_excluded_output=$(
 	{
 		printf '%s\n' '{"id":"advisor-excluded-bare","type":"prompt","message":"/bro advisor"}'
-	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$advisor_config" "$pi_bin" --offline --mode rpc --session "$advisor_excluded_session" --exclude-tools bro_advisor --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/bro.ts"
+	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$advisor_config" "$pi_bin" --offline --mode rpc --session "$advisor_excluded_session" --exclude-tools bro_advisor --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts"
 )
 if [ "${BRO_PIG_RPC_EXCLUSION_XFAIL:-}" = "0.3.0" ]; then
 	# PiG 0.3.0 RPC still exposes excluded tools to the provider. Do not hide this
