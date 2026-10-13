@@ -18,6 +18,11 @@ updates:
     ignore:
       - dependency-name: "@earendil-works/*"
       - dependency-name: typebox
+      # Major bumps of these break the build; upgrade them deliberately.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       runtime:
         dependency-type: production
