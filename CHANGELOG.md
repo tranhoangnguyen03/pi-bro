@@ -2,18 +2,17 @@
 
 All notable changes to pi-bro are documented here.
 
-## [0.22.1] - 2026-10-12
+## [0.22.2] - 2026-10-13
 
 ### Highlights
 
 - Get `/bro show` pages built from plain HTML and CSS, without Mermaid source that could never render; prose answers stay as text.
 - Get started from a short README, and find the full reference in `docs/user-guide.md` (linked from `/bro help`).
+- Stopping Bro while it reads a PDF or Word file now always stops cleanly.
 
 ### Fixed
 
 - `/bro show` no longer invites Mermaid inside the HTML fence. Bro's HTML page blocks all scripts, so Mermaid could only appear as plain source text. The prompt now asks for hand-rolled HTML and CSS only and says prose subjects never use the HTML fence (#108).
-
-### Fixed
 
 - Make cancellation consistent across synchronous reading and asynchronous parsing in `extractDocumentText` (#87).
 
