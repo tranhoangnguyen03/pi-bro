@@ -3,13 +3,10 @@ import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import {
-	Container,
 	Editor,
 	Markdown,
-	Text,
 	matchesKey,
-	truncateToWidth,
-	visibleWidth,
+	wrapTextWithAnsi,
 	type Component,
 	type EditorTheme,
 	type Focusable,
@@ -40,8 +37,8 @@ import {
 } from "./settings.ts";
 import { openShowHtml, stripShowDiagramFence } from "./show.ts";
 import type { BroSource } from "./sources.ts";
-import { BRO_OVERLAY, modalHeight, openBroOverlay, renderFrame, Scroller } from "./modal-kit.ts";
-import { consumeWheel, hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
+import { BRO_OVERLAY, delegateMouse, modalHeight, openBroOverlay, renderFrame, Scroller, type Area } from "./modal-kit.ts";
+import { hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
 const LOADING_TEXT = "Simplifying for my bro…";
@@ -110,15 +107,17 @@ export function createTextEditorModal(
 		editor.setText(options.initialText);
 		let disposed = false;
 		let pending = false;
-		// paddingY 0: the overlay clips from the bottom, so blank rows would push hints and notices off screen.
-		// shortcut: Editor keeps its own min height, so preferences fits from ~22 rows at 80+ columns; revisit if users report smaller terminals.
-		const notice = new Text(options.initialNotice ? theme.fg("accent", options.initialNotice) : "", 1, 0);
+		let notice = options.initialNotice ? theme.fg("accent", options.initialNotice) : "";
+		// Where the editor was last drawn inside the overlay, for click forwarding.
+		let editorArea: Area = { top: 0, left: 0, width: 0, height: 0 };
 		const showNotice = (message: string, color: "success" | "error") => {
 			if (disposed) return;
-			notice.setText(theme.fg(color, message));
+			notice = theme.fg(color, message);
 			tui.requestRender();
 		};
-		editor.onChange = () => notice.setText("");
+		editor.onChange = () => {
+			notice = "";
+		};
 		const persist = (action: () => void | Promise<void>, success: string, failure: string, after?: () => void) => {
 			const fail = (error: unknown) => showNotice(`${failure}: ${errorMessage(error)}`, "error");
 			let result: void | Promise<void>;
@@ -148,24 +147,25 @@ export function createTextEditorModal(
 			);
 		};
 
-		const container = new Container();
-		container.addChild(new Text(theme.fg("accent", theme.bold(options.title)), 1, 0));
-		container.addChild(new Text(theme.fg("dim", options.subtitle), 1, 0));
-		container.addChild(editor);
-		container.addChild(notice);
-		container.addChild(new Text(theme.fg("dim", "Ctrl+S save · Ctrl+K clear · Ctrl+C copy · Esc close"), 1, 0));
-
 		return {
-			render: (w: number) => {
-				const inner = Math.max(1, w - 4);
-				const border = (left: string, right: string) => theme.fg("border", left + "─".repeat(inner + 2) + right);
-				return [border("┌", "┐"), ...container.render(inner).map((line) => {
-					const text = truncateToWidth(line, inner, "");
-					return theme.fg("border", "│") + " " + text + " ".repeat(Math.max(0, inner - visibleWidth(text))) + " " + theme.fg("border", "│");
-				}), border("└", "┘")];
-			},
-			invalidate: () => container.invalidate(),
-			handleMouse: consumeWheel,
+			// shortcut: Editor keeps its own min height (5 lines), so preferences fits from ~22 rows at
+			// 80+ columns; the subtitle gives way first. Revisit if users report smaller terminals.
+			render: (width: number) =>
+				renderFrame(theme, width, modalHeight(tui), {
+					header: () => theme.fg("accent", theme.bold(options.title)),
+					body: (rows, innerWidth) => {
+						const lines = editor.render(innerWidth);
+						const subtitle = wrapTextWithAnsi(theme.fg("dim", options.subtitle), innerWidth).slice(0, Math.max(0, rows - lines.length));
+						// Body rows start under the top border, header and rule.
+						editorArea = { top: 3 + subtitle.length, left: 1, width: innerWidth, height: lines.length };
+						return [...subtitle, ...lines];
+					},
+					notice,
+					hints: "Ctrl+S save · Ctrl+K clear · Ctrl+C copy · Esc close",
+					fill: false,
+				}),
+			invalidate: () => editor.invalidate(),
+			handleMouse: (event: BroMouseEvent) => delegateMouse(editor, event, editorArea),
 			handleInput: (data: string) => {
 				if (matchesKey(data, "escape")) {
 					disposed = true;
@@ -263,16 +263,13 @@ export async function showPreferencesModal(ctx: ExtensionCommandContext): Promis
 	} catch (error) {
 		loaded = { error: `${errorMessage(error)} Ctrl+K deletes it.` };
 	}
-	await ctx.ui.custom<void>(
+	await openBroOverlay<void>(
+		ctx,
 		createPreferencesModal(loaded, {
 			// ponytail: last writer wins against external edits while the editor is open, like writeSettings.
 			save: (text) => queuePreferencesWrite(() => writeFile(PREFERENCES_FILE, `${text.trim()}\n`, "utf8")),
 			clear: () => queuePreferencesWrite(() => rm(PREFERENCES_FILE, { force: true })),
 		}),
-		{
-			overlay: true,
-			overlayOptions: { width: "78%", minWidth: 48, maxHeight: "78%", anchor: "top-center", margin: { top: 1, left: 2, right: 2 } },
-		},
 	);
 }
 
@@ -282,16 +279,13 @@ export async function showAdvisorSteerModal(ctx: ExtensionCommandContext, pi: Ex
 		return;
 	}
 	const { steering } = resolveAdvisorState(ctx.sessionManager.getBranch());
-	await ctx.ui.custom<void>(
+	await openBroOverlay<void>(
+		ctx,
 		createAdvisorSteerModal(
 			steering,
 			(text) => pi.appendEntry(ADVISOR_STEERING_ENTRY, { text }),
 			() => pi.appendEntry(ADVISOR_STEERING_ENTRY, { text: "" }),
 		),
-		{
-			overlay: true,
-			overlayOptions: { width: "78%", minWidth: 48, maxHeight: "78%", anchor: "top-center", margin: { top: 1, left: 2, right: 2 } },
-		},
 	);
 }
 
@@ -499,7 +493,7 @@ export class BroModal implements Focusable {
 				);
 			},
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
-			notice: this.notice,
+			notice: this.notice && this.theme.fg("accent", this.notice),
 			hints: this.controls(),
 		});
 	}

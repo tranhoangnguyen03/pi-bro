@@ -1,7 +1,7 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { Theme, TuiLike } from "./config-ui.ts";
-import { broModalRows, setRegularMouseReporting, wheelDelta, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
+import { broModalRows, consumeWheel, setRegularMouseReporting, wheelDelta, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 
 // Shared building blocks for Bro's overlays; see docs/plans/modal-consistency.md.
 
@@ -33,13 +33,16 @@ export type FrameParts = {
 	body: (rows: number, innerWidth: number) => string[];
 	/** Lines under the body, e.g. a composer; truncated to the inner width, so wrap long text first. */
 	footer?: string[];
-	/** Wrapped to at most two lines, above the hints. */
+	/** Already styled; wrapped to at most two lines, above the hints. */
 	notice?: string;
-	hints: string;
+	/** Omit when the body prints its own hints (config's SettingsList). */
+	hints?: string;
+	/** false: size to the content instead of padding the body to the full height. */
+	fill?: boolean;
 };
 
 /**
- * Square frame that never renders more than `height` lines. Pi clips overlays from the
+ * Square frame that never renders more than `height` lines (exactly `height` unless `fill` is false). Pi clips overlays from the
  * bottom, so when space runs out the body shrinks first, then lines go from the top of
  * the frame's middle (header, rules), keeping the footer, notice, hints and both borders.
  */
@@ -53,12 +56,12 @@ export function renderFrame(theme: Theme, width: number, height: number, parts: 
 	const rule = border(`├${"─".repeat(inner)}┤`);
 	const below = [
 		...(parts.footer ?? []),
-		...(parts.notice ? wrapTextWithAnsi(theme.fg("accent", parts.notice), inner).slice(0, 2) : []),
-		theme.fg("dim", parts.hints),
+		...(parts.notice ? wrapTextWithAnsi(parts.notice, inner).slice(0, 2) : []),
+		...(parts.hints ? [theme.fg("dim", parts.hints)] : []),
 	];
 	const bodyRows = Math.max(0, height - 5 - below.length);
 	const body = bodyRows ? parts.body(bodyRows, inner).slice(0, bodyRows) : [];
-	while (body.length < bodyRows) body.push("");
+	if (parts.fill !== false) while (body.length < bodyRows) body.push("");
 	const middle = [row(parts.header()), rule, ...body.map(row), rule, ...below.map(row)];
 	return [border(`┌${"─".repeat(inner)}┐`), ...middle.slice(-Math.max(0, height - 2)), border(`└${"─".repeat(inner)}┘`)].slice(0, height);
 }
@@ -121,6 +124,22 @@ export class Scroller {
 	indicator(): string {
 		return this.max > 0 ? `↑${this.offset} ↓${this.max - this.offset}` : "";
 	}
+}
+
+export type Area = { top: number; left: number; width: number; height: number };
+
+/**
+ * Forward a pointer event to a pi-tui child drawn at `area` inside the overlay, in the child's own
+ * coordinates (without `area`, the event already is). Pi 0.84 components have no handleMouse, hence
+ * the structural call. A wheel the child leaves unhandled is consumed; presses and drags stay
+ * unhandled so host text selection keeps working.
+ */
+export function delegateMouse(child: object, event: BroMouseEvent, area?: Area): BroMouseResult {
+	const { x = -1, y = -1 } = event;
+	const inside = !area || (y >= area.top && y < area.top + area.height && x >= area.left && x < area.left + area.width);
+	const local = area ? { ...event, x: x - area.left, y: y - area.top, width: area.width, height: area.height } : event;
+	const handle = (child as { handleMouse?: (event: BroMouseEvent) => BroMouseResult }).handleMouse;
+	return (inside ? handle?.call(child, local) : undefined) ?? consumeWheel(event);
 }
 
 /** Regular-mode mouse reporting held by one overlay; release is idempotent and also runs on exit. */

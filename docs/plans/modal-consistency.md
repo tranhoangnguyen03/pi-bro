@@ -11,7 +11,12 @@ after small fixes").
   function (it runs after the body, to show the scroll position) and truncates
   footer lines instead of wrapping them (btw's composer line carries cursor
   markers); `delegateMouse` waits for step 3, its first user.
-- Next: steps 3–5.
+- Step 3 landed: preferences, advisor-steer and config use `renderFrame`
+  (with `fill: false`, so they size to their content) and `openBroOverlay`;
+  `delegateMouse` forwards clicks and wheel to pi-tui's `Editor`, `SettingsList`
+  and the model picker. The frame now keeps hints and borders on every size;
+  below ~22 rows the editor's own minimum height is cut instead of the hints.
+- Next: step 4 (Guided Review), then step 5 (docs and changelog).
 
 ## Why
 

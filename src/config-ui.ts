@@ -2,15 +2,11 @@ import {
 	type Component,
 	type SelectItem,
 	type SettingItem,
-	Container,
 	Input,
 	SelectList,
 	SettingsList,
-	Text,
-	TruncatedText,
 	matchesKey,
 	truncateToWidth,
-	visibleWidth,
 } from "@earendil-works/pi-tui";
 import {
 	type ExtensionCommandContext,
@@ -35,7 +31,8 @@ import {
 	withCapabilityOverride,
 } from "./settings.ts";
 import { BRO_MODES, parseBroMode } from "./prompt.ts";
-import { broModalRows, consumeWheel } from "./ui-capabilities.ts";
+import { delegateMouse, modalHeight, renderFrame, type Area } from "./modal-kit.ts";
+import type { BroMouseEvent } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
 export type Theme = ExtensionCommandContext["ui"]["theme"];
@@ -60,10 +57,10 @@ export function createConfigModal(
 	persistSettings: (settings: BroSettings) => Promise<void>,
 ): (tui: TuiLike, theme: Theme, keybindings: unknown, done: (value?: void) => void) => Component & { dispose?(): void } {
 	return (tui, theme, _keybindings, done) => {
-		// The overlay (maxHeight 78%) clips from the bottom: leave room for the borders, title,
-		// subtitle, a two-line notice and SettingsList's own scroll, blank and hint rows.
+		// The overlay clips from the bottom: leave room for the frame (borders, header, two rules),
+		// the subtitle, a two-line notice and SettingsList's own scroll, blank and hint rows.
 		// shortcut: sized once at open, not on resize; fine while config stays short-lived.
-		const listRows = Math.max(3, Math.floor(broModalRows(tui, process.stdout.rows) * 0.78) - 9);
+		const listRows = Math.max(3, modalHeight(tui) - 11);
 		let settings = initialSettings;
 		// The last settings actually confirmed on disk. A failed save reverts `settings` (and the
 		// whole displayed row set) back to this, so the screen never shows state that doesn't exist.
@@ -128,6 +125,8 @@ export function createConfigModal(
 					? [`${customLabel()} model ID (Enter saves, Esc cancels)`, ...input.render(width)]
 					: [...picker.render(width), "", truncateToWidth(theme.fg("dim", "  ↑/↓ choose · Enter select · Esc back"), width)],
 				invalidate: () => { picker.invalidate(); input.invalidate(); },
+				// SettingsList hands an open submenu its own events unchanged.
+				handleMouse: (event: BroMouseEvent) => (enteringBackend ? undefined : delegateMouse(picker, event)),
 				handleInput: (data: string) => {
 					if (enteringBackend && matchesKey(data, "escape")) pickerDone();
 					else if (enteringBackend) input.handleInput(data);
@@ -211,14 +210,16 @@ export function createConfigModal(
 			...CAPABILITIES.flatMap((capability) => [capabilityItems[capability].model, capabilityItems[capability].effort]),
 		];
 
-		const noticeText = new Text("", 1, 0);
+		let notice = "";
+		// Where the list was last drawn inside the overlay, for click forwarding.
+		let listArea: Area = { top: 0, left: 0, width: 0, height: 0 };
 
 		function runSave(toSave: BroSettings): void {
 			saving = true;
 			void persistSettings(toSave)
 				.then(() => {
 					savedSettings = toSave;
-					noticeText.setText("");
+					notice = "";
 				})
 				.catch((error: unknown) => {
 					// Restore the last state that is actually on disk: showing the failed, unsaved
@@ -227,7 +228,7 @@ export function createConfigModal(
 					queued = undefined;
 					closeRequested = false;
 					refresh();
-					noticeText.setText(theme.fg("warning", `Could not save settings: ${errorMessage(error)}. Reverted to the last saved settings.`));
+					notice = theme.fg("warning", `Could not save settings: ${errorMessage(error)}. Reverted to the last saved settings.`);
 				})
 				.finally(() => {
 					saving = false;
@@ -313,24 +314,22 @@ export function createConfigModal(
 		};
 
 		const settingsList = new SettingsList(items, Math.min(items.length, listRows), getSettingsListTheme(), onChange, requestClose);
-		const container = new Container();
-		container.addChild(new Text(theme.fg("accent", theme.bold("Bro · config")), 1, 0));
-		container.addChild(new TruncatedText(theme.fg("dim", "Shared defaults, with optional overrides per capability"), 1, 0));
-		// SettingsList prints its own key hints, so Bro adds none.
-		container.addChild(settingsList);
-		container.addChild(noticeText);
-
 		return {
-			render: (w: number) => {
-				const inner = Math.max(1, w - 4);
-				const border = (left: string, right: string) => theme.fg("border", left + "─".repeat(inner + 2) + right);
-				return [border("┌", "┐"), ...container.render(inner).map(line => {
-					const text = truncateToWidth(line, inner, "");
-					return theme.fg("border", "│") + " " + text + " ".repeat(Math.max(0, inner - visibleWidth(text))) + " " + theme.fg("border", "│");
-				}), border("└", "┘")];
-			},
-			invalidate: () => container.invalidate(),
-			handleMouse: consumeWheel,
+			render: (width: number) =>
+				renderFrame(theme, width, modalHeight(tui), {
+					header: () => theme.fg("accent", theme.bold("Bro · config")),
+					body: (_rows, innerWidth) => {
+						const list = settingsList.render(innerWidth);
+						// Body rows start under the top border, header, rule and the one-line subtitle.
+						listArea = { top: 4, left: 1, width: innerWidth, height: list.length };
+						return [truncateToWidth(theme.fg("dim", "Shared defaults, with optional overrides per capability"), innerWidth), ...list];
+					},
+					notice,
+					// SettingsList prints its own key hints at the end of the body.
+					fill: false,
+				}),
+			invalidate: () => settingsList.invalidate(),
+			handleMouse: (event: BroMouseEvent) => delegateMouse(settingsList, event, listArea),
 			handleInput: (data: string) => {
 				settingsList.handleInput?.(data);
 				if (!closed) tui.requestRender();

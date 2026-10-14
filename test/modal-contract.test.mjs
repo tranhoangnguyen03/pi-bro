@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
-import { TuiMainScreen, visibleWidth } from "@earendil-works/pi-tui";
+import { Editor, TuiMainScreen, visibleWidth } from "@earendil-works/pi-tui";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { btw, configUi, explainModal } from "./test-build.mjs";
 import { pathToFileURL } from "node:url";
@@ -60,8 +60,8 @@ function mount(open, mode, cols, rows) {
 	return { ...mounted, writes, rendersAfterDispose: () => rendersAfterDispose };
 }
 
-// Editors and config were mounted outside the kit until step 3; their rows use the preset directly.
-const factoryRow = (create) => (ctx) => ctx.ui.custom(create(), { overlay: true, overlayOptions: kit.BRO_OVERLAY });
+// Mounted the way their /bro commands mount them, minus the file and settings reads.
+const factoryRow = (create) => (ctx) => kit.openBroOverlay(ctx, create());
 
 const SURFACES = [
 	{ name: "explain result", scrolls: true, mouse: true, open: (ctx) => explainModal.showBroModal(ctx, { result: { text: long, model: "m" } }) },
@@ -183,4 +183,30 @@ test("modal kit: Scroller pages, follows the end, and releases follow when scrol
 	assert.equal(scroller.handleKey("x"), false);
 	assert.equal(scroller.handleMouse({ type: "click" }), undefined);
 	assert.equal(scrolled, 2);
+});
+
+// Pi 0.84 components have no handleMouse; there the wrappers only swallow the wheel.
+test("modal kit: editor and config forward clicks and wheel to their pi-tui children", { skip: typeof Editor.prototype.handleMouse !== "function" }, () => {
+	const tui = { mode: "fullscreen", terminal: { rows: 24, columns: 80 }, requestRender() {} };
+	const text = (component) => component.render(62).map((line) => stripVTControlCharacters(line));
+
+	let saved;
+	const editor = explainModal.createAdvisorSteerModal("hello world", (value) => (saved = value), () => {})(tui, theme, {}, () => {});
+	const lines = text(editor);
+	const y = lines.findIndex((line) => line.includes("hello world"));
+	const x = lines[y].indexOf("world");
+	assert.equal(editor.handleMouse({ type: "press", button: "left", x, y }), undefined, "press stays with host text selection");
+	assert.equal(editor.handleMouse({ type: "click", button: "left", x, y })?.handled, true);
+	editor.handleInput("X");
+	editor.handleInput("\x13"); // Ctrl+S
+	assert.equal(saved, "hello Xworld", "the click moved the cursor to where it landed");
+	assert.equal(editor.handleMouse({ type: "click", button: "left", x: 2, y: 1 }), undefined, "header clicks are not the editor's");
+
+	const config = configUi.createConfigModal(settings, [], async () => {})(tui, theme, {}, () => {});
+	const before = text(config).join("\n");
+	const row = text(config).findIndex((line) => line.includes("Default model"));
+	assert.equal(config.handleMouse({ type: "wheel", x: 3, y: 1, wheelDelta: 1 })?.handled, true);
+	assert.equal(text(config).join("\n"), before, "a wheel over the header changes nothing");
+	config.handleMouse({ type: "wheel", x: 3, y: row, wheelDelta: 1 });
+	assert.notEqual(text(config).join("\n"), before, "a wheel over the list moves the selection");
 });

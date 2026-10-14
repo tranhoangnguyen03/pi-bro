@@ -12,6 +12,7 @@ import {
 } from "./advisor.ts";
 import { agyFailureMessage, reviewBackendError } from "./backend.ts";
 import { createConfigModal } from "./config-ui.ts";
+import { openBroOverlay } from "./modal-kit.ts";
 import {
 	type AgyEffort,
 	type AgyModelFamily,
@@ -528,14 +529,5 @@ export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: Exten
 		families = [];
 		ctx.ui.notify("Agy model catalog unavailable — showing other backend settings without Agy choices.", "warning");
 	}
-	await ctx.ui.custom<void>(createConfigModal(settings, families, writeSettings), {
-		overlay: true,
-		overlayOptions: {
-			width: "78%",
-			minWidth: 48,
-			maxHeight: "78%",
-			anchor: "top-center",
-			margin: { top: 1, left: 2, right: 2 },
-		},
-	});
+	await openBroOverlay<void>(ctx, createConfigModal(settings, families, writeSettings));
 }
