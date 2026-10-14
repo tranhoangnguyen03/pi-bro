@@ -42,6 +42,15 @@ export function wheelDelta(data: string): number {
 	return (button & 3) === 0 ? -3 : (button & 3) === 1 ? 3 : 0;
 }
 
+/** Structural subset of pi-tui's mouse event; Pi 0.84 declares no mouse types. */
+export type BroMouseEvent = { type: string; wheelDelta?: number };
+export type BroMouseResult = { handled: boolean; render: boolean } | undefined;
+
+/** Pi 1.2+ scrolls the chat behind an overlay whose handleMouse leaves a wheel unhandled. */
+export function consumeWheel(event: BroMouseEvent): BroMouseResult {
+	return event.type === "wheel" ? { handled: true, render: false } : undefined;
+}
+
 export function setRegularMouseReporting(
 	tui: { readonly mode: "regular" | "fullscreen"; readonly terminal?: { write?: (data: string) => void } },
 	enabled: boolean,

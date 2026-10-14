@@ -179,8 +179,9 @@ asked in.
 
   `/insert` and `/insert-all` never replace an existing main-editor draft:
   edit or clear it first. Any other text, including other slash-prefixed input
-  such as `/send`, is sent as a question. Esc closes the modal (or cancels a
-  running turn). The header shows the model and reasoning effort the latest
+  such as `/send`, is sent as a question. Esc closes the modal and stops a
+  running turn; the thread is kept. The view follows the newest text while you
+  are at the bottom; scroll up to read earlier turns. The header shows the model and reasoning effort the latest
   turn used (`default` when the model's own effort applies) and the current
   mode.
 - A turn is capped at 2 minutes in conversation-only mode and 10 minutes in

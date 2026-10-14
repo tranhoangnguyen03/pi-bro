@@ -25,6 +25,7 @@ import {
 } from "./review.ts";
 import { captureReview, readEvidence, resolveReviewTarget } from "./review-source.ts";
 import { ReviewModal, newReviewView, safeReviewText } from "./review-modal.ts";
+import { consumeWheel } from "./ui-capabilities.ts";
 
 const activeReviews = new Map<string, AbortController | undefined>();
 export function stopGuidedReviews(): void {
@@ -177,6 +178,7 @@ export async function openGuidedReview(
 							.map((line) => theme.fg("accent", truncateToWidth(line, width, "")));
 					},
 					invalidate() {},
+					handleMouse: consumeWheel,
 					handleInput(data: string) {
 						if (matchesKey(data, "escape")) {
 							disposed = true;
@@ -495,12 +497,14 @@ export async function openGuidedReview(
 						panel.focused = value;
 					},
 					dispose() {
+						// close() sets `closed` only after its save succeeded; other teardown still saves here.
+						const savedByClose = closed;
 						closed = true;
 						panel.dispose();
 						evidenceAbort.abort();
 						controller?.abort();
 						if (saveTimer) clearTimeout(saveTimer);
-						void persist().catch(() => {});
+						if (!savedByClose) void persist().catch(() => {});
 					},
 				};
 			},

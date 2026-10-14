@@ -40,7 +40,15 @@ import {
 } from "./settings.ts";
 import { openShowHtml, stripShowDiagramFence } from "./show.ts";
 import type { BroSource } from "./sources.ts";
-import { broModalRows, hasBroCustomUi, setRegularMouseReporting, wheelDelta } from "./ui-capabilities.ts";
+import {
+	broModalRows,
+	consumeWheel,
+	hasBroCustomUi,
+	setRegularMouseReporting,
+	wheelDelta,
+	type BroMouseEvent,
+	type BroMouseResult,
+} from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
 const LOADING_TEXT = "Simplifying for my bro…";
@@ -109,7 +117,9 @@ export function createTextEditorModal(
 		editor.setText(options.initialText);
 		let disposed = false;
 		let pending = false;
-		const notice = new Text(options.initialNotice ? theme.fg("accent", options.initialNotice) : "");
+		// paddingY 0: the overlay clips from the bottom, so blank rows would push hints and notices off screen.
+		// shortcut: Editor keeps its own min height, so preferences fits from ~22 rows at 80+ columns; revisit if users report smaller terminals.
+		const notice = new Text(options.initialNotice ? theme.fg("accent", options.initialNotice) : "", 1, 0);
 		const showNotice = (message: string, color: "success" | "error") => {
 			if (disposed) return;
 			notice.setText(theme.fg(color, message));
@@ -146,11 +156,11 @@ export function createTextEditorModal(
 		};
 
 		const container = new Container();
-		container.addChild(new Text(theme.fg("accent", theme.bold(options.title))));
-		container.addChild(new Text(theme.fg("dim", options.subtitle)));
+		container.addChild(new Text(theme.fg("accent", theme.bold(options.title)), 1, 0));
+		container.addChild(new Text(theme.fg("dim", options.subtitle), 1, 0));
 		container.addChild(editor);
 		container.addChild(notice);
-		container.addChild(new Text(theme.fg("dim", "Ctrl+S save · Enter newline · Ctrl+K clear · Ctrl+C copy · Esc close")));
+		container.addChild(new Text(theme.fg("dim", "Ctrl+S save · Ctrl+K clear · Ctrl+C copy · Esc close"), 1, 0));
 
 		return {
 			render: (w: number) => {
@@ -162,6 +172,7 @@ export function createTextEditorModal(
 				}), border("└", "┘")];
 			},
 			invalidate: () => container.invalidate(),
+			handleMouse: consumeWheel,
 			handleInput: (data: string) => {
 				if (matchesKey(data, "escape")) {
 					disposed = true;
@@ -267,7 +278,7 @@ export async function showPreferencesModal(ctx: ExtensionCommandContext): Promis
 		}),
 		{
 			overlay: true,
-			overlayOptions: { width: "78%", minWidth: 48, maxHeight: "60%", anchor: "top-center", margin: { top: 1, left: 2, right: 2 } },
+			overlayOptions: { width: "78%", minWidth: 48, maxHeight: "78%", anchor: "top-center", margin: { top: 1, left: 2, right: 2 } },
 		},
 	);
 }
@@ -286,7 +297,7 @@ export async function showAdvisorSteerModal(ctx: ExtensionCommandContext, pi: Ex
 		),
 		{
 			overlay: true,
-			overlayOptions: { width: "78%", minWidth: 48, maxHeight: "60%", anchor: "top-center", margin: { top: 1, left: 2, right: 2 } },
+			overlayOptions: { width: "78%", minWidth: 48, maxHeight: "78%", anchor: "top-center", margin: { top: 1, left: 2, right: 2 } },
 		},
 	);
 }
@@ -540,6 +551,20 @@ export class BroModal implements Focusable {
 		this.markdown.invalidate();
 	}
 
+	// Pi 1.2+ fullscreen delivers the wheel here and no longer forwards raw wheel input to handleInput.
+	handleMouse(event: BroMouseEvent): BroMouseResult {
+		if (event.type !== "wheel") return;
+		const delta = Math.trunc(event.wheelDelta ?? 0);
+		if (delta) this.scroll(delta);
+		return { handled: true, render: false };
+	}
+
+	private scroll(delta: number): void {
+		this.offset = Math.max(0, Math.min(this.offset + delta, this.maxOffset));
+		this.notice = "";
+		this.tui.requestRender();
+	}
+
 	handleInput(data: string): void {
 		if (matchesKey(data, "escape")) {
 			this.onClose();
@@ -548,9 +573,7 @@ export class BroModal implements Focusable {
 
 		const delta = wheelDelta(data) || (matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0);
 		if (delta) {
-			this.offset = Math.max(0, Math.min(this.offset + delta, this.maxOffset));
-			this.notice = "";
-			this.tui.requestRender();
+			this.scroll(delta);
 			return;
 		}
 
