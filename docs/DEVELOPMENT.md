@@ -36,6 +36,7 @@ Production code lives in `src/` and is published as TypeScript source (no build 
   advisor. Prompts are backend-neutral; backend differences belong in
   `backend.ts`, not in prompt text.
 - **`ui-capabilities.ts`** — environment UI capability probes (interactive TUI, virtual viewport, Desktop panels) and terminal mouse-reporting helpers.
+- **`modal-kit.ts`** — shared overlay building blocks: the `BRO_OVERLAY` preset and `modalHeight`, `renderFrame`, `Scroller`, the regular-mode mouse lease and `openBroOverlay`. See [Modals](#modals).
 - **`dev/`** — manual review launcher and recorded #102 source fixture, not shipped or included in the normal typecheck. `review-live.ts` uses the production controller but omits preferences; use `bro.ts` for a production-equivalent journey. The JSON fixture is kept as historical acquisition/rendering source data, not an automated test or generated-answer substitute.
 
 ## Settings
@@ -69,6 +70,25 @@ BTW keeps one in-memory thread bound to a backend and an access mode
   and every earlier turn. Any thread with turns but no native ID reseeds the
   same way.
 - Changing the BTW backend starts a fresh thread; IDs never cross backends.
+
+## Modals
+
+Bro's overlays share `src/modal-kit.ts` so they behave the same on every
+supported Pi (0.84.2 and up) in regular and fullscreen mode. Pi clips an overlay
+that is taller than its `maxHeight` from the bottom, and Pi 1.2 sends the wheel
+only to `handleMouse` (a wheel left unhandled scrolls the chat behind).
+
+- Mount with `openBroOverlay` (preset `BRO_OVERLAY`); pass `mouse: true` for a
+  scrolling surface so regular-mode mouse reporting is turned on and always off again.
+- Draw with `renderFrame` at `modalHeight(tui, BRO_OVERLAY, cap)`. It never returns
+  more lines than that, and drops body rows before hints, notices and borders.
+- Scroll with `Scroller`: keys, raw SGR wheel (Pi 0.84 and regular mode) and
+  `handleMouse` (Pi 1.x) in one place.
+- Add a row to `test/modal-contract.test.mjs` for every new surface. It checks
+  each surface against pi-tui's own overlay sizing at several terminal sizes.
+
+Migration status and the remaining surfaces (editors, config, Guided Review)
+are tracked in [plans/modal-consistency.md](plans/modal-consistency.md).
 
 ## Invariants
 

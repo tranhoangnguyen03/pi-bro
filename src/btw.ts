@@ -1,6 +1,6 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Input, Markdown, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Focusable } from "@earendil-works/pi-tui";
+import { Input, Markdown, matchesKey, wrapTextWithAnsi, type Focusable } from "@earendil-works/pi-tui";
 import { execute as executeBackend, type BackendProgress, type BackendSelection } from "./backend.ts";
 import type { Theme, TuiLike } from "./config-ui.ts";
 import { buildBtwPrompt } from "./prompt.ts";
@@ -14,15 +14,8 @@ import {
 	selectionLabel,
 } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
-import {
-	broModalRows,
-	canBroInsertIntoEditor,
-	insertBroDesktopText,
-	setRegularMouseReporting,
-	wheelDelta,
-	type BroMouseEvent,
-	type BroMouseResult,
-} from "./ui-capabilities.ts";
+import { BRO_OVERLAY, modalHeight, openBroOverlay, renderFrame, Scroller } from "./modal-kit.ts";
+import { canBroInsertIntoEditor, insertBroDesktopText, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
 export const BTW_CONTEXT_TURNS = 8;
@@ -183,11 +176,14 @@ export class BtwModal implements Focusable {
 	private readonly markdown = new Markdown("", 0, 0, getMarkdownTheme());
 	private readonly input = new Input();
 	private notice = "";
-	private offset = 0;
-	// Pinned to the newest text until the reader scrolls up; scrolling back to the end re-pins.
-	private follow = false;
-	private maxOffset = 0;
-	private bodyHeight = 1;
+	// Follows the newest text until the reader scrolls up; scrolling back to the end follows again.
+	private readonly scroller = new Scroller(
+		() => {
+			this.notice = "";
+			this.tui.requestRender();
+		},
+		{ followEnd: true },
+	);
 	private running = false;
 	private full = false;
 	private model = "";
@@ -209,13 +205,12 @@ export class BtwModal implements Focusable {
 		private readonly onSubmit: (value: string) => void,
 		private readonly onDispose: () => void,
 	) {
-		setRegularMouseReporting(this.tui, true);
 		this.input.onSubmit = (value) => {
 			if (!this.running) this.onSubmit(value);
 		};
 	}
 
-	// Keeps the reader's place; render clamps the offset when the text shrinks (e.g. /clear).
+	// Keeps the reader's place; the scroller clamps when the text shrinks (e.g. /clear).
 	setText(text: string): void {
 		this.markdown.setText(text);
 		this.tui.requestRender();
@@ -223,7 +218,7 @@ export class BtwModal implements Focusable {
 
 	/** Show the newest text and keep following it while a reply streams. */
 	scrollToEnd(): void {
-		this.follow = true;
+		this.scroller.toEnd();
 		this.tui.requestRender();
 	}
 
@@ -258,19 +253,8 @@ export class BtwModal implements Focusable {
 		this.input.invalidate();
 	}
 
-	// Pi 1.2+ fullscreen delivers the wheel here and no longer forwards raw wheel input to handleInput.
 	handleMouse(event: BroMouseEvent): BroMouseResult {
-		if (event.type !== "wheel") return;
-		const delta = Math.trunc(event.wheelDelta ?? 0);
-		if (delta) this.scroll(delta);
-		return { handled: true, render: false };
-	}
-
-	private scroll(delta: number): void {
-		this.offset = Math.max(0, Math.min(this.offset + delta, this.maxOffset));
-		this.follow = this.offset >= this.maxOffset;
-		this.notice = "";
-		this.tui.requestRender();
+		return this.scroller.handleMouse(event);
 	}
 
 	handleInput(data: string): void {
@@ -278,74 +262,34 @@ export class BtwModal implements Focusable {
 			this.onClose();
 			return;
 		}
-		const delta = wheelDelta(data) || (matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0);
-		if (delta) {
-			this.scroll(delta);
-			return;
-		}
+		if (this.scroller.handleKey(data)) return;
 		this.input.handleInput(data);
 		this.tui.requestRender();
 	}
 
-	private frameLine(content: string, innerWidth: number): string {
-		const truncated = truncateToWidth(content, innerWidth, "");
-		const padding = Math.max(0, innerWidth - visibleWidth(truncated));
-		return `${this.theme.fg("border", "│")}${truncated}${" ".repeat(padding)}${this.theme.fg("border", "│")}`;
-	}
-
-	private borderLine(innerWidth: number, edge: "top" | "bottom"): string {
-		const left = edge === "top" ? "┌" : "└";
-		const right = edge === "top" ? "┐" : "┘";
-		return this.theme.fg("border", `${left}${"─".repeat(innerWidth)}${right}`);
-	}
-
-	private ruleLine(innerWidth: number): string {
-		return this.theme.fg("border", `├${"─".repeat(innerWidth)}┤`);
-	}
-
 	render(width: number): string[] {
-		const dialogWidth = Math.max(24, width);
-		const innerWidth = Math.max(22, dialogWidth - 2);
-		const terminalRows = broModalRows(this.tui, process.stdout.rows);
-		const dialogHeight = Math.min(34, Math.max(8, Math.floor(terminalRows * 0.82)));
-		const footer = [
-			...wrapTextWithAnsi(this.theme.fg("accent", this.theme.bold("Your message to Bro")), innerWidth),
-			this.input.render(innerWidth)[0] ?? "",
-			...wrapTextWithAnsi(this.running ? "Bro is thinking… · Esc: close (stops reply)" : "Enter: send message · Esc: close panel", innerWidth),
-			...wrapTextWithAnsi("Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", innerWidth),
-			...(this.notice ? wrapTextWithAnsi(this.theme.fg("accent", this.notice), innerWidth) : []),
-		];
-		this.bodyHeight = Math.max(1, dialogHeight - 5 - footer.length);
-
-		const rendered = this.markdown.render(innerWidth);
-		this.maxOffset = Math.max(0, rendered.length - this.bodyHeight);
-		if (this.follow) this.offset = this.maxOffset;
-		this.offset = Math.max(0, Math.min(this.offset, this.maxOffset));
-		const visible = rendered.slice(this.offset, this.offset + this.bodyHeight);
-		const hiddenBelow = Math.max(0, this.maxOffset - this.offset);
-		const scroll = this.maxOffset > 0 ? ` · ↑${this.offset} ↓${hiddenBelow}` : "";
-
-		const model = this.model ? this.theme.fg("dim", ` · ${this.model}`) : "";
-		const mode = this.theme.fg("dim", " · ") + (this.full ? this.theme.fg("accent", this.theme.bold(btwModeLabel(true))) : this.theme.fg("dim", btwModeLabel(false)));
-		const header = this.theme.fg("accent", this.theme.bold("Bro · btw")) + model + mode + this.theme.fg("dim", scroll);
-
-		const lines = [
-			this.borderLine(innerWidth, "top"),
-			this.frameLine(header, innerWidth),
-			this.ruleLine(innerWidth),
-		];
-		for (const line of visible) lines.push(this.frameLine(line, innerWidth));
-		for (let i = visible.length; i < this.bodyHeight; i++) lines.push(this.frameLine("", innerWidth));
-		lines.push(this.ruleLine(innerWidth));
-		for (const line of footer) lines.push(this.frameLine(line, innerWidth));
-		lines.push(this.borderLine(innerWidth, "bottom"));
-		return lines;
+		const inner = Math.max(1, width - 2);
+		return renderFrame(this.theme, width, modalHeight(this.tui, BRO_OVERLAY, 34), {
+			header: () => {
+				const scroll = this.scroller.indicator();
+				const model = this.model ? this.theme.fg("dim", ` · ${this.model}`) : "";
+				const mode = this.theme.fg("dim", " · ") + (this.full ? this.theme.fg("accent", this.theme.bold(btwModeLabel(true))) : this.theme.fg("dim", btwModeLabel(false)));
+				return this.theme.fg("accent", this.theme.bold("Bro · btw")) + model + mode + this.theme.fg("dim", scroll ? ` · ${scroll}` : "");
+			},
+			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
+			footer: [
+				this.theme.fg("accent", this.theme.bold("Your message to Bro")),
+				this.input.render(inner)[0] ?? "",
+				...wrapTextWithAnsi("Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner),
+			],
+			notice: this.notice,
+			hints: this.running ? "Bro is thinking… · Esc: close (stops reply)" : "Enter: send message · Esc: close panel",
+		});
 	}
 
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		setRegularMouseReporting(this.tui, false);
 		this.onDispose();
 	}
 }
@@ -356,7 +300,8 @@ export async function openBtwModal(
 ): Promise<void> {
 	const thread = options.thread;
 
-	await ctx.ui.custom<void>(
+	await openBroOverlay<void>(
+		ctx,
 		(tui, theme, _keybindings, done) => {
 			let closed = false;
 			let controller: AbortController | undefined;
@@ -558,15 +503,6 @@ export async function openBtwModal(
 
 			return modal;
 		},
-		{
-			overlay: true,
-			overlayOptions: {
-				width: "78%",
-				minWidth: 48,
-				maxHeight: "82%",
-				anchor: "top-center",
-				margin: { top: 1, left: 2, right: 2 },
-			},
-		},
+		{ mouse: true },
 	);
 }

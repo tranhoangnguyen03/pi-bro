@@ -88,6 +88,7 @@ next mode without saving it:
 
 - **Mouse wheel / trackpad**: Scroll in regular or fullscreen mode
 - **↑ / ↓**: Scroll in any mode
+- **PgUp / PgDn**: Scroll a page at a time (also in btw)
 - **C**: Copy the complete explanation
 - **R**: Simplify the captured source again in the mode shown, or run the
   current Doctor check again
