@@ -1038,7 +1038,7 @@ export class ReviewModal {
 			return [
 				border("╭", "╮"),
 				row("Resize to at least 36×18"),
-				row(this.busy ? "Esc: stop and close" : "Esc: close"),
+				row(this.busy ? "Esc stop and close" : "Esc close"),
 				border("╰", "╯"),
 			]
 				.slice(0, height)

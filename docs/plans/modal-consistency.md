@@ -1,6 +1,6 @@
-# Proposal: one shared modal kit for every Bro overlay
+# Design: one shared modal kit for every Bro overlay
 
-Status: in progress (2026-10-15). v2 was revised after independent reviews by
+Status: complete (2026-10-15). v2 was revised after independent reviews by
 agy, claude and codex; v3 adds a second review by agy and claude (both: "ready
 after small fixes").
 
@@ -23,7 +23,11 @@ after small fixes").
   lease, so the wheel works in regular mode too, released while hidden behind
   the regenerate confirm; one raw SGR parser (`rawWheel`) serves every surface.
   The contract test covers all surfaces; no `todo` rows remain.
-- Next: step 5 (hint wording convention, changelog with the next release).
+- Step 5 landed: btw and Review's small-terminal screen use the `Key action`
+  hint wording; DEVELOPMENT.md documents the conventions. The user-facing
+  changelog entry goes in with the release that ships steps 1–5.
+- Done. Open follow-ups: the editors' minimum height below ~22 rows (pi-tui
+  `Editor`), and a live-terminal pass on Pi 0.84.2 and 1.2 before release.
 
 ## Why
 
@@ -153,7 +157,7 @@ export function delegateMouse(container, event: WheelEvent, top: number, left: n
 
 // 5. Regular-mode mouse reporting as a lease: idempotent.
 export function mouseLease(tui): { acquire(): void; release(): void };
-//    openBroOverlay acquires it after mount (onHandle) and releases it on dispose.
+//    openBroOverlay acquires it after component creation and releases it on dispose.
 //    One process.once("exit") hook is added on acquire and removed on release, so
 //    listeners never pile up. Review also releases it while hidden for its confirm.
 export function openBroOverlay<T>(ctx, factory, options?: {
@@ -223,7 +227,7 @@ Assertions:
 - mouse reporting writes are balanced after close, and no exit listener is left behind;
 - no `requestRender` after `dispose`.
 
-Rows for surfaces that haven't migrated yet use node:test `{ todo: true }`.
+During migration, rows for surfaces not yet moved used node:test `{ todo: true }`; no todo rows remain.
 
 ## Migration (one PR each)
 
@@ -237,7 +241,7 @@ Rows for surfaces that haven't migrated yet use node:test `{ todo: true }`.
 1. **Kit + contract test.** Add `src/modal-kit.ts` and its `files` entry (`test/release.test.ts` already fails if it's missing), with unit tests and the contract test (unmigrated rows marked `todo`).
 2. **BroModal + BtwModal** move to `renderFrame`, `Scroller`, `openBroOverlay`/`mouseLease`. Fixes D5, D6 and D10 for these two, and adds PgUp/PgDn.
 3. **Editors + config + model picker** get a `renderFrame` wrapper, the height budget and `delegateMouse`. Fixes the rest of D1, plus D2 and D9.
-4. **Review** moves to `rawWheel` via `Scroller`'s parser, `openBroOverlay({ mouse: true, onHandle })` with the lease suspended while hidden, and `delegateMouse` for acquisition. Fixes D7 and D10 for Review, plus the acquisition part of D2.
+4. **Review** moves to the shared `rawWheel` parser, `openBroOverlay({ mouse: true, onHandle })` with the lease suspended while hidden, and the shared overlay mount for acquisition. Fixes D7 and D10 for Review, plus the acquisition part of D2.
 5. **Docs.** A "Modals" section in `docs/DEVELOPMENT.md` (use the kit, add a contract-test row), user-guide hint updates, changelog.
 
 ## Risks
