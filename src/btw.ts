@@ -14,7 +14,7 @@ import {
 	selectionLabel,
 } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
-import { BRO_OVERLAY, modalHeight, openBroOverlay, renderFrame, Scroller } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, modalHeight, openBroOverlay, renderFrame, Scroller, type Area } from "./modal-kit.ts";
 import { canBroInsertIntoEditor, insertBroDesktopText, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -176,6 +176,7 @@ export class BtwModal implements Focusable {
 	private readonly markdown = new Markdown("", 0, 0, getMarkdownTheme());
 	private readonly input = new Input();
 	private notice = "";
+	private rawArea: Area | undefined;
 	// Follows the newest text until the reader scrolls up; scrolling back to the end follows again.
 	private readonly scroller = new Scroller(
 		() => {
@@ -262,14 +263,16 @@ export class BtwModal implements Focusable {
 			this.onClose();
 			return;
 		}
-		if (this.scroller.handleKey(data)) return;
+		if (this.scroller.handleKey(data, this.rawArea)) return;
 		this.input.handleInput(data);
 		this.tui.requestRender();
 	}
 
 	render(width: number): string[] {
 		const inner = Math.max(1, width - 2);
-		return renderFrame(this.theme, width, modalHeight(this.tui, BRO_OVERLAY, 34), {
+		const height = modalHeight(this.tui, BRO_OVERLAY, 34);
+		this.rawArea = broOverlayArea(this.tui, width, height);
+		return renderFrame(this.theme, width, height, {
 			header: () => {
 				const scroll = this.scroller.indicator();
 				const model = this.model ? this.theme.fg("dim", ` · ${this.model}`) : "";

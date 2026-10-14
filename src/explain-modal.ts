@@ -37,7 +37,7 @@ import {
 } from "./settings.ts";
 import { openShowHtml, stripShowDiagramFence } from "./show.ts";
 import type { BroSource } from "./sources.ts";
-import { BRO_OVERLAY, delegateMouse, modalHeight, openBroOverlay, renderFrame, Scroller, type Area } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, delegateMouse, modalHeight, openBroOverlay, renderFrame, Scroller, type Area } from "./modal-kit.ts";
 import { hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -383,6 +383,7 @@ export class BroModal implements Focusable {
 	private sourceLabel = "";
 	private modelLabel = "";
 	private notice = "";
+	private rawArea: Area | undefined;
 	private readonly scroller = new Scroller(() => {
 		this.notice = "";
 		this.tui.requestRender();
@@ -484,7 +485,9 @@ export class BroModal implements Focusable {
 	}
 
 	render(width: number): string[] {
-		return renderFrame(this.theme, width, modalHeight(this.tui, BRO_OVERLAY, 32), {
+		const height = modalHeight(this.tui, BRO_OVERLAY, 32);
+		this.rawArea = broOverlayArea(this.tui, width, height);
+		return renderFrame(this.theme, width, height, {
 			header: () => {
 				const scroll = this.scroller.indicator();
 				return (
@@ -512,7 +515,7 @@ export class BroModal implements Focusable {
 			return;
 		}
 
-		if (this.scroller.handleKey(data)) return;
+		if (this.scroller.handleKey(data, this.rawArea)) return;
 
 		if ((matchesKey(data, "c") || matchesKey(data, "shift+c")) && this.copyable && this.rawText) {
 			void copyToClipboard(this.rawText)

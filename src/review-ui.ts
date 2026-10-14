@@ -25,18 +25,13 @@ import {
 } from "./review.ts";
 import { captureReview, readEvidence, resolveReviewTarget } from "./review-source.ts";
 import { ReviewModal, newReviewView, safeReviewText } from "./review-modal.ts";
+import { modalHeight, openBroOverlay, REVIEW_OVERLAY } from "./modal-kit.ts";
 import { consumeWheel } from "./ui-capabilities.ts";
 
 const activeReviews = new Map<string, AbortController | undefined>();
 export function stopGuidedReviews(): void {
 	for (const controller of activeReviews.values()) controller?.abort();
 }
-const overlayOptions = {
-	anchor: "center" as const,
-	width: "100%" as const,
-	maxHeight: "100%" as const,
-	margin: { top: 1, bottom: 1 },
-};
 
 export async function openGuidedReview(
 	ctx: ExtensionCommandContext,
@@ -74,7 +69,8 @@ export async function openGuidedReview(
 		if (!picked) return;
 		record = records[labels.indexOf(picked)];
 	} else {
-		record = await ctx.ui.custom<ReviewRecord | undefined>(
+		record = await openBroOverlay<ReviewRecord | undefined>(
+			ctx,
 			(tui, theme, _keys, done) => {
 				let controller = new AbortController();
 				let message = "Resolving PR identity…";
@@ -154,7 +150,7 @@ export async function openGuidedReview(
 				return {
 					render(width: number) {
 						const inner = Math.max(1, width - 2);
-						const height = Math.max(1, tui.terminal.rows - 2);
+						const height = modalHeight(tui, REVIEW_OVERLAY);
 						const border = "─".repeat(inner);
 						const row = (text: string) => {
 							const line = truncateToWidth(text, inner, "…");
@@ -195,7 +191,7 @@ export async function openGuidedReview(
 					},
 				};
 			},
-			{ overlay: true, overlayOptions },
+			{ overlay: REVIEW_OVERLAY },
 		);
 	}
 	if (!record) return;
@@ -207,7 +203,8 @@ export async function openGuidedReview(
 	activeReviews.set(state.id, undefined);
 	let overlayHandle: { setHidden(hidden: boolean): void } | undefined;
 	try {
-		await ctx.ui.custom<void>(
+		await openBroOverlay<void>(
+			ctx,
 			(tui, theme, _keys, done) => {
 				let controller: AbortController | undefined;
 				let running: Promise<void> | undefined;
@@ -509,8 +506,9 @@ export async function openGuidedReview(
 				};
 			},
 			{
-				overlay: true,
-				overlayOptions,
+				overlay: REVIEW_OVERLAY,
+				// Regular-mode wheel scrolling; released while hidden behind the regenerate confirm.
+				mouse: true,
 				onHandle: (handle) => {
 					overlayHandle = handle;
 				},

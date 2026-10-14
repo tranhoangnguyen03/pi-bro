@@ -107,6 +107,7 @@ pi --tui-mode fullscreen --no-extensions -e "$BRO/src/bro.ts"
 5. Create an unsent draft; **do not press Enter in the composer**. Conversation → composer → actions. Close automatically saves; reopen restores draft/context/position. Clearing the last draft must leave a valid/empty list, not a ghost selection.
 6. Copy finding to a scratch editor, not an external service. Check full formatted text and confirmation; copying does not apply/submit. Host clipboard errors must be readable.
 7. Check 132×38, 110×32, 60×20, 36×18 and tiny. Essential exit hints/actions remain visible; 36×18 works. Wheel scrolls the hovered pane/pinned title without moving selection/focus. Physical mouse/terminal behavior is separate from injected-event tests.
+   Repeat the wheel check with `--tui-mode regular`: the hovered pane scrolls, a wheel outside the overlay does not move it, and terminal scrollback and mouse selection return after Close (also after Regenerate's confirm is answered).
 8. Close shows a saved/reopen message. No new backend process should be started by reading/navigation/resume.
 
 ### Bounded live checks (not part of npm test)
