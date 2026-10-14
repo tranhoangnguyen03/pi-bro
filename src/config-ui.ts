@@ -7,6 +7,7 @@ import {
 	SelectList,
 	SettingsList,
 	Text,
+	TruncatedText,
 	matchesKey,
 	truncateToWidth,
 	visibleWidth,
@@ -34,6 +35,7 @@ import {
 	withCapabilityOverride,
 } from "./settings.ts";
 import { BRO_MODES, parseBroMode } from "./prompt.ts";
+import { broModalRows, consumeWheel } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
 export type Theme = ExtensionCommandContext["ui"]["theme"];
@@ -58,6 +60,10 @@ export function createConfigModal(
 	persistSettings: (settings: BroSettings) => Promise<void>,
 ): (tui: TuiLike, theme: Theme, keybindings: unknown, done: (value?: void) => void) => Component & { dispose?(): void } {
 	return (tui, theme, _keybindings, done) => {
+		// The overlay (maxHeight 78%) clips from the bottom: leave room for the borders, title,
+		// subtitle, a two-line notice and SettingsList's own scroll, blank and hint rows.
+		// shortcut: sized once at open, not on resize; fine while config stays short-lived.
+		const listRows = Math.max(3, Math.floor(broModalRows(tui, process.stdout.rows) * 0.78) - 9);
 		let settings = initialSettings;
 		// The last settings actually confirmed on disk. A failed save reverts `settings` (and the
 		// whole displayed row set) back to this, so the screen never shows state that doesn't exist.
@@ -101,7 +107,7 @@ export function createConfigModal(
 					pickerDone(`${meta.prefix}${value.trim()}`);
 				}
 			};
-			const picker = new SelectList(options, Math.min(options.length, 8), getSelectListTheme());
+			const picker = new SelectList(options, Math.min(options.length, 8, listRows), getSelectListTheme());
 			const selectedIndex = capability && current === "Default" ? 0 : options.findIndex((option) => option.value === current);
 			picker.setSelectedIndex(Math.max(0, selectedIndex));
 			picker.onSelect = (item) => {
@@ -197,7 +203,7 @@ export function createConfigModal(
 			...CAPABILITIES.flatMap((capability) => [capabilityItems[capability].model, capabilityItems[capability].effort]),
 		];
 
-		const noticeText = new Text("");
+		const noticeText = new Text("", 1, 0);
 
 		function runSave(toSave: BroSettings): void {
 			saving = true;
@@ -298,13 +304,13 @@ export function createConfigModal(
 			done(undefined);
 		};
 
-		const settingsList = new SettingsList(items, Math.min(items.length + 2, 18), getSettingsListTheme(), onChange, requestClose);
+		const settingsList = new SettingsList(items, Math.min(items.length, listRows), getSettingsListTheme(), onChange, requestClose);
 		const container = new Container();
-		container.addChild(new Text(theme.fg("accent", theme.bold("Bro · config"))));
-		container.addChild(new Text(theme.fg("dim", "Shared defaults, with optional overrides per capability")));
+		container.addChild(new Text(theme.fg("accent", theme.bold("Bro · config")), 1, 0));
+		container.addChild(new TruncatedText(theme.fg("dim", "Shared defaults, with optional overrides per capability"), 1, 0));
+		// SettingsList prints its own key hints, so Bro adds none.
 		container.addChild(settingsList);
 		container.addChild(noticeText);
-		container.addChild(new Text(theme.fg("dim", "↑/↓ navigate · Enter select/change · Esc back/close")));
 
 		return {
 			render: (w: number) => {
@@ -316,6 +322,7 @@ export function createConfigModal(
 				}), border("└", "┘")];
 			},
 			invalidate: () => container.invalidate(),
+			handleMouse: consumeWheel,
 			handleInput: (data: string) => {
 				settingsList.handleInput?.(data);
 				tui.requestRender();

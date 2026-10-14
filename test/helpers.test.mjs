@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 import mammoth from "mammoth";
-import { bro, backend, sources, buildDir } from "./test-build.mjs";
+import * as piTui from "@earendil-works/pi-tui";
+import { bro, backend, sources, buildDir, btw, explainModal } from "./test-build.mjs";
 
 test("Bro helpers, modals, advisor lifecycle and SDK restrictions", async (t) => {
 const documentFixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "documents");
@@ -423,6 +424,68 @@ await t.test("Terminal UI mouse reporting and wheelDelta handlers", () => {
 	setRegularMouseReporting(regularTui, false);
 	setRegularMouseReporting({ mode: "fullscreen", terminal: regularTui.terminal }, true);
 	assert.deepEqual(mouseWrites, ["\u001b[?1000h\u001b[?1006h", "\u001b[?1000l\u001b[?1006l"]);
+});
+
+await t.test("Explain and btw modals scroll on fullscreen wheel events (Pi 1.2+)", () => {
+	const tui = { mode: "fullscreen", terminal: { rows: 20, columns: 80 }, requestRender() {} };
+	const theme = { fg: (_color, text) => text, bold: (text) => text };
+	const text = Array.from({ length: 60 }, (_, index) => `line ${index}`).join("\n\n");
+	const explain = new explainModal.BroModal(tui, theme, () => {}, () => {}, () => {}, "retry");
+	explain.setResult(text, false);
+	const chat = new btw.BtwModal(tui, theme, () => {}, () => {}, () => {});
+	chat.setText(text);
+	for (const modal of [explain, chat]) {
+		modal.render(80);
+		assert.deepEqual(modal.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: 4 }), { handled: true, render: false });
+		assert.match(stripVTControlCharacters(modal.render(80).join("\n")), /↑4 ↓/);
+		modal.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: -10 });
+		assert.doesNotMatch(stripVTControlCharacters(modal.render(80).join("\n")), /↑[1-9]/);
+		assert.equal(modal.handleMouse({ type: "click", x: 1, y: 1 }), undefined);
+	}
+});
+
+await t.test("Editor and config overlays swallow the wheel and fit Pi's overlay height at 24 rows", () => {
+	const { TuiMainScreen } = piTui;
+	const overlay = { width: "78%", minWidth: 48, maxHeight: "78%", anchor: "top-center", margin: { top: 1, left: 2, right: 2 } };
+	// Pi's own overlay sizing is the oracle, so a host change fails here instead of clipping silently.
+	const layout = TuiMainScreen.prototype.resolveOverlayLayout.call(TuiMainScreen.prototype, overlay, 0, 80, 24);
+	const tui = { mode: "fullscreen", terminal: { rows: 24, columns: 80 }, requestRender() {} };
+	const modals = {
+		preferences: createPreferencesModal({}, { save: async () => {}, clear: async () => {} })(tui, fakeTheme, {}, () => {}),
+		advisorSteer: createAdvisorSteerModal("brief", () => {}, () => {})(tui, fakeTheme, {}, () => {}),
+		config: createConfigModal({ model: "gemini-a", effort: "low", mode: "balanced", showTurns: 1, overrides: {} }, configFamilies, async () => {})(tui, fakeTheme, {}, () => {}),
+	};
+	for (const [name, modal] of Object.entries(modals)) {
+		const lines = modal.render(layout.width);
+		assert.ok(lines.length <= layout.maxHeight, `${name}: ${lines.length} rows > ${layout.maxHeight}`);
+		assert.match(lines.at(-1), /└/, `${name}: bottom border visible`);
+		assert.deepEqual(modal.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: 3 }), { handled: true, render: false });
+		assert.equal(modal.handleMouse({ type: "click", x: 1, y: 1 }), undefined);
+	}
+	assert.match(stripVTControlCharacters(modals.preferences.render(layout.width).join("\n")), /Ctrl\+S save · Ctrl\+K clear · Ctrl\+C copy · Esc close/);
+	assert.equal(stripVTControlCharacters(modals.config.render(layout.width).join("\n")).match(/Esc/g)?.length, 1, "config shows one key-hint line");
+});
+
+await t.test("btw follows the newest text until the reader scrolls up", () => {
+	const tui = { mode: "fullscreen", terminal: { rows: 20, columns: 80 }, requestRender() {} };
+	const chat = new btw.BtwModal(tui, fakeTheme, () => {}, () => {}, () => {});
+	const view = () => stripVTControlCharacters(chat.render(80).join("\n"));
+	const lines = (count) => Array.from({ length: count }, (_, index) => `line ${index}`).join("\n\n");
+	chat.setText(lines(40));
+	assert.match(view(), /↑0 ↓/, "a new modal starts at the top");
+	chat.scrollToEnd();
+	assert.match(view(), /↓0/);
+	chat.setText(lines(60));
+	assert.match(view(), /↓0/, "streamed text keeps the view on the newest line");
+	chat.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: -5 });
+	const before = view().match(/↑(\d+)/)[1];
+	chat.setText(lines(80));
+	assert.equal(view().match(/↑(\d+)/)[1], before, "scrolling up stops following and a finished answer keeps the place");
+	chat.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: 1000 });
+	chat.setText(lines(90));
+	assert.match(view(), /↓0/, "scrolling back to the end follows again");
+	chat.setText("");
+	assert.doesNotMatch(view(), /↑/, "/clear empties the view");
 });
 
 await t.test("Agy CLI usage formatting and model catalog parsing", () => {

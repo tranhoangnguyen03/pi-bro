@@ -20,6 +20,8 @@ import {
 	insertBroDesktopText,
 	setRegularMouseReporting,
 	wheelDelta,
+	type BroMouseEvent,
+	type BroMouseResult,
 } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -182,6 +184,8 @@ export class BtwModal implements Focusable {
 	private readonly input = new Input();
 	private notice = "";
 	private offset = 0;
+	// Pinned to the newest text until the reader scrolls up; scrolling back to the end re-pins.
+	private follow = false;
 	private maxOffset = 0;
 	private bodyHeight = 1;
 	private running = false;
@@ -211,9 +215,15 @@ export class BtwModal implements Focusable {
 		};
 	}
 
+	// Keeps the reader's place; render clamps the offset when the text shrinks (e.g. /clear).
 	setText(text: string): void {
 		this.markdown.setText(text);
-		if (!this.running) this.offset = 0;
+		this.tui.requestRender();
+	}
+
+	/** Show the newest text and keep following it while a reply streams. */
+	scrollToEnd(): void {
+		this.follow = true;
 		this.tui.requestRender();
 	}
 
@@ -248,6 +258,21 @@ export class BtwModal implements Focusable {
 		this.input.invalidate();
 	}
 
+	// Pi 1.2+ fullscreen delivers the wheel here and no longer forwards raw wheel input to handleInput.
+	handleMouse(event: BroMouseEvent): BroMouseResult {
+		if (event.type !== "wheel") return;
+		const delta = Math.trunc(event.wheelDelta ?? 0);
+		if (delta) this.scroll(delta);
+		return { handled: true, render: false };
+	}
+
+	private scroll(delta: number): void {
+		this.offset = Math.max(0, Math.min(this.offset + delta, this.maxOffset));
+		this.follow = this.offset >= this.maxOffset;
+		this.notice = "";
+		this.tui.requestRender();
+	}
+
 	handleInput(data: string): void {
 		if (matchesKey(data, "escape")) {
 			this.onClose();
@@ -255,9 +280,7 @@ export class BtwModal implements Focusable {
 		}
 		const delta = wheelDelta(data) || (matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0);
 		if (delta) {
-			this.offset = Math.max(0, Math.min(this.offset + delta, this.maxOffset));
-			this.notice = "";
-			this.tui.requestRender();
+			this.scroll(delta);
 			return;
 		}
 		this.input.handleInput(data);
@@ -288,7 +311,7 @@ export class BtwModal implements Focusable {
 		const footer = [
 			...wrapTextWithAnsi(this.theme.fg("accent", this.theme.bold("Your message to Bro")), innerWidth),
 			this.input.render(innerWidth)[0] ?? "",
-			...wrapTextWithAnsi(this.running ? "Bro is thinking… · Esc: cancel response" : "Enter: send message · Esc: close panel", innerWidth),
+			...wrapTextWithAnsi(this.running ? "Bro is thinking… · Esc: close panel (stops the reply)" : "Enter: send message · Esc: close panel", innerWidth),
 			...wrapTextWithAnsi("Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", innerWidth),
 			...(this.notice ? wrapTextWithAnsi(this.theme.fg("accent", this.notice), innerWidth) : []),
 		];
@@ -296,6 +319,7 @@ export class BtwModal implements Focusable {
 
 		const rendered = this.markdown.render(innerWidth);
 		this.maxOffset = Math.max(0, rendered.length - this.bodyHeight);
+		if (this.follow) this.offset = this.maxOffset;
 		this.offset = Math.max(0, Math.min(this.offset, this.maxOffset));
 		const visible = rendered.slice(this.offset, this.offset + this.bodyHeight);
 		const hiddenBelow = Math.max(0, this.maxOffset - this.offset);
@@ -391,6 +415,7 @@ export async function openBtwModal(
 
 				thread.turns.push({ question, answer: "…" });
 				modal.setText(transcript());
+				modal.scrollToEnd();
 
 				try {
 					const selection = selectionForCapability(settings, "btw");
@@ -527,6 +552,7 @@ export async function openBtwModal(
 			modal.setFull(thread.full);
 			modal.setModel(btwHeaderLabel(thread));
 			modal.setText(transcript());
+			modal.scrollToEnd();
 
 			if (options.initialQuestion) void runTurn(options.initialQuestion);
 

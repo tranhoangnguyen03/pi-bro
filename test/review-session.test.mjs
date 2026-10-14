@@ -53,6 +53,70 @@ test("saved review opens and closes without a backend call and preserves its com
 	component.dispose();
 });
 
+test("closing a review saves once; teardown without Esc still saves", async () => {
+	const root = join(getAgentDir(), "bro-reviews");
+	const id = "7".repeat(64);
+	const path = join(root, `${id}.json`);
+	const record = {
+		version: 1,
+		id,
+		snapshot: {
+			target: { repository: "a/b", number: 77, head: "abcdef", base: "base" },
+			mergeBase: "merge",
+			gitDir: root,
+			checkout: root,
+			files: [],
+			diff: "",
+		},
+		turns: [],
+		ui: newReviewView(),
+	};
+	const exists = () => readFile(path).then(() => true, () => false);
+	const open = (onMount) =>
+		openGuidedReview(
+			{
+				mode: "tui",
+				ui: {
+					select: async (_title, labels) => labels.find((label) => label.includes("#77")),
+					notify() {},
+					custom: (factory) =>
+						new Promise((resolve) => {
+							const component = factory({ terminal: { rows: 20 }, requestRender() {} }, { fg: (_c, s) => s, bold: (s) => s }, {}, resolve);
+							onMount(component, resolve);
+						}),
+				},
+			},
+			"resume",
+			"",
+		);
+	try {
+		// Esc: close() saves before done(); the host then disposes, which must not save again.
+		await saveReview(root, record);
+		let closed;
+		await open((component) => {
+			closed = component;
+			component.handleInput("\x1b");
+		});
+		assert.equal(await exists(), true);
+		await rm(path);
+		closed.dispose();
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		assert.equal(await exists(), false, "dispose after a successful close does not save again");
+
+		// Teardown that skips close() (e.g. a session switch) still saves.
+		await saveReview(root, record);
+		await open(async (component, resolve) => {
+			await rm(path);
+			component.dispose();
+			resolve();
+		});
+		for (let i = 0; i < 50 && !(await exists()); i++) await new Promise((resolve) => setTimeout(resolve, 20));
+		assert.equal(await exists(), true, "dispose without close saves");
+	} finally {
+		await rm(path, { force: true });
+	}
+});
+
 test("resume warns about unreadable reviews but still opens a healthy one", async () => {
 	const root = join(getAgentDir(), "bro-reviews"),
 		id = "f".repeat(64),

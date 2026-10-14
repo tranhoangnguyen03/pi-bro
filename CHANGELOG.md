@@ -2,6 +2,27 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.23.1] - 2026-10-15
+
+### Highlights
+
+- Scroll Bro's explain, show, help and btw windows with the mouse wheel again on Pi 1.2.
+- See the save messages and key hints in `/bro preferences`, `/bro advisor-steer` and `/bro config` on normal-size terminals; they were cut off at the bottom.
+- btw keeps your place: it follows the newest answer while you are at the bottom and no longer jumps back to the top after each reply.
+
+### Fixed
+
+- Mouse-wheel scrolling in the explain/show/doctor/help and btw windows on Pi 1.2 fullscreen. Pi 1.2 stopped passing raw wheel input to windows without a mouse handler; both windows now handle Pi's mouse events and keep the raw path for Pi 0.84 and regular mode.
+- The wheel over the preferences, advisor-steer, config and Guided Review loading windows no longer scrolls the chat behind them on Pi 1.2.
+- `/bro preferences`, `/bro advisor-steer` and `/bro config` fit their windows: no blank padding rows, a shorter editor hint line, the editors' height limit raised from 60% to 78% like the other Bro windows, and the config list sized to the terminal. At 24 rows the preferences editor now draws 18 rows instead of 27. Very short terminals (under about 22 rows) can still clip the editors, because Pi's editor has a minimum height.
+- `/bro config` shows one key-hint line instead of two that disagreed.
+- btw's hint while a reply runs now says Esc closes the panel and stops the reply, which is what it does.
+- Guided Review saves once when you close it instead of twice; closing without Esc still saves.
+
+### Changed
+
+- Internal: `src/bro.ts` is split into feature and modal modules (#133). No behaviour change.
+
 ## [0.23.0] - 2026-10-13
 
 ### Highlights
