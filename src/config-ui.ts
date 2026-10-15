@@ -118,7 +118,10 @@ export function createConfigModal(
 			picker.onCancel = () => pickerDone();
 			const customLabel = () => enteringBackend ? EXTERNAL_BACKENDS[enteringBackend].label : "";
 			return {
-				render: (width: number) => enteringBackend ? [`${customLabel()} model ID (Enter saves, Esc cancels)`, ...input.render(width)] : picker.render(width),
+				// SettingsList draws an open submenu instead of its own list and hints, so the picker brings its own.
+				render: (width: number) => enteringBackend
+					? [`${customLabel()} model ID (Enter saves, Esc cancels)`, ...input.render(width)]
+					: [...picker.render(width), "", truncateToWidth(theme.fg("dim", "  ↑/↓ choose · Enter select · Esc back"), width)],
 				invalidate: () => { picker.invalidate(); input.invalidate(); },
 				handleInput: (data: string) => {
 					if (enteringBackend && matchesKey(data, "escape")) pickerDone();
