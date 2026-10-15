@@ -368,7 +368,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 ## Configure and check
 
 - \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
-- \`/bro config\` — shared default and per-capability (explain/show/btw/advisor/review) backend, model, and effort; explain mode; show turns. Changes save immediately.
+- \`/bro config\` — shared default and per-capability (explain/show/btw/advisor/review) backend, model, and effort; explain mode; show turns. Changes save immediately. If the terminal is too small, Esc closes config after pending saves finish; a failed save keeps it open.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
 

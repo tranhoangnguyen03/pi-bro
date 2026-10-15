@@ -749,8 +749,10 @@ Use `/bro config` to review or change the shared default backend/model/effort
 and any per-capability (explain/show/btw/advisor/review) overrides, the explanation
 mode, and the default show turn count. Changes save immediately. Esc inside a
 picker cancels that pick; Esc on the settings screen closes it, keeping
-whatever was already saved. A failed save (for example, a read-only file) is
-shown inline. `/bro mode` changes the mode directly (**M** in an explanation
+whatever was already saved. If the terminal becomes too small, config blocks
+hidden actions; Esc closes config even if a picker was open, after pending saves
+finish. A failed save cancels that close and shows its error inline; if the error
+alone makes config too small, any other key clears it so you can try again. `/bro mode` changes the mode directly (**M** in an explanation
 tries another mode without saving it), and `/bro help` shows the active settings
 and file path.
 

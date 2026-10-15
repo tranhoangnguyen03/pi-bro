@@ -66,6 +66,7 @@ export function createConfigModal(
 		let closeRequested = false;
 		let closed = false;
 		const close = () => {
+			if (closed) return;
 			closed = true;
 			done(undefined);
 		};
@@ -336,7 +337,12 @@ export function createConfigModal(
 			invalidate: () => settingsList.invalidate(),
 			handleMouse: (event: BroMouseEvent) => delegateMouse(settingsList, event, listArea),
 			handleInput: (data: string) => {
-				if (!interactive && !matchesKey(data, "escape")) {
+				if (!interactive) {
+					// No picker is visible here: Esc closes config, still waiting for pending saves.
+					if (matchesKey(data, "escape")) {
+						requestClose();
+						return;
+					}
 					if (notice) {
 						notice = "";
 						tui.requestRender();
