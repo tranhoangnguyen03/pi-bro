@@ -14,8 +14,10 @@ after small fixes").
 - Step 3 landed: preferences, advisor-steer and config use `renderFrame`
   (with `fill: false`, so they size to their content) and `openBroOverlay`;
   `delegateMouse` forwards clicks and wheel to pi-tui's `Editor`, `SettingsList`
-  and the model picker. The frame now keeps hints and borders on every size;
-  below ~22 rows the editor's own minimum height is cut instead of the hints.
+  and the model picker. Config only accepts input while the complete host list,
+  including its selection and hints, fits the current frame; after a shrink it
+  asks for a larger terminal instead of allowing hidden actions. Below ~22 rows
+  the editor's own minimum height is still cut instead of the hints.
 - Next: step 4 (Guided Review), then step 5 (docs and changelog).
 
 ## Why
@@ -176,8 +178,8 @@ Removed after review:
   - It fits from about 22 rows (measured with the starter text). Below that the overlay clips, marked as `shortcut: Editor min height, revisit if users report <22-row terminals`.
 - **Config.**
   - `SettingsList` visible rows = budget − chrome − 3 (its own blank, hint and scroll rows), computed when the modal opens.
-  - Bro's duplicate hint line is dropped; SettingsList's own hint stays.
-  - `shortcut: no rebuild on resize, config is short-lived`.
+  - Bro's duplicate hint line is dropped while the complete SettingsList fits; SettingsList's own selection and hint stay together.
+  - SettingsList has no public resize API. If a later resize makes the component incomplete, Config shows an enlarge-terminal state, keeps Esc visible and blocks hidden actions until it fits again.
 
 ### Conventions
 

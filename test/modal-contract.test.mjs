@@ -77,10 +77,10 @@ const SURFACES = [
 	// shortcut rows: pi-tui's Editor has a fixed minimum height, so the editors fit from ~22 rows.
 	{ name: "preferences", minRows: 22, open: factoryRow(() => explainModal.createPreferencesModal({}, { save: async () => {}, clear: async () => {} })) },
 	{ name: "advisor-steer", minRows: 22, open: factoryRow(() => explainModal.createAdvisorSteerModal(long, () => {}, () => {})) },
-	{ name: "config", minRows: 14, open: factoryRow(() => configUi.createConfigModal(settings, [], async () => {})) },
+	{ name: "config", shows: [/Esc/], open: factoryRow(() => configUi.createConfigModal(settings, [], async () => {})) },
 	{
 		name: "config with the model picker open",
-		minRows: 14,
+		shows: [/Esc/],
 		open: factoryRow(() => configUi.createConfigModal(settings, [], async () => {})),
 		after: (component) => component.handleInput("\r"),
 		// The first Esc only closes the picker.
@@ -106,6 +106,8 @@ for (const surface of SURFACES) {
 					assert.ok(lines.length <= layout.maxHeight, `${where}: ${lines.length} rows > ${layout.maxHeight}`);
 					if (layout.maxHeight >= 3) assert.match(lines.at(-1), /└/, `${where}: bottom border clipped`);
 				}
+				const shown = stripVTControlCharacters(lines.join("\n"));
+				for (const pattern of surface.shows ?? []) assert.match(shown, pattern, `${where}: missing ${pattern}`);
 
 				assert.equal(component.handleMouse?.({ type: "wheel", x: 1, y: 1, wheelDelta: 3 })?.handled, true, `${where}: wheel falls through to the chat`);
 				// Only where some body is left: on tiny terminals the frame keeps controls over content.
@@ -209,4 +211,37 @@ test("modal kit: editor and config forward clicks and wheel to their pi-tui chil
 	assert.equal(text(config).join("\n"), before, "a wheel over the header changes nothing");
 	config.handleMouse({ type: "wheel", x: 3, y: row, wheelDelta: 1 });
 	assert.notEqual(text(config).join("\n"), before, "a wheel over the list moves the selection");
+});
+
+test("modal kit: config blocks hidden actions after resize and recovers when it fits", async () => {
+	const saved = [];
+	let closed = false;
+	const tui = { mode: "fullscreen", terminal: { rows: 40, columns: 80 }, requestRender() {} };
+	const config = configUi.createConfigModal(settings, [], async (value) => void saved.push(value))(
+		tui,
+		theme,
+		{},
+		() => { closed = true; },
+	);
+
+	config.render(62);
+	tui.terminal.rows = 8;
+	tui.terminal.columns = 40;
+	const small = stripVTControlCharacters(config.render(36).join("\n"));
+	assert.match(small, /enlarge terminal/);
+	assert.match(small, /Esc close/);
+	for (let index = 0; index < 3; index++) config.handleInput("\x1b[B");
+	config.handleInput("\r");
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(saved.length, 0, "an invisible setting cannot be changed");
+
+	tui.terminal.rows = 40;
+	tui.terminal.columns = 80;
+	assert.doesNotMatch(stripVTControlCharacters(config.render(62).join("\n")), /enlarge terminal/);
+	for (let index = 0; index < 3; index++) config.handleInput("\x1b[B");
+	config.handleInput("\r");
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(saved.at(-1)?.showTurns, 2, "configuration resumes after the terminal fits again");
+	config.handleInput("\x1b");
+	assert.equal(closed, true);
 });
