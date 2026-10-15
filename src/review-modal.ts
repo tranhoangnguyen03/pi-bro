@@ -14,6 +14,8 @@ import {
 	type Finding,
 	type ReviewRecord,
 } from "./review.ts";
+import { modalHeight, REVIEW_OVERLAY } from "./modal-kit.ts";
+import { rawWheel, SGR_MOUSE } from "./ui-capabilities.ts";
 
 export type ReviewView = {
 	selected: string;
@@ -454,20 +456,18 @@ export class ReviewModal {
 			offset === this.maxOffset;
 	}
 	handleInput(data: string): void {
-		// Pi 0.84 forwards raw wheel input to focused overlays; newer hosts use handleMouse.
-		const mouse = /^\u001b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
-		if (mouse) {
-			const button = Number(mouse[1]);
-			if (button & 64 && (button & 3) < 2 && mouse[4] === "M") {
-				const columns = this.tui.terminal.columns;
-				if (columns !== undefined)
-					this.handleMouse({
-						type: "wheel",
-						x: Number(mouse[2]) - 1 - Math.floor((columns - this.width) / 2),
-						y: Number(mouse[3]) - 1 - Math.floor((this.tui.terminal.rows - this.layout.height) / 2),
-						wheelDelta: button & 1 ? 3 : -3,
-					});
-			}
+		// Pi 0.84 and regular mode deliver raw mouse reports here; Pi 1.x fullscreen uses handleMouse.
+		// Every raw report is swallowed so none reaches the composer as text.
+		if (SGR_MOUSE.test(data)) {
+			const wheel = rawWheel(data);
+			const columns = this.tui.terminal.columns;
+			if (wheel && columns !== undefined)
+				this.handleMouse({
+					type: "wheel",
+					x: wheel.column - 1 - Math.floor((columns - this.width) / 2),
+					y: wheel.row - 1 - Math.floor((this.tui.terminal.rows - this.layout.height) / 2),
+					wheelDelta: wheel.delta,
+				});
 			return;
 		}
 		if (this.tiny) {
@@ -1022,7 +1022,7 @@ export class ReviewModal {
 	}
 	render(width: number): string[] {
 		this.width = width;
-		const height = Math.max(1, Math.min(36, this.tui.terminal.rows - 2));
+		const height = modalHeight(this.tui, REVIEW_OVERLAY, 36);
 		const inner = Math.max(1, width - 2);
 		const fit = (text: string, size: number) => {
 			const line = truncateToWidth(text, size, "…");

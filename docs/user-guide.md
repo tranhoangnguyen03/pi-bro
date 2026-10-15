@@ -140,7 +140,7 @@ Optional conveniences:
 Reopening also keeps the captured revision, even after the author pushes.
 Findings are model suggestions, not approval; citations show real locations,
 not proof of the conclusion. Review uses Claude or Muse file-only inspection: shell, writes and web tools are disabled. Agy/Grok/Codex review requests fail clearly; choose a review override in `/bro config`. Saved reviews remain readable with any selection. Repository text can still mislead the model; tool restrictions are not proof of its conclusions.
-Use `pi --tui-mode fullscreen` for pane-local wheel scrolling.
+The wheel scrolls the pane under the pointer in regular and fullscreen mode.
 
 See the [Guided Review guide](guided-review.md) for controls, calls and
 costs, source freshness, access/privacy, local storage, recovery and current

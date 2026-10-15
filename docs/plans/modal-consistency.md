@@ -18,7 +18,12 @@ after small fixes").
   including its selection and hints, fits the current frame; after a shrink it
   asks for a larger terminal instead of allowing hidden actions. Below ~22 rows
   the editor's own minimum height is still cut instead of the hints.
-- Next: step 4 (Guided Review), then step 5 (docs and changelog).
+- Step 4 landed: Guided Review mounts with `openBroOverlay` and `REVIEW_OVERLAY`
+  (it keeps its rounded frame and pane layout); the workspace holds the mouse
+  lease, so the wheel works in regular mode too, released while hidden behind
+  the regenerate confirm; one raw SGR parser (`rawWheel`) serves every surface.
+  The contract test covers all surfaces; no `todo` rows remain.
+- Next: step 5 (hint wording convention, changelog with the next release).
 
 ## Why
 

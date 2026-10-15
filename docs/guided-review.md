@@ -20,12 +20,6 @@ A URL works even when your current workspace belongs to a different repository. 
 
 A **new** review captures the PR's base/head commits outside your working tree and automatically makes one model request. Subsequent questions each make another request. Calls use your selected backend CLI's account and billing—not Pi's model account. Bro does not automatically retry a failed generation or switch backends.
 
-For fullscreen mouse scrolling, start Pi with:
-
-```sh
-pi --tui-mode fullscreen
-```
-
 Opening the **same PR again** restores its saved review without another model call. Bare `/bro guided-review` lists saved reviews; `/bro guided-review resume` remains an alias for that list.
 
 **Reopening keeps the captured code.** It does not fetch a new comparison when the author pushes commits. Opening by URL/number checks current metadata and reports newer source, but continues the saved capture. The saved-review picker does not check freshness. Reviewing newer revisions is not implemented.
@@ -63,7 +57,7 @@ The generation header shows observable application stages and elapsed time—not
 | Close | Save automatically and leave |
 | Stop and close | Stop active work, await cancellation, save partial work, then leave |
 
-In fullscreen mode, the wheel scrolls the pane under the pointer without moving its list selection or keyboard focus. Reading an active answer pauses following; deliberately returning to the bottom resumes it. In regular terminal mode, the wheel belongs to terminal scrollback.
+The wheel scrolls the pane under the pointer without moving its list selection or keyboard focus, in regular and fullscreen mode. Reading an active answer pauses following; deliberately returning to the bottom resumes it. In regular terminal mode, Bro captures the mouse while the review is open (as its other windows do), so terminal scrollback and mouse text selection return when you close it; use the copy actions meanwhile.
 
 ## Ask privately, if needed
 

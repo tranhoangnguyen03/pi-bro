@@ -34,12 +34,19 @@ export async function insertBroDesktopText(ctx: UiContext, text: string): Promis
 /** Only terminal mode uses synchronous insertion; Desktop uses insertBroDesktopText instead. */
 export function canBroInsertIntoEditor(ctx: UiContext): boolean { return ctx.mode === "tui"; }
 
+/** Any raw SGR mouse report; regular-mode reporting delivers these to handleInput. */
+export const SGR_MOUSE = /^\x1b\[<(\d+);(\d+);(\d+)[Mm]$/;
+
+/** A raw SGR wheel report (Pi 0.84 and regular mode): ±3 lines at a 1-based terminal cell. */
+export function rawWheel(data: string): { delta: number; column: number; row: number } | undefined {
+	const match = SGR_MOUSE.exec(data);
+	const button = match ? Number.parseInt(match[1]!, 10) : 0;
+	if ((button & 64) === 0 || (button & 3) > 1) return undefined;
+	return { delta: button & 1 ? 3 : -3, column: Number(match![2]), row: Number(match![3]) };
+}
+
 export function wheelDelta(data: string): number {
-	const match = /^\x1b\[<(\d+);\d+;\d+[Mm]$/.exec(data);
-	if (!match) return 0;
-	const button = Number.parseInt(match[1], 10);
-	if ((button & 64) === 0) return 0;
-	return (button & 3) === 0 ? -3 : (button & 3) === 1 ? 3 : 0;
+	return rawWheel(data)?.delta ?? 0;
 }
 
 /** Structural subset of pi-tui's mouse event; Pi 0.84 declares no mouse types. */

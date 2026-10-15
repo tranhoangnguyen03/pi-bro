@@ -1,11 +1,12 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type TUI } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type OverlayHandle, type OverlayOptions, type TUI } from "@earendil-works/pi-tui";
 import type { Theme, TuiLike } from "./config-ui.ts";
-import { broModalRows, consumeWheel, setRegularMouseReporting, wheelDelta, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
+import { broModalRows, consumeWheel, rawWheel, setRegularMouseReporting, SGR_MOUSE, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 
 // Shared building blocks for Bro's overlays; see docs/plans/modal-consistency.md.
 
 type Mounted = Component & { dispose?(): void };
+export type Area = { top: number; left: number; width: number; height: number };
 
 /** One overlay preset for Bro's windows. Drawn heights come from the same numbers via modalHeight. */
 export const BRO_OVERLAY = {
@@ -16,14 +17,34 @@ export const BRO_OVERLAY = {
 	margin: { top: 1, left: 2, right: 2 },
 } as const;
 
+/** Guided Review's full-width preset. */
+export const REVIEW_OVERLAY = {
+	anchor: "center",
+	width: "100%",
+	maxHeight: "100%",
+	margin: { top: 1, bottom: 1 },
+} as const;
+
 type HeightOptions = { readonly maxHeight: `${number}%`; readonly margin: { readonly top?: number; readonly bottom?: number } };
 
 /** Rows the host lets the overlay show; mirrors pi-tui's resolveOverlayLayout (floor, clamp to margins, min 1). */
-export function modalHeight(tui: TuiLike, overlay: HeightOptions = BRO_OVERLAY, cap = Infinity): number {
+export function modalHeight(tui: unknown, overlay: HeightOptions = BRO_OVERLAY, cap = Infinity): number {
 	const rows = broModalRows(tui, process.stdout.rows);
 	const percent = Math.floor((rows * Number.parseFloat(overlay.maxHeight)) / 100);
 	const available = Math.max(1, rows - (overlay.margin.top ?? 0) - (overlay.margin.bottom ?? 0));
 	return Math.max(1, Math.min(percent, available, cap));
+}
+
+/** Terminal-cell bounds for the rendered top-centred Bro overlay. */
+export function broOverlayArea(tui: TuiLike, width: number, height: number): Area {
+	const columns = tui.terminal?.columns;
+	const centered = typeof columns === "number" ? Math.floor((columns - width) / 2) : 0;
+	return {
+		top: BRO_OVERLAY.margin.top,
+		left: Math.max(BRO_OVERLAY.margin.left, centered),
+		width,
+		height,
+	};
 }
 
 export type FrameParts = {
@@ -101,11 +122,20 @@ export class Scroller {
 		this.follow = true;
 	}
 
-	/** ↑/↓ one line, PgUp/PgDn one page, and raw SGR wheel bytes (Pi 0.84, regular mode). */
-	handleKey(data: string): boolean {
+	/** ↑/↓ one line, PgUp/PgDn one page, and raw SGR mouse input (Pi 0.84, regular mode). */
+	handleKey(data: string, area?: Area): boolean {
+		if (SGR_MOUSE.test(data)) {
+			const wheel = rawWheel(data);
+			const x = (wheel?.column ?? 0) - 1;
+			const y = (wheel?.row ?? 0) - 1;
+			if (
+				wheel &&
+				(!area || (x >= area.left && x < area.left + area.width && y >= area.top && y < area.top + area.height))
+			) this.by(wheel.delta);
+			return true;
+		}
 		const page = Math.max(1, this.rows - 1);
 		const delta =
-			wheelDelta(data) ||
 			(matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0) ||
 			(matchesKey(data, "pageUp") ? -page : matchesKey(data, "pageDown") ? page : 0);
 		if (!delta) return false;
@@ -125,8 +155,6 @@ export class Scroller {
 		return this.max > 0 ? `↑${this.offset} ↓${this.max - this.offset}` : "";
 	}
 }
-
-export type Area = { top: number; left: number; width: number; height: number };
 
 /**
  * Forward a pointer event to a pi-tui child drawn at `area` inside the overlay, in the child's own
@@ -163,13 +191,18 @@ export function mouseLease(tui: TuiLike): { acquire(): void; release(): void } {
 	};
 }
 
-/** Mount a Bro overlay. `mouse` holds regular-mode reporting until the overlay closes or is disposed. */
+/**
+ * Mount a Bro overlay. `mouse` holds regular-mode reporting until the overlay closes or is disposed,
+ * and releases it while the overlay is hidden through the handle passed to `onHandle`.
+ */
 export async function openBroOverlay<T>(
 	ctx: ExtensionCommandContext,
 	factory: (tui: TUI, theme: Theme, keybindings: unknown, done: (result: T) => void) => Mounted,
-	options: { mouse?: boolean } = {},
+	options: { mouse?: boolean; overlay?: OverlayOptions; onHandle?: (handle: OverlayHandle) => void } = {},
 ): Promise<T> {
 	let lease: ReturnType<typeof mouseLease> | undefined;
+	// Once closed or disposed, un-hiding must not turn reporting back on.
+	let ended = false;
 	try {
 		return await ctx.ui.custom<T>(
 			(tui, theme, keybindings, done) => {
@@ -179,15 +212,29 @@ export async function openBroOverlay<T>(
 				held.acquire();
 				const dispose = component.dispose?.bind(component);
 				component.dispose = () => {
+					ended = true;
 					held.release();
 					dispose?.();
 				};
 				return component;
 			},
-			{ overlay: true, overlayOptions: BRO_OVERLAY },
+			{
+				overlay: true,
+				overlayOptions: options.overlay ?? BRO_OVERLAY,
+				onHandle: (handle) =>
+					options.onHandle?.({
+						...handle,
+						setHidden: (hidden: boolean) => {
+							if (hidden) lease?.release();
+							else if (!ended) lease?.acquire();
+							handle.setHidden(hidden);
+						},
+					}),
+			},
 		);
 	} finally {
 		// Also covers a close before mount, when the host never calls dispose.
+		ended = true;
 		lease?.release();
 	}
 }
