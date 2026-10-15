@@ -460,11 +460,11 @@ export function registerAdvisorTool(pi: ExtensionAPI): void {
 		name: ADVISOR_TOOL_NAME,
 		label: "Bro advisor",
 		description:
-			"Consult a fresh, independent process of the configured advisor backend for a second opinion mid-task. It has real, unsandboxed tool access in the current workspace (read files, search, run commands) with permissions auto-approved, and is instructed to investigate before advising and to leave edits to you — that is a behavioral instruction to the advisor, not an enforced restriction, so treat its findings as advice rather than a delegated implementation. You never need to prepare a summary or evidence first: Bro automatically captures your system instructions, active tools, and the conversation so far, plus any human-set steering priorities, and sends them to the advisor.",
+			"Consult a fresh, independent process of the configured advisor backend for a second opinion mid-task. It has real, unsandboxed tool access in the current workspace (read files, search, run commands) with permissions auto-approved, and is instructed to investigate before advising and to leave edits to you — that is a behavioral instruction to the advisor, not an enforced restriction, so treat its findings as advice rather than a delegated implementation. No need to prepare a summary or evidence first: Bro automatically captures your system instructions, active tools, and the conversation so far, plus any human-set steering priorities, and sends them to the advisor.",
 		promptSnippet: "Consult a fresh configured-backend process for a second opinion mid-task; it investigates the workspace itself and returns advice",
 		promptGuidelines: [
-			"Call bro_advisor before or after a non-trivial design or scope decision, or when genuinely uncertain, for a second opinion from a fresh, independent process of the configured advisor backend.",
-			"bro_advisor's question parameter is optional — never delay a call to first prepare a summary or evidence; Bro captures context automatically.",
+			"Use bro_advisor when the user asks for an independent opinion, or when one would likely settle real uncertainty or catch a costly mistake. Routine decisions do not require consultation.",
+			"bro_advisor's question parameter is optional — Bro captures context automatically, so you do not need to prepare a summary or evidence before calling.",
 			"Any human-set steering priorities are applied automatically by bro_advisor; you don't need to relay or repeat them.",
 			"bro_advisor is instructed to only return advice and leave edits to you — that instruction is not enforced, so verify its findings yourself rather than treating them as a completed implementation.",
 		],

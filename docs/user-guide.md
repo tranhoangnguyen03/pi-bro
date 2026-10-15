@@ -208,8 +208,8 @@ activates `bro_advisor`, its resolved backend/model/effort, steering
 presence, and backend compatibility (for Agy, a minimum CLI version with an
 `agy update` action when it is too old).
 
-- **Automatic context, no prep needed**: the executor never assembles a
-  summary. Bro captures a harness-neutral snapshot — the executor's system
+- **Automatic context, no prep needed**: the executor does not need to assemble
+  a summary. Bro captures a harness-neutral snapshot — the executor's system
   instructions, its active tools, and the conversation so far including tool
   calls and results — and sends it, along with an optional `question` the
   executor may pass, to a **fresh, standalone process of the selected
