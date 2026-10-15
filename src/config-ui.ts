@@ -79,6 +79,11 @@ export function createConfigModal(
 		// that only actually happens once the in-flight (and any coalesced) save has settled, and
 		// only if it succeeded — a failure cancels the pending close so its notice stays visible.
 		let closeRequested = false;
+		let closed = false;
+		const close = () => {
+			closed = true;
+			done(undefined);
+		};
 
 		const modelPicker = (current: string, pickerDone: (value?: string) => void, capability?: Capability) => {
 			const defaultResolved = resolveModelEffort({ model: settings.model, effort: settings.effort }, families);
@@ -233,7 +238,7 @@ export function createConfigModal(
 						runSave(next);
 					} else if (closeRequested) {
 						closeRequested = false;
-						done(undefined);
+						close();
 					}
 				});
 		}
@@ -304,7 +309,7 @@ export function createConfigModal(
 				closeRequested = true;
 				return;
 			}
-			done(undefined);
+			close();
 		};
 
 		const settingsList = new SettingsList(items, Math.min(items.length, listRows), getSettingsListTheme(), onChange, requestClose);
@@ -328,7 +333,7 @@ export function createConfigModal(
 			handleMouse: consumeWheel,
 			handleInput: (data: string) => {
 				settingsList.handleInput?.(data);
-				tui.requestRender();
+				if (!closed) tui.requestRender();
 			},
 		};
 	};

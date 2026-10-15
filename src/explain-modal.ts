@@ -40,15 +40,8 @@ import {
 } from "./settings.ts";
 import { openShowHtml, stripShowDiagramFence } from "./show.ts";
 import type { BroSource } from "./sources.ts";
-import {
-	broModalRows,
-	consumeWheel,
-	hasBroCustomUi,
-	setRegularMouseReporting,
-	wheelDelta,
-	type BroMouseEvent,
-	type BroMouseResult,
-} from "./ui-capabilities.ts";
+import { BRO_OVERLAY, modalHeight, openBroOverlay, renderFrame, Scroller } from "./modal-kit.ts";
+import { consumeWheel, hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
 const LOADING_TEXT = "Simplifying for my bro…";
@@ -375,7 +368,7 @@ The mode decides how much of the source to keep; your preferences decide who it'
 
 ## Controls
 
-- **Mouse wheel / trackpad**, **↑ / ↓** — scroll
+- **Mouse wheel / trackpad**, **↑ / ↓**, **PgUp / PgDn** — scroll
 - **C** — copy the full explanation
 - **R** — repeat the current action (an explanation keeps its mode)
 - **M** — re-simplify in the next mode (brief → balanced → faithful); not saved
@@ -396,9 +389,10 @@ export class BroModal implements Focusable {
 	private sourceLabel = "";
 	private modelLabel = "";
 	private notice = "";
-	private offset = 0;
-	private maxOffset = 0;
-	private bodyHeight = 1;
+	private readonly scroller = new Scroller(() => {
+		this.notice = "";
+		this.tui.requestRender();
+	});
 	private copyable = false;
 	private retryable = false;
 	private disposed = false;
@@ -416,9 +410,7 @@ export class BroModal implements Focusable {
 		private readonly onDispose: () => void,
 		private readonly retryLabel: string,
 		private readonly onSwitchMode: () => void = () => {},
-	) {
-		setRegularMouseReporting(this.tui, true);
-	}
+	) {}
 
 	setLoading(text = LOADING_TEXT): void {
 		this.setContent("loading", `**${text}**`, "", false, false);
@@ -476,25 +468,9 @@ export class BroModal implements Focusable {
 			.replace(/\s+/g, " ")
 			.trim();
 		this.modelLabel = modelLabel;
-		if (kind !== "streaming") this.offset = 0;
+		if (kind !== "streaming") this.scroller.toStart();
 		this.markdown.setText(text);
 		this.tui.requestRender();
-	}
-
-	private frameLine(content: string, innerWidth: number): string {
-		const truncated = truncateToWidth(content, innerWidth, "");
-		const padding = Math.max(0, innerWidth - visibleWidth(truncated));
-		return `${this.theme.fg("border", "│")}${truncated}${" ".repeat(padding)}${this.theme.fg("border", "│")}`;
-	}
-
-	private borderLine(innerWidth: number, edge: "top" | "bottom"): string {
-		const left = edge === "top" ? "┌" : "└";
-		const right = edge === "top" ? "┐" : "┘";
-		return this.theme.fg("border", `${left}${"─".repeat(innerWidth)}${right}`);
-	}
-
-	private ruleLine(innerWidth: number): string {
-		return this.theme.fg("border", `├${"─".repeat(innerWidth)}┤`);
 	}
 
 	private canSwitchMode(): boolean {
@@ -514,55 +490,26 @@ export class BroModal implements Focusable {
 	}
 
 	render(width: number): string[] {
-		const dialogWidth = Math.max(24, width);
-		const innerWidth = Math.max(22, dialogWidth - 2);
-		const terminalRows = broModalRows(this.tui, process.stdout.rows);
-		const dialogHeight = Math.min(32, Math.max(7, Math.floor(terminalRows * 0.78)));
-		this.bodyHeight = Math.max(1, dialogHeight - 6);
-
-		const rendered = this.markdown.render(innerWidth);
-		this.maxOffset = Math.max(0, rendered.length - this.bodyHeight);
-		this.offset = Math.max(0, Math.min(this.offset, this.maxOffset));
-		const visible = rendered.slice(this.offset, this.offset + this.bodyHeight);
-		const hiddenBelow = Math.max(0, this.maxOffset - this.offset);
-		const scroll = this.maxOffset > 0 ? ` · ↑${this.offset} ↓${hiddenBelow}` : "";
-		const controls = this.notice ? `${this.notice} · ${this.controls()}` : this.controls();
-
-		const lines = [
-			this.borderLine(innerWidth, "top"),
-			this.frameLine(
-				this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}`)) +
-					this.theme.fg("dim", `${this.modelLabel ? ` · ${this.modelLabel}` : ""}${this.modeLabel ? ` · ${this.modeLabel}` : ""}${this.preferencesUsed ? " · prefs" : ""}${scroll}`),
-				innerWidth,
-			),
-			this.ruleLine(innerWidth),
-		];
-
-		for (const line of visible) lines.push(this.frameLine(line, innerWidth));
-		for (let i = visible.length; i < this.bodyHeight; i++) lines.push(this.frameLine("", innerWidth));
-
-		lines.push(this.ruleLine(innerWidth));
-		lines.push(this.frameLine(this.theme.fg("dim", controls), innerWidth));
-		lines.push(this.borderLine(innerWidth, "bottom"));
-		return lines;
+		return renderFrame(this.theme, width, modalHeight(this.tui, BRO_OVERLAY, 32), {
+			header: () => {
+				const scroll = this.scroller.indicator();
+				return (
+					this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}`)) +
+					this.theme.fg("dim", `${this.modelLabel ? ` · ${this.modelLabel}` : ""}${this.modeLabel ? ` · ${this.modeLabel}` : ""}${this.preferencesUsed ? " · prefs" : ""}${scroll ? ` · ${scroll}` : ""}`)
+				);
+			},
+			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
+			notice: this.notice,
+			hints: this.controls(),
+		});
 	}
 
 	invalidate(): void {
 		this.markdown.invalidate();
 	}
 
-	// Pi 1.2+ fullscreen delivers the wheel here and no longer forwards raw wheel input to handleInput.
 	handleMouse(event: BroMouseEvent): BroMouseResult {
-		if (event.type !== "wheel") return;
-		const delta = Math.trunc(event.wheelDelta ?? 0);
-		if (delta) this.scroll(delta);
-		return { handled: true, render: false };
-	}
-
-	private scroll(delta: number): void {
-		this.offset = Math.max(0, Math.min(this.offset + delta, this.maxOffset));
-		this.notice = "";
-		this.tui.requestRender();
+		return this.scroller.handleMouse(event);
 	}
 
 	handleInput(data: string): void {
@@ -571,11 +518,7 @@ export class BroModal implements Focusable {
 			return;
 		}
 
-		const delta = wheelDelta(data) || (matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0);
-		if (delta) {
-			this.scroll(delta);
-			return;
-		}
+		if (this.scroller.handleKey(data)) return;
 
 		if ((matchesKey(data, "c") || matchesKey(data, "shift+c")) && this.copyable && this.rawText) {
 			void copyToClipboard(this.rawText)
@@ -619,7 +562,6 @@ export class BroModal implements Focusable {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		setRegularMouseReporting(this.tui, false);
 		this.onDispose();
 	}
 }
@@ -650,7 +592,8 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 		return;
 	}
 
-	await ctx.ui.custom<void>(
+	await openBroOverlay<void>(
+		ctx,
 		(tui, theme, _keybindings, done) => {
 			let closed = false;
 			let controller: AbortController | undefined;
@@ -744,15 +687,6 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 
 			return modal;
 		},
-		{
-			overlay: true,
-			overlayOptions: {
-				width: "78%",
-				minWidth: 48,
-				maxHeight: "78%",
-				anchor: "top-center",
-				margin: { top: 1, left: 2, right: 2 },
-			},
-		},
+		{ mouse: true },
 	);
 }
