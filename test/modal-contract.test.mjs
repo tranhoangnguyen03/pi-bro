@@ -127,7 +127,7 @@ const SURFACES = [
 		fullShows: [/Enter select · Esc back/],
 		open: factoryRow(() => configUi.createConfigModal(settings, [], async () => {})),
 		after: (component) => component.handleInput("\r"),
-		// The first Esc only closes the picker.
+		// When it fits, the first Esc closes the picker; in resize fallback it closes config.
 		close: (component) => ["\x1b", "\x1b"].forEach((key) => component.handleInput(key)),
 	},
 	{ name: "Guided Review acquisition", open: (ctx) => openGuidedReview(ctx, "https://github.com/a/b/pull/99", "") },
@@ -321,6 +321,45 @@ test("modal kit: config blocks hidden actions after resize and recovers when it 
 	config.handleInput("\x1b");
 	assert.equal(closed, true);
 });
+
+for (const save of ["none", "success", "failure"]) {
+	test(`modal kit: resize fallback Esc closes a hidden picker safely (${save})`, async () => {
+		const tui = { mode: "fullscreen", terminal: { rows: 40, columns: 80 }, requestRender() {} };
+		let settle;
+		let closes = 0;
+		const config = configUi.createConfigModal(settings, [], () => new Promise((resolve, reject) => {
+			settle = () => save === "failure" ? reject(new Error("disk full")) : resolve();
+		}))(tui, theme, {}, () => closes++);
+		const view = () => stripVTControlCharacters(config.render(62).join("\n"));
+		view();
+		if (save !== "none") {
+			for (let index = 0; index < 3; index++) config.handleInput("\x1b[B");
+			config.handleInput("\r"); // start saving Show turns
+			assert.equal(typeof settle, "function");
+			for (let index = 0; index < 3; index++) config.handleInput("\x1b[A");
+		}
+		config.handleInput("\r"); // open Default model picker
+		view();
+		tui.terminal.rows = 8;
+		assert.match(view(), /Esc close/);
+		config.handleInput("\x1b");
+		if (save === "none") {
+			assert.equal(closes, 1, "one Esc closes config, not just the hidden picker");
+		} else {
+			assert.equal(closes, 0, "the in-flight save must settle before closing");
+			settle();
+			await new Promise((resolve) => setImmediate(resolve));
+			if (save === "failure") {
+				assert.equal(closes, 0, "a failed save cancels the deferred close");
+				assert.match(view(), /Reverted/);
+				config.handleInput("\x1b");
+			}
+			assert.equal(closes, 1);
+		}
+		config.handleInput("\x1b");
+		assert.equal(closes, 1, "repeated Esc does not close twice");
+	});
+}
 
 test("modal kit: config can clear a notice that alone causes resize lockout", async () => {
 	const tui = { mode: "fullscreen", terminal: { rows: 40, columns: 80 }, requestRender() {} };
