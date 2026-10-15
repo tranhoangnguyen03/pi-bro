@@ -286,7 +286,7 @@ export class BtwModal implements Focusable {
 				...wrapTextWithAnsi("Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner),
 			],
 			notice: this.notice && this.theme.fg("accent", this.notice),
-			hints: this.running ? "Bro is thinking… · Esc: close (stops reply)" : "Enter: send message · Esc: close panel",
+			hints: this.running ? "Bro is thinking… · Esc close (stops reply)" : "Enter send · Esc close",
 		});
 	}
 

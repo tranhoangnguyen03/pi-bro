@@ -84,11 +84,13 @@ only to `handleMouse` (a wheel left unhandled scrolls the chat behind).
   more lines than that, and drops body rows before hints, notices and borders.
 - Scroll with `Scroller`: keys, raw SGR wheel (Pi 0.84 and regular mode) and
   `handleMouse` (Pi 1.x) in one place.
+- Write key hints as `Key action` joined by ` · ` (no colons), e.g.
+  `↑/↓ scroll · C copy · Esc close`; notices go above the hints, never in front.
 - Add a row to `test/modal-contract.test.mjs` for every new surface. It checks
   each surface against pi-tui's own overlay sizing at several terminal sizes.
 
-Migration status and the remaining surfaces (editors, config, Guided Review)
-are tracked in [plans/modal-consistency.md](plans/modal-consistency.md).
+Every Bro overlay uses the kit; the design and its reviews are in
+[plans/modal-consistency.md](plans/modal-consistency.md).
 
 ## Invariants
 

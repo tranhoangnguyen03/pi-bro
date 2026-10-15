@@ -716,7 +716,10 @@ test("tiny viewport ignores hidden actions but permits closing", () => {
 			closed++;
 		},
 	});
-	modal.render(35);
+	assert.match(stripVTControlCharacters(modal.render(35).join("\n")), /Esc close/);
+	modal.busy = true;
+	assert.match(stripVTControlCharacters(modal.render(35).join("\n")), /Esc stop and close/);
+	modal.busy = false;
 	modal.handleInput(enter);
 	modal.handleInput(down);
 	assert.equal(modal.view.selected, "overview");

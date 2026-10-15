@@ -475,8 +475,11 @@ await t.test("btw's running hint fits a narrow 60x14 terminal", () => {
 	const chat = new btw.BtwModal({ mode: "fullscreen", terminal: { rows: 14, columns: 60 }, requestRender() {} }, fakeTheme, () => {}, () => {}, () => {});
 	chat.setRunning(true);
 	const lines = chat.render(layout.width);
+	const text = stripVTControlCharacters(lines.join("\n"));
 	assert.ok(lines.length <= layout.maxHeight, `${lines.length} rows > ${layout.maxHeight}`);
 	assert.match(lines.at(-1), /└/);
+	assert.match(text, /Bro is thinking… · Esc close \(stops reply\)/);
+	assert.doesNotMatch(text, /Esc:/);
 });
 
 await t.test("btw follows the newest text until the reader scrolls up", () => {
