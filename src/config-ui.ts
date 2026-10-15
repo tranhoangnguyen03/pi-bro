@@ -7,13 +7,8 @@ import {
 	SettingsList,
 	matchesKey,
 	truncateToWidth,
-	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import {
-	type ExtensionCommandContext,
-	getSelectListTheme,
-	getSettingsListTheme,
-} from "@earendil-works/pi-coding-agent";
+import { getSelectListTheme, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import {
 	type AgyModelFamily,
 	type BroSettings,
@@ -32,16 +27,9 @@ import {
 	withCapabilityOverride,
 } from "./settings.ts";
 import { BRO_MODES, parseBroMode } from "./prompt.ts";
-import { delegateMouse, modalHeight, renderFrame, type Area } from "./modal-kit.ts";
+import { delegateMouse, modalHeight, renderFrame, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
 import type { BroMouseEvent } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
-
-export type Theme = ExtensionCommandContext["ui"]["theme"];
-export type TuiLike = {
-	readonly mode: "regular" | "fullscreen";
-	readonly terminal?: { rows?: number; columns?: number; write?: (data: string) => void };
-	requestRender(): void;
-};
 
 const SHOW_TURNS_PRESETS = [1, 2, 3, 5, 8];
 
@@ -229,7 +217,8 @@ export function createConfigModal(
 					queued = undefined;
 					closeRequested = false;
 					refresh();
-					notice = theme.fg("warning", `Could not save settings: ${errorMessage(error)}. Reverted to the last saved settings.`);
+					// Outcome first: long notices are cut after three lines.
+					notice = theme.fg("warning", `Reverted to the last saved settings. Could not save settings: ${errorMessage(error)}`);
 				})
 				.finally(() => {
 					saving = false;
@@ -321,8 +310,8 @@ export function createConfigModal(
 				const height = modalHeight(tui);
 				const innerWidth = Math.max(1, width - 2);
 				const list = settingsList.render(innerWidth);
-				const noticeRows = notice ? wrapTextWithAnsi(notice, innerWidth).slice(0, 2).length : 0;
-				interactive = list.length <= Math.max(0, height - 5 - noticeRows);
+				// renderFrame shrinks a notice to one line before taking minBody rows.
+				interactive = list.length <= Math.max(0, height - 5 - (notice ? 1 : 0));
 				return renderFrame(theme, width, height, {
 					header: () => theme.fg(
 						interactive ? "accent" : "warning",
@@ -334,18 +323,26 @@ export function createConfigModal(
 						const subtitle = rows > list.length
 							? [truncateToWidth(theme.fg("dim", "Shared defaults, with optional overrides per capability"), innerWidth)]
 							: [];
-						listArea = { top: 3 + subtitle.length, left: 1, width: innerWidth, height: list.length };
+						// Clicks only reach list rows that were actually drawn.
+						listArea = { top: 3 + subtitle.length, left: 1, width: innerWidth, height: Math.min(list.length, rows - subtitle.length) };
 						return [...subtitle, ...list];
 					},
 					notice,
 					hints: interactive ? undefined : "Esc close",
 					fill: false,
+					minBody: interactive ? list.length : 1,
 				});
 			},
 			invalidate: () => settingsList.invalidate(),
 			handleMouse: (event: BroMouseEvent) => delegateMouse(settingsList, event, listArea),
 			handleInput: (data: string) => {
-				if (!interactive && !matchesKey(data, "escape")) return;
+				if (!interactive && !matchesKey(data, "escape")) {
+					if (notice) {
+						notice = "";
+						tui.requestRender();
+					}
+					return;
+				}
 				settingsList.handleInput?.(data);
 				if (!closed) tui.requestRender();
 			},

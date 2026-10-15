@@ -2,7 +2,6 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Input, Markdown, matchesKey, wrapTextWithAnsi, type Focusable } from "@earendil-works/pi-tui";
 import { execute as executeBackend, type BackendProgress, type BackendSelection } from "./backend.ts";
-import type { Theme, TuiLike } from "./config-ui.ts";
 import { buildBtwPrompt } from "./prompt.ts";
 import {
 	type BackendName,
@@ -14,7 +13,7 @@ import {
 	selectionLabel,
 } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
-import { BRO_OVERLAY, broOverlayArea, modalHeight, openBroOverlay, renderFrame, Scroller, type Area } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
 import { canBroInsertIntoEditor, insertBroDesktopText, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -280,10 +279,11 @@ export class BtwModal implements Focusable {
 				return this.theme.fg("accent", this.theme.bold("Bro · btw")) + model + mode + this.theme.fg("dim", scroll ? ` · ${scroll}` : "");
 			},
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
+			// The frame drops lines from the top when space runs out, so the composer goes last.
 			footer: [
+				...wrapTextWithAnsi("Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner),
 				this.theme.fg("accent", this.theme.bold("Your message to Bro")),
 				this.input.render(inner)[0] ?? "",
-				...wrapTextWithAnsi("Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner),
 			],
 			notice: this.notice && this.theme.fg("accent", this.notice),
 			hints: this.running ? "Bro is thinking… · Esc close (stops reply)" : "Enter send · Esc close",

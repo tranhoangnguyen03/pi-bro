@@ -14,7 +14,6 @@ import {
 } from "@earendil-works/pi-tui";
 import { ADVISOR_STEERING_ENTRY, ADVISOR_STEERING_FILE, resolveAdvisorState } from "./advisor.ts";
 import { runBackendText } from "./backend.ts";
-import type { Theme, TuiLike } from "./config-ui.ts";
 import {
 	type BroMode,
 	MAX_PREFERENCES_CHARS,
@@ -37,7 +36,7 @@ import {
 } from "./settings.ts";
 import { openShowHtml, stripShowDiagramFence } from "./show.ts";
 import type { BroSource } from "./sources.ts";
-import { BRO_OVERLAY, broOverlayArea, delegateMouse, modalHeight, openBroOverlay, renderFrame, Scroller, type Area } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, delegateMouse, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
 import { hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -83,6 +82,8 @@ export async function simplify(
 
 export type TextEditorModalOptions = {
 	title: string;
+	/** Always shown in full above the editor; the editor asks for a bigger terminal before hiding it. */
+	privacy: string;
 	subtitle: string;
 	initialText: string;
 	initialNotice?: string;
@@ -110,6 +111,8 @@ export function createTextEditorModal(
 		let notice = options.initialNotice ? theme.fg("accent", options.initialNotice) : "";
 		// Where the editor was last drawn inside the overlay, for click forwarding.
 		let editorArea: Area = { top: 0, left: 0, width: 0, height: 0 };
+		// The editor did not fit at the last render; editing blind could save text the user never saw.
+		let tooSmall = false;
 		const showNotice = (message: string, color: "success" | "error") => {
 			if (disposed) return;
 			notice = theme.fg(color, message);
@@ -149,21 +152,37 @@ export function createTextEditorModal(
 
 		return {
 			// shortcut: Editor keeps its own min height (5 lines), so preferences fits from ~22 rows at
-			// 80+ columns; the subtitle gives way first. Revisit if users report smaller terminals.
-			render: (width: number) =>
-				renderFrame(theme, width, modalHeight(tui), {
+			// 80+ columns; the subtitle gives way first, the privacy line never. Revisit if users report smaller terminals.
+			render: (width: number) => {
+				editorArea = { top: 0, left: 0, width: 0, height: 0 };
+				// Editor sizes itself from the terminal and cannot be cut without hiding its cursor.
+				const lines = editor.render(Math.max(1, width - 2));
+				const privacy = wrapTextWithAnsi(theme.fg("dim", options.privacy), Math.max(1, width - 2));
+				let fits = false;
+				const frame = renderFrame(theme, width, modalHeight(tui), {
 					header: () => theme.fg("accent", theme.bold(options.title)),
 					body: (rows, innerWidth) => {
-						const lines = editor.render(innerWidth);
-						const subtitle = wrapTextWithAnsi(theme.fg("dim", options.subtitle), innerWidth).slice(0, Math.max(0, rows - lines.length));
+						fits = rows >= privacy.length + lines.length;
+						if (!fits) {
+							// Most important first: the body may have only a row or two.
+							const clear = notice ? "; any key clears the message below" : "";
+							return wrapTextWithAnsi(theme.fg("warning", `Enlarge the terminal to edit (about 22 rows). Ctrl+C still copies the text${clear}.`), innerWidth);
+						}
+						const subtitle = wrapTextWithAnsi(theme.fg("dim", options.subtitle), innerWidth).slice(0, rows - privacy.length - lines.length);
 						// Body rows start under the top border, header and rule.
-						editorArea = { top: 3 + subtitle.length, left: 1, width: innerWidth, height: lines.length };
-						return [...subtitle, ...lines];
+						editorArea = { top: 3 + privacy.length + subtitle.length, left: 1, width: innerWidth, height: lines.length };
+						return [...privacy, ...subtitle, ...lines];
 					},
 					notice,
+					// Constant on purpose: hints that change height with `tooSmall` would flip it every render.
 					hints: "Ctrl+S save · Ctrl+K clear · Ctrl+C copy · Esc close",
 					fill: false,
-				}),
+					// A long notice shrinks before it can push the editor or the privacy line off screen.
+					minBody: privacy.length + lines.length,
+				});
+				tooSmall = !fits;
+				return frame;
+			},
 			invalidate: () => editor.invalidate(),
 			handleMouse: (event: BroMouseEvent) => delegateMouse(editor, event, editorArea),
 			handleInput: (data: string) => {
@@ -172,7 +191,22 @@ export function createTextEditorModal(
 					done(undefined);
 					return;
 				}
-				if (pending) return;
+				// Copy works even when the editor does not fit, so a draft can always be rescued.
+				if (matchesKey(data, "ctrl+c")) {
+					const text = editor.getExpandedText();
+					void Promise.resolve()
+						.then(() => copy(text))
+						.then(() => showNotice("Copied", "success"))
+						.catch((error) => showNotice(`Copy failed: ${errorMessage(error)}`, "error"));
+					return;
+				}
+				// Even a one-line notice can tip the editor out at the edge sizes; any key clears it.
+				if (tooSmall && notice) {
+					notice = "";
+					tui.requestRender();
+					return;
+				}
+				if (pending || tooSmall) return;
 				if (matchesKey(data, "ctrl+s")) {
 					const text = editor.getExpandedText();
 					const invalid = validate?.(text);
@@ -185,14 +219,6 @@ export function createTextEditorModal(
 				}
 				if (matchesKey(data, "ctrl+k")) {
 					persist(onClear, "Cleared", "Clear failed", () => editor.setText(""));
-					return;
-				}
-				if (matchesKey(data, "ctrl+c")) {
-					const text = editor.getExpandedText();
-					void Promise.resolve()
-						.then(() => copy(text))
-						.then(() => showNotice("Copied", "success"))
-						.catch((error) => showNotice(`Copy failed: ${errorMessage(error)}`, "error"));
 					return;
 				}
 				if (matchesKey(data, "enter")) {
@@ -216,7 +242,8 @@ export function createAdvisorSteerModal(
 ): ReturnType<typeof createTextEditorModal> {
 	return createTextEditorModal({
 		title: "Bro · advisor steer",
-		subtitle: `Session-specific steering brief for the advisor (takes precedence over ${ADVISOR_STEERING_FILE}) — never sent to the main model.`,
+		privacy: "Never sent to the main model.",
+		subtitle: `Session-specific steering brief for the advisor (takes precedence over ${ADVISOR_STEERING_FILE}).`,
 		initialText,
 		onSave,
 		onClear,
@@ -241,9 +268,10 @@ export function createPreferencesModal(
 	const starter = loaded.text === undefined && !loaded.error;
 	return createTextEditorModal({
 		title: "Bro · preferences",
-		subtitle: "About you and how you like answers. Sent to the selected backend with every explain, show, btw, and Guided Review request — never to the advisor or Pi's main model.",
+		privacy: "Never sent to the advisor or Pi's main model.",
+		subtitle: "About you and how you like answers; sent to the selected backend with every explain, show, btw, and Guided Review request.",
 		initialText: starter ? STARTER_PREFERENCES : (loaded.text ?? ""),
-		initialNotice: loaded.error ?? (starter ? "Starter text — not saved. Ctrl+S saves it; Esc leaves no file." : undefined),
+		initialNotice: loaded.error ?? (starter ? "Starter text — not saved. Ctrl+S saves it." : undefined),
 		validate: preferencesTooLong,
 		onSave: persist.save,
 		onClear: persist.clear,
@@ -261,7 +289,8 @@ export async function showPreferencesModal(ctx: ExtensionCommandContext): Promis
 		const text = await readPreferencesRaw();
 		loaded = text === undefined ? {} : { text };
 	} catch (error) {
-		loaded = { error: `${errorMessage(error)} Ctrl+K deletes it.` };
+		// Action first: long notices are cut after three lines.
+		loaded = { error: `Unusable preferences file (Ctrl+K deletes it): ${errorMessage(error)}` };
 	}
 	await openBroOverlay<void>(
 		ctx,

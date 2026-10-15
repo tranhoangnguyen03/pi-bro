@@ -24,8 +24,8 @@ import {
 	type ReviewRecord,
 } from "./review.ts";
 import { captureReview, readEvidence, resolveReviewTarget } from "./review-source.ts";
-import { ReviewModal, newReviewView, safeReviewText } from "./review-modal.ts";
-import { modalHeight, openBroOverlay, REVIEW_OVERLAY } from "./modal-kit.ts";
+import { REVIEW_OVERLAY, ReviewModal, newReviewView, safeReviewText } from "./review-modal.ts";
+import { modalHeight, openBroOverlay } from "./modal-kit.ts";
 import { consumeWheel } from "./ui-capabilities.ts";
 
 const activeReviews = new Map<string, AbortController | undefined>();
