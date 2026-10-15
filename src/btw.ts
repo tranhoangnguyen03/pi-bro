@@ -311,7 +311,7 @@ export class BtwModal implements Focusable {
 		const footer = [
 			...wrapTextWithAnsi(this.theme.fg("accent", this.theme.bold("Your message to Bro")), innerWidth),
 			this.input.render(innerWidth)[0] ?? "",
-			...wrapTextWithAnsi(this.running ? "Bro is thinking… · Esc: close panel (stops the reply)" : "Enter: send message · Esc: close panel", innerWidth),
+			...wrapTextWithAnsi(this.running ? "Bro is thinking… · Esc: close (stops reply)" : "Enter: send message · Esc: close panel", innerWidth),
 			...wrapTextWithAnsi("Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", innerWidth),
 			...(this.notice ? wrapTextWithAnsi(this.theme.fg("accent", this.notice), innerWidth) : []),
 		];

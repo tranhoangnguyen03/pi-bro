@@ -464,6 +464,19 @@ await t.test("Editor and config overlays swallow the wheel and fit Pi's overlay 
 	}
 	assert.match(stripVTControlCharacters(modals.preferences.render(layout.width).join("\n")), /Ctrl\+S save · Ctrl\+K clear · Ctrl\+C copy · Esc close/);
 	assert.equal(stripVTControlCharacters(modals.config.render(layout.width).join("\n")).match(/Esc/g)?.length, 1, "config shows one key-hint line");
+	modals.config.handleInput("\r"); // open the model picker
+	assert.match(stripVTControlCharacters(modals.config.render(layout.width).join("\n")), /Esc back/, "the model picker shows its own hints");
+});
+
+await t.test("btw's running hint fits a narrow 60x14 terminal", () => {
+	const { TuiMainScreen } = piTui;
+	const overlay = { width: "78%", minWidth: 48, maxHeight: "82%", anchor: "top-center", margin: { top: 1, left: 2, right: 2 } };
+	const layout = TuiMainScreen.prototype.resolveOverlayLayout.call(TuiMainScreen.prototype, overlay, 0, 60, 14);
+	const chat = new btw.BtwModal({ mode: "fullscreen", terminal: { rows: 14, columns: 60 }, requestRender() {} }, fakeTheme, () => {}, () => {}, () => {});
+	chat.setRunning(true);
+	const lines = chat.render(layout.width);
+	assert.ok(lines.length <= layout.maxHeight, `${lines.length} rows > ${layout.maxHeight}`);
+	assert.match(lines.at(-1), /└/);
 });
 
 await t.test("btw follows the newest text until the reader scrolls up", () => {
