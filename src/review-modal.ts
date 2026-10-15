@@ -14,7 +14,7 @@ import {
 	type Finding,
 	type ReviewRecord,
 } from "./review.ts";
-import { modalHeight, REVIEW_OVERLAY } from "./modal-kit.ts";
+import { modalHeight } from "./modal-kit.ts";
 import { rawWheel, SGR_MOUSE } from "./ui-capabilities.ts";
 
 export type ReviewView = {
@@ -55,10 +55,18 @@ export type ReviewControls = {
 	changed(): void;
 	copy(text: string): void;
 };
+// Narrower than the kit's TuiLike/Theme on purpose: Review always reads terminal rows and needs no mode.
 type Tui = { terminal: { rows: number; columns?: number }; requestRender(): void };
 // Structural subset keeps normalized mouse support compatible with the pinned pre-mouse SDK.
 type ReviewMouseEvent = { type: string; x: number; y: number; wheelDelta?: number };
 type Theme = { fg: (name: any, text: string) => string; bold: (text: string) => string };
+/** Guided Review's full-width overlay; the drawn height comes from it via modalHeight. */
+export const REVIEW_OVERLAY = {
+	anchor: "center",
+	width: "100%",
+	maxHeight: "100%",
+	margin: { top: 1, bottom: 1 },
+} as const;
 export const safeReviewText = (text: string): string =>
 	text.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
 const label = (text: string) => safeReviewText(text).replace(/[\n\r\t]/g, " ");

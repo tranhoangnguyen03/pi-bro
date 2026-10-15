@@ -9,7 +9,8 @@ import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { btw, buildDir, configUi, explainModal } from "./test-build.mjs";
+import { btw, buildDir, configUi, explainModal, settings as settingsModule } from "./test-build.mjs";
+import { rm } from "node:fs/promises";
 
 const load = (name) => import(pathToFileURL(join(buildDir, name)).href);
 const kit = await load("modal-kit.js");
@@ -97,16 +98,33 @@ const SURFACES = [
 		name: "btw with a long thread and a notice",
 		scrolls: true,
 		mouse: true,
+		// The composer outlives the command help and the notice at every size.
+		shows: [/Esc/, /> /],
 		open: (ctx) => btw.openBtwModal(ctx, { thread: { turns: [{ question: "Why?", answer: long }], full: false } }),
 		after: (component) => component.setNotice("A long notice that wraps across more than one line of the btw window footer, and then some."),
 	},
-	// shortcut rows: pi-tui's Editor has a fixed minimum height, so the editors fit from ~22 rows.
-	{ name: "preferences", minRows: 22, open: factoryRow(() => explainModal.createPreferencesModal({}, { save: async () => {}, clear: async () => {} })) },
-	{ name: "advisor-steer", minRows: 22, open: factoryRow(() => explainModal.createAdvisorSteerModal(long, () => {}, () => {})) },
-	{ name: "config", shows: [/Esc/], open: factoryRow(() => configUi.createConfigModal(settings, [], async () => {})) },
+	// shortcut rows: pi-tui's Editor has a fixed minimum height; below ~22 rows the editors ask for a bigger terminal.
+	{
+		name: "preferences",
+		minRows: 22,
+		fullShows: [/Never sent to the advisor or Pi's main model/, /Ctrl\+S save/],
+		smallShows: [/Enlarge the terminal/],
+		open: factoryRow(() => explainModal.createPreferencesModal({}, { save: async () => {}, clear: async () => {} })),
+	},
+	{
+		name: "advisor-steer",
+		minRows: 22,
+		fullShows: [/Never sent to the main model/, /Ctrl\+S save/],
+		smallShows: [/Enlarge the terminal/],
+		open: factoryRow(() => explainModal.createAdvisorSteerModal(long, () => {}, () => {})),
+	},
+	// SettingsList prints config's full hints inside the list; the safe tiny state still keeps Esc visible.
+	{ name: "config", minRows: 14, shows: [/Esc/], fullShows: [/Enter\/Space to change · Esc/], open: factoryRow(() => configUi.createConfigModal(settings, [], async () => {})) },
 	{
 		name: "config with the model picker open",
+		minRows: 14,
 		shows: [/Esc/],
+		fullShows: [/Enter select · Esc back/],
 		open: factoryRow(() => configUi.createConfigModal(settings, [], async () => {})),
 		after: (component) => component.handleInput("\r"),
 		// The first Esc only closes the picker.
@@ -130,13 +148,15 @@ for (const surface of SURFACES) {
 				const lines = component.render(layout.width);
 
 				for (const line of lines) assert.ok(visibleWidth(line) <= layout.width, `${where}: line wider than ${layout.width}`);
-				if (rows >= (surface.minRows ?? 0)) {
-					assert.ok(lines.length <= layout.maxHeight, `${where}: ${lines.length} rows > ${layout.maxHeight}`);
-					// Guided Review keeps its rounded frame.
-					if (layout.maxHeight >= 3) assert.match(lines.at(-1), /[└╰]/, `${where}: bottom border clipped`);
-				}
-				const shown = stripVTControlCharacters(lines.join("\n"));
-				for (const pattern of surface.shows ?? []) assert.match(shown, pattern, `${where}: missing ${pattern}`);
+				assert.ok(lines.length <= layout.maxHeight, `${where}: ${lines.length} rows > ${layout.maxHeight}`);
+				// Guided Review keeps its rounded frame.
+				if (layout.maxHeight >= 3) assert.match(lines.at(-1), /[└╰]/, `${where}: bottom border clipped`);
+				// What must stay visible: an Esc hint everywhere, the rest from minRows up.
+				const shown = stripVTControlCharacters(lines.join("\n")).replace(/[│\s]+/g, " ");
+				const big = rows >= (surface.minRows ?? 0);
+				// smallShows needs room for at least one body row next to the frame and hints.
+				const extra = big ? surface.fullShows : layout.maxHeight >= 8 ? surface.smallShows : [];
+				for (const pattern of [...(surface.shows ?? [/Esc/]), ...(extra ?? [])]) assert.match(shown, pattern, `${where}: missing ${pattern}`);
 
 				assert.equal(component.handleMouse?.({ type: "wheel", x: 1, y: 1, wheelDelta: 3 })?.handled, true, `${where}: wheel falls through to the chat`);
 				// Only where some body is left: on tiny terminals the frame keeps controls over content.
@@ -153,6 +173,12 @@ for (const surface of SURFACES) {
 					component.handleInput(`\x1b[<64;${column};${row}M`);
 					component.handleInput(`\x1b[<64;${column};${row}M`);
 					assert.ok(down !== before || view() !== down, `${where}: raw wheel does not scroll`);
+					// Normalized wheel (Pi 1.x fullscreen) must move the view too, not just be handled.
+					const start = view();
+					component.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: 3 });
+					const moved = view();
+					component.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: -6 });
+					assert.ok(moved !== start || view() !== moved, `${where}: handleMouse wheel does not scroll`);
 					scrollChecks++;
 				}
 
@@ -187,19 +213,29 @@ test("modal kit: renderFrame keeps borders, hints and notice when space runs out
 			assert.match(lines.at(-2), /Esc close/);
 		}
 		if (height >= 5) assert.match(lines.join("\n"), /Notice[\s\S]*Esc close/);
+		assert.doesNotMatch(lines.join("\n"), /├─+┤\n[^\n]*├─+┤/, `height ${height}: two rules in a row`);
 	}
 });
 
+test("modal kit: a long notice shrinks to keep minBody rows", () => {
+	const notice = "word ".repeat(40);
+	const lines = kit.renderFrame(theme, 30, 12, { header: () => "H", body: (rows) => Array.from({ length: rows }, () => "body"), notice, hints: "Esc close", minBody: 5 });
+	assert.equal(lines.filter((line) => line.includes("body")).length, 5);
+	assert.match(lines.join("\n"), /word/, "one notice line stays");
+});
+
 test("modal kit: modalHeight matches Pi's overlay sizing", () => {
-	for (const rows of [1, 2, 3, 8, 14, 24, 40, 100]) {
-		const tui = { mode: "fullscreen", terminal: { rows, columns: 80 }, requestRender() {} };
-		const layout = hostLayout(kit.BRO_OVERLAY, 80, rows);
-		assert.equal(kit.modalHeight(tui), layout.maxHeight, `${rows} rows`);
-		assert.deepEqual(
-			kit.broOverlayArea(tui, layout.width, layout.maxHeight),
-			{ top: layout.row, left: layout.col, width: layout.width, height: layout.maxHeight },
-			`${rows} rows: raw mouse bounds`,
-		);
+	for (const columns of [40, 60, 80, 121]) {
+		for (const rows of [1, 2, 3, 8, 14, 24, 40, 100]) {
+			const tui = { mode: "fullscreen", terminal: { rows, columns }, requestRender() {} };
+			const layout = hostLayout(kit.BRO_OVERLAY, columns, rows);
+			assert.equal(kit.modalHeight(tui), layout.maxHeight, `${columns}x${rows}`);
+			assert.deepEqual(
+				kit.broOverlayArea(tui, layout.width, layout.maxHeight),
+				{ top: layout.row, left: layout.col, width: layout.width, height: layout.maxHeight },
+				`${columns}x${rows}: raw mouse bounds`,
+			);
+		}
 	}
 	assert.equal(kit.modalHeight({ terminal: { rows: 100 }, requestRender() {} }, kit.BRO_OVERLAY, 32), 32);
 });
@@ -220,6 +256,9 @@ test("modal kit: Scroller pages, follows the end, and releases follow when scrol
 	scroller.view([...lines, "more", "again"], 10);
 	assert.equal(scroller.indicator(), "↑38 ↓4", "scrolling up stops following");
 	assert.equal(scroller.handleKey("x"), false);
+	const position = scroller.indicator();
+	assert.equal(scroller.handleKey("\x1b[<0;10;5M"), true, "raw clicks are swallowed");
+	assert.equal(scroller.indicator(), position, "raw clicks do not scroll");
 	assert.equal(scroller.handleMouse({ type: "click" }), undefined);
 	assert.equal(scrolled, 2);
 });
@@ -283,6 +322,37 @@ test("modal kit: config blocks hidden actions after resize and recovers when it 
 	assert.equal(closed, true);
 });
 
+test("modal kit: config can clear a notice that alone causes resize lockout", async () => {
+	const tui = { mode: "fullscreen", terminal: { rows: 40, columns: 80 }, requestRender() {} };
+	const config = configUi.createConfigModal(settings, [], async () => { throw Error("disk full"); })(
+		tui,
+		theme,
+		{},
+		() => {},
+	);
+
+	config.render(62);
+	for (let index = 0; index < 3; index++) config.handleInput("\x1b[B");
+	config.handleInput("\r");
+	await new Promise((resolve) => setImmediate(resolve));
+
+	let edge;
+	for (let rows = 40; rows >= 8; rows--) {
+		tui.terminal.rows = rows;
+		if (/enlarge terminal/.test(stripVTControlCharacters(config.render(62).join("\n")))) {
+			edge = rows;
+			break;
+		}
+	}
+	assert.ok(edge, "the failed-save notice reaches an edge-size lockout");
+	config.handleInput("x");
+	assert.doesNotMatch(
+		stripVTControlCharacters(config.render(62).join("\n")),
+		/enlarge terminal/,
+		"a non-Esc key clears the notice and restores the available row",
+	);
+});
+
 test("modal kit: the mouse lease pauses while hidden and stays off after close", async () => {
 	const writes = [];
 	const tui = { mode: "regular", terminal: { rows: 24, columns: 80, write: (data) => writes.push(data) }, requestRender() {} };
@@ -309,4 +379,149 @@ test("modal kit: the mouse lease pauses while hidden and stays off after close",
 	await closed;
 	handle.setHidden(false);
 	assert.deepEqual(state(), ["on", "off", "on", "off"], "un-hiding after close does not turn reporting back on");
+});
+
+test("modal kit: rawWheel reads direction and cell, and ignores other mouse reports", async () => {
+	const { rawWheel, wheelDelta } = await load("ui-capabilities.js");
+	assert.deepEqual(rawWheel("\x1b[<64;12;7M"), { delta: -3, column: 12, row: 7 });
+	assert.deepEqual(rawWheel("\x1b[<69;1;2M"), { delta: 3, column: 1, row: 2 }, "a modifier bit keeps the direction");
+	assert.equal(rawWheel("\x1b[<0;5;5M"), undefined, "a click is not a wheel");
+	assert.equal(rawWheel("\x1b[<66;5;5M"), undefined, "horizontal wheel");
+	assert.equal(rawWheel("x"), undefined);
+	assert.equal(wheelDelta("\x1b[<65;5;5M"), 3);
+});
+
+test("modal kit: renderFrame with fill false sizes to its content", () => {
+	const parts = { header: () => "H", body: () => ["one"], hints: "Esc close" };
+	assert.equal(kit.renderFrame(theme, 30, 20, parts).length, 20);
+	const lines = kit.renderFrame(theme, 30, 20, { ...parts, fill: false });
+	assert.equal(lines.length, 7, "border, header, rule, body, rule, hints, border");
+	assert.match(lines.at(-1), /└/);
+});
+
+test("modal kit: an editor that does not fit asks for a bigger terminal and blocks blind edits", () => {
+	let saved;
+	let closed = false;
+	const tui = { mode: "fullscreen", terminal: { rows: 14, columns: 80 }, requestRender() {} };
+	const brief = Array.from({ length: 20 }, (_, index) => `line ${index}`).join("\n"); // long enough for Editor's minimum height
+	const editor = explainModal.createAdvisorSteerModal(brief, (value) => (saved = value), () => {})(tui, theme, {}, () => (closed = true));
+	const shown = editor.render(62).map((line) => stripVTControlCharacters(line)).join("\n");
+	assert.match(shown, /Enlarge the terminal/);
+	assert.match(shown, /Esc close/);
+	editor.handleInput("X");
+	editor.handleInput("\x13"); // Ctrl+S
+	assert.equal(saved, undefined, "no save while the editor is hidden");
+	tui.terminal.rows = 30;
+	editor.render(62);
+	editor.handleInput("\x13");
+	assert.equal(saved, brief, "the typing above never reached the hidden editor");
+	editor.handleInput("\x1b");
+	assert.equal(closed, true);
+});
+
+test("modal kit: an unusable preferences file keeps its fix-it hint visible at 80x24", async () => {
+	await writeFile(settingsModule.PREFERENCES_FILE, "x".repeat(70 * 1024));
+	try {
+		const mounted = await mount((ctx) => explainModal.showPreferencesModal(ctx), "fullscreen", 80, 24);
+		const shown = mounted.component.render(hostLayout(mounted.overlay, 80, 24).width).map((line) => stripVTControlCharacters(line)).join(" ");
+		assert.match(shown.replace(/[│\s]+/g, " "), /Unusable preferences file \(Ctrl\+K deletes it\)/);
+		mounted.component.handleInput("\x1b");
+		await mounted.closed;
+	} finally {
+		await rm(settingsModule.PREFERENCES_FILE, { force: true });
+	}
+});
+
+test("modal kit: config ignores clicks on list rows the frame no longer shows", () => {
+	let saves = 0;
+	const tui = { mode: "fullscreen", terminal: { rows: 30, columns: 80 }, requestRender() {} };
+	const config = configUi.createConfigModal(settings, [], async () => void saves++)(tui, theme, {}, () => {});
+	tui.terminal.rows = 14; // shrinks after the list was sized at open
+	const before = config.render(62);
+	const rule = before.length - 2; // the frame's bottom rule, just under the cut list
+	config.handleMouse({ type: "press", button: "left", x: 3, y: rule });
+	config.handleMouse({ type: "click", button: "left", x: 3, y: rule });
+	assert.equal(saves, 0, "a hidden setting was changed");
+	assert.deepEqual(config.render(62), before);
+});
+
+test("modal kit: a failed save never locks the editor, and Ctrl+C always copies", async () => {
+	const tui = { mode: "fullscreen", terminal: { rows: 24, columns: 60 }, requestRender() {} };
+	const brief = Array.from({ length: 15 }, (_, index) => `line ${index}`).join("\n");
+	let saves = 0;
+	let copied;
+	const onSave = (value) => {
+		if (++saves === 1) throw new Error("disk full while writing the advisor steering entry to the session file, try again later");
+		return value;
+	};
+	const editor = explainModal.createAdvisorSteerModal(brief, onSave, () => {}, async (text) => void (copied = text))(tui, theme, {}, () => {});
+	const view = () => editor.render(48).map((line) => stripVTControlCharacters(line)).join("\n");
+	editor.handleInput("\x13"); // Ctrl+S fails and shows a long notice
+	const afterFailure = view();
+	assert.match(afterFailure, /Save failed/);
+	assert.doesNotMatch(afterFailure, /Enlarge the terminal/, "the notice gave way to the editor");
+	assert.equal(view(), afterFailure, "the screen is stable between renders");
+	editor.handleInput("\x13");
+	assert.equal(saves, 2, "saving again still works");
+
+	tui.terminal.rows = 14; // now the editor really does not fit
+	view();
+	const small = view();
+	assert.match(small, /Enlarge the terminal/);
+	assert.match(small.replace(/[│\s]+/g, " "), /Ctrl\+C still copies the text/);
+	assert.equal(view(), small, "the screen is stable between renders");
+	editor.handleInput("\x03"); // Ctrl+C
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(copied, brief, "the draft can be rescued");
+});
+
+test("modal kit: config keeps its key hints after a long save error on a short terminal", async () => {
+	const tui = { mode: "fullscreen", terminal: { rows: 14, columns: 60 }, requestRender() {} };
+	const config = configUi.createConfigModal(settings, [], async () => {
+		throw new Error("disk full while writing the settings file, which is a long message on purpose");
+	})(tui, theme, {}, () => {});
+	config.handleInput("\x1b[B"); // Default effort
+	config.handleInput("\x1b[B"); // Explain mode
+	config.handleInput("\r"); // cycle the value and try to save
+	for (let i = 0; i < 50 && !config.render(48).join("\n").includes("Reverted"); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+	const shown = config.render(48).map((line) => stripVTControlCharacters(line)).join("\n");
+	assert.match(shown, /Reverted to the last saved settings/);
+	assert.match(shown, /Esc/, "SettingsList's hints are still on screen");
+});
+
+test("modal kit: a one-line notice that tips the editor out is cleared by any key", async () => {
+	const brief = Array.from({ length: 15 }, (_, index) => `line ${index}`).join("\n");
+	let tipped = 0;
+	for (let rows = 12; rows <= 26; rows++) {
+		const tui = { mode: "fullscreen", terminal: { rows, columns: 60 }, requestRender() {} };
+		let saved;
+		const editor = explainModal.createPreferencesModal({ text: brief }, { save: async (value) => void (saved = value), clear: async () => {} }, async () => {})(tui, theme, {}, () => {});
+		const view = () => editor.render(48).map((line) => stripVTControlCharacters(line)).join("\n");
+		if (/Enlarge the terminal/.test(view())) continue; // too small even without a notice
+		editor.handleInput("\x03"); // Ctrl+C shows "Copied"
+		await new Promise((resolve) => setImmediate(resolve));
+		if (!/Enlarge the terminal/.test(view())) continue; // the notice fit
+		tipped++;
+		assert.match(view().replace(/[│\s]+/g, " "), /any key clears the message/, `${rows} rows: says how to recover`);
+		editor.handleInput("q"); // swallowed: it only clears the notice
+		assert.doesNotMatch(view(), /Enlarge the terminal/, `${rows} rows: the editor came back`);
+		editor.handleInput("\x13"); // Ctrl+S works again
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(saved, brief, `${rows} rows: the clearing key was not typed`);
+	}
+	assert.ok(tipped > 0, "no size tipped the editor; the test no longer exercises the edge");
+});
+
+test("modal kit: the editor never shows without its full privacy sentence or cut short", () => {
+	for (const [cols, rows] of [[40, 24], [48, 30], [60, 22], [80, 24]]) {
+		const tui = { mode: "fullscreen", terminal: { rows, columns: cols }, requestRender() {} };
+		const editor = explainModal.createPreferencesModal({}, { save: async () => {}, clear: async () => {} })(tui, theme, {}, () => {});
+		const lines = editor.render(hostLayout(kit.BRO_OVERLAY, cols, rows).width).map((line) => stripVTControlCharacters(line));
+		const shown = lines.join(" ").replace(/[│\s]+/g, " ");
+		if (/Enlarge the terminal/.test(shown)) continue;
+		assert.match(shown, /Never sent to the advisor or Pi's main model\./, `${cols}x${rows}`);
+		// ...and the editor is whole: its bottom border sits right above the frame's lower rule.
+		const lowerRule = lines.findLastIndex((line) => line.startsWith("├"));
+		assert.match(lines[lowerRule - 1], /^│─[─ ↓\w]*─│$/, `${cols}x${rows}: editor cut`);
+	}
 });

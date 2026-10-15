@@ -1,12 +1,17 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type OverlayHandle, type OverlayOptions, type TUI } from "@earendil-works/pi-tui";
-import type { Theme, TuiLike } from "./config-ui.ts";
 import { broModalRows, consumeWheel, rawWheel, setRegularMouseReporting, SGR_MOUSE, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 
 // Shared building blocks for Bro's overlays; see docs/plans/modal-consistency.md.
 
 type Mounted = Component & { dispose?(): void };
 export type Area = { top: number; left: number; width: number; height: number };
+export type Theme = ExtensionCommandContext["ui"]["theme"];
+export type TuiLike = {
+	readonly mode: "regular" | "fullscreen";
+	readonly terminal?: { rows?: number; columns?: number; write?: (data: string) => void };
+	requestRender(): void;
+};
 
 /** One overlay preset for Bro's windows. Drawn heights come from the same numbers via modalHeight. */
 export const BRO_OVERLAY = {
@@ -15,14 +20,6 @@ export const BRO_OVERLAY = {
 	maxHeight: "78%",
 	anchor: "top-center",
 	margin: { top: 1, left: 2, right: 2 },
-} as const;
-
-/** Guided Review's full-width preset. */
-export const REVIEW_OVERLAY = {
-	anchor: "center",
-	width: "100%",
-	maxHeight: "100%",
-	margin: { top: 1, bottom: 1 },
 } as const;
 
 type HeightOptions = { readonly maxHeight: `${number}%`; readonly margin: { readonly top?: number; readonly bottom?: number } };
@@ -54,18 +51,21 @@ export type FrameParts = {
 	body: (rows: number, innerWidth: number) => string[];
 	/** Lines under the body, e.g. a composer; truncated to the inner width, so wrap long text first. */
 	footer?: string[];
-	/** Already styled; wrapped to at most two lines, above the hints. */
+	/** Already styled; wrapped to at most three lines, above the hints. Put the action first. */
 	notice?: string;
 	/** Omit when the body prints its own hints (config's SettingsList). */
 	hints?: string;
 	/** false: size to the content instead of padding the body to the full height. */
 	fill?: boolean;
+	/** Body rows the notice must leave free; it shrinks to one line before taking them. */
+	minBody?: number;
 };
 
 /**
- * Square frame that never renders more than `height` lines (exactly `height` unless `fill` is false). Pi clips overlays from the
- * bottom, so when space runs out the body shrinks first, then lines go from the top of
- * the frame's middle (header, rules), keeping the footer, notice, hints and both borders.
+ * Square frame that never renders more than `height` lines (exactly `height` unless `fill` is false).
+ * Pi clips overlays from the bottom, so when space runs out the notice shrinks to `minBody`, the
+ * body shrinks, then lines go from the top of the frame's middle (header, rules, notice), keeping
+ * the footer (e.g. a composer), the hints and both borders.
  */
 export function renderFrame(theme: Theme, width: number, height: number, parts: FrameParts): string[] {
 	const inner = Math.max(1, width - 2);
@@ -75,15 +75,17 @@ export function renderFrame(theme: Theme, width: number, height: number, parts: 
 		return `${border("│")}${line}${" ".repeat(Math.max(0, inner - visibleWidth(line)))}${border("│")}`;
 	};
 	const rule = border(`├${"─".repeat(inner)}┤`);
-	const below = [
-		...(parts.footer ?? []),
-		...(parts.notice ? wrapTextWithAnsi(parts.notice, inner).slice(0, 2) : []),
-		...(parts.hints ? [theme.fg("dim", parts.hints)] : []),
-	];
+	const footer = parts.footer ?? [];
+	// Wrapped, not truncated: Esc comes last in every hint line and must not be cut off.
+	const hints = parts.hints ? wrapTextWithAnsi(theme.fg("dim", parts.hints), inner) : [];
+	const notice = parts.notice ? wrapTextWithAnsi(parts.notice, inner).slice(0, 3) : [];
+	while (notice.length > 1 && height - 5 - footer.length - hints.length - notice.length < (parts.minBody ?? 0)) notice.pop();
+	// The notice sits above the footer so it is dropped before a composer when space runs out.
+	const below = [...notice, ...footer, ...hints];
 	const bodyRows = Math.max(0, height - 5 - below.length);
 	const body = bodyRows ? parts.body(bodyRows, inner).slice(0, bodyRows) : [];
 	if (parts.fill !== false) while (body.length < bodyRows) body.push("");
-	const middle = [row(parts.header()), rule, ...body.map(row), rule, ...below.map(row)];
+	const middle = [row(parts.header()), rule, ...(bodyRows ? [...body.map(row), rule] : []), ...below.map(row)];
 	return [border(`┌${"─".repeat(inner)}┐`), ...middle.slice(-Math.max(0, height - 2)), border(`└${"─".repeat(inner)}┘`)].slice(0, height);
 }
 
@@ -159,8 +161,8 @@ export class Scroller {
 /**
  * Forward a pointer event to a pi-tui child drawn at `area` inside the overlay, in the child's own
  * coordinates (without `area`, the event already is). Pi 0.84 components have no handleMouse, hence
- * the structural call. A wheel the child leaves unhandled is consumed; presses and drags stay
- * unhandled so host text selection keeps working.
+ * the structural call. A wheel the child leaves unhandled is consumed; presses and drags the child
+ * ignores (Editor does) stay unhandled so host text selection keeps working there.
  */
 export function delegateMouse(child: object, event: BroMouseEvent, area?: Area): BroMouseResult {
 	const { x = -1, y = -1 } = event;

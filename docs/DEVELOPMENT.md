@@ -36,7 +36,7 @@ Production code lives in `src/` and is published as TypeScript source (no build 
   advisor. Prompts are backend-neutral; backend differences belong in
   `backend.ts`, not in prompt text.
 - **`ui-capabilities.ts`** — environment UI capability probes (interactive TUI, virtual viewport, Desktop panels) and terminal mouse-reporting helpers.
-- **`modal-kit.ts`** — shared overlay building blocks: the `BRO_OVERLAY` preset and `modalHeight`, `renderFrame`, `Scroller`, the regular-mode mouse lease and `openBroOverlay`. See [Modals](#modals).
+- **`modal-kit.ts`** — shared overlay building blocks: the `Theme`/`TuiLike` types, the `BRO_OVERLAY` preset and `modalHeight`, `renderFrame`, `Scroller`, `delegateMouse`, the regular-mode mouse lease and `openBroOverlay`. See [Modals](#modals).
 - **`dev/`** — manual review launcher and recorded #102 source fixture, not shipped or included in the normal typecheck. `review-live.ts` uses the production controller but omits preferences; use `bro.ts` for a production-equivalent journey. The JSON fixture is kept as historical acquisition/rendering source data, not an automated test or generated-answer substitute.
 
 ## Settings
