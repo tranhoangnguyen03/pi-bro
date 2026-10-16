@@ -1579,6 +1579,31 @@ await t.test("Registered bro_advisor integration with real subprocess transport 
 	assert.equal(registeredTool?.name, "bro_advisor", "the extension registers the real advisor tool");
 	assert.ok(registeredTool?.promptSnippet && !registeredTool.promptSnippet.startsWith("bro_advisor"), "promptSnippet does not redundantly repeat tool name prefix");
 	assert.ok(registeredTool?.promptGuidelines?.every((line) => line.includes("bro_advisor")), "every promptGuideline bullet explicitly names bro_advisor per Pi extension docs");
+	assert.ok(
+		registeredTool?.promptGuidelines?.some((line) => line.includes("Routine decisions do not require consultation")),
+		"promptGuidelines explicitly disclaim mandatory consultation for routine work",
+	);
+	assert.ok(
+		registeredTool?.promptGuidelines?.every((line) => !line.includes("non-trivial") && !line.includes("never delay")),
+		"promptGuidelines avoid broad non-trivial mandates and aggressive 'never delay' imperatives",
+	);
+	assert.ok(
+		!registeredTool?.description?.includes("You never need to"),
+		"tool description avoids harsh 'You never need to' phrasing",
+	);
+	assert.ok(
+		registeredTool?.description?.includes("No need to prepare a summary or evidence first"),
+		"tool description carries gentle factual preparation guidance",
+	);
+	assert.ok(
+		registeredTool?.description?.includes("unsandboxed") &&
+		registeredTool?.description?.includes("not an enforced restriction"),
+		"tool description truthfully discloses unsandboxed access and behavioral role boundary",
+	);
+	assert.ok(
+		registeredTool?.promptGuidelines?.some((line) => line.includes("verify its findings yourself")),
+		"promptGuidelines retain parent agent responsibility to verify advisor findings",
+	);
 
 	// A historical "bro-advisor-active" entry (from before the on/off state machinery was removed)
 	// must not affect anything -- the tool executes regardless, gated only by whether it was called.
