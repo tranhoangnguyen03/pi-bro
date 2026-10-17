@@ -1,7 +1,9 @@
 # Developing pi-bro
 
-The user guide is [user-guide.md](user-guide.md); the [README](../README.md) is
-the short overview. This page is the short map for
+User documentation starts at the [docs home](README.md), with canonical
+[commands](reference/commands.md), [settings](reference/settings.md),
+[backend access](reference/data-and-permissions.md), and feature guides.
+The [README](../README.md) is the short overview. This page is the short map for
 changing the code. Read the code before trusting any plan in `docs/plans/`;
 those are historical records.
 
@@ -14,6 +16,8 @@ Production code lives in `src/` and is published as TypeScript source (no build 
 - **`show.ts`** — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.
 - **`advisor.ts`** — the `bro_advisor` tool registration, context snapshot builder, session/durable steering state, and retry/progress orchestration.
 - **`btw.ts`** — the `/bro btw` side conversation thread state, native continuation/reseed policy, composer command parsing, and `BtwModal`.
+- **`elevate-engine.ts`** — independent discovery and rewrite prompts, strict discovery JSON parser, user selection and scope guards.
+- **`elevate.ts`** — `/bro elevate` UI, draft capture, context filtering, backend calls, cancellation and guarded editor insertion.
 - **`explain-modal.ts`** — `BroModal` (explain/show/doctor/help result overlay), `simplify`, `createTextEditorModal` (`/bro preferences` and `/bro advisor-steer` editors), and `/bro help` text.
 - **`review.ts`** — Guided Review schema/validation, atomic records, guide replacement and prompt construction.
 - **`review-source.ts`** — explicit GitHub identity through `gh`, managed Git capture and protected blob evidence reads.
@@ -47,6 +51,18 @@ atomic `{ backend, model, effort }` — an override replaces the whole
 selection, never merges fields, and stays pinned until reset to Default.
 Legacy flat files (root `model`/`effort`, no backend) still parse and mean
 Agy; reads never rewrite the file.
+
+## Elevate architecture and invariants
+
+- Human-initiated and pre-execution only. The main agent receives nothing until the user submits the rewritten request.
+- The engine in `src/elevate-engine.ts` depends on no Pi API or model CLI. Discovery can produce zero findings; the user selects which ones can reach the rewrite. The model can still make mistakes; review its output.
+- `src/elevate.ts` captures up to eight recent user/assistant turns, at most 12,000 characters, with no tool results or hidden reasoning.
+- Each stage makes a fresh restricted backend call through `selectionForCapability(settings, "btw")`. Restrictions are backend-specific; see [data and permissions](reference/data-and-permissions.md#backends-access-and-retention).
+- **One visible focus target.** Compose uses the shared body `Editor`; review owns a checklist cursor; every consequential action is a button rendered by `buttonLabels` from `modal-kit.ts`. `Tab`/`Shift+Tab` switch zones, arrows move within a zone, and `Enter` activates only the focused thing. `Enter` never toggles a finding, so one key cannot mean two things. Buttons are packed by `wrapButtons` so a label is never split across lines.
+- **Nothing is approved by default.** Findings start unticked so the user approves only what they read; the highlighted finding's reason is rendered beside the list. A rewrite with nothing ticked is refused with an explanation. A failed step retries that step with the same approvals.
+- The original main editor stays unchanged until `[Insert into editor]` (or its Desktop equivalent). Terminal insertion replaces the editor only when Elevate was opened on that draft and the text is still unchanged; with an explicit `/bro elevate <request>`, the editor must be empty first. Desktop/RPC only uses confirmed atomic insert into an empty editor. Neither action submits text.
+- Compose reads the objective with `getExpandedText()`, never `getText()`: the `Editor` stores large pastes as `[paste #1 +N lines]` markers, and the marker must never be sent to the backend. When the `Editor` cannot render whole, the modal refuses to edit and says so rather than hiding the cursor.
+- Automated unit tests: `test/elevate.test.ts` and `test/elevate-docs.test.mjs`; the modal contract in `test/modal-contract.test.mjs` covers every Elevate stage. Manually test real modal use as described in [TESTING.md](TESTING.md).
 
 ## Prompt size and recent context
 

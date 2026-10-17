@@ -55,6 +55,9 @@ export type FrameParts = {
 	notice?: string;
 	/** Omit when the body prints its own hints (config's SettingsList). */
 	hints?: string;
+	/** Lines rendered under the hints, e.g. a focusable action row. Wrapped by the caller; a line
+	 * wider than the frame is truncated, so keep a single label narrower than the modal. */
+	footerAfterHints?: string;
 	/** false: size to the content instead of padding the body to the full height. */
 	fill?: boolean;
 	/** Body rows the notice must leave free; it shrinks to one line before taking them. */
@@ -78,10 +81,12 @@ export function renderFrame(theme: Theme, width: number, height: number, parts: 
 	const footer = parts.footer ?? [];
 	// Wrapped, not truncated: Esc comes last in every hint line and must not be cut off.
 	const hints = parts.hints ? wrapTextWithAnsi(theme.fg("dim", parts.hints), inner) : [];
+	// The action row is already wrapped by the caller, so keep its own line breaks.
+	const belowHints = parts.footerAfterHints ? parts.footerAfterHints.split("\n").map((line) => truncateToWidth(line, inner, "")) : [];
 	const notice = parts.notice ? wrapTextWithAnsi(parts.notice, inner).slice(0, 3) : [];
-	while (notice.length > 1 && height - 5 - footer.length - hints.length - notice.length < (parts.minBody ?? 0)) notice.pop();
+	while (notice.length > 1 && height - 5 - footer.length - hints.length - belowHints.length - notice.length < (parts.minBody ?? 0)) notice.pop();
 	// The notice sits above the footer so it is dropped before a composer when space runs out.
-	const below = [...notice, ...footer, ...hints];
+	const below = [...notice, ...footer, ...hints, ...belowHints];
 	const bodyRows = Math.max(0, height - 5 - below.length);
 	const body = bodyRows ? parts.body(bodyRows, inner).slice(0, bodyRows) : [];
 	if (parts.fill !== false) while (body.length < bodyRows) body.push("");
@@ -120,6 +125,17 @@ export class Scroller {
 		this.follow = false;
 	}
 
+	/**
+	 * Scroll the minimum amount needed to bring lines[first..last] into view. Used to keep a list
+	 * cursor, and the text that explains it, on screen: a toggle whose row is invisible is a blind
+	 * action. Call after `view`, which supplies the row count and maximum offset.
+	 */
+	reveal(first: number, last: number): void {
+		if (first < this.offset) this.offset = first;
+		else if (last >= this.offset + this.rows) this.offset = last - this.rows + 1;
+		this.offset = Math.max(0, Math.min(this.offset, this.max));
+	}
+
 	toEnd(): void {
 		this.follow = true;
 	}
@@ -156,6 +172,34 @@ export class Scroller {
 	indicator(): string {
 		return this.max > 0 ? `↑${this.offset} ↓${this.max - this.offset}` : "";
 	}
+}
+
+/**
+ * Render a focusable action row: the focused button carries a leading marker and accent colour, so a
+ * keypress always has exactly one visible target. Callers own focus, keys and activation; this only
+ * draws, which is why Guided Review can keep its own navigation and layout.
+ */
+export function buttonLabels(theme: Theme, labels: readonly string[], focused?: number): string[] {
+	return labels.map((label, index) => {
+		const text = `${index === focused ? "›" : ""}[${label}]`;
+		return index === focused ? theme.bold(theme.fg("accent", text)) : text;
+	});
+}
+
+/**
+ * Pack whole buttons onto lines with `visibleWidth`, never splitting one: a label broken mid-word
+ * makes the focused target ambiguous, which is the misclick this row exists to prevent.
+ */
+export function wrapButtons(buttons: readonly string[], width: number): string[] {
+	const lines: string[] = [];
+	let line = "";
+	for (const button of buttons) {
+		if (!line) { line = button; continue; }
+		if (visibleWidth(`${line} ${button}`) <= width) line += ` ${button}`;
+		else { lines.push(line); line = button; }
+	}
+	if (line) lines.push(line);
+	return lines;
 }
 
 /**

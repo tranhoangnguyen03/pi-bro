@@ -1,14 +1,32 @@
-# pi-bro docs
+# Pi-bro documentation
 
-- [README](../README.md) — the short overview: install, try it, requirements, data flow.
-- [user-guide.md](user-guide.md) — the full user guide (authoritative for behavior).
-- [guided-review.md](guided-review.md) — current Guided Review behavior, optional controls, access/storage and limits.
-- [pig-compatibility.md](pig-compatibility.md) — experimental PiG support and its limits.
-- [DEVELOPMENT.md](DEVELOPMENT.md) — code map, settings and BTW continuation model, invariants, test commands.
-- [TESTING.md](TESTING.md) — the manual end-to-end checklist across backends.
-- [test-consolidation.md](test-consolidation.md) — the #74 test coverage ledger.
-- [PUBLIC-PRESENTATION.md](PUBLIC-PRESENTATION.md) — how pi-* repos present themselves publicly; sister repos follow it too.
-- [dev/README.md](../dev/README.md) — manual review launcher and profile/call precautions (not shipped).
-- [plans/](plans/README.md) — historical design notes and plans; not the current spec.
-- [images/](images/) — screenshots used by the README and user guide.
-- [benchmark/README.md](../benchmark/README.md) — the manual, live prompt benchmark.
+Start with what you want to do. The [README](../README.md) explains the product, install, and privacy summary.
+
+## I'm new
+
+- [Getting started](getting-started.md) — install, check your backend, and complete a working first example.
+- [Command lookup](reference/commands.md#commands) — find the right command.
+
+## I want to do something
+
+- [Explain an agent answer or text](features/explain.md#explanation-modes) — plain-language explanations.
+- [Explain a local file](features/explain.md#explain-a-document) or [webpage](features/explain.md#explain-a-webpage).
+- [Visualize a conversation](features/show.md#bro-show) — Show diagrams.
+- [Ask a private side question](features/btw.md#bro-btw-side-conversation) — BTW.
+- [Improve a request before sending it](elevate.md) — Elevate: discover expert gaps, choose improvements, rewrite the task.
+- [Investigate a PR](guided-review.md) — Guided Review.
+- [Get an agent's second opinion](features/advisor.md#bro-advisor) — Advisor; review its permissions first.
+
+## I need to set up or fix something
+
+- [Choose backend, model and preferences](reference/settings.md#settings).
+- [Check your setup](reference/troubleshooting.md#check-your-setup) and [troubleshoot](reference/troubleshooting.md#troubleshooting-and-current-limits).
+- [See exactly what Bro sends and can access](reference/data-and-permissions.md#backends-access-and-retention) — backend permissions, retention, and [privacy](reference/data-and-permissions.md#privacy-and-safety).
+- [PiG compatibility](pig-compatibility.md) — experimental host support.
+
+## For contributors
+
+- [Contributing](../CONTRIBUTING.md), [code map](DEVELOPMENT.md), [manual testing](TESTING.md), and [security reports](../SECURITY.md).
+- [Presentation standard](PUBLIC-PRESENTATION.md), [test evidence](test-consolidation.md), [prompt benchmarks](../benchmark/README.md), and [historical plans](plans/).
+
+The topic pages and references above document shipped behavior. [Old user-guide links](user-guide.md) still work as pointers. Historical plans may describe work that did not ship.

@@ -24,7 +24,7 @@ Problems in pi-bro's own code, for example:
 - Bro's own files (settings, preferences, saved reviews, temp files) being
   written with unsafe permissions or outside their documented locations.
 - Explain, Show or Guided Review gaining more backend access than
-  [Backends: access and retention](docs/user-guide.md#backends-access-and-retention)
+  [Backends: access and retention](docs/reference/data-and-permissions.md#backends-access-and-retention)
   describes.
 
 ## Out of scope
