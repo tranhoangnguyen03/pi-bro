@@ -763,14 +763,22 @@ test("modal kit: elevate has no dead zone and never edits an invisible Editor", 
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(copied, "MY VALUABLE OBJECTIVE", "Ctrl+C copied nothing while reviewing findings");
 
-	// A click inside the Editor must map to the cell the user clicked.
+	// A click inside the Editor must map to the cell the user clicked. Pi 0.84's Editor has no
+	// handleMouse, so that version forwards nothing and leaves the click to host text selection; both
+	// cases must at least keep the wheel swallowed. Version-gated like the shared kit's own test.
 	const clicker = mk(30, 80);
 	clicker.setCompose("hello");
 	clicker.render(78);
 	const area = clicker.editorArea;
 	assert.ok(area.top >= 3, "editorArea ignores the frame rows above the body");
 	assert.equal(area.left, 1, "editorArea ignores the frame's left border");
-	assert.equal(clicker.handleMouse({ type: "click", button: "left", x: 1, y: area.top })?.handled, true, "a click on the Editor was dropped");
+	const click = { type: "click", button: "left", x: 1, y: area.top };
+	if (typeof Editor.prototype.handleMouse === "function") {
+		assert.equal(clicker.handleMouse(click)?.handled, true, "a click on the Editor was dropped");
+	} else {
+		assert.equal(clicker.handleMouse(click), undefined, "Pi 0.84 must leave the click to host text selection");
+	}
+	assert.equal(clicker.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: 3 })?.handled, true, "the wheel escaped the overlay");
 });
 
 // Ctrl+Enter needs the kitty keyboard protocol, so many terminals deliver nothing. Ctrl+S is the
