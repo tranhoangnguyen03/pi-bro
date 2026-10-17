@@ -90,6 +90,27 @@ in `/bro config` as the shared default or as the capability under test.
        with the limit error, Doctor fails, and `/bro preferences` still opens
        it for trimming. Ctrl+K deletes the file.
 
+## Documentation quality
+
+Run `npm run docs:check` whenever commands, feature guides, links or data access change. It checks local Markdown links and heading anchors, registered /bro subcommands and the README's first-use example. It never calls a model or uses the network.
+
+Before release, manually follow the [getting-started guide](getting-started.md) in a clean Pi session. For UI changes, compare visible controls, cancellation, error states, editor insertion and screen sizes against the feature guide. For backend changes, verify that the [permissions reference](reference/data-and-permissions.md) matches actual CLI settings. Confirm external URLs and images render on GitHub and npm; the offline checker cannot establish that.
+
+## Elevate
+
+Use interactive Pi with a configured BTW backend and a non-sensitive sample task.
+
+1. `/bro elevate Design a document search system` should start discovery without sending a main-agent message. Check 0–5 findings with reasons and expert actions, and that **nothing starts ticked**. Stage 1 should accept a pasted **multi-line** objective and keep its line breaks; on a very short terminal it must ask for a bigger one rather than let you edit blind.
+2. Press `Space` to tick the highlighted finding and `↑`/`↓` to move between them; `Enter` moves focus to the buttons and must not toggle. `[Rewrite with 0 selected]` must explain itself instead of rewriting. Tick at least one, choose `[Rewrite with N selected]`, and check that the output is an improved **request**, not a completed design.
+3. Choose `[Back]`, adjust the ticks, regenerate and choose `[Copy]` to copy the revised request.
+4. Type a multi-line task in the main editor, then use Ctrl+Shift+E where supported. Esc must leave the original draft unchanged. In terminal mode `[Insert into editor]` may **replace** that draft, but only the draft Elevate opened on, and only if it has not changed. With `/bro elevate <request>` the editor must be empty. Nothing is submitted.
+5. **The regression that must not return:** put an unrelated unsent draft in the editor, run `/bro elevate some task`, then choose `[Insert into editor]`. The unrelated draft must survive, with a notice to copy instead. Repeat with an *empty* editor and explicit request: insertion is allowed. Then open Elevate on the draft itself and confirm insertion still replaces it while unchanged.
+5. If the editor changes while the modal is open, insertion must refuse to overwrite it. For Desktop/RPC, only confirmed atomic insertion into an empty editor is permitted.
+6. Simulate malformed JSON and backend failure; `[Retry]` repeats the failed step and Esc cancels. A failed **rewrite** must retry the rewrite with the same approved findings, not silently re-run discovery. Also test zero suggestions, small terminals, scrolling, and abort during both stages. A reply containing prose around the JSON, capitalised dimensions, or a wrapping code fence must still work; a reply with two JSON payloads must fail closed and offer a retry rather than pick one. Close the window from the host (not via Esc) and confirm the backend call stops.
+7. Verify no tool calls, tool results, or hidden reasoning appear in the captured text; confirm only approved findings are passed to rewrite and the BTW-selected backend/model/effort is used.
+
+Offline tests do not prove the quality of model-generated suggestions. Compare real results from original versus revised assignments in separate evaluations.
+
 ## Guided Review
 
 ### UI check without model calls

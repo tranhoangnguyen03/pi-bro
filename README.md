@@ -36,26 +36,38 @@ GitHub, use `pi install git:github.com/tranhoangnguyen03/pi-bro`.
 
 ## Try it
 
-| Type this in Pi | What happens |
+For a first success, type this in Pi after setting up a backend:
+
+```text
+/bro text A request limit means a service allows only a certain number of calls in a given time.
+```
+
+**Expected:** Bro opens a separate window and explains that sentence in plain words. Close with **Esc**. Nothing is sent to your main agent's conversation. The exact words depend on your selected model.
+
+| After that | What happens |
 | --- | --- |
-| `/bro` | Explains the agent's last reply |
-| `/bro file docs/report.pdf` | Explains a document (use your own path) |
-| `/bro url https://example.com/article` | Explains a webpage (use your own link) |
-| `/bro btw "what file defines this route?"` | Asks a side question |
-| `/bro show` | Draws the last turn as a diagram |
+| `/bro` | Explains the agent's latest completed reply (requires one) |
+| `/bro btw What is a race condition?` | Asks a private side question |
+| `/bro show` | Draws the current session's recent conversation, if any |
+| `/bro elevate Improve how we search company documents` | Find expert gaps before giving Pi a task |
+
+File and webpage examples need your own real path or URL; see [how to explain them](docs/features/explain.md#explain-a-document). For a step-by-step first run, see [Getting started](docs/getting-started.md).
 
 ## What it does
 
 | Command | What you get |
 | --- | --- |
-| `/bro`, `/bro text`, `/bro file`, `/bro url` | **[Explain](docs/user-guide.md#what-bro-can-explain).** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
-| `/bro show` | **[Show](docs/user-guide.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
-| `/bro btw` | **[Side questions](docs/user-guide.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
+| `/bro`, `/bro text`, `/bro file`, `/bro url` | **[Explain](docs/features/explain.md).** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
+| `/bro show` | **[Show](docs/features/show.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
+| `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
+| `/bro btw` | **[Side questions](docs/features/btw.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
 | `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Needs the Claude or Muse backend. |
-| `bro_advisor` tool | **[Second opinion](docs/user-guide.md#bro-advisor).** A tool your agent can call mid-task; a fresh backend process investigates and returns advice to the agent. ⚠️ [Runs with permissions bypassed](#what-leaves-your-machine). |
-| `/bro config`, `/bro preferences` | **[Settings](docs/user-guide.md#settings) and [preferences](docs/user-guide.md#preferences).** Pick the backend, model and effort per feature, and tell Bro how you like answers. |
+| `bro_advisor` tool | **[Second opinion](docs/features/advisor.md#bro-advisor).** A tool your agent can call mid-task; a fresh backend process investigates and returns advice to the agent. ⚠️ [Runs with permissions bypassed](#what-leaves-your-machine). |
+| `/bro config`, `/bro preferences` | **[Settings](docs/reference/settings.md#settings) and [preferences](docs/user-guide.md#preferences).** Pick the backend, model and effort per feature, and tell Bro how you like answers. |
 
-Every command, control and setting is in the **[user guide](docs/user-guide.md)**.
+For help by task, start at the **[docs home](docs/README.md)**; see the [command reference](docs/reference/commands.md) for syntax.
+**Elevate, in practice:** Bro points out expert questions or tests you may have missed before you ask Pi to do the work. Review the suggestions, approve only what matters, then edit or submit the resulting request yourself. See the [walkthrough](docs/elevate.md) for limits, privacy, and editor replacement.
+
 Guided Review has its own [guide](docs/guided-review.md).
 
 ## Requirements
@@ -89,6 +101,7 @@ which may keep it under their own policies. Paths below are under
 | Explain | The agent's last reply, your pasted text, or text extracted from your file or webpage, plus your preferences | Nothing; the last result stays in memory |
 | Show | User and assistant text from recent turns (no tool calls, tool results, reasoning or images), plus your preferences | Diagram pages in `pi-bro-<uid>/` in your system temp folder |
 | Side questions | Your questions and up to the last 8 turns of conversation text, plus your preferences | Nothing; the thread stays in memory |
+| Elevate | Your objective, selected findings, up to 8 conversation-text turns (12,000 characters), and preferences | Nothing; the workflow stays in memory |
 | Guided Review | The PR description and diff, the files the backend reads, your questions, plus your preferences | Reviews and captured source in `bro-reviews/`, with no automatic cleanup |
 | Advisor | The agent's system instructions, tool list and whole conversation, including tool calls and results (reasoning and images omitted), plus your steering | Steering in `bro-advisor.md` and the session file |
 
@@ -109,8 +122,8 @@ tool results.
 >   the supplied context" is only an instruction.
 
 Details per backend:
-[Backends: access and retention](docs/user-guide.md#backends-access-and-retention)
-and [Privacy and safety](docs/user-guide.md#privacy-and-safety).
+[Backends: access and retention](docs/reference/data-and-permissions.md#backends-access-and-retention)
+and [Privacy and safety](docs/reference/data-and-permissions.md#privacy-and-safety).
 
 ## Limits
 
@@ -120,12 +133,13 @@ and [Privacy and safety](docs/user-guide.md#privacy-and-safety).
   proxy settings. → Save the page as PDF or text and use `/bro file`.
 - No fallback: if the chosen backend, model or effort fails, Bro shows that
   backend's error instead of switching. → Run `/bro doctor`.
+- Elevate runs fresh restricted calls through the BTW model setting. Restricted does not always mean sandboxed; see [access and retention](docs/reference/data-and-permissions.md). The shortcut may not work in all terminals: use `/bro elevate` instead.
 - BTW threads and the last explanation live in memory only and clear on
   reload or restart.
 - Guided Review runs in local interactive Pi only and does not post to
   GitHub.
 
-Full list: [Troubleshooting and current limits](docs/user-guide.md#troubleshooting-and-current-limits).
+Full list: [Troubleshooting and current limits](docs/reference/troubleshooting.md#troubleshooting-and-current-limits).
 
 ## Stability
 

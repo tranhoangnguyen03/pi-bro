@@ -353,6 +353,12 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 - Enter opens an item or focuses actions; Enter on a highlighted action activates it. Tab changes focus. Esc goes back, then closes from Contents. Close saves automatically; Stop and close stops active work first.
 - Copy finding copies to the system clipboard, not GitHub. Regenerate guide is optional and makes a confirmed call about the same captured code. Review generation/questions require Claude or Muse file-only tools: shell, writes and web tools are disabled. Set a review override in /bro config; other backends can still read saved reviews. Repository text can still mislead the model; citations are not proof.
 
+## Elevate
+
+- \`/bro elevate [request]\` — find expert gaps before giving Pi a task; Ctrl+Shift+E uses the draft. Tick findings with Space, then Enter moves to the buttons.
+- Approve it yourself: Enter newline, Ctrl+Enter discover, and labelled buttons for the rest.
+- Shares BTW settings; see docs/elevate.md.
+
 ## Side conversation
 
 - \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
