@@ -647,7 +647,7 @@ test("acquisition shows observable elapsed progress and readable retry errors wi
 					notify() {},
 					custom: (factory, options) =>
 						new Promise((resolve) => {
-							assert.equal(options.overlayOptions.width, "100%");
+							assert.equal(options.overlayOptions.width, "70%");
 							resolveOpen = resolve;
 							panel = factory(
 								{ terminal: { rows: 20 }, requestRender() {} },
@@ -665,7 +665,7 @@ test("acquisition shows observable elapsed progress and readable retry errors wi
 		for (let i = 0; i < 500 && !panel.render(36).join("\n").includes("permission denied"); i++)
 			await new Promise((r) => setTimeout(r, 10));
 		assert.match(panel.render(36).join("\n"), /permission denied/);
-		assert.match(panel.render(36).join("\n"), /Esc close · Enter retry/);
+		assert.match(panel.render(36).join("\n"), /Enter retry · Esc close/);
 		assert.doesNotMatch(panel.render(36).join("\n"), /Error: gh/);
 		panel.handleInput("\x1b");
 		await opened;

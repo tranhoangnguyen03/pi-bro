@@ -27,7 +27,7 @@ import {
 	withCapabilityOverride,
 } from "./settings.ts";
 import { BRO_MODES, parseBroMode } from "./prompt.ts";
-import { delegateMouse, modalHeight, renderFrame, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
+import { delegateMouse, formatNotice, modalHeight, renderFrame, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
 import type { BroMouseEvent } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -111,11 +111,16 @@ export function createConfigModal(
 			return {
 				// SettingsList draws an open submenu instead of its own list and hints, so the picker brings its own.
 				render: (width: number) => enteringBackend
-					? [`${customLabel()} model ID (Enter saves, Esc cancels)`, ...input.render(width)]
+					? [
+						`${customLabel()} model ID:`,
+						...input.render(width),
+						"",
+						truncateToWidth(theme.fg("dim", "  Enter save · Esc back"), width),
+					]
 					: [...picker.render(width), "", truncateToWidth(theme.fg("dim", "  ↑/↓ choose · Enter select · Esc back"), width)],
 				invalidate: () => { picker.invalidate(); input.invalidate(); },
 				// SettingsList hands an open submenu its own events unchanged.
-				handleMouse: (event: BroMouseEvent) => (enteringBackend ? undefined : delegateMouse(picker, event)),
+				handleMouse: (event: BroMouseEvent) => (enteringBackend ? delegateMouse(input, event, { top: 1, left: 0, width: tui.terminal?.columns ?? 80, height: 1 }) : delegateMouse(picker, event)),
 				handleInput: (data: string) => {
 					if (enteringBackend && matchesKey(data, "escape")) pickerDone();
 					else if (enteringBackend) input.handleInput(data);
@@ -219,7 +224,7 @@ export function createConfigModal(
 					closeRequested = false;
 					refresh();
 					// Outcome first: long notices are cut after three lines.
-					notice = theme.fg("warning", `Reverted to the last saved settings. Could not save settings: ${errorMessage(error)}`);
+					notice = formatNotice(theme, `Reverted to the last saved settings. Could not save settings: ${errorMessage(error)}`, "error");
 				})
 				.finally(() => {
 					saving = false;

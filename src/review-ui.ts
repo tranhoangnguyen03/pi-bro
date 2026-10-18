@@ -1,7 +1,5 @@
 import {
 	matchesKey,
-	truncateToWidth,
-	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import {
@@ -25,8 +23,16 @@ import {
 } from "./review.ts";
 import { captureReview, readEvidence, resolveReviewTarget } from "./review-source.ts";
 import { REVIEW_OVERLAY, ReviewModal, newReviewView, safeReviewText } from "./review-modal.ts";
-import { modalHeight, openBroOverlay } from "./modal-kit.ts";
+import { modalHeight, openBroOverlay, renderFrame } from "./modal-kit.ts";
 import { consumeWheel } from "./ui-capabilities.ts";
+
+export const REVIEW_ACQUIRE_OVERLAY = {
+	anchor: "center",
+	width: "70%",
+	minWidth: 44,
+	maxHeight: "60%",
+	margin: { top: 1, bottom: 1 },
+} as const;
 
 const activeReviews = new Map<string, AbortController | undefined>();
 export function stopGuidedReviews(): void {
@@ -149,29 +155,20 @@ export async function openGuidedReview(
 				void acquire();
 				return {
 					render(width: number) {
-						const inner = Math.max(1, width - 2);
-						const height = modalHeight(tui, REVIEW_OVERLAY);
-						const border = "─".repeat(inner);
-						const row = (text: string) => {
-							const line = truncateToWidth(text, inner, "…");
-							return `│${line}${" ".repeat(Math.max(0, inner - visibleWidth(line)))}│`;
-						};
-						const body = wrapTextWithAnsi(safeReviewText(message), inner).slice(
-							0,
-							Math.max(1, height - 4),
-						);
-						const lines = [
-							`╭${border}╮`,
-							row(
-								`Bro · Review${failed ? "" : ` · ${Math.floor((Date.now() - startedAt) / 1000)}s`}`,
-							),
-							...body.map(row),
-							row(failed ? (retryable ? "Esc close · Enter retry" : "Esc close") : "Esc cancel"),
-							`╰${border}╯`,
-						];
-						return lines
-							.slice(0, height)
-							.map((line) => theme.fg("accent", truncateToWidth(line, width, "")));
+						const height = modalHeight(tui, REVIEW_ACQUIRE_OVERLAY);
+						const hints = failed ? (retryable ? "Enter retry · Esc close" : "Esc close") : "Esc cancel";
+						return renderFrame(theme, width, height, {
+							header: () =>
+								theme.fg("accent", theme.bold("Bro · Review")) +
+								(failed ? "" : theme.fg("dim", ` · ${Math.floor((Date.now() - startedAt) / 1000)}s`)),
+							body: (_rows, innerWidth) =>
+								wrapTextWithAnsi(safeReviewText(message), innerWidth).map((line) =>
+									failed ? theme.fg("error", line) : theme.fg("dim", line),
+								),
+							hints,
+							fill: false,
+							minBody: 1,
+						});
 					},
 					invalidate() {},
 					handleMouse: consumeWheel,
@@ -191,7 +188,7 @@ export async function openGuidedReview(
 					},
 				};
 			},
-			{ overlay: REVIEW_OVERLAY },
+			{ overlay: REVIEW_ACQUIRE_OVERLAY },
 		);
 	}
 	if (!record) return;

@@ -1110,7 +1110,7 @@ export class ReviewModal {
 			...(this.notice && this.notice !== "Saved" && !this.busy
 				? [
 						...wrapTextWithAnsi(label(this.notice), detailWidth).map((line) =>
-							this.theme.fg("accent", line),
+							this.theme.fg(/failed|error|cannot/i.test(this.notice) ? "error" : "accent", line),
 						),
 						"",
 					]

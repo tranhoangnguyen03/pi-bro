@@ -90,7 +90,9 @@ only to `handleMouse` (a wheel left unhandled scrolls the chat behind).
   each surface against pi-tui's own overlay sizing at several terminal sizes.
 
 Every Bro overlay uses the kit; the design and its reviews are in
-[plans/modal-consistency.md](plans/modal-consistency.md).
+[plans/modal-consistency.md](plans/modal-consistency.md). The Guided Review workspace
+(`ReviewModal`) keeps its specialized full-width multi-pane layout and rounded corners;
+acquisition uses `renderFrame` with `REVIEW_ACQUIRE_OVERLAY` (centered 70% width).
 
 ## Invariants
 

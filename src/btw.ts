@@ -13,7 +13,7 @@ import {
 	selectionLabel,
 } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
-import { BRO_OVERLAY, broOverlayArea, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
 import { canBroInsertIntoEditor, insertBroDesktopText, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -34,6 +34,7 @@ export type BtwThread = {
 	context?: string;
 	sessionFull?: boolean;
 	sessionPreferences?: string;
+	draft?: string;
 };
 
 export function parseBtwArguments(value: string): { question: string; invalid?: string } {
@@ -174,12 +175,13 @@ export class BtwModal implements Focusable {
 	private _focused = false;
 	private readonly markdown = new Markdown("", 0, 0, getMarkdownTheme());
 	private readonly input = new Input();
-	private notice = "";
+	private noticeText = "";
+	private noticeTone: NoticeTone = "info";
 	private rawArea: Area | undefined;
 	// Follows the newest text until the reader scrolls up; scrolling back to the end follows again.
 	private readonly scroller = new Scroller(
 		() => {
-			this.notice = "";
+			this.noticeText = "";
 			this.tui.requestRender();
 		},
 		{ followEnd: true },
@@ -188,6 +190,7 @@ export class BtwModal implements Focusable {
 	private full = false;
 	private model = "";
 	private disposed = false;
+	onInput?: () => void;
 
 	get focused(): boolean {
 		return this._focused;
@@ -222,9 +225,18 @@ export class BtwModal implements Focusable {
 		this.tui.requestRender();
 	}
 
-	setNotice(notice: string): void {
+	get notice(): string {
+		return this.noticeText;
+	}
+
+	set notice(notice: string) {
+		this.setNotice(notice);
+	}
+
+	setNotice(notice: string, tone: NoticeTone = "info"): void {
 		if (this.disposed) return;
-		this.notice = notice;
+		this.noticeText = notice;
+		this.noticeTone = tone;
 		this.tui.requestRender();
 	}
 
@@ -248,6 +260,16 @@ export class BtwModal implements Focusable {
 		this.tui.requestRender();
 	}
 
+	getComposerText(): string {
+		return this.input.getValue();
+	}
+
+	setComposerText(text: string): void {
+		this.input.setValue(text);
+		(this.input as unknown as { cursor: number }).cursor = text.length;
+		this.tui.requestRender();
+	}
+
 	invalidate(): void {
 		this.markdown.invalidate();
 		this.input.invalidate();
@@ -264,6 +286,7 @@ export class BtwModal implements Focusable {
 		}
 		if (this.scroller.handleKey(data, this.rawArea)) return;
 		this.input.handleInput(data);
+		this.onInput?.();
 		this.tui.requestRender();
 	}
 
@@ -285,7 +308,7 @@ export class BtwModal implements Focusable {
 				this.theme.fg("accent", this.theme.bold("Your message to Bro")),
 				this.input.render(inner)[0] ?? "",
 			],
-			notice: this.notice && this.theme.fg("accent", this.notice),
+			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
 			hints: this.running ? "Bro is thinking… · Esc close (stops reply)" : "Enter send · Esc close",
 		});
 	}
@@ -311,17 +334,33 @@ export async function openBtwModal(
 
 			const transcript = () => formatBtwTranscript(thread.turns);
 
+			let composerTouched = false;
+			const saveDraft = () => {
+				const draft = modal.getComposerText();
+				if (draft.trim()) {
+					thread.draft = draft;
+				} else if (!options.initialQuestion || composerTouched) {
+					delete thread.draft;
+				}
+			};
+
 			const close = () => {
 				if (closed) return;
 				closed = true;
+				saveDraft();
 				controller?.abort();
 				done(undefined);
 			};
 
 			const modal = new BtwModal(tui, theme, close, submit, () => {
 				closed = true;
+				saveDraft();
 				controller?.abort();
 			});
+			modal.onInput = () => {
+				composerTouched = true;
+			};
+			if (thread.draft && !options.initialQuestion) modal.setComposerText(thread.draft);
 
 			// `replaced` is the turn /retry removed; it is put back if the turn never starts.
 			const runTurn = async (question: string, replaced?: BtwTurn) => {
@@ -329,7 +368,6 @@ export async function openBtwModal(
 				const turnController = new AbortController();
 				controller = turnController;
 				modal.setRunning(true);
-				modal.clearComposer();
 
 				let settings: BroSettings;
 				let preferences: string;
@@ -338,17 +376,19 @@ export async function openBtwModal(
 					preferences = await readPreferences();
 				} catch (error) {
 					if (replaced) thread.turns.push(replaced);
+					if (!replaced && !options.initialQuestion) modal.setComposerText(question);
 					if (controller === turnController) controller = undefined;
-					if (!closed) { modal.setRunning(false); modal.setNotice(errorMessage(error)); }
+					if (!closed) { modal.setRunning(false); modal.setNotice(errorMessage(error), "error"); }
 					return;
 				}
 				// Closing (or reopening) during the reads above must not touch the shared thread.
 				if (closed || turnController.signal.aborted) {
 					if (replaced) thread.turns.push(replaced);
+					if (!replaced && !options.initialQuestion) modal.setComposerText(question);
 					if (controller === turnController) controller = undefined;
 					return;
 				}
-				if (bindBtwBackend(thread, capabilityBackend(settings, "btw"))) modal.setNotice("Backend changed — started a fresh side thread.");
+				if (bindBtwBackend(thread, capabilityBackend(settings, "btw"))) modal.setNotice("Backend changed — started a fresh side thread.", "warning");
 				if (thread.turns.length === 0) {
 					thread.conversationId = undefined;
 					const context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS, BTW_CONTEXT_MAX)?.text;
@@ -391,7 +431,7 @@ export async function openBtwModal(
 				} catch (error) {
 					if (turnController.signal.aborted || closed) return;
 					thread.turns[thread.turns.length - 1]!.answer = `_${errorMessage(error)}_`;
-					modal.setNotice(errorMessage(error));
+					modal.setNotice(errorMessage(error), "error");
 				} finally {
 					if (controller === turnController) controller = undefined;
 					if (!closed) {
@@ -404,7 +444,7 @@ export async function openBtwModal(
 			const toggleMode = () => {
 				toggleBtwMode(thread);
 				modal.setFull(thread.full);
-				modal.setNotice(`Mode: ${btwModeLabel(thread.full)}`);
+				modal.setNotice(`Mode: ${btwModeLabel(thread.full)}`, "info");
 			};
 
 			const clear = () => {
@@ -413,6 +453,7 @@ export async function openBtwModal(
 				thread.context = undefined;
 				thread.sessionFull = undefined;
 				thread.sessionPreferences = undefined;
+				delete thread.draft;
 				modal.clearComposer();
 				modal.setNotice("");
 				modal.setText("");
@@ -422,7 +463,7 @@ export async function openBtwModal(
 				if (controller) return;
 				const last = thread.turns.at(-1);
 				if (!last) {
-					modal.setNotice("Nothing to retry yet.");
+					modal.setNotice("Nothing to retry yet.", "warning");
 					return;
 				}
 				thread.turns.pop();
@@ -432,34 +473,34 @@ export async function openBtwModal(
 			const copyOut = async (all: boolean) => {
 				const text = all ? transcript() : (thread.turns.at(-1)?.answer ?? "");
 				if (!text.trim()) {
-					modal.setNotice("Nothing to copy yet.");
+					modal.setNotice("Nothing to copy yet.", "warning");
 					return;
 				}
 				try {
 					await copyToClipboard(text);
-					modal.setNotice(all ? "Copied the full thread to the clipboard." : "Copied the latest answer to the clipboard.");
+					modal.setNotice(all ? "Copied the full thread to the clipboard." : "Copied the latest answer to the clipboard.", "success");
 				} catch (error) {
-					modal.setNotice(`Copy failed: ${errorMessage(error)}`);
+					modal.setNotice(`Copy failed: ${errorMessage(error)}`, "error");
 				}
 			};
 
 			const insert = async (all: boolean) => {
 				const text = all ? transcript() : (thread.turns.at(-1)?.answer ?? "");
 				if (!text.trim()) {
-					modal.setNotice("Nothing to insert yet.");
+					modal.setNotice("Nothing to insert yet.", "warning");
 					return;
 				}
 				if (!canBroInsertIntoEditor(ctx)) {
 					const result = await insertBroDesktopText(ctx, text);
-					modal.setNotice(result === "inserted" ? "Inserted into the main editor. Review it before sending." : result === "not_empty" ? "Main editor has a draft or attachment. Clear it first, then insert again." : "Could not confirm insertion. Check the main editor before trying again.");
+					modal.setNotice(result === "inserted" ? "Inserted into the main editor. Review it before sending." : result === "not_empty" ? "Main editor has a draft or attachment. Clear it first, then insert again." : "Could not confirm insertion. Check the main editor before trying again.", result === "inserted" ? "success" : result === "not_empty" ? "warning" : "error");
 					return;
 				}
 				if (ctx.ui.getEditorText().trim()) {
-					modal.setNotice("Main editor has a draft. Edit or clear it first, then insert again.");
+					modal.setNotice("Main editor has a draft. Edit or clear it first, then insert again.", "warning");
 					return;
 				}
 				ctx.ui.setEditorText(text);
-				modal.setNotice(all ? "Inserted the full thread into the main editor." : "Inserted the latest answer into the main editor.");
+				modal.setNotice(all ? "Inserted the full thread into the main editor." : "Inserted the latest answer into the main editor.", "success");
 			};
 
 			function submit(value: string): void {
@@ -490,10 +531,14 @@ export async function openBtwModal(
 					return;
 				}
 				if (action.kind === "retry") {
+					composerTouched = true;
 					modal.clearComposer();
 					retry();
 					return;
 				}
+				composerTouched = true;
+				delete thread.draft;
+				modal.clearComposer();
 				void runTurn(action.text);
 			}
 

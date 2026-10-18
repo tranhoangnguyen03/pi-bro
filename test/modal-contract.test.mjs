@@ -224,6 +224,23 @@ test("modal kit: a long notice shrinks to keep minBody rows", () => {
 	assert.match(lines.join("\n"), /word/, "one notice line stays");
 });
 
+test("modal kit: formatNotice sanitizes control characters and formats semantic tones", () => {
+	const recordingTheme = {
+		fg: (color, text) => `<${color}>${text}</${color}>`,
+		bold: (text) => text,
+	};
+	assert.equal(kit.formatNotice(recordingTheme, "hello", "error"), "<error>hello</error>");
+	assert.equal(kit.formatNotice(recordingTheme, "warn", "warning"), "<warning>warn</warning>");
+	assert.equal(kit.formatNotice(recordingTheme, "done", "success"), "<success>done</success>");
+	assert.equal(kit.formatNotice(recordingTheme, "info", "info"), "<accent>info</accent>");
+	assert.equal(kit.formatNotice(recordingTheme, "default"), "<accent>default</accent>");
+
+	const malicious = "\x1b[2JBad \x1b[31merror\x1b[0m message\x07";
+	const formatted = kit.formatNotice(recordingTheme, malicious, "error");
+	assert.equal(formatted, "<error>Bad error message</error>");
+	assert.doesNotMatch(formatted, /\x1b/);
+});
+
 test("modal kit: modalHeight matches Pi's overlay sizing", () => {
 	for (const columns of [40, 60, 80, 121]) {
 		for (const rows of [1, 2, 3, 8, 14, 24, 40, 100]) {
@@ -287,6 +304,19 @@ test("modal kit: editor and config forward clicks and wheel to their pi-tui chil
 	assert.equal(text(config).join("\n"), before, "a wheel over the header changes nothing");
 	config.handleMouse({ type: "wheel", x: 3, y: row, wheelDelta: 1 });
 	assert.notEqual(text(config).join("\n"), before, "a wheel over the list moves the selection");
+
+	// Custom model ID submenu mouse delegation
+	const freshConfig = configUi.createConfigModal(settings, [], async () => {})(tui, theme, {}, () => {});
+	freshConfig.render(62);
+	freshConfig.handleInput("\r"); // Open Default model picker
+	for (let i = 0; i < 8; i++) freshConfig.handleInput("\x1b[B"); // Navigate to Claude custom model ID
+	freshConfig.handleInput("\r"); // Open custom input
+	const customLines = text(freshConfig);
+	const labelRow = customLines.findIndex((l) => l.includes("model ID:"));
+	const inputRow = labelRow + 1;
+	assert.ok(labelRow >= 0);
+	assert.equal(freshConfig.handleMouse({ type: "press", button: "left", x: 5, y: inputRow })?.handled, true, "clicks on input row are handled");
+	assert.equal(freshConfig.handleMouse({ type: "press", button: "left", x: 5, y: labelRow }), undefined, "clicks on label row are ignored");
 });
 
 test("modal kit: config blocks hidden actions after resize and recovers when it fits", async () => {
