@@ -1,4 +1,5 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { stripVTControlCharacters } from "node:util";
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type OverlayHandle, type OverlayOptions, type TUI } from "@earendil-works/pi-tui";
 import { broModalRows, consumeWheel, rawWheel, setRegularMouseReporting, SGR_MOUSE, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 
@@ -12,6 +13,21 @@ export type TuiLike = {
 	readonly terminal?: { rows?: number; columns?: number; write?: (data: string) => void };
 	requestRender(): void;
 };
+
+export type NoticeTone = "info" | "success" | "warning" | "error";
+
+/**
+ * Format a notice text with the semantic tone.
+ * Strips raw terminal control characters from the message to prevent escape sequence injection.
+ */
+export function formatNotice(theme: Theme, text: string, tone: NoticeTone = "info"): string {
+	const sanitized = stripVTControlCharacters(text)
+		.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+		.trim();
+	if (!sanitized) return "";
+	const color = tone === "error" ? "error" : tone === "warning" ? "warning" : tone === "success" ? "success" : "accent";
+	return theme.fg(color, sanitized);
+}
 
 /** One overlay preset for Bro's windows. Drawn heights come from the same numbers via modalHeight. */
 export const BRO_OVERLAY = {

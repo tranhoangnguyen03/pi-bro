@@ -504,6 +504,83 @@ await t.test("btw follows the newest text until the reader scrolls up", () => {
 	assert.doesNotMatch(view(), /↑/, "/clear empties the view");
 });
 
+await t.test("btw retains unsubmitted composer draft across modal reopen", async () => {
+	const thread = { turns: [], full: false };
+	const ctx = {
+		cwd: process.cwd(),
+		ui: {
+			custom: (factory) => new Promise((resolve) => {
+				const component = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 80 }, requestRender() {} }, fakeTheme, {}, resolve);
+				for (const ch of "my draft question") component.handleInput(ch);
+				component.handleInput('\x1b');
+			}),
+		},
+	};
+	await btw.openBtwModal(ctx, { thread });
+	assert.equal(thread.draft, "my draft question", "unsubmitted draft is saved to thread on close");
+
+	let reopenedDraft = "";
+	const ctx2 = {
+		cwd: process.cwd(),
+		ui: {
+			custom: (factory) => new Promise((resolve) => {
+				const component = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 80 }, requestRender() {} }, fakeTheme, {}, resolve);
+				reopenedDraft = component.getComposerText();
+				for (const ch of " more") component.handleInput(ch);
+				assert.equal(component.getComposerText(), "my draft question more", "typing continues at end of restored draft");
+				component.handleInput('\x1b');
+			}),
+		},
+	};
+	await btw.openBtwModal(ctx2, { thread });
+	assert.equal(reopenedDraft, "my draft question", "reopened modal restores draft");
+
+	const threadWhitespace = { turns: [], full: false };
+	const ctxWs = {
+		cwd: process.cwd(),
+		ui: {
+			custom: (factory) => new Promise((resolve) => {
+				const component = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 80 }, requestRender() {} }, fakeTheme, {}, resolve);
+				for (const ch of "   ") component.handleInput(ch);
+				component.handleInput('\x1b');
+			}),
+		},
+	};
+	await btw.openBtwModal(ctxWs, { thread: threadWhitespace });
+	assert.equal(threadWhitespace.draft, undefined, "whitespace-only draft is not saved");
+
+	// CLI initialQuestion preserves background draft on close
+	const threadCli = { turns: [], full: false, draft: "preserved draft" };
+	const ctxCli = {
+		cwd: process.cwd(),
+		ui: {
+			custom: (factory) => new Promise((resolve) => {
+				const component = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 80 }, requestRender() {} }, fakeTheme, {}, resolve);
+				assert.equal(component.getComposerText(), "", "composer is left empty for initial question");
+				component.handleInput('\x1b');
+			}),
+		},
+	};
+	await btw.openBtwModal(ctxCli, { thread: threadCli, initialQuestion: "one shot" });
+	assert.equal(threadCli.draft, "preserved draft", "closing CLI invocation preserves background draft");
+
+	// Submitting with trailing spaces clears the composer
+	const threadSpaces = { turns: [], full: false };
+	const ctxSpaces = {
+		cwd: process.cwd(),
+		ui: {
+			custom: (factory) => new Promise((resolve) => {
+				const component = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 80 }, requestRender() {} }, fakeTheme, {}, resolve);
+				for (const ch of "follow up with spaces ") component.handleInput(ch);
+				component.handleInput('\r');
+				assert.equal(component.getComposerText(), "", "composer is cleared upon submit");
+				component.handleInput('\x1b');
+			}),
+		},
+	};
+	await btw.openBtwModal(ctxSpaces, { thread: threadSpaces });
+});
+
 await t.test("Agy CLI usage formatting and model catalog parsing", () => {
 	const usage = formatAgyUsage({
 		status: "SUCCESS",
@@ -1846,10 +1923,37 @@ await t.test("createAdvisorSteerModal: drive the real raw key sequences through 
 
 	for (const ch of " unsaved") component.handleInput(ch);
 	component.handleInput('');
-	assert.equal(isClosed(), true);
+	assert.equal(isClosed(), false, "first Esc arms discard");
+	assert.match(text(), /Esc again to discard/);
+	component.handleInput('');
+	assert.equal(isClosed(), true, "second Esc closes without saving draft edits");
 	assert.equal(saved, undefined, "Esc closes without saving draft edits");
 	assert.equal(cleared, false);
 
+});
+await t.test("Steering Esc discard confirmation is disarmed by typing or clicking", async (t) => {
+	let saved;
+	const { component, text, isClosed } = driveAdvisorSteerModal("Initial", (v) => { saved = v; }, () => {});
+	component.handleInput("X");
+	text();
+	component.handleInput("");
+	assert.equal(isClosed(), false, "first Esc prompts to discard");
+	assert.match(text(), /Esc again to discard/);
+
+	component.handleInput("Y");
+	assert.doesNotMatch(text(), /Esc again to discard/);
+	assert.equal(isClosed(), false);
+
+	component.handleInput("");
+	assert.match(text(), /Esc again to discard/);
+	component.handleMouse({ type: "click", button: "left", x: 2, y: 3 });
+	assert.doesNotMatch(text(), /Esc again to discard/);
+
+	component.handleInput("");
+	assert.match(text(), /Saved/);
+	assert.equal(saved, "InitialXY");
+	component.handleInput("");
+	assert.equal(isClosed(), true);
 });
 await t.test("Steering Ctrl+S saves without closing", async (t) => {
 	let saved;
@@ -1949,6 +2053,36 @@ await t.test("Preferences editor: starter text, async save, validation, and reco
 	pending.resolve();
 	await settle();
 	assert.match(modal.text(), /Saved/);
+
+	const pendingSave = deferred();
+	let deferClosed = false;
+	const deferModal = createPreferencesModal(
+		{ text: "Pending test" },
+		{ save: () => pendingSave.promise, clear: ok.clear },
+	)({ requestRender() {}, terminal: { rows: 30 } }, fakeTheme, {}, () => { deferClosed = true; });
+	deferModal.handleInput('\x13'); // Ctrl+S
+	deferModal.handleInput('\x1b'); // Esc while pending
+	assert.equal(deferClosed, false, "Esc while save is pending does not close immediately");
+	assert.match(stripVTControlCharacters(deferModal.render(120).join('\n')), /Saving… closes when done/);
+	pendingSave.resolve();
+	await settle();
+	assert.equal(deferClosed, true, "successful pending save completes and closes");
+
+	const failSave = deferred();
+	let failClosed = false;
+	const failModal = createPreferencesModal(
+		{ text: "Fail test" },
+		{ save: () => failSave.promise, clear: ok.clear },
+	)({ requestRender() {}, terminal: { rows: 30 } }, fakeTheme, {}, () => { failClosed = true; });
+	failModal.handleInput('\x13'); // Ctrl+S
+	failModal.handleInput('\x1b'); // Esc while pending
+	assert.equal(failClosed, false);
+	failSave.reject(new Error("disk full"));
+	await settle();
+	assert.equal(failClosed, false, "failed pending save keeps editor open");
+	assert.match(stripVTControlCharacters(failModal.render(120).join('\n')), /Save failed: disk full/);
+	failModal.handleInput('\x1b'); // Esc closes now
+	assert.equal(failClosed, true);
 
 	modal = drivePreferencesModal({ text: "Draft" }, { save: async () => { throw new Error("disk full"); }, clear: ok.clear });
 	modal.component.handleInput('\x13');
