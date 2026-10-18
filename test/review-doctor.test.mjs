@@ -28,16 +28,22 @@ test("doctor probes each backend selected only by the review capability", async 
 		};
 		const ctx = { sessionManager: { getBranch: () => [] } };
 		const report = await bro.doctorReport(pi, ctx, new AbortController().signal);
-		if (!["claude", "muse"].includes(backend))
-			assert.match(report, /needs a Claude or Muse override/);
 		assert.ok(
 			calls.some((call) => call.command === backend),
 			`${backend} review override must be probed`,
 		);
+		assert.doesNotMatch(report, /needs a Claude or Muse override/);
+		if (["claude", "muse"].includes(backend)) {
+			// File-only backends get no advisory at all: not the shell-sandbox wording, not a review line.
+			assert.doesNotMatch(report, /sandboxed shell|Guided Review on (claude|muse)/);
+		} else {
+			// The advisory names the backend actually selected, so a wrong-backend regression fails here.
+			assert.match(report, new RegExp(`Guided Review on ${backend} uses sandboxed shell`));
+		}
 	}
 });
 
-test("unsupported optional review backend does not make a healthy installation fail", async () => {
+test("sandboxed review backend is informational and does not make a healthy installation fail", async () => {
 	const directory = process.env.PI_CODING_AGENT_DIR;
 	await mkdir(directory, { recursive: true });
 	for (const backend of ["agy", "grok", "codex"]) {
@@ -71,7 +77,8 @@ test("unsupported optional review backend does not make a healthy installation f
 		assert.doesNotMatch(report, /Bro needs attention|✗/);
 		assert.match(
 			report,
-			/- ℹ \*\*Guided review:\*\* needs a Claude or Muse override in `\/bro config`/,
+			new RegExp(`- ℹ \\*\\*Guided review:\\*\\* Guided Review on ${backend} uses sandboxed shell`),
 		);
+		assert.doesNotMatch(report, /needs a Claude or Muse override/);
 	}
 });

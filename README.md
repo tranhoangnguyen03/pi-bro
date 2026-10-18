@@ -51,7 +51,7 @@ GitHub, use `pi install git:github.com/tranhoangnguyen03/pi-bro`.
 | `/bro`, `/bro text`, `/bro file`, `/bro url` | **[Explain](docs/user-guide.md#what-bro-can-explain).** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
 | `/bro show` | **[Show](docs/user-guide.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
 | `/bro btw` | **[Side questions](docs/user-guide.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
-| `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Needs the Claude or Muse backend. |
+| `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Claude or Muse is recommended for untrusted PRs. |
 | `bro_advisor` tool | **[Second opinion](docs/user-guide.md#bro-advisor).** A tool your agent can call mid-task; a fresh backend process investigates and returns advice to the agent. ⚠️ [Runs with permissions bypassed](#what-leaves-your-machine). |
 | `/bro config`, `/bro preferences` | **[Settings](docs/user-guide.md#settings) and [preferences](docs/user-guide.md#preferences).** Pick the backend, model and effort per feature, and tell Bro how you like answers. |
 
@@ -68,14 +68,14 @@ Guided Review has its own [guide](docs/guided-review.md).
 
 | Backend | CLI | Notes |
 | --- | --- | --- |
-| [Google Antigravity](https://antigravity.google/docs/cli-install) | `agy` | Default for new settings. Needs `>=1.1.15`. Not for Guided Review. |
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `claude` | Works for every feature, including Guided Review. |
-| [Grok Build](https://docs.x.ai/build/overview) | `grok` | Not for Guided Review. |
-| [Codex CLI](https://github.com/openai/codex) | `codex` | Not for Guided Review. |
-| [Muse Code](https://dev.meta.ai/docs/muse-code) | `muse` | Works for every feature, including Guided Review. |
+| [Google Antigravity](https://antigravity.google/docs/cli-install) | `agy` | Default for new settings. Needs `>=1.1.15`. Guided Review uses `--sandbox`, which restricts shell commands but still allows writes inside the project. |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `claude` | Works for every feature; strict file-only inspection for Guided Review. |
+| [Grok Build](https://docs.x.ai/build/overview) | `grok` | Guided Review uses its read-only sandbox (shell-enabled). |
+| [Codex CLI](https://github.com/openai/codex) | `codex` | Guided Review uses its read-only sandbox (shell-enabled). |
+| [Muse Code](https://dev.meta.ai/docs/muse-code) | `muse` | Works for every feature; strict file-only inspection for Guided Review. |
 
 - Guided Review also needs Git and an authenticated [`gh`](https://cli.github.com/).
-  Choose Claude or Muse for it in `/bro config`.
+  Claude or Muse is recommended for untrusted PRs (strict file-only inspection); Codex, Grok and Agy run with shell available under their sandbox, with an advisory.
 - [PiG](docs/pig-compatibility.md) support is experimental.
 
 ## What leaves your machine
@@ -105,8 +105,9 @@ tool results.
 >   only an instruction.
 > - **BTW full-permission mode** (turned on with `/mode` inside BTW): it is
 >   meant to edit files and run commands.
-> - **Grok, wherever you use it:** its sandbox is always off. "Answer only from
->   the supplied context" is only an instruction.
+> - **Grok:** its sandbox is off except during Guided Review, which uses the
+>   read-only sandbox. "Answer only from the supplied context" is only an
+>   instruction.
 
 Details per backend:
 [Backends: access and retention](docs/user-guide.md#backends-access-and-retention)

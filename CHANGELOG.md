@@ -2,6 +2,21 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.24.0] - 2026-10-19
+
+### Highlights
+
+- Guided Review now works with Codex, Grok and Agy, not just Claude and Muse. Those three run shell commands inside their own sandbox on the captured checkout.
+- Bro tells you plainly when a review backend can run shell commands (and that Agy's sandbox still allows writes), and recommends Claude or Muse for PRs you do not trust.
+- `/bro doctor` no longer treats a Codex/Grok/Agy review choice as a setup problem; it shows the same advisory as information.
+- Nothing changes for Claude and Muse, which still use strict file-only inspection.
+
+### Changed
+
+- Review generation and questions no longer fail before starting on Codex, Grok and Agy. Codex runs `--sandbox read-only --ephemeral`, Grok runs `--sandbox read-only --permission-mode dontAsk`, and Agy keeps `--sandbox` (which limits terminal commands, not file writes); all three use the captured checkout and the 10-minute review deadline. No bypass flag is ever added to a review, and Grok review no longer gets the "do not inspect" prompt restriction.
+- A new advisory appears while a review is being prepared, in the review window, and in `/bro doctor`: the backend runs commands inside its sandbox rather than doing strict file-only inspection.
+- Saved reviews still open with any backend.
+
 ## [0.23.1] - 2026-10-15
 
 ### Highlights
