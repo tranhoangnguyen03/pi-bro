@@ -29,6 +29,7 @@ type Zone = "editor" | "list" | "actions";
 export class ElevateModal implements Focusable {
   private _focused = false;
   private readonly editor: Editor;
+  private readonly editorViewport = { rows: 24 };
   private readonly markdown = new Markdown("", 0, 0, getMarkdownTheme());
   private readonly scroller = new Scroller(() => this.tui.requestRender());
   private rawArea: Area | undefined;
@@ -40,14 +41,16 @@ export class ElevateModal implements Focusable {
   private discovery?: ElevateDiscovery;
   private readonly accepted = new Set<number>();
   private cursor = 0;
+  private listOffset = 0;
   private action = 0;
   private original = "";
   private revised = "";
-  /** Review keeps its checklist as plain lines so it can be composed around a pinned detail pane. */
+  /** Review pins this checklist above the scrollable explanation. */
   private listText: string[] = [];
   private disposed = false;
   /** The Editor did not render whole at the last layout, so editing could save text the user never saw. */
-  private tooSmall = false;
+  private tooSmall = true;
+  private findingVisible = false;
 
   get focused(): boolean { return this._focused; }
   set focused(value: boolean) { this._focused = value; this.syncEditorFocus(); }
@@ -68,7 +71,8 @@ export class ElevateModal implements Focusable {
     private readonly onDispose: () => void,
   ) {
     const editorTheme: EditorTheme = { borderColor: (value: string) => this.theme.fg("border", value), selectList: getSelectListTheme() };
-    this.editor = new Editor(tui as unknown as TUI, editorTheme);
+    // Editor only needs terminal.rows and requestRender; keep its viewport local to this modal.
+    this.editor = new Editor({ terminal: this.editorViewport, requestRender: () => this.tui.requestRender() } as unknown as TUI, editorTheme);
     this.editor.onChange = () => { this.notice = ""; };
     this.draw();
   }
@@ -104,6 +108,7 @@ export class ElevateModal implements Focusable {
     // failure this whole stage exists to prevent.
     this.accepted.clear();
     this.cursor = 0;
+    this.listOffset = 0;
     this.action = 0;
     this.zone = discovery.findings.length ? "list" : "actions";
     if (!discovery.findings.length) {
@@ -143,7 +148,7 @@ export class ElevateModal implements Focusable {
     else if (this.stage === "discovering") text = `## Discovering gaps\n\n**Original request**\n\n${this.original}\n\nLooking for expert methods, missing evidence and tests. This does not change the main session.`;
     else if (this.stage === "review" && this.discovery) {
       // The checklist stands alone: display order, the cursor, and the tick on each row. No markdown
-      // document, so a finding can never be toggled while its reason is off screen.
+      // document, so the approval target stays visible while its reason scrolls.
       const list = this.discovery.findings.map((f, i) =>
         `${i === this.cursor && this.zone === "list" ? "›" : " "} ${this.accepted.has(i) ? "[x]" : "[ ]"} ${i + 1}. ${f.title} · ${f.dimension}`);
       this.listText = list;
@@ -284,8 +289,7 @@ export class ElevateModal implements Focusable {
           const delta = matchesKey(data, "down") ? 1 : -1;
           this.cursor = Math.max(0, Math.min(this.discovery.findings.length - 1, this.cursor + delta));
           this.notice = "";
-          // Scrolling to the cursor keeps the highlighted row and its explanation on screen, so the
-          // highlighted finding is always the one the description belongs to.
+          this.scroller.toStart();
           this.draw();
           return;
         }
@@ -294,6 +298,7 @@ export class ElevateModal implements Focusable {
         // Space or Enter toggles the highlighted finding: the target is always on screen, and either
         // key does the same thing so there is no wrong one to press. Tab is what leaves this zone.
         if (matchesKey(data, "space") || matchesKey(data, "enter")) {
+          if (!this.findingVisible) { this.setNotice("Enlarge the terminal to review findings."); return; }
           if (this.accepted.has(this.cursor)) this.accepted.delete(this.cursor);
           else this.accepted.add(this.cursor);
           this.notice = "";
@@ -317,6 +322,10 @@ export class ElevateModal implements Focusable {
       if (matchesKey(data, "tab") || matchesKey(data, "shift+tab")) { this.cycleZone(matchesKey(data, "shift+tab")); return; }
       if (matchesKey(data, "enter") || matchesKey(data, "space")) {
         const button = buttons[this.action];
+        if (this.stage === "review" && !this.findingVisible && (this.action === 0 || this.action === 1)) {
+          this.setNotice("Enlarge the terminal to review findings.");
+          return;
+        }
         // [Rewrite with 0 selected] would be a dead end; say why instead of doing nothing.
         if (this.stage === "review" && !this.accepted.size && button?.label.startsWith("Rewrite")) {
           this.setNotice("Choose at least one finding with Space, or press Esc to keep the original.");
@@ -344,6 +353,7 @@ export class ElevateModal implements Focusable {
     // Assume the Editor does not fit until the body says otherwise: when the frame has no body rows
     // at all the body callback never runs, and a stale `false` would let the user edit blind.
     if (this.stage === "compose") this.tooSmall = true;
+    this.findingVisible = false;
     const inner = Math.max(1, width - 2);
     const small = this.theme.fg("warning", "Enlarge the terminal to edit (about 20 rows). Ctrl+C still copies your text.");
     // Switch to short labels when the full set cannot share one line, measuring with the focus marker
@@ -369,7 +379,7 @@ export class ElevateModal implements Focusable {
       header: () => this.theme.fg("accent", this.theme.bold("Bro · elevate"))
         + (this.model ? this.theme.fg("dim", ` · ${this.model}`) : "")
         + (this.stage === "review" && this.discovery?.findings.length ? this.theme.fg("dim", ` · ${this.accepted.size}/${this.discovery.findings.length} selected`) : "")
-        + (this.scroller.indicator() ? this.theme.fg("dim", ` · ${this.scroller.indicator()}`) : ""),
+        + (this.stage !== "compose" && this.scroller.indicator() ? this.theme.fg("dim", ` · ${this.scroller.indicator()}`) : ""),
       body: (rows, innerWidth) => {
         if (this.stage !== "review" || !this.discovery) {
           if (this.stage === "compose") {
@@ -379,10 +389,11 @@ export class ElevateModal implements Focusable {
               this.theme.fg("dim", "What should the main agent achieve? Enter adds a line."),
               "",
             ];
+            // shortcut: Editor uses max(5, floor(terminal.rows * 0.3)); use a height API when Pi provides one.
+            this.editorViewport.rows = Math.ceil(Math.max(5, rows - intro.length - 2) / 0.3);
+            this.tooSmall = rows < intro.length + 7;
+            if (this.tooSmall) return wrapTextWithAnsi(small, innerWidth).slice(0, rows);
             const editorLines = this.editor.render(innerWidth);
-            const fits = rows >= editorLines.length + intro.length;
-            this.tooSmall = !fits;
-            if (!fits) return wrapTextWithAnsi(small, innerWidth).slice(0, rows);
             // The frame draws a top border, a header and a rule above the body, and one column of
             // left border, so mouse coordinates need that same origin.
             this.editorArea = { top: 3 + intro.length, left: 1, width: innerWidth, height: editorLines.length };
@@ -390,22 +401,21 @@ export class ElevateModal implements Focusable {
           }
           return this.scroller.view(this.markdown.render(innerWidth), rows);
         }
-        // Review: the checklist and the highlighted finding's detail share one scrollable body, so the
-        // reason for a row is always readable and a row can never be toggled blind.
+        // Pin the approval target; only its explanation scrolls.
         const current = this.discovery.findings[this.cursor];
         const label = (name: string, value: string) => wrapTextWithAnsi(`${this.theme.fg("dim", `${name}: `)}${value}`, innerWidth);
         const intro = this.markdown.render(innerWidth);
-        const detail = current ? ["", ...label("Why", current.why), ...label("Move", current.expertMove)] : [];
-        // Priority when space runs out: the checklist first (it is what the keys act on), then the
-        // detail, then the assessment. Scrolling still works over whatever fits.
-        const full = [...intro, ...this.listText, ...detail];
-        const noIntro = [...this.listText, ...detail];
-        const lines = full.length > rows ? noIntro : full;
-        // Keep the highlighted row and its explanation visible: the cursor is what Space acts on.
-        // `view` runs first to learn the row count, then `reveal` adjusts the offset before the final view.
-        this.scroller.view(lines, rows);
-        this.scroller.reveal(intro.length + this.cursor, intro.length + this.cursor + detail.length);
-        return this.scroller.view(lines, rows);
+        const detail = current ? [...label("Why", current.why), ...label("Move", current.expertMove)] : [];
+        const assessment = intro.length + this.listText.length + detail.length <= rows ? intro : [];
+        const listRows = Math.min(this.listText.length, Math.max(1, rows - 2));
+        this.listOffset = Math.max(0, Math.min(this.listOffset, this.listText.length - listRows));
+        if (this.cursor < this.listOffset) this.listOffset = this.cursor;
+        else if (this.cursor >= this.listOffset + listRows) this.listOffset = this.cursor - listRows + 1;
+        const list = this.listText.slice(this.listOffset, this.listOffset + listRows);
+        this.findingVisible = true;
+        const detailRows = rows - assessment.length - list.length;
+        const visibleDetail = this.scroller.view(detailRows > 0 ? detail : [], detailRows);
+        return [...assessment, ...list, ...visibleDetail];
       },
       footer: [],
       notice: this.notice ? this.theme.fg(this.stage === "failed" ? "warning" : "accent", this.notice) : undefined,

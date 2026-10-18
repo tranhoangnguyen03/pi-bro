@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
 import { Editor, TuiMainScreen, visibleWidth } from "@earendil-works/pi-tui";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { withFakeExecutable } from "./test-fake-exec.ts";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -684,38 +685,135 @@ test("modal kit: elevate compose accepts a multi-line objective and guards a tin
 	await mounted.closed;
 });
 
-// A failed rewrite must repeat the rewrite, not silently re-run discovery and discard the approvals.
-// The modal's onRetry is routed by openElevateModal's pending-step bookkeeping, so this asserts the
-// routing decision itself: after a rewrite fails, retry must ask for another rewrite with the SAME
-// approvals, and must not ask for discovery.
+test("modal kit: elevate long explanations scroll without hiding the approval target", async () => {
+	for (const [cols, rows] of [[80, 24], [80, 16], [60, 14], [40, 8]]) {
+		const mounted = await mount(elevateStage("review"), "fullscreen", cols, rows);
+		const { component } = mounted;
+		const layout = hostLayout(mounted.overlay, cols, rows);
+		const findings = elevateFindings.map((finding) => ({ ...finding, why: "Evidence to check. ".repeat(100), expertMove: "Run this test. ".repeat(100) + "DETAIL END" }));
+		component.setDiscovery({ assessment: "Assess the objective.", findings });
+		const view = () => stripVTControlCharacters(component.render(layout.width).join("\n"));
+		try {
+			const initial = view();
+			assert.equal(view(), initial, `${cols}x${rows}: rendering moved the reader`);
+			if (layout.maxHeight < 10) {
+				component.handleInput(" ");
+				assert.equal(component.currentSelection.size, 0, "a hidden finding was approved");
+				component.handleInput("\t");
+				component.handleInput("\x1b[C");
+				component.handleInput("\r");
+				assert.equal(component.currentSelection.size, 0, "Select all approved hidden findings");
+				continue;
+			}
+			assert.match(initial, /› \[ \] 1\./, "the first approval target is hidden");
+			component.handleInput(" ");
+			assert.match(view(), /› \[x\] 1\./);
+			for (let i = 0; i < 100; i++) component.handleInput("\x1b[6~");
+			const end = view();
+			assert.match(end, /DETAIL END/, "Page Down cannot reach the end of the explanation");
+			assert.match(end, /› \[x\] 1\./, "scrolling hid the approval target");
+			assert.equal(view(), end, "a render undid manual scrolling");
+			component.handleInput("\x1b[B");
+			assert.match(view(), /› \[ \] 2\./);
+			assert.match(view(), /Why:/, "a new finding did not start at its explanation");
+			component.setCompose("Edit the objective");
+			assert.doesNotMatch(view(), /↑\d+ ↓\d+/, "Compose inherited the explanation's scroll indicator");
+		} finally { component.handleInput("\x1b"); await mounted.closed; }
+	}
+});
+
+test("modal kit: elevate preserves the checklist window and blocks hidden rewrite actions", () => {
+	let upgrades = 0;
+	const tui = { mode: "fullscreen", terminal: { rows: 16, columns: 80 }, requestRender() {} };
+	const modal = new elevate.ElevateModal(tui, theme, () => {}, () => {}, () => upgrades++, () => {}, () => {}, () => {});
+	modal.setDiscovery({ assessment: "a", findings: elevateFindings });
+	const view = () => stripVTControlCharacters(modal.render(62).join("\n"));
+	view();
+	for (let i = 0; i < 4; i++) { modal.handleInput("\x1b[B"); view(); }
+	assert.match(view(), /› \[ \] 5\./);
+	modal.handleInput("\x1b[A");
+	const up = view();
+	assert.match(up, /› \[ \] 4\./);
+	assert.match(up, /  \[ \] 5\./, "moving within the list window shifted its contents");
+	modal.handleInput(" ");
+	modal.handleInput("\t");
+	tui.terminal.rows = 8;
+	view();
+	modal.handleInput("\r");
+	assert.equal(upgrades, 0, "Rewrite ran while the findings were hidden");
+});
+
+test("modal kit: elevate multiline typing never locks a fitting editor", () => {
+	for (const [cols, rows] of [[80, 24], [120, 40]]) {
+		const tui = { mode: "fullscreen", terminal: { rows, columns: cols }, requestRender() {} };
+		const modal = new elevate.ElevateModal(
+			tui, theme, () => {}, () => {}, () => {}, () => {}, () => {}, () => {});
+		const width = hostLayout(kit.BRO_OVERLAY, cols, rows).width;
+		const view = () => stripVTControlCharacters(modal.render(width).join("\n"));
+		modal.setCompose("Line one\nLine two\nLine three\nLine four\nLine five");
+		for (let i = 0; i < 30; i++) {
+			assert.doesNotMatch(view(), /Enlarge the terminal/);
+			modal.handleInput("\r");
+			modal.handleInput(`Line ${i + 6}`);
+			assert.match(view(), new RegExp(`Line ${i + 6}`), "typing scrolled the cursor out of view");
+		}
+		const beforeDelete = modal.editor.getExpandedText();
+		modal.handleInput("\x7f");
+		assert.equal(modal.editor.getExpandedText(), beforeDelete.slice(0, -1), "Backspace was blocked");
+		assert.doesNotMatch(view(), /Enlarge the terminal/);
+		assert.equal(tui.terminal.rows, rows, "the editor changed the host terminal size");
+		tui.terminal.rows = 12;
+		assert.match(view(), /Enlarge the terminal/);
+		tui.terminal.rows = rows;
+		assert.doesNotMatch(view(), /Enlarge the terminal/, "resizing back did not restore the editor");
+	}
+});
+
+// Exercise the real workflow and retry routing, not a replacement onRetry callback.
 test("modal kit: elevate retry repeats the failed step and keeps approvals", async () => {
-	const calls = [];
-	const modal = new elevate.ElevateModal(
-		{ mode: "fullscreen", terminal: { rows: 30, columns: 80 }, requestRender() {} },
-		theme,
-		() => {},
-		(objective) => calls.push(["discover", objective]),
-		(indexes) => calls.push(["upgrade", [...indexes]]),
-		() => {},
-		() => { const last = calls.at(-1); calls.push(last?.[0] === "upgrade" ? ["upgrade", last[1]] : ["discover", "objective"]); },
-		() => {},
-	);
-	modal.setDiscovery({ assessment: "a", findings: [
+	const findings = [
 		{ dimension: "depth", title: "One", why: "w", expertMove: "m" },
 		{ dimension: "range", title: "Two", why: "w", expertMove: "m" },
-	] });
-	modal.render(78);
-	modal.handleInput(" ");    // tick only finding 1
-	modal.handleInput("\t");
-	modal.handleInput("\r");   // rewrite with 1 selected
-	assert.deepEqual(calls, [["upgrade", [0]]], "the rewrite did not start with the ticked finding");
-	modal.setFailed("Bro returned an empty request. Retry.");
-	modal.render(78);
-	modal.handleInput("\r");   // [Retry] is focused first
-	// Decisive: a second upgrade carrying the same approvals, and no discovery at all.
-	assert.equal(calls.length, 2, "retry did not run anything");
-	assert.deepEqual(calls[1], ["upgrade", [0]], "retry re-ran discovery instead of the failed rewrite");
-	assert.equal(calls.filter(([kind]) => kind === "discover").length, 0, "retry ran discovery");
+	];
+	await settingsModule.writeSettings(settingsModule.parseBroSettings({ version: 2, default: { backend: "agy", model: "test-model", effort: "default" } }));
+	try {
+		await withFakeExecutable("agy", `#!/usr/bin/env node
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const log = join(process.env.BIN_DIR, 'calls.jsonl');
+const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\\n').length : 0;
+const prompt = process.argv[process.argv.indexOf('--print') + 1];
+appendFileSync(log, JSON.stringify(prompt) + '\\n');
+if (calls === 1) { console.error('fixture: rewrite failed'); process.exit(1); }
+const text = calls === 0 ? JSON.stringify(${JSON.stringify({ assessment: "Check evidence.", findings })}) : 'Improved objective';
+console.log(JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: text } }));
+`, async (bin) => {
+			const mounted = await mount((ctx) => elevate.openElevateModal(ctx, "Original objective"), "fullscreen", 80, 24);
+			const modal = mounted.component;
+			const waitForStage = async (stage) => {
+				for (let i = 0; i < 1000 && modal.currentStage !== stage; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+				assert.equal(modal.currentStage, stage, stripVTControlCharacters(modal.render(62).join("\n")));
+			};
+			try {
+				await waitForStage("review");
+				modal.render(62);
+				modal.handleInput(" ");
+				modal.handleInput("\t");
+				modal.handleInput("\r");
+				await waitForStage("failed");
+				modal.handleInput("\r");
+				await waitForStage("ready");
+				const calls = (await readFile(join(bin, "calls.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+				assert.equal(calls.length, 3);
+				assert.match(calls[0], /Find the few expert considerations/);
+				assert.match(calls[1], /Rewrite an assignment/);
+				assert.equal(calls[2], calls[1], "retry changed the rewrite prompt or reran discovery");
+				const approved = JSON.parse(calls[2].split("Approved improvements: ")[1]);
+				assert.deepEqual(approved, [findings[0]], "retry lost approvals or added rejected findings");
+				assert.equal(modal.currentRevised, "Improved objective");
+			} finally { modal.handleInput("\x1b"); await mounted.closed; }
+		});
+	} finally { await rm(settingsModule.settingsFile(), { force: true }); }
 });
 
 // Regression suite for the states that broke in review: dead zones, hidden editing, and the fit-guard

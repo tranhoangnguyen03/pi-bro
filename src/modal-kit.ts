@@ -125,17 +125,6 @@ export class Scroller {
 		this.follow = false;
 	}
 
-	/**
-	 * Scroll the minimum amount needed to bring lines[first..last] into view. Used to keep a list
-	 * cursor, and the text that explains it, on screen: a toggle whose row is invisible is a blind
-	 * action. Call after `view`, which supplies the row count and maximum offset.
-	 */
-	reveal(first: number, last: number): void {
-		if (first < this.offset) this.offset = first;
-		else if (last >= this.offset + this.rows) this.offset = last - this.rows + 1;
-		this.offset = Math.max(0, Math.min(this.offset, this.max));
-	}
-
 	toEnd(): void {
 		this.follow = true;
 	}
