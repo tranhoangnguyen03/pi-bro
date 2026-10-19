@@ -2,6 +2,18 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.25.1] - 2026-10-19
+
+### Highlights
+
+- `bro_advisor` answers faster: it relies on the session snapshot (including tool calls and outputs) first, and only reads files or runs commands when needed.
+- `bro_advisor` no longer automatically restarts failed consultations up to three times with 5s and 10s waits; it runs once and reports any failure immediately.
+
+### Changed
+
+- `buildAdvisorPrompt` and the `bro_advisor` tool description now instruct the advisor to use the captured session snapshot first and inspect the workspace only when something needed is missing or a key claim is in doubt, instead of requiring a fresh workspace investigation before advising.
+- `runAdvisor` (formerly `runAdvisorWithRetries`) runs a single consultation attempt and surfaces any backend failure, timeout, or cancellation immediately without 5-second and 10-second full-restart retries.
+
 ## [0.25.0] - 2026-10-19
 
 ### Highlights

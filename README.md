@@ -62,7 +62,7 @@ File and webpage examples need your own real path or URL; see [how to explain th
 | `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
 | `/bro btw` | **[Side questions](docs/features/btw.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
 | `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Claude or Muse is recommended for untrusted PRs. |
-| `bro_advisor` tool | **[Second opinion](docs/features/advisor.md#bro-advisor).** A tool your agent can call mid-task; a fresh backend process investigates and returns advice to the agent. ⚠️ [Runs with permissions bypassed](#what-leaves-your-machine). |
+| `bro_advisor` tool | **[Second opinion](docs/features/advisor.md#bro-advisor).** A tool your agent can call mid-task; a fresh backend process reviews the session snapshot, can inspect the workspace when needed, and returns advice to the agent. ⚠️ [Runs with permissions bypassed](#what-leaves-your-machine). |
 | `/bro config`, `/bro preferences` | **[Settings](docs/reference/settings.md#settings) and [preferences](docs/user-guide.md#preferences).** Pick the backend, model and effort per feature, and tell Bro how you like answers. |
 
 For help by task, start at the **[docs home](docs/README.md)**; see the [command reference](docs/reference/commands.md) for syntax.

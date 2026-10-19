@@ -24,14 +24,15 @@ presence, and backend compatibility (for Agy, a minimum CLI version with an
   instructions, its active tools, and the conversation so far including tool
   calls and results — and sends it, along with an optional `question` the
   executor may pass, to a **fresh, standalone process of the selected
-  backend** for every consultation. Nothing is resumed or reused across calls,
-  including retries.
-- **Instructed to investigate, not implement**: the advisor process has real
+  backend** for every consultation. Nothing is resumed or reused across calls.
+- **Snapshot first, workspace tools when needed**: the advisor process has real
   tool access in the workspace with permissions auto-approved — there is no
-  enforced read-only isolation. It is instructed to verify claims itself and
-  return advice, leaving edits to the executor, but that boundary is a
-  behavioral prompt instruction rather than an enforced sandbox constraint, so
-  treat its findings as advice to verify, not a guaranteed hands-off review.
+  enforced read-only isolation. It is instructed to rely on the captured
+  snapshot (including its tool calls and results) first, inspect the workspace
+  only when something is missing or a key claim is in doubt, and return advice
+  while leaving edits to the executor. That boundary is a behavioral prompt
+  instruction rather than an enforced sandbox constraint, so treat its findings
+  as advice to verify, not a guaranteed hands-off review.
 - **Steering**: The advisor reads standing priorities from `~/.pi/agent/bro-advisor.md`
   and session-specific priorities from `/bro advisor-steer`.
   `/bro advisor-steer` opens an editor for one session steering brief — e.g. "quick
@@ -47,24 +48,18 @@ presence, and backend compatibility (for Agy, a minimum CLI version with an
   session file (`bro-advisor-steering`) and is restored on resume or reload. Forking a
   session inherits session steering; edits made after the fork are independent of the
   original branch. Clearing session steering leaves durable steering intact.
-- **Retries**: on an invocation failure (not a completed answer — "I need
-  more evidence" is a normal result, not a failure), Bro retries with the
-  identical snapshot, steering, and question: once after 5 seconds, once more
-  after 10 seconds, then returns the backend's own diagnostic — including a
-  context-length error, verbatim — as the failure. Host-imposed deadlines and
-  cancellation are terminal: neither starts another attempt or a backoff wait.
-  The advisor CLI is asked to stop at 10 minutes; Bro's host deadline is 610
-  seconds plus bounded process cleanup. A CLI-reported error before that host
-  deadline remains an invocation failure and can be retried.
-  Cancelling the tool call skips any pending retry wait.
-- **Progress and provenance**: while an attempt is running, Bro shows the last
+- **Single attempt, no automatic retries**: each consultation runs once (the
+  advisor CLI is asked to stop at 10 minutes; Bro's host deadline is 610
+  seconds plus bounded process cleanup). Any backend failure, timeout, or
+  cancellation is returned immediately — including a context-length error,
+  verbatim — without waiting or restarting the consultation from scratch.
+- **Progress and provenance**: while a consultation is running, Bro shows the last
   thing the advisor actually reported — a tool name or a user-facing response
   line, never hidden reasoning — and how long ago it arrived, e.g. `last
   reported: Read src/app.ts (2s ago)`, or "awaiting first activity" before
   anything arrives. Expanding a running consultation shows up to the last 4
-  reported activity lines; each retry starts the trail over. The returned
-  answer starts with backend, model, effort, attempt count, duration,
-  workspace, steering presence, snapshot size, and known omission/compaction
-  notes; the advisor's complete answer follows unchanged.
+  reported activity lines. The returned answer starts with backend, model,
+  effort, duration, workspace, steering presence, snapshot size, and known
+  omission/compaction notes; the advisor's complete answer follows unchanged.
 - **Model/effort**: resolved the same way as explain/show/btw, through
   `/bro config` (shared default or per-capability override).

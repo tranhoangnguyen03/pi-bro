@@ -228,8 +228,7 @@ export type AdvisorActivityCallback = (label: string, timestamp: number) => void
 // Thin wrapper around the shared backend: advisor's stdin/stream-json transport, activity parsing,
 // and process lifecycle now live in backend.ts (see docs/plans/2026-09-19-bro-advisor-design.md,
 // "Transport" for why stdin rather than --print). This function keeps its exact existing
-// signature/throw contract -- it is called directly by tests and by runAdvisorWithRetries below,
-// which owns the 3-attempt retry/backoff policy the backend itself never performs.
+// signature/throw contract -- it is called directly by tests and by runAdvisor below.
 export class TerminalConsultError extends Error {
 	readonly status: "failure" | "cancelled" | "timeout";
 	constructor(status: "failure" | "cancelled" | "timeout", message: string) {
@@ -262,32 +261,6 @@ export async function runAdvisorConsultation(
 	throw new TerminalConsultError(outcome.status, outcome.message);
 }
 
-function advisorDelay(ms: number, signal: AbortSignal, onTick?: (remainingMs: number) => void): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (signal.aborted) {
-			reject(new Error("Canceled."));
-			return;
-		}
-		const startedAt = Date.now();
-		const interval = onTick ? setInterval(() => onTick(Math.max(0, ms - (Date.now() - startedAt))), 1_000) : undefined;
-		interval?.unref();
-		const cleanup = () => {
-			clearTimeout(timer);
-			if (interval) clearInterval(interval);
-			signal.removeEventListener("abort", onAbort);
-		};
-		const onAbort = () => {
-			cleanup();
-			reject(new Error("Canceled."));
-		};
-		const timer = setTimeout(() => {
-			cleanup();
-			resolve();
-		}, ms);
-		signal.addEventListener("abort", onAbort, { once: true });
-	});
-}
-
 export type AdvisorConsult = (
 	prompt: string,
 	selection: BackendSelection,
@@ -296,14 +269,9 @@ export type AdvisorConsult = (
 	killEscalationMs?: number,
 	onActivity?: AdvisorActivityCallback,
 ) => Promise<string>;
-export type AdvisorDelayFn = (ms: number, signal: AbortSignal, onTick?: (remainingMs: number) => void) => Promise<void>;
 export type AdvisorToolDetails = {
-	status: "investigating" | "retrying" | "done";
-	attempt: number;
-	of: number;
+	status: "investigating" | "done";
 	elapsedMs: number;
-	error?: string;
-	retryInMs?: number;
 	backend?: BackendName;
 	model?: string;
 	effort?: string;
@@ -314,136 +282,98 @@ export type AdvisorToolDetails = {
 	snapshotChars?: number;
 	broTruncated?: false;
 	omissions?: string;
-	// Real backend-reported activity for the current attempt only -- reset to empty whenever a new
-	// attempt (including a retry) starts, never carried over from a prior failed attempt.
+	// Real backend-reported activity for this consultation, bounded to the last 4 labels.
 	activity?: string[];
 	lastActivityAt?: number;
 	// Total count of accepted activity events (tool calls AND user-facing text deltas -- "activity"
-	// is the honest label, not "tool calls") observed across the whole consultation, including every
-	// retry attempt. Unlike `activity` above, this never resets on a retry; the final "done" details
-	// carry the same running total.
+	// is the honest label, not "tool calls") observed across the consultation.
 	activityCount?: number;
 };
 export type AdvisorProgressCallback = (details: AdvisorToolDetails) => void;
-export type AdvisorRunResult = { advice: string; attempts: number; durationMs: number; activityCount: number };
+export type AdvisorRunResult = { advice: string; durationMs: number; activityCount: number };
 
 // Bursts of chunked NDJSON activity events are coalesced to this cadence so a fast stream of tool
 // calls/text deltas doesn't flood onProgress; the 1s elapsed-time heartbeat below is unaffected and
 // keeps ticking independently.
 const ADVISOR_ACTIVITY_THROTTLE_MS = 250;
 
-// `consult`/`delayFn` are injectable so tests can swap in a fake process spawn and a fake clock
-// instead of spawning real processes and waiting 15 real seconds. Every attempt sends the
-// identical prompt/selection/cwd to a fresh, standalone backend process — never resumed via
-// --conversation, even across retries.
-export async function runAdvisorWithRetries(
+// `consult` is injectable so tests can swap in a fake process spawn instead of spawning real
+// processes. Every consultation runs once against a fresh, standalone backend process — never
+// resumed via --conversation and never automatically retried.
+export async function runAdvisor(
 	prompt: string,
 	selection: BackendSelection,
 	cwd: string,
 	signal: AbortSignal,
 	consult: AdvisorConsult = runAdvisorConsultation,
-	delayFn: AdvisorDelayFn = advisorDelay,
 	onProgress?: AdvisorProgressCallback,
 	progressIntervalMs = 1_000,
 	activityThrottleMs = ADVISOR_ACTIVITY_THROTTLE_MS,
 ): Promise<AdvisorRunResult> {
-	const delays = [5_000, 10_000];
-	const totalAttempts = delays.length + 1;
+	if (signal.aborted) throw new Error("Canceled.");
 	const startedAt = Date.now();
-	let lastError: unknown;
-	// Cumulative across every attempt in this consultation, including retries -- unlike `activity`
-	// below, a retry must never reset this back to zero.
+	const activity: string[] = [];
 	let totalActivityCount = 0;
-	for (let attempt = 0; attempt <= delays.length; attempt++) {
-		if (signal.aborted) throw new Error("Canceled.");
-		// Fresh per attempt: a retry must never show the previous attempt's activity trail.
-		const activity: string[] = [];
-		let lastActivityAt: number | undefined;
-		let lastActivityEmitAt = 0;
-		let pendingActivityTimer: ReturnType<typeof setTimeout> | undefined;
+	let lastActivityAt: number | undefined;
+	let lastActivityEmitAt = 0;
+	let pendingActivityTimer: ReturnType<typeof setTimeout> | undefined;
 
-		const running = (): AdvisorToolDetails => ({
-			status: "investigating",
-			attempt: attempt + 1,
-			of: totalAttempts,
-			elapsedMs: Date.now() - startedAt,
-			activity: [...activity],
-			lastActivityAt,
-			activityCount: totalActivityCount,
-		});
-		const emitRunning = () => onProgress?.(running());
-		emitRunning();
-		const progressTimer = onProgress ? setInterval(emitRunning, progressIntervalMs) : undefined;
-		progressTimer?.unref();
+	const running = (): AdvisorToolDetails => ({
+		status: "investigating",
+		elapsedMs: Date.now() - startedAt,
+		activity: [...activity],
+		lastActivityAt,
+		activityCount: totalActivityCount,
+	});
+	const emitRunning = () => onProgress?.(running());
+	emitRunning();
+	const progressTimer = onProgress ? setInterval(emitRunning, progressIntervalMs) : undefined;
+	progressTimer?.unref();
 
-		const stopActivityThrottle = () => {
-			if (pendingActivityTimer) {
-				clearTimeout(pendingActivityTimer);
+	const stopActivityThrottle = () => {
+		if (pendingActivityTimer) {
+			clearTimeout(pendingActivityTimer);
+			pendingActivityTimer = undefined;
+		}
+	};
+	const onActivity: AdvisorActivityCallback = (label, timestamp) => {
+		const normalized = label.replace(/\s+/g, " ").trim();
+		if (!normalized) return;
+		activity.push(normalized);
+		if (activity.length > MAX_ADVISOR_ACTIVITY_LINES) activity.splice(0, activity.length - MAX_ADVISOR_ACTIVITY_LINES);
+		totalActivityCount += 1;
+		lastActivityAt = timestamp;
+		if (!onProgress) return;
+		const elapsed = Date.now() - lastActivityEmitAt;
+		if (elapsed >= activityThrottleMs) {
+			lastActivityEmitAt = Date.now();
+			emitRunning();
+			return;
+		}
+		if (!pendingActivityTimer) {
+			pendingActivityTimer = setTimeout(() => {
 				pendingActivityTimer = undefined;
-			}
-		};
-		const onActivity: AdvisorActivityCallback = (label, timestamp) => {
-			const normalized = label.replace(/\s+/g, " ").trim();
-			if (!normalized) return;
-			activity.push(normalized);
-			if (activity.length > MAX_ADVISOR_ACTIVITY_LINES) activity.splice(0, activity.length - MAX_ADVISOR_ACTIVITY_LINES);
-			totalActivityCount += 1;
-			lastActivityAt = timestamp;
-			if (!onProgress) return;
-			const elapsed = Date.now() - lastActivityEmitAt;
-			if (elapsed >= activityThrottleMs) {
 				lastActivityEmitAt = Date.now();
 				emitRunning();
-				return;
-			}
-			if (!pendingActivityTimer) {
-				pendingActivityTimer = setTimeout(() => {
-					pendingActivityTimer = undefined;
-					lastActivityEmitAt = Date.now();
-					emitRunning();
-				}, activityThrottleMs - elapsed);
-				pendingActivityTimer.unref?.();
-			}
-		};
-
-		try {
-			const advice = await consult(prompt, selection, cwd, signal, undefined, onActivity);
-			// `totalActivityCount` is read directly here rather than from the last onProgress snapshot,
-			// which may lag behind by up to `activityThrottleMs` -- the final count must be exact.
-			return { advice, attempts: attempt + 1, durationMs: Date.now() - startedAt, activityCount: totalActivityCount };
-		} catch (error) {
-			if (progressTimer) clearInterval(progressTimer);
-			stopActivityThrottle();
-			if (signal.aborted || errorMessage(error) === "Canceled." ||
-				(error instanceof TerminalConsultError && error.status !== "failure")) throw error;
-			lastError = error;
-			if (attempt === delays.length) break;
-			const delay = delays[attempt]!;
-			const retrying = (remainingMs: number): AdvisorToolDetails => ({
-				status: "retrying",
-				attempt: attempt + 2,
-				of: totalAttempts,
-				elapsedMs: Date.now() - startedAt,
-				error: errorMessage(error),
-				retryInMs: remainingMs,
-				activityCount: totalActivityCount,
-			});
-			onProgress?.(retrying(delay));
-			await delayFn(delay, signal, (remainingMs) => onProgress?.(retrying(remainingMs)));
-		} finally {
-			if (progressTimer) clearInterval(progressTimer);
-			stopActivityThrottle();
+			}, activityThrottleMs - elapsed);
+			pendingActivityTimer.unref?.();
 		}
+	};
+
+	try {
+		const advice = await consult(prompt, selection, cwd, signal, undefined, onActivity);
+		// `totalActivityCount` is read directly here rather than from the last onProgress snapshot,
+		// which may lag behind by up to `activityThrottleMs` -- the final count must be exact.
+		return { advice, durationMs: Date.now() - startedAt, activityCount: totalActivityCount };
+	} finally {
+		if (progressTimer) clearInterval(progressTimer);
+		stopActivityThrottle();
 	}
-	throw lastError;
 }
 
 export function advisorAttemptLabel(details: AdvisorToolDetails): string {
-	if (details.status === "retrying") {
-		return `Bro advisor · retrying in ${Math.ceil((details.retryInMs ?? 0) / 1_000)}s · attempt ${details.attempt}/${details.of}${details.error ? ` — ${details.error}` : ""}`;
-	}
 	if (details.status === "done") {
-		return `Bro advisor · ${details.model ?? "unknown model"} · ${details.attempt} attempt${details.attempt === 1 ? "" : "s"} · ${Math.ceil((details.durationMs ?? details.elapsedMs) / 1_000)}s`;
+		return `Bro advisor · ${details.model ?? "unknown model"} · ${Math.ceil((details.durationMs ?? details.elapsedMs) / 1_000)}s`;
 	}
 	const latest = details.activity?.at(-1);
 	const backendLabel = details.backend === "claude" ? "Claude" : details.backend === "grok" ? "Grok" : details.backend === "codex" ? "Codex" : details.backend === "muse" ? "Muse" : "Agy";
@@ -452,7 +382,7 @@ export function advisorAttemptLabel(details: AdvisorToolDetails): string {
 	const activityLabel = latest
 		? `last reported: ${advisorActivityPreview(latest)} (${Math.max(0, Math.floor((Date.now() - (details.lastActivityAt ?? Date.now())) / 1_000))}s ago)`
 		: `awaiting first activity from ${backendLabel}`;
-	return `Bro advisor · running · ${Math.floor(details.elapsedMs / 1_000)}s · attempt ${details.attempt}/${details.of} · ${activityLabel}`;
+	return `Bro advisor · running · ${Math.floor(details.elapsedMs / 1_000)}s · ${activityLabel}`;
 }
 
 export function registerAdvisorTool(pi: ExtensionAPI): void {
@@ -460,8 +390,8 @@ export function registerAdvisorTool(pi: ExtensionAPI): void {
 		name: ADVISOR_TOOL_NAME,
 		label: "Bro advisor",
 		description:
-			"Consult a fresh, independent process of the configured advisor backend for a second opinion mid-task. It has real, unsandboxed tool access in the current workspace (read files, search, run commands) with permissions auto-approved, and is instructed to investigate before advising and to leave edits to you — that is a behavioral instruction to the advisor, not an enforced restriction, so treat its findings as advice rather than a delegated implementation. No need to prepare a summary or evidence first: Bro automatically captures your system instructions, active tools, and the conversation so far, plus any human-set steering priorities, and sends them to the advisor.",
-		promptSnippet: "Consult a fresh configured-backend process for a second opinion mid-task; it investigates the workspace itself and returns advice",
+			"Consult a fresh, independent process of the configured advisor backend for a second opinion mid-task. It has real, unsandboxed tool access in the current workspace (read files, search, run commands) with permissions auto-approved, and is instructed to use the captured snapshot first, inspect the workspace only when needed, and leave edits to you — that is a behavioral instruction to the advisor, not an enforced restriction, so treat its findings as advice rather than a delegated implementation. No need to prepare a summary or evidence first: Bro automatically captures your system instructions, active tools, and the conversation so far, plus any human-set steering priorities, and sends them to the advisor.",
+		promptSnippet: "Consult a fresh configured-backend process for a second opinion mid-task; it reviews the captured session snapshot, can inspect the workspace when needed, and returns advice",
 		promptGuidelines: [
 			"Use bro_advisor when the user asks for an independent opinion, or when one would likely settle real uncertainty or catch a costly mistake. Routine decisions do not require consultation.",
 			"bro_advisor's question parameter is optional — Bro captures context automatically, so you do not need to prepare a summary or evidence before calling.",
@@ -483,21 +413,20 @@ export function registerAdvisorTool(pi: ExtensionAPI): void {
 			const prompt = buildAdvisorPrompt({ durable: durableSteering, session: state.steering }, snapshot.text, params?.question);
 			const hasDurable = Boolean(durableSteering.trim());
 			const hasSession = Boolean(state.steering.trim());
-			let lastAttempt: AdvisorToolDetails = { status: "investigating", attempt: 1, of: 3, elapsedMs: 0, backend };
+			let lastProgress: AdvisorToolDetails = { status: "investigating", elapsedMs: 0, backend };
 			try {
-				const run = await runAdvisorWithRetries(
+				const run = await runAdvisor(
 					prompt,
 					selection,
 					ctx.cwd,
 					signal ?? new AbortController().signal,
 					undefined,
-					undefined,
 					(details) => {
-						lastAttempt = { ...details, backend };
-						const label = advisorAttemptLabel(lastAttempt);
+						lastProgress = { ...details, backend };
+						const label = advisorAttemptLabel(lastProgress);
 						onUpdate?.({
 							content: [{ type: "text", text: label }],
-							details: lastAttempt,
+							details: lastProgress,
 						});
 						// A host's tool-card renderer may replace onUpdate's partial renderResult with its
 						// own generic placeholder for the whole run (observed with pi-cc-extensions' default
@@ -511,9 +440,8 @@ export function registerAdvisorTool(pi: ExtensionAPI): void {
 				const effort = selection.effort ?? "model default";
 				const omissions = `image/reasoning bodies omitted when present; ${snapshot.hadCompaction ? "Pi compaction summaries replace earlier turns" : "no Pi compaction summary present"}`;
 				const details: AdvisorToolDetails = {
-					...lastAttempt,
+					...lastProgress,
 					status: "done",
-					attempt: run.attempts,
 					backend,
 					model: selection.model,
 					effort,
@@ -524,12 +452,12 @@ export function registerAdvisorTool(pi: ExtensionAPI): void {
 					snapshotChars: snapshot.text.length,
 					broTruncated: false,
 					omissions,
-					// run.activityCount is the exact final total; lastAttempt's may lag behind by up to
+					// run.activityCount is the exact final total; lastProgress's may lag behind by up to
 					// the activity throttle window.
 					activityCount: run.activityCount,
 				};
-				// The backend qualifier appears only off Agy, keeping the Agy header byte-identical.
-				const header = `Bro advisor · ${backend === "agy" ? "" : `backend: ${backend} · `}model: ${selection.model} · effort: ${effort} · ${run.attempts} attempt${run.attempts === 1 ? "" : "s"} · ${Math.ceil(run.durationMs / 1_000)}s`;
+				// The backend qualifier appears only off Agy, keeping the Agy header concise.
+				const header = `Bro advisor · ${backend === "agy" ? "" : `backend: ${backend} · `}model: ${selection.model} · effort: ${effort} · ${Math.ceil(run.durationMs / 1_000)}s`;
 				const steeringSummary = hasDurable && hasSession
 					? "included (durable+session)"
 					: hasDurable
