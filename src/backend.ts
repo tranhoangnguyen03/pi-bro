@@ -8,12 +8,28 @@ import { join } from "node:path";
 // (Agy, Claude Code, Grok, Codex, Muse): it owns CLI selection, process invocation,
 // progress/outcome normalization, continuation, and single-attempt cleanup. Feature code
 // keeps retries, UI, source/session capture and settings.
+// For Guided Review (`feature: "review"`), Claude and Muse enforce strict file-only inspection;
+// Agy, Grok, and Codex run inside their own sandbox with shell available, and the UI owns telling
+// the user via `reviewBackendNotice`.
 
 export type BackendFeature = "explain" | "show" | "btw" | "advisor" | "review";
 export type BackendAccess = "restricted" | "workspace-full";
-export function reviewBackendError(backend: string): string | undefined {
-	if (backend !== "claude" && backend !== "muse") return "Guided Review requires Claude or Muse for file-only inspection. Set the review backend in /bro config; saved reviews remain readable.";
+// Per-backend truth, not one shared sentence: Codex and Grok have a read-only sandbox, Agy's
+// sandbox only restricts terminal commands and still lets it write inside the project. Kept short
+// enough that the whole notice fits the review window's advisory rows on a narrow terminal.
+export function reviewBackendNotice(backend: "agy" | "claude" | "grok" | "codex" | "muse"): string | undefined {
+	if (backend === "claude" || backend === "muse") return undefined;
+	const sandbox = backend === "agy" ? "sandboxed shell (project writes allowed)" : "sandboxed shell in a read-only sandbox";
+	return `Guided Review on ${backend} uses ${sandbox}, not strict file-only inspection. Claude or Muse is recommended for untrusted PRs.`;
 }
+// One default deadline table for every adapter: workspace-full, Guided Review and the advisor get
+// the long bound; btw the middle one; explain/show the short one.
+export const REVIEW_DEADLINE_MS = 610_000;
+export function backendDeadlineMs(feature: BackendFeature, access: BackendAccess): number {
+	if (access === "workspace-full" || feature === "review") return REVIEW_DEADLINE_MS;
+	return feature === "btw" ? 130_000 : 125_000;
+}
+
 export type AgySelection = { model: string; effort?: "low" | "medium" | "high" };
 export const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export const GROK_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
@@ -232,16 +248,17 @@ async function executeArgvPrint(
 	// stdin protocol rather than risking Linux's per-argument byte limit.
 	const stdinPrompt = Buffer.byteLength(request.prompt, "utf8") >= 120_000;
 	const isBtw = request.feature === "btw";
+	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
-	const printTimeout = full ? "10m" : "2m";
-	const action = request.feature === "review" ? "complete the guided review request" : isBtw ? "answer the side question" : "simplify the response";
-	const timeoutVerb = request.feature === "review" ? "during the guided review request" : isBtw ? "during the side conversation" : "while simplifying the response";
-	const emptyTextMessage = request.feature === "review" ? "Agy returned no response for Guided Review." : isBtw ? "Agy returned no answer for the side question." : "Agy returned no final explanation.";
+	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
+	const printTimeout = full || inspect ? "10m" : "2m";
+	const action = inspect ? "complete the guided review request" : isBtw ? "answer the side question" : "simplify the response";
+	const timeoutVerb = inspect ? "during the guided review request" : isBtw ? "during the side conversation" : "while simplifying the response";
+	const emptyTextMessage = inspect ? "Agy returned no response for Guided Review." : isBtw ? "Agy returned no answer for the side question." : "Agy returned no final explanation.";
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 
-	const runDirectory = full ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
+	const runDirectory = full || inspect ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
 	if (signal.aborted) {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 		return { status: "cancelled", message: "Canceled." };
@@ -264,7 +281,7 @@ async function executeArgvPrint(
 				...(stdinPrompt ? ["--input-format", "stream-json"] : ["--print", request.prompt]),
 			],
 			{
-				cwd: full ? request.cwd : runDirectory,
+				cwd: full || inspect ? request.cwd : runDirectory,
 				stdio: [stdinPrompt ? "pipe" : "ignore", "pipe", "pipe"],
 				windowsHide: true,
 				detached: process.platform !== "win32",
@@ -446,7 +463,7 @@ async function executeAdvisorStdin(
 ): Promise<BackendOutcome> {
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 
-	const deadlineMs = deadlineMsOverride ?? 610_000;
+	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
 	const child = spawn(
 		"agy",
 		[
@@ -570,7 +587,7 @@ async function executeClaude(
 	const isBtw = request.feature === "btw";
 	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? (full || inspect ? 610_000 : isBtw ? 130_000 : 125_000);
+	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
 	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
@@ -751,18 +768,21 @@ export const GROK_RESTRICTED_PREFIX =
 	"Bro restricted mode (a request, not a technical restriction): answer only from the context supplied in this prompt. " +
 	"Do not inspect, read, or write workspace files, run commands, or use web or other external tools unless the user explicitly asks you to in this prompt.";
 
-// Grok runs every feature with all capabilities on (--sandbox off, bypassPermissions, no tool
-// blacklist). explain/show run in a fresh mkdtemp scratch cwd removed afterwards (the Agy pattern);
+// Grok runs explain, show, btw, and advisor with all capabilities on (--sandbox off,
+// bypassPermissions, no tool blacklist); Guided Review (`review`) runs in the caller's workspace
+// under Grok's read-only sandbox (--sandbox read-only, --permission-mode dontAsk).
+// explain/show run in a fresh mkdtemp scratch cwd removed afterwards (the Agy pattern);
 // btw (both accesses) runs in the caller's workspace cwd and continues natively with --resume, whose
-// session keeps the cwd it was created in; the advisor runs fresh in the workspace. Restricted
-// requests get GROK_RESTRICTED_PREFIX. The prompt goes through a private 0600 file in its own
-// mkdtemp directory, removed once the attempt ends.
+// session keeps the cwd it was created in; the advisor and review run fresh in the workspace.
+// Restricted requests other than review get GROK_RESTRICTED_PREFIX (review must be allowed to
+// inspect the captured checkout). The prompt goes through a private 0600 file in its own mkdtemp
+// directory, removed once the attempt ends.
 // Only a top-level terminal `result` with success/is_error false/end_turn is authoritative; the
 // first failure (a failed result or a top-level `error` event, even after a success) is latched.
-// Nested (subagent) frames are ignored. The advisor reports activity labels only; explain/show/btw
-// report top-level text_delta progress, falling back to an assistant message's text blocks only when
-// no delta streamed for it. Thinking is never reported. btw requires init/result session ids to
-// agree (and to equal the resumed id) and returns that id as the continuation.
+// Nested (subagent) frames are ignored. The advisor reports activity labels only; explain/show/btw/review
+// report top-level text_delta progress, falling back to an assistant message's text
+// blocks only when no delta streamed for it. Thinking is never reported. btw requires init/result
+// session ids to agree (and to equal the resumed id) and returns that id as the continuation.
 async function executeGrok(
 	request: BackendRequest,
 	selection: { model: string; effort?: string },
@@ -773,11 +793,13 @@ async function executeGrok(
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
-	const deadlineMs = deadlineMsOverride ?? (request.access === "workspace-full" ? 610_000 : isBtw ? 130_000 : 125_000);
-	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
-	const timeoutVerb = request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
-	const emptyTextMessage = request.feature === "review" ? "Grok returned no response for Guided Review." : isAdvisor ? "Grok returned no advice." : isBtw ? "Grok returned no answer for the side question." : "Grok returned no final explanation.";
-	const prompt = request.access === "restricted" ? `${GROK_RESTRICTED_PREFIX}\n\n${request.prompt}` : request.prompt;
+	const inspect = request.feature === "review";
+	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
+	const action = inspect ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
+	const timeoutVerb = inspect ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
+	const emptyTextMessage = inspect ? "Grok returned no response for Guided Review." : isAdvisor ? "Grok returned no advice." : isBtw ? "Grok returned no answer for the side question." : "Grok returned no final explanation.";
+	// Review inspects the captured checkout, so it must not carry the "do not inspect" restriction.
+	const prompt = request.access === "restricted" && !inspect ? `${GROK_RESTRICTED_PREFIX}\n\n${request.prompt}` : request.prompt;
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 	const promptDirectory = await mkdtemp(join(tmpdir(), "pi-bro-grok-"));
@@ -786,16 +808,14 @@ async function executeGrok(
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const promptFile = join(promptDirectory, "prompt.txt");
 		await writeFile(promptFile, prompt, { encoding: "utf8", mode: 0o600 });
-		if (request.access !== "workspace-full" && !isBtw) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+		if (request.access !== "workspace-full" && !isBtw && !inspect) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 
 		const child = spawn(
 			"grok",
 			[
-				"--sandbox",
-				"off",
-				"--permission-mode",
-				"bypassPermissions",
+				// Review never auto-approves: dontAsk denies unpromptable asks instead of bypassing them. Unverified against a local grok CLI; an unsupported flag fails visibly rather than falling back to --sandbox off.
+				...(inspect ? ["--sandbox", "read-only", "--permission-mode", "dontAsk"] : ["--sandbox", "off", "--permission-mode", "bypassPermissions"]),
 				"--output-format",
 				"streaming-messages-json",
 				"--include-partial-messages",
@@ -836,8 +856,14 @@ async function executeGrok(
 			}
 			if (event.parent_tool_use_id !== undefined && event.parent_tool_use_id !== null) return;
 			if (event.type === "system" && event.subtype === "init") {
-				if (event.permissionMode !== "bypassPermissions") {
-					throw new Error("Grok did not apply the required bypassPermissions mode; check Grok policy/configuration.");
+				// Review asks for dontAsk, but `--sandbox read-only` in argv is the real boundary: another
+				// restricting mode is not a downgrade, and only auto-approval means the request was
+				// ignored. Both paths fail closed when the mode is missing, exactly like explain/btw.
+				const escalated = event.permissionMode === "bypassPermissions" || event.permissionMode === "always-approve";
+				if (inspect ? typeof event.permissionMode !== "string" || escalated : event.permissionMode !== "bypassPermissions") {
+					throw new Error(
+						`Grok did not apply the required ${inspect ? "restricted" : "bypassPermissions"} mode; check Grok policy/configuration.`,
+					);
 				}
 				if (typeof event.session_id === "string") initSessionId = event.session_id;
 			}
@@ -1007,14 +1033,15 @@ async function executeCodex(
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
+	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? (full ? 610_000 : isBtw ? 130_000 : 125_000);
-	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
-	const timeoutVerb = request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
-	const emptyTextMessage = request.feature === "review" ? "Codex returned no response for Guided Review." : isAdvisor ? "Codex returned no advice." : isBtw ? "Codex returned no answer for the side question." : "Codex returned no final explanation.";
+	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
+	const action = inspect ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
+	const timeoutVerb = inspect ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
+	const emptyTextMessage = inspect ? "Codex returned no response for Guided Review." : isAdvisor ? "Codex returned no advice." : isBtw ? "Codex returned no answer for the side question." : "Codex returned no final explanation.";
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
-	const runDirectory = full || isBtw ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
+	const runDirectory = full || isBtw || inspect ? undefined : await mkdtemp(join(tmpdir(), "pi-bro-"));
 	if (signal.aborted) {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 		return { status: "cancelled", message: "Canceled." };
@@ -1180,7 +1207,7 @@ async function executeMuse(
 	const isBtw = request.feature === "btw";
 	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? (full || inspect ? 610_000 : isBtw ? 130_000 : 125_000);
+	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
 	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
 	const timeoutVerb = request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
 	const emptyTextMessage = request.feature === "review" ? "Muse returned no response for Guided Review." : isAdvisor ? "Muse returned no advice." : isBtw ? "Muse returned no answer for the side question." : "Muse returned no final explanation.";
@@ -1369,10 +1396,6 @@ export async function execute(
 		(request.feature !== "btw" && request.continuation)
 	) return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 	const backend = (selection as { backend?: unknown }).backend;
-	if (request.feature === "review") {
-		const error = reviewBackendError(String(backend ?? "agy"));
-		if (error) return { status: "failure", message: error };
-	}
 	// An explicit tag guard: a stale or corrupt runtime tag must fail, never fall through to Agy.
 	if (backend !== undefined && backend !== "agy" && backend !== "claude" && backend !== "grok" && backend !== "codex" && backend !== "muse") {
 		return { status: "failure", message: `Unknown backend ${JSON.stringify(backend)}: pick Agy, Claude, Grok, Codex or Muse in \`/bro config\`.` };

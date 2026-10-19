@@ -12,19 +12,145 @@ import {
 	type BackendProgress,
 	type BackendRequest,
 	MAX_STDOUT_LINE_CHARS,
+	REVIEW_DEADLINE_MS,
 	agySelection,
+	backendDeadlineMs,
 	beginAttempt,
 	execute,
 	frameStdoutLines,
+	reviewBackendNotice,
 } from "../src/backend.ts";
 
 const withFakeAgy = (script: string, run: (binDir: string) => Promise<void>) => withFakeExecutable("agy", script, run);
 
-test('review inspection fails closed on command-capable adapters', async () => {
- for (const backend of ['agy', 'grok', 'codex'] as const) {
-  const result = await execute({feature:'review',access:'restricted',cwd:process.cwd(),prompt:'inspect'}, {backend,model:'test'}, new AbortController().signal);
-  assert.equal(result.status,'failure');assert.match(result.message,/Claude or Muse/);
- }
+test("review backend notice recommends file-only inspection only for shell-capable sandboxes", () => {
+	assert.equal(reviewBackendNotice("claude"), undefined);
+	assert.equal(reviewBackendNotice("muse"), undefined);
+	for (const backend of ["agy", "grok", "codex"] as const) {
+		const notice = reviewBackendNotice(backend)!;
+		assert.ok(notice.trim(), backend);
+		assert.match(notice, /sandboxed shell/);
+		assert.match(notice, /not strict file-only inspection/);
+		assert.match(notice, /Claude or Muse is recommended for untrusted PRs/);
+		assert.doesNotMatch(notice, /[\x00-\x1f\x7f]/);
+	}
+	// Agy's sandbox only restricts terminal commands; it must not be sold as read-only.
+	assert.match(reviewBackendNotice("agy")!, /project writes allowed/);
+	assert.doesNotMatch(reviewBackendNotice("agy")!, /read-only sandbox/);
+	for (const backend of ["codex", "grok"] as const)
+		assert.match(reviewBackendNotice(backend)!, /read-only sandbox/);
+});
+
+test("review and advisor get the 610-second deadline; explain/show stay short", () => {
+	assert.equal(REVIEW_DEADLINE_MS, 610_000);
+	// Review must get the long bound for every backend, and no other feature may drift.
+	for (const feature of ["review"] as const) assert.equal(backendDeadlineMs(feature, "restricted"), 610_000);
+	for (const feature of ["explain", "show"] as const) {
+		assert.equal(backendDeadlineMs(feature, "restricted"), 125_000, feature);
+		assert.equal(backendDeadlineMs(feature, "workspace-full"), 610_000, feature);
+	}
+	assert.equal(backendDeadlineMs("btw", "restricted"), 130_000);
+	assert.equal(backendDeadlineMs("btw", "workspace-full"), 610_000);
+	assert.equal(backendDeadlineMs("advisor", "workspace-full"), 610_000);
+});
+
+test("every adapter derives its deadline from backendDeadlineMs, never a local literal", async () => {
+	// A single literal in one adapter was the original defect; the helper now owns the table. A
+	// source check is the cheap guard a 610-second process test cannot be.
+	const source = await readFile(new URL("../src/backend.ts", import.meta.url), "utf8");
+	const body = source.slice(source.indexOf("export function backendDeadlineMs"));
+	assert.equal(body.slice(0, body.indexOf("\n}")).includes("REVIEW_DEADLINE_MS"), true, "the helper owns the 610s value");
+	assert.equal(
+		(source.match(/610_000/g) ?? []).length,
+		1,
+		"610_000 may appear only once, in REVIEW_DEADLINE_MS (no adapter literal)",
+	);
+	// Every adapter routes through the helper; a new adapter that forgets to is caught here.
+	assert.equal((source.match(/deadlineMsOverride \?\? backendDeadlineMs\(/g) ?? []).length, 6);
+});
+
+test("grok review fails closed when its permission mode is missing or auto-approving", async () => {
+	// A restricting mode other than dontAsk is fine (the sandbox is the boundary), but an
+	// auto-approving mode, or no reported mode at all, means the requested restriction was ignored.
+	const cases: Array<{ name: string; init: string; ok: boolean }> = [
+		{ name: "dontAsk", init: `{type:'system',subtype:'init',permissionMode:'dontAsk',session_id:'s1'}`, ok: true },
+		{ name: "plan", init: `{type:'system',subtype:'init',permissionMode:'plan',session_id:'s1'}`, ok: true },
+		{ name: "missing", init: `{type:'system',subtype:'init',session_id:'s1'}`, ok: false },
+		{ name: "null", init: `{type:'system',subtype:'init',permissionMode:null,session_id:'s1'}`, ok: false },
+		{ name: "bypassPermissions", init: `{type:'system',subtype:'init',permissionMode:'bypassPermissions',session_id:'s1'}`, ok: false },
+		{ name: "always-approve", init: `{type:'system',subtype:'init',permissionMode:'always-approve',session_id:'s1'}`, ok: false },
+	];
+	for (const { name, init, ok } of cases) {
+		await withFakeExecutable(
+			"grok",
+			`#!/usr/bin/env node
+console.log(JSON.stringify(${init}));
+console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,stop_reason:'end_turn',result:'reviewed',session_id:'s1'}));
+`,
+			async (bin) => {
+				const outcome = await execute(
+					{ feature: "review", access: "restricted", cwd: bin, prompt: "inspect" },
+					{ backend: "grok", model: "test" },
+					new AbortController().signal,
+				);
+				assert.equal(outcome.status, ok ? "success" : "failure", `${name}: ${JSON.stringify(outcome)}`);
+				if (!ok) assert.match((outcome as { message: string }).message, /Grok did not apply the required restricted mode/);
+			},
+		);
+	}
+});
+
+test("review runs shell-capable backends in their sandbox in the captured checkout", async () => {
+	const forbidden = [
+		"--dangerously-skip-permissions",
+		"--dangerously-bypass-approvals-and-sandbox",
+		"--yolo",
+		"--permission-mode bypassPermissions",
+		"--disable-sandbox",
+	];
+	for (const backend of ["agy", "grok", "codex"] as const)
+		await withFakeExecutable(
+			backend,
+			`#!/usr/bin/env node
+const fs=require('node:fs');const args=process.argv.slice(2);
+fs.writeFileSync(process.env.BIN_DIR+'/argv.json',JSON.stringify(args));
+fs.writeFileSync(process.env.BIN_DIR+'/pwd.txt',process.cwd());
+const pair=(flag)=>args.includes(flag)?args[args.indexOf(flag)+1]:undefined;
+if(args.some(x=>${JSON.stringify(forbidden)}.includes(x)))process.exit(9);
+if(${JSON.stringify(backend)}==='agy'){
+ if(!args.includes('--sandbox')||args.includes('--dangerously-skip-permissions'))process.exit(9);
+ if(pair('--print-timeout')!=='10m')process.exit(9);
+ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:process.cwd()}}));
+}else if(${JSON.stringify(backend)}==='grok'){
+ if(pair('--sandbox')!=='read-only'||pair('--permission-mode')!=='dontAsk')process.exit(9);
+ const file=pair('--prompt-file');if(file)fs.copyFileSync(file,process.env.BIN_DIR+'/prompt.txt');
+ console.log(JSON.stringify({type:'system',subtype:'init',permissionMode:'dontAsk',session_id:'s1'}));
+ console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,stop_reason:'end_turn',result:process.cwd(),session_id:'s1'}));
+}else{
+ if(pair('--sandbox')!=='read-only'||!args.includes('--ephemeral'))process.exit(9);
+ console.log(JSON.stringify({type:'thread.started',thread_id:'t1'}));
+ console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:process.cwd()}}));
+ console.log(JSON.stringify({type:'turn.completed'}));
+}
+`,
+			async (bin) => {
+				const result = await execute(
+					{ feature: "review", access: "restricted", cwd: bin, prompt: "inspect" },
+					{ backend, model: "test" },
+					new AbortController().signal,
+				);
+				assert.equal(result.status, "success", `${backend}: ${JSON.stringify(result)}`);
+				assert.equal(result.status === "success" ? await realpath(result.text) : undefined, await realpath(bin));
+				assert.equal(result.status === "success" ? result.continuation : "missing", undefined);
+				const promptFile = join(bin, "prompt.txt");
+				if (backend === "grok") {
+					// Review must be allowed to inspect: no "do not inspect the workspace" prefix.
+					assert.doesNotMatch(await readFile(promptFile, "utf8"), /Do not inspect, read, or write workspace files/);
+				}
+				const argv = JSON.parse(await readFile(join(bin, "argv.json"), "utf8")) as string[];
+				assert.doesNotMatch(argv.join(" "), /--dangerously|--yolo|--disable-sandbox|bypassPermissions|--sandbox off/);
+			},
+		);
 });
 
 test('review exposes only confined inspection tools and retains captured cwd', async () => {

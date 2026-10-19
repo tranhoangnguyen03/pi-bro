@@ -8,8 +8,8 @@ import {
 	type ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
-import { execute, reviewBackendError } from "./backend.ts";
-import { readSettings, selectionForCapability } from "./settings.ts";
+import { execute, reviewBackendNotice } from "./backend.ts";
+import { capabilityBackend, readSettings, selectionForCapability } from "./settings.ts";
 import {
 	replaceGuide,
 	guideEvidence,
@@ -23,7 +23,7 @@ import {
 } from "./review.ts";
 import { captureReview, readEvidence, resolveReviewTarget } from "./review-source.ts";
 import { REVIEW_OVERLAY, ReviewModal, newReviewView, safeReviewText } from "./review-modal.ts";
-import { modalHeight, openBroOverlay, renderFrame } from "./modal-kit.ts";
+import { formatNotice, modalHeight, openBroOverlay, renderFrame } from "./modal-kit.ts";
 import { consumeWheel } from "./ui-capabilities.ts";
 
 export const REVIEW_ACQUIRE_OVERLAY = {
@@ -80,6 +80,7 @@ export async function openGuidedReview(
 			(tui, theme, _keys, done) => {
 				let controller = new AbortController();
 				let message = "Resolving PR identity…";
+				let advisory: string | undefined;
 				let failed = false;
 				let retryable = true;
 				let startedAt = Date.now();
@@ -97,11 +98,15 @@ export async function openGuidedReview(
 				const acquire = async () => {
 					failed = false;
 					retryable = true;
+					advisory = undefined;
 					startedAt = Date.now();
 					controller = new AbortController();
 					message = "Resolving PR identity…";
 					tui.requestRender();
 					try {
+						// Resolved before PR identity: the advisory is about the backend that will run the
+						// review, so it belongs on a resolution failure too, not only a capture failure.
+						advisory = reviewBackendNotice(capabilityBackend(await readSettings(), "review"));
 						const target = await resolveReviewTarget(value, ctx.cwd, controller.signal);
 						if (disposed) return;
 						const id = reviewKey(target);
@@ -126,12 +131,6 @@ export async function openGuidedReview(
 							release();
 							if (!disposed) done(existing);
 							return;
-						}
-						const selection = selectionForCapability(await readSettings(), "review");
-						const backendError = reviewBackendError(selection.backend ?? "agy");
-						if (backendError) {
-							retryable = false;
-							throw Error(backendError);
 						}
 						message = `${target.repository} #${target.number} · ${target.head.slice(0, 8)}\nFetching captured source…`;
 						tui.requestRender();
@@ -165,6 +164,8 @@ export async function openGuidedReview(
 								wrapTextWithAnsi(safeReviewText(message), innerWidth).map((line) =>
 									failed ? theme.fg("error", line) : theme.fg("dim", line),
 								),
+							// An advisory is information, not a failure: keep it visible even when the fetch fails.
+							notice: advisory ? formatNotice(theme, advisory, "warning") : undefined,
 							hints,
 							fill: false,
 							minBody: 1,
@@ -303,7 +304,9 @@ export async function openGuidedReview(
 						await persist();
 						const settings = await readSettings();
 						const selection = selectionForCapability(settings, "review");
-						panel.notice = `${question ? "Answering" : regenerate ? "Regenerating guide" : "Preparing guide"} · ${selection.backend ?? "agy"}`;
+						const backend = capabilityBackend(settings, "review");
+						panel.advisory = reviewBackendNotice(backend) ?? "";
+						panel.notice = `${question ? "Answering" : regenerate ? "Regenerating guide" : "Preparing guide"} · ${backend}`;
 						panel.stage = {
 							step: "investigate",
 							detail: question ? "Considering your question" : "Inspecting captured changes",
@@ -468,6 +471,14 @@ export async function openGuidedReview(
 					changed,
 				});
 				void hydrateEvidence();
+				// Also on reopen: the advisory is about the selected backend, not about a new turn.
+				void readSettings().then(
+					(settings) => {
+						panel.advisory = reviewBackendNotice(capabilityBackend(settings, "review")) ?? "";
+						if (!closed) tui.requestRender();
+					},
+					() => {},
+				);
 				if (fresh)
 					queueMicrotask(() => {
 						if (!closed && !closing) running = run("whole review");
