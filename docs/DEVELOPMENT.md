@@ -14,7 +14,7 @@ Production code lives in `src/` and is published as TypeScript source (no build 
 - **`bro.ts`** — the Pi extension entry point, `/bro` command routing and completion, session lifecycle wiring, and barrel re-exports.
 - **`doctor.ts`** — `/bro doctor` diagnostics, CLI version/auth probes, Agy model catalog/usage parsing, and `/bro config` modal launch wiring.
 - **`show.ts`** — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.
-- **`advisor.ts`** — the `bro_advisor` tool registration, context snapshot builder, session/durable steering state, and retry/progress orchestration.
+- **`advisor.ts`** — the `bro_advisor` tool registration, context snapshot builder, session/durable steering state, and progress orchestration.
 - **`btw.ts`** — the `/bro btw` side conversation thread state, native continuation/reseed policy, composer command parsing, and `BtwModal`.
 - **`elevate-engine.ts`** — independent discovery and rewrite prompts, strict discovery JSON parser, user selection and scope guards.
 - **`elevate.ts`** — `/bro elevate` UI, draft capture, context filtering, backend calls, cancellation and guarded editor insertion.
@@ -120,8 +120,8 @@ acquisition uses `renderFrame` with `REVIEW_ACQUIRE_OVERLAY` (centered 70% width
   backend's own error.
 - Describe access truthfully per backend. A prompt instruction (Grok) is not
   enforcement, and the advisor's "advise, don't edit" is behavioral.
-- Cancellation or a host deadline never produces a late success or a retry.
-  CLI-reported errors remain retryable invocation failures; they are not inferred
+- Cancellation or a host deadline never produces a late success.
+  CLI-reported errors remain invocation failures; they are not inferred
   to be host timeouts by matching diagnostic text.
 - Explain modes and Show are separate. `bro-preferences.md` is added to the
   explain, Show, BTW, and review prompts as a JSON-quoted section and never to the

@@ -36,7 +36,7 @@ const {
 	buildAdvisorSnapshot,
 	advisorAgyCompatible,
 	runAdvisorConsultation,
-	runAdvisorWithRetries,
+	runAdvisor,
 	TerminalConsultError,
 	captureShowTranscript,
 	extractDocumentText,
@@ -1209,60 +1209,31 @@ await t.test("advisorFlagErrorHint: an old agy CLI rejects --input-format with G
 
 });
 
-// runAdvisorWithRetries: retry/backoff sequencing with an injectable clock and consult function --
-// no real 15-second wait, no real process. Every attempt (including retries) is a fresh, standalone
-// call -- the wrapper never resumes a prior consultation.
-await t.test("Succeeds immediately: no retry, no delay.", async (t) => {
-	// Succeeds immediately: no retry, no delay.
+// runAdvisor: single-attempt consultation with an injectable consult function -- no automatic
+// retries, no real process.
+await t.test("Succeeds in one attempt.", async (t) => {
 	let calls = 0;
-	const result = await runAdvisorWithRetries(
+	const result = await runAdvisor(
 		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
 		async () => { calls += 1; return "immediate advice"; },
-		async () => { throw new Error("delayFn must not be called when the first attempt succeeds"); },
 	);
 	assert.equal(result.advice, "immediate advice");
-	assert.equal(result.attempts, 1);
 	assert.equal(calls, 1);
-
 });
-await t.test("Fails once, then succeeds on the second attempt after a 5s backoff. onAttempt fires before", async (t) => {
-	// Fails once, then succeeds on the second attempt after a 5s backoff. onAttempt fires before
-	// EVERY attempt including the first (so a caller can show "investigating…" immediately, not
-	// just on retries), and carries the previous attempt's real error reason from attempt 2 on.
+await t.test("Fails immediately without retrying and rethrows the backend diagnostic verbatim", async (t) => {
 	let calls = 0;
-	const delays = [];
 	const progress = [];
-	const result = await runAdvisorWithRetries(
-		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
-		async () => { calls += 1; if (calls === 1) throw new Error("agy failed with status ERROR: transient"); return "advice after retry"; },
-		async (ms, _signal, onTick) => { delays.push(ms); onTick?.(ms); },
-		(details) => { progress.push(details); },
-		10,
-	);
-	assert.equal(result.advice, "advice after retry");
-	assert.equal(result.attempts, 2);
-	assert.equal(calls, 2);
-	assert.deepEqual(delays, [5000]);
-	assert.ok(progress.some((item) => item.status === "retrying" && item.retryInMs === 5000 && /transient/.test(item.error)));
-	assert.equal(progress.at(-1).attempt, 2);
-
-});
-await t.test("Fails all three attempts: waits 5s then 10s, then rethrows the LAST attempt's diagnostic", async (t) => {
-	// Fails all three attempts: waits 5s then 10s, then rethrows the LAST attempt's diagnostic
-	// verbatim -- Agy's own error text, not a reworded/generic one.
-	let calls = 0;
-	const delays = [];
 	await assert.rejects(
-		runAdvisorWithRetries(
+		runAdvisor(
 			"prompt", { model: "m" }, "/cwd", new AbortController().signal,
 			async () => { calls += 1; throw new Error(`attempt ${calls} failed: agy context length exceeded`); },
-			async (ms) => { delays.push(ms); },
+			(details) => { progress.push(details); },
+			10,
 		),
-		/attempt 3 failed: agy context length exceeded/,
+		/attempt 1 failed: agy context length exceeded/,
 	);
-	assert.equal(calls, 3);
-	assert.deepEqual(delays, [5000, 10000]);
-
+	assert.equal(calls, 1, "failures are never retried");
+	assert.ok(progress.every((item) => item.status === "investigating"), "never enters a retrying state");
 });
 await t.test("An already-cancelled signal never attempts a consultation at all.", async (t) => {
 	// An already-cancelled signal never attempts a consultation at all.
@@ -1270,79 +1241,44 @@ await t.test("An already-cancelled signal never attempts a consultation at all."
 	controller.abort();
 	let calls = 0;
 	await assert.rejects(
-		runAdvisorWithRetries("prompt", { model: "m" }, "/cwd", controller.signal, async () => { calls += 1; return "x"; }, async () => {}),
+		runAdvisor("prompt", { model: "m" }, "/cwd", controller.signal, async () => { calls += 1; return "x"; }),
 		/Canceled\./,
 	);
 	assert.equal(calls, 0);
-
 });
-await t.test("Cancellation during the backoff wait propagates immediately -- it is not swallowed and", async (t) => {
-	// Cancellation during the backoff wait propagates immediately -- it is not swallowed and
-	// retried again as if it were an ordinary failure.
+await t.test("#72: a host deadline is TERMINAL and its diagnostic and status survive verbatim", async (t) => {
 	let calls = 0;
-	await assert.rejects(
-		runAdvisorWithRetries(
-			"prompt", { model: "m" }, "/cwd", new AbortController().signal,
-			async () => { calls += 1; throw new Error("agy transient failure"); },
-			async (ms) => { assert.equal(ms, 5000, "cancellation happens during the first backoff wait"); throw new Error("Canceled."); },
-		),
-		/Canceled\./,
-	);
-	assert.equal(calls, 1, "cancellation during the backoff wait stops further attempts");
-
-});
-await t.test("#72: a host deadline is TERMINAL, exactly like cancellation -- it must not be retried with", async (t) => {
-	// #72: a host deadline is TERMINAL, exactly like cancellation -- it must not be retried with
-	// 5s/10s backoffs, and its diagnostic must survive the wrapper's classification verbatim.
-	// Only ordinary invocation failures keep the retry policy.
-	let calls = 0;
-	const delays = [];
 	let caught;
 	try {
-		await runAdvisorWithRetries(
+		await runAdvisor(
 			"prompt", { model: "m" }, "/cwd", new AbortController().signal,
 			async () => { calls += 1; throw new TerminalConsultError("timeout", "Agy timed out during the advisor consultation. Run `/bro doctor` for setup help."); },
-			async (ms) => { delays.push(ms); },
 		);
 	} catch (error) { caught = error; }
 	assert.match(caught?.message ?? "", /timed out during the advisor consultation/, "the timeout diagnostic survives the wrapper");
 	assert.equal(caught?.status, "timeout", "the stop cause survives the wrapper");
-	assert.equal(calls, 1, "a deadline is terminal: exactly one attempt, no retry");
-	assert.deepEqual(delays, [], "a deadline must not schedule any backoff wait");
-
+	assert.equal(calls, 1, "a deadline runs once with no retry");
 });
-await t.test("A cancelled outcome is terminal too -- and a plain failure in the same wrapper still retries,", async (t) => {
-	// A cancelled outcome is terminal too -- and a plain failure in the same wrapper still retries,
-	// proving the policy distinguishes the stop cause rather than disabling retries wholesale.
+await t.test("A cancelled outcome and a failure outcome both stop after one attempt", async (t) => {
 	let calls = 0;
-	const delays = [];
 	await assert.rejects(
-		runAdvisorWithRetries(
+		runAdvisor(
 			"prompt", { model: "m" }, "/cwd", new AbortController().signal,
 			async () => { calls += 1; throw new TerminalConsultError("cancelled", "Canceled."); },
-			async (ms) => { delays.push(ms); },
 		),
 		/Canceled\./,
 	);
 	assert.equal(calls, 1, "a cancelled outcome is terminal");
-	assert.deepEqual(delays, []);
 
-});
-await t.test("Retryable failures retain both backoff intervals", async (t) => {
-	let calls = 0;
-	const delays = [];
-	const result = await runAdvisorWithRetries(
-		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
-		async () => {
-			calls += 1;
-			if (calls < 3) throw new TerminalConsultError("failure", `attempt ${calls} failed`);
-			return "advice after two retries";
-		},
-		async (ms) => { delays.push(ms); },
+	let failCalls = 0;
+	await assert.rejects(
+		runAdvisor(
+			"prompt", { model: "m" }, "/cwd", new AbortController().signal,
+			async () => { failCalls += 1; throw new TerminalConsultError("failure", "backend failed"); },
+		),
+		/backend failed/,
 	);
-	assert.equal(result.attempts, 3);
-	assert.deepEqual(delays, [5000, 10000], "non-terminal failures keep the documented backoff");
-
+	assert.equal(failCalls, 1, "an invocation failure also stops after one attempt");
 });
 await t.test("Running progress timers stop after cancellation; no stale updates leak into a later UI.", async (t) => {
 	// Running progress timers stop after cancellation; no stale updates leak into a later UI.
@@ -1350,12 +1286,11 @@ await t.test("Running progress timers stop after cancellation; no stale updates 
 	const progress = [];
 	setTimeout(() => controller.abort(), 25);
 	await assert.rejects(
-		runAdvisorWithRetries(
+		runAdvisor(
 			"prompt", { model: "m" }, "/cwd", controller.signal,
 			async (_prompt, _selection, _cwd, signal) => new Promise((_resolve, reject) => {
 				signal.addEventListener("abort", () => reject(new Error("Canceled.")), { once: true });
 			}),
-			async () => {},
 			(details) => progress.push(details),
 			5,
 		),
@@ -1364,23 +1299,21 @@ await t.test("Running progress timers stop after cancellation; no stale updates 
 	const updatesAfterCancel = progress.length;
 	await new Promise((resolve) => setTimeout(resolve, 25));
 	assert.equal(progress.length, updatesAfterCancel, "progress interval is cleared on cancellation");
-
 });
 
-// Real advisor activity: runAdvisorWithRetries threads the onActivity callback consult() is given
+// Real advisor activity: runAdvisor threads the onActivity callback consult() is given
 // into bounded, timestamped progress -- independent of the 1s elapsed-time heartbeat.
 await t.test("Chunked activity reaches onProgress while the attempt is still running (before the terminal", async (t) => {
 	// Chunked activity reaches onProgress while the attempt is still running (before the terminal
 	// advice is returned), normalized, and bounded to the last 4 labels.
 	const progress = [];
 	const labels = ["Read file.ts", "Bash ls -la", "  multi   space  label ", "Search TODO", "Grep foo", "Write bar.ts"];
-	const result = await runAdvisorWithRetries(
+	const result = await runAdvisor(
 		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
 		async (_prompt, _selection, _cwd, _signal, _killEscalationMs, onActivity) => {
 			for (const label of labels) onActivity(label, Date.now());
 			return "final advice";
 		},
-		async () => { throw new Error("delayFn must not be called on immediate success"); },
 		(details) => { progress.push(details); },
 		100_000,
 		0,
@@ -1396,49 +1329,17 @@ await t.test("Chunked activity reaches onProgress while the attempt is still run
 		"activity is bounded to the last 4 labels and whitespace-normalized",
 	);
 	assert.ok(typeof withActivity.at(-1).lastActivityAt === "number" && withActivity.at(-1).lastActivityAt > 0);
-
-});
-await t.test("A retry must never show the previous, failed attempt's activity trail.", async (t) => {
-	// A retry must never show the previous, failed attempt's activity trail.
-	const progress = [];
-	let attempt = 0;
-	const result = await runAdvisorWithRetries(
-		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
-		async (_prompt, _selection, _cwd, _signal, _killEscalationMs, onActivity) => {
-			attempt += 1;
-			if (attempt === 1) {
-				onActivity("stale tool from failed attempt", Date.now());
-				throw new Error("agy failed with status ERROR: transient");
-			}
-			return "advice after retry";
-		},
-		async (ms, _signal, onTick) => { onTick?.(ms); },
-		(details) => { progress.push(details); },
-		100_000,
-		0,
-	);
-	assert.equal(result.attempts, 2);
-	const secondAttemptStart = progress.find((item) => item.status === "investigating" && item.attempt === 2);
-	assert.ok(secondAttemptStart, "the second attempt emits its own initial investigating progress");
-	assert.deepEqual(secondAttemptStart.activity, [], "a retry starts with an empty activity trail");
-	assert.equal(secondAttemptStart.lastActivityAt, undefined, "a retry starts with no lastActivityAt");
-	assert.ok(
-		!progress.some((item) => item.attempt === 2 && item.activity?.includes("stale tool from failed attempt")),
-		"the failed attempt's activity never leaks into the retry",
-	);
-
 });
 await t.test("The 1s-class elapsed-time heartbeat re-emits the same progress snapshot on its own cadence without bumping lastActivityAt or activityCount", async (t) => {
 	t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"], now: 10_000 });
 	const progress = [];
 	const pending = deferred();
-	const running = runAdvisorWithRetries(
+	const running = runAdvisor(
 		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
 		async (_prompt, _selection, _cwd, _signal, _killEscalationMs, onActivity) => {
 			onActivity("Read file.ts", 10_000);
 			return pending.promise;
 		},
-		async () => {},
 		(details) => { progress.push(details); },
 		10,
 		0,
@@ -1464,14 +1365,13 @@ await t.test("A burst of activity events is coalesced to the throttle window ins
 	// A burst of activity events is coalesced to the throttle window instead of one onProgress
 	// call per event, while still carrying the full, up-to-date bounded trail once it fires.
 	const progress = [];
-	const result = await runAdvisorWithRetries(
+	const result = await runAdvisor(
 		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
 		async (_prompt, _selection, _cwd, _signal, _killEscalationMs, onActivity) => {
 			for (let i = 0; i < 5; i++) onActivity(`tool-${i}`, Date.now());
 			await new Promise((resolve) => setTimeout(resolve, 80));
 			return "done";
 		},
-		async () => {},
 		(details) => { progress.push(details); },
 		100_000,
 		50,
@@ -1480,7 +1380,6 @@ await t.test("A burst of activity events is coalesced to the throttle window ins
 	const withActivity = progress.filter((item) => item.status === "investigating" && item.activity?.length);
 	assert.ok(withActivity.length < 5, `a 5-event burst must be throttled, not emitted once per event (got ${withActivity.length} updates)`);
 	assert.deepEqual(withActivity.at(-1).activity, ["tool-1", "tool-2", "tool-3", "tool-4"], "the throttled emission still carries the latest bounded trail");
-
 });
 await t.test("A pending throttled activity emission must not fire after the run is cancelled -- no stale", async (t) => {
 	// A pending throttled activity emission must not fire after the run is cancelled -- no stale
@@ -1488,7 +1387,7 @@ await t.test("A pending throttled activity emission must not fire after the run 
 	t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"], now: 10_000 });
 	const controller = new AbortController();
 	const progress = [];
-	const running = runAdvisorWithRetries(
+	const running = runAdvisor(
 		"prompt", { model: "m" }, "/cwd", controller.signal,
 		async (_prompt, _selection, _cwd, signal, _killEscalationMs, onActivity) => {
 			onActivity("immediate tool", Date.now());
@@ -1497,7 +1396,7 @@ await t.test("A pending throttled activity emission must not fire after the run 
 				signal.addEventListener("abort", () => reject(new Error("Canceled.")), { once: true });
 			});
 		},
-		async () => {}, (details) => progress.push(details), 100_000, 5_000,
+		(details) => progress.push(details), 100_000, 5_000,
 	);
 	assert.deepEqual(progress.at(-1).activity, ["immediate tool"], "second emission is pending");
 	controller.abort();
@@ -1505,22 +1404,20 @@ await t.test("A pending throttled activity emission must not fire after the run 
 	const updatesAfterCancel = progress.length;
 	t.mock.timers.tick(5_001);
 	assert.equal(progress.length, updatesAfterCancel, "pending emission cleared after its actual deadline");
-
 });
 
 // activityCount: the total number of accepted activity events (tool calls AND user-facing text
 // deltas -- honestly labeled "activity", not "tool calls" or "steps") observed for the whole
-// consultation, independent of the bounded, per-attempt `activity` tail.
+// consultation, independent of the bounded `activity` tail.
 await t.test("More than 4 events: the tail stays bounded to the last 4, but the count reflects all of them.", async (t) => {
 	// More than 4 events: the tail stays bounded to the last 4, but the count reflects all of them.
 	const progress = [];
-	const result = await runAdvisorWithRetries(
+	const result = await runAdvisor(
 		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
 		async (_prompt, _selection, _cwd, _signal, _killEscalationMs, onActivity) => {
 			for (let i = 0; i < 6; i++) onActivity(`tool-${i}`, Date.now());
 			return "final advice";
 		},
-		async () => { throw new Error("delayFn must not be called on immediate success"); },
 		(details) => { progress.push(details); },
 		100_000,
 		0,
@@ -1529,55 +1426,21 @@ await t.test("More than 4 events: the tail stays bounded to the last 4, but the 
 	assert.deepEqual(withActivity.at(-1).activity, ["tool-2", "tool-3", "tool-4", "tool-5"], "the tail stays bounded to the last 4 labels");
 	assert.equal(withActivity.at(-1).activityCount, 6, "the count reflects all 6 accepted events, not just the bounded tail");
 	assert.equal(result.activityCount, 6, "the final AdvisorRunResult carries the exact total, not a throttled snapshot");
-
-});
-
-await t.test("A retry resets the per-attempt tail but must never reset the cumulative total -- the user asks", async (t) => {
-	// A retry resets the per-attempt tail but must never reset the cumulative total -- the user asks
-	// for the total across the whole consultation process, not just the surviving attempt.
-	const progress = [];
-	let attempt = 0;
-	const result = await runAdvisorWithRetries(
-		"prompt", { model: "m" }, "/cwd", new AbortController().signal,
-		async (_prompt, _selection, _cwd, _signal, _killEscalationMs, onActivity) => {
-			attempt += 1;
-			if (attempt === 1) {
-				onActivity("stale tool from failed attempt", Date.now());
-				onActivity("another stale tool", Date.now());
-				throw new Error("agy failed with status ERROR: transient");
-			}
-			onActivity("tool from retry", Date.now());
-			return "advice after retry";
-		},
-		async (ms, _signal, onTick) => { onTick?.(ms); },
-		(details) => { progress.push(details); },
-		100_000,
-		0,
-	);
-	assert.equal(result.attempts, 2);
-	const secondAttemptStart = progress.find((item) => item.status === "investigating" && item.attempt === 2);
-	assert.deepEqual(secondAttemptStart.activity, [], "a retry starts with an empty activity tail");
-	assert.equal(secondAttemptStart.activityCount, 2, "the retry's initial snapshot preserves the total from the failed first attempt");
-	assert.equal(result.activityCount, 3, "the final total sums accepted events across every attempt, including the failed one");
-
 });
 
 // runAdvisorConsultation: the real stdin/stream-json transport against a fake `agy` on PATH --
-// confirms the exact wire protocol (args, stdin envelope, NDJSON parsing), not just the retry
-// wrapper around it. No live paid Agy call is made.
+// confirms the exact wire protocol (args, stdin envelope, NDJSON parsing), not just the wrapper
+// around it. No live paid Agy call is made.
 await t.test("runAdvisorConsultation: the real stdin/stream-json transport against a fake `agy` on PATH --", async (t) => {
 	await withFakeAgy(
 		"#!/bin/sh\ncat >/dev/null\nsleep 30\n",
 		async (binDir) => {
 			let calls = 0;
-			const delays = [];
-			await assert.rejects(runAdvisorWithRetries(
+			await assert.rejects(runAdvisor(
 				"prompt", { model: "m" }, binDir, new AbortController().signal,
 				(...args) => { calls++; return runAdvisorConsultation(...args.slice(0, 4), 20, args[5], 100); },
-				async (ms) => { delays.push(ms); },
 			), (error) => error.status === "timeout" && /timed out/.test(error.message));
 			assert.equal(calls, 1, "real wrapper preserves the backend's timeout classification");
-			assert.deepEqual(delays, []);
 		},
 	);
 
@@ -1743,13 +1606,12 @@ await t.test("Registered bro_advisor integration with real subprocess transport 
 					(update) => progress.push(update),
 					ctx,
 				);
-				assert.match(result.content[0].text, /^Bro advisor · model: gemini-advisor-override · effort: high · 1 attempt · /);
+				assert.match(result.content[0].text, /^Bro advisor · model: gemini-advisor-override · effort: high · \d+s/);
 				assert.match(result.content[0].text, /Context · cwd: .* · steering: included · snapshot: \d+ chars · Bro truncation: none/);
 				assert.match(result.content[0].text, /REGISTERED_ADVICE_CANARY$/);
 				assert.doesNotMatch(await readFile(stdinFile, "utf8") + await readFile(argsFile, "utf8"), /ADVISOR_PREFS_MARKER/, "the advisor never receives preferences");
 				await rm(join(configDir, "bro-preferences.md"), { force: true });
 				assert.equal(result.details.status, "done");
-				assert.equal(result.details.attempt, 1);
 				assert.equal(result.details.model, "gemini-advisor-override");
 				assert.equal(result.details.effort, "high");
 				assert.equal(result.details.cwd, workspace);
@@ -1757,14 +1619,16 @@ await t.test("Registered bro_advisor integration with real subprocess transport 
 				assert.deepEqual(result.details.steeringSources, { durable: false, session: true });
 				assert.equal(result.details.broTruncated, false);
 				assert.ok(result.details.snapshotChars > 0);
-				assert.match(progress[0].content[0].text, /Bro advisor · running · 0s · attempt 1\/3/);
+				assert.match(progress[0].content[0].text, /^Bro advisor · running · 0s · awaiting first activity from Agy$/);
+				const collapsedDone = stripVTControlCharacters(registeredTool.renderResult(result, { isPartial: false, expanded: false }, fakeTheme).render(120).join("\n")).trim();
+				assert.match(collapsedDone, /^Bro advisor · gemini-advisor-override · \d+s$/, "collapsed done label shows model and duration without attempt count");
 
 				// The fallback status-bar surface must carry the same progress a tool-card renderResult
 				// would show, and be cleared once the call settles -- this is the actual render path fix
 				// (a host tool-card override can silently swallow onUpdate's partial renderResult; it
 				// cannot swallow setStatus, which is a distinct API the host itself owns).
 				assert.ok(statusUpdates.length >= 2, "setStatus mirrors at least the initial progress update and the terminal clear");
-				assert.match(statusUpdates[0].text, /Bro advisor · running · 0s · attempt 1\/3/, "setStatus receives the same label as onUpdate's first progress call");
+				assert.match(statusUpdates[0].text, /^Bro advisor · running · 0s · awaiting first activity from Agy$/, "setStatus receives the same label as onUpdate's first progress call");
 				assert.equal(statusUpdates[0].key, statusUpdates.at(-1).key, "every update uses the same status-bar key, so later updates replace earlier ones instead of stacking");
 				assert.equal(statusUpdates.at(-1).text, undefined, "the status bar entry is cleared once the call settles, instead of leaking a stale 'running' status after completion");
 
@@ -2291,10 +2155,10 @@ await t.test("Two-way isolation between reader preferences and advisor steering"
 	}
 });
 
-await t.test("Advisor consultation uses a stable prompt snapshot across retries even if steering changes mid-run", async () => {
+await t.test("Advisor consultation fails without retrying and re-reads durable steering on a subsequent consultation", async () => {
 	const configDir = process.env.PI_CODING_AGENT_DIR;
 	const advisorFile = join(configDir, "bro-advisor.md");
-	await writeFile(advisorFile, "DURABLE_V1_FROZEN_CANARY");
+	await writeFile(advisorFile, "DURABLE_V1_CANARY");
 
 	const tools = new Map();
 	const fakePi = {
@@ -2308,7 +2172,7 @@ await t.test("Advisor consultation uses a stable prompt snapshot across retries 
 	const advisorTool = tools.get("bro_advisor");
 	assert.ok(advisorTool);
 
-	const workspace = await mkdtemp(join(tmpdir(), "pi-bro-retry-workspace-"));
+	const workspace = await mkdtemp(join(tmpdir(), "pi-bro-steering-workspace-"));
 	const testCtx = {
 		cwd: workspace,
 		getSystemPrompt: () => "SYS",
@@ -2324,14 +2188,10 @@ await t.test("Advisor consultation uses a stable prompt snapshot across retries 
 			"#!/bin/sh\n" +
 			"cat >> \"$AGY_PROMPTS_LOG\"\n" +
 			"printf '\\n---SPLIT---\\n' >> \"$AGY_PROMPTS_LOG\"\n" +
-			"count=$(wc -l < \"$AGY_CALLS_FILE\" 2>/dev/null || echo 0)\n" +
 			"printf 'call\\n' >> \"$AGY_CALLS_FILE\"\n" +
-			"if [ \"$count\" -eq 0 ]; then\n" +
-			"  printf 'DURABLE_V2_MUTATED_CANARY\\n' > \"$AGY_STEERING_FILE\"\n" +
-			"  printf '%s\\n' '{\"event\":\"result\",\"result\":{\"status\":\"ERROR\",\"error\":\"transient backend failure\"}}'\n" +
-			"  exit 1\n" +
-			"fi\n" +
-			"printf '%s\\n' '{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"RETRY_ADVICE_CANARY\"}}'\n",
+			"printf 'DURABLE_V2_MUTATED_CANARY\\n' > \"$AGY_STEERING_FILE\"\n" +
+			"printf '%s\\n' '{\"event\":\"result\",\"result\":{\"status\":\"ERROR\",\"error\":\"transient backend failure\"}}'\n" +
+			"exit 1\n",
 			async (binDir) => {
 				const promptsLog = join(binDir, "prompts.log");
 				const callsFile = join(binDir, "calls.txt");
@@ -2339,34 +2199,25 @@ await t.test("Advisor consultation uses a stable prompt snapshot across retries 
 				process.env.AGY_CALLS_FILE = callsFile;
 				process.env.AGY_STEERING_FILE = advisorFile;
 
-				const result = await advisorTool.execute(
-					"retry-call-1",
-					{ question: "RETRY_Q" },
-					new AbortController().signal,
-					() => {},
-					testCtx,
+				await assert.rejects(
+					advisorTool.execute(
+						"single-call-1",
+						{ question: "STEERING_Q" },
+						new AbortController().signal,
+						() => {},
+						testCtx,
+					),
+					/transient backend failure/,
 				);
 
-				assert.equal(result.details.attempt, 2, "the consultation succeeded on attempt 2 after a retry");
-				assert.match(result.content[0].text, /RETRY_ADVICE_CANARY/);
-
-				// Inspect the prompts sent on attempt 1 and attempt 2
 				const log = await readFile(promptsLog, "utf8");
-				const attempts = log.split("---SPLIT---").filter((s) => s.trim().length > 0);
-				assert.equal(attempts.length, 2, "exactly two attempts were logged");
+				const calls = log.split("---SPLIT---").filter((s) => s.trim().length > 0);
+				assert.equal(calls.length, 1, "exactly one call was made without retrying");
 
-				const prompt1 = JSON.parse(attempts[0].trim()).message.content;
-				const prompt2 = JSON.parse(attempts[1].trim()).message.content;
+				const prompt1 = JSON.parse(calls[0].trim()).message.content;
+				assert.match(prompt1, /DURABLE_V1_CANARY/);
 
-				// Both attempts must contain V1
-				assert.match(prompt1, /DURABLE_V1_FROZEN_CANARY/);
-				assert.match(prompt2, /DURABLE_V1_FROZEN_CANARY/);
-
-				// Neither attempt may contain V2, because the prompt was frozen before retrying
-				assert.doesNotMatch(prompt1, /DURABLE_V2_MUTATED_CANARY/);
-				assert.doesNotMatch(prompt2, /DURABLE_V2_MUTATED_CANARY/);
-
-				// However, a brand new consultation now reads V2
+				// A subsequent fresh consultation reads V2
 				await withFakeAgy(
 					"#!/bin/sh\n" +
 					"cat > \"$AGY_PROMPTS_LOG_2\"\n" +

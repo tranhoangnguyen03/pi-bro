@@ -173,9 +173,10 @@ test("advisor prompt is backend-neutral: no backend name or CLI flags, advisory 
 	const prompt = buildAdvisorPrompt("steer", "## user\nx", "q");
 	assert.doesNotMatch(prompt, /\bagy\b|antigravity|claude|grok/i);
 	assert.doesNotMatch(prompt, /(^|\s)--[a-z]/m);
-	assert.match(prompt, /Investigate before advising/);
+	assert.doesNotMatch(prompt, /Investigate before advising/i);
+	assert.match(prompt, /Use the snapshot below first; only read files or run commands when something you need is missing/);
 	assert.match(prompt, /strictly advisory/);
-	assert.match(prompt, /grounded in what you verified yourself/);
+	assert.match(prompt, /grounded in the snapshot and any workspace checks you needed/);
 });
 
 test("advisor prompt states explicitly when steering or a question were not given, instead of omitting the section", () => {

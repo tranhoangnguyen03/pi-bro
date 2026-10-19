@@ -1376,11 +1376,10 @@ async function executeMuse(
 	}
 }
 
-// Single-attempt executor shared by all features. Never retries (retries are feature-owned,
-// e.g. advisor's 3-attempt backoff in bro.ts); never spawns a pre-aborted request; on cancellation,
-// host deadline, or a protocol failure, stops the whole POSIX process group (SIGTERM, then SIGKILL
-// after a bounded grace period) before resolving. `options` is for offline tests only -- production
-// callers never override the deadline or kill-escalation delay.
+// Single-attempt executor shared by all features. Never retries; never spawns a pre-aborted
+// request; on cancellation, host deadline, or a protocol failure, stops the whole POSIX process
+// group (SIGTERM, then SIGKILL after a bounded grace period) before resolving. `options` is for
+// offline tests only -- production callers never override the deadline or kill-escalation delay.
 export async function execute(
 	request: BackendRequest,
 	selection: BackendSelection,
