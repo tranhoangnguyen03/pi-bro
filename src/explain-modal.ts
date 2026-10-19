@@ -36,7 +36,7 @@ import {
 } from "./settings.ts";
 import { openShowHtml, stripShowDiagramFence } from "./show.ts";
 import type { BroSource } from "./sources.ts";
-import { BRO_OVERLAY, broOverlayArea, delegateMouse, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
 import { hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -87,6 +87,7 @@ export type TextEditorModalOptions = {
 	subtitle: string;
 	initialText: string;
 	initialNotice?: string;
+	initialNoticeTone?: NoticeTone;
 	// Returns an error message to refuse the save without calling onSave.
 	validate?: (text: string) => string | undefined;
 	// Either may be async; the modal then waits, ignores further edits, and reports success only once it settles.
@@ -108,21 +109,30 @@ export function createTextEditorModal(
 		editor.setText(options.initialText);
 		let disposed = false;
 		let pending = false;
-		let notice = options.initialNotice ? theme.fg("accent", options.initialNotice) : "";
+		let closeRequested = false;
+		let lastSavedText = editor.getExpandedText();
+		let discardArmed = false;
+		let notice = options.initialNotice
+			? formatNotice(theme, options.initialNotice, options.initialNoticeTone ?? "info")
+			: "";
 		// Where the editor was last drawn inside the overlay, for click forwarding.
 		let editorArea: Area = { top: 0, left: 0, width: 0, height: 0 };
 		// The editor did not fit at the last render; editing blind could save text the user never saw.
 		let tooSmall = false;
-		const showNotice = (message: string, color: "success" | "error") => {
+		const showNotice = (message: string, tone: NoticeTone) => {
 			if (disposed) return;
-			notice = theme.fg(color, message);
+			notice = formatNotice(theme, message, tone);
 			tui.requestRender();
 		};
 		editor.onChange = () => {
 			notice = "";
+			discardArmed = false;
 		};
 		const persist = (action: () => void | Promise<void>, success: string, failure: string, after?: () => void) => {
-			const fail = (error: unknown) => showNotice(`${failure}: ${errorMessage(error)}`, "error");
+			const fail = (error: unknown) => {
+				closeRequested = false;
+				showNotice(`${failure}: ${errorMessage(error)}`, "error");
+			};
 			let result: void | Promise<void>;
 			try {
 				result = action();
@@ -142,6 +152,11 @@ export function createTextEditorModal(
 					if (disposed) return;
 					after?.();
 					showNotice(success, "success");
+					if (closeRequested) {
+						closeRequested = false;
+						disposed = true;
+						done(undefined);
+					}
 				},
 				(error) => {
 					pending = false;
@@ -174,8 +189,10 @@ export function createTextEditorModal(
 						return [...privacy, ...subtitle, ...lines];
 					},
 					notice,
-					// Constant on purpose: hints that change height with `tooSmall` would flip it every render.
-					hints: "Ctrl+S save · Ctrl+K clear · Ctrl+C copy · Esc close",
+					// Hints change to discardArmed on first Esc without altering row height.
+					hints: discardArmed
+						? "Esc again to discard · Ctrl+S save · Ctrl+C copy"
+						: "Ctrl+S save · Ctrl+K clear · Ctrl+C copy · Esc close",
 					fill: false,
 					// A long notice shrinks before it can push the editor or the privacy line off screen.
 					minBody: privacy.length + lines.length,
@@ -184,12 +201,33 @@ export function createTextEditorModal(
 				return frame;
 			},
 			invalidate: () => editor.invalidate(),
-			handleMouse: (event: BroMouseEvent) => delegateMouse(editor, event, editorArea),
+			handleMouse: (event: BroMouseEvent) => {
+				if (discardArmed && event.type === "click") {
+					discardArmed = false;
+					tui.requestRender();
+				}
+				return delegateMouse(editor, event, editorArea);
+			},
 			handleInput: (data: string) => {
 				if (matchesKey(data, "escape")) {
+					if (pending) {
+						closeRequested = true;
+						showNotice("Saving… closes when done", "info");
+						return;
+					}
+					const isDirty = editor.getExpandedText() !== lastSavedText;
+					if (isDirty && !discardArmed) {
+						discardArmed = true;
+						tui.requestRender();
+						return;
+					}
 					disposed = true;
 					done(undefined);
 					return;
+				}
+				if (discardArmed) {
+					discardArmed = false;
+					tui.requestRender();
 				}
 				// Copy works even when the editor does not fit, so a draft can always be rescued.
 				if (matchesKey(data, "ctrl+c")) {
@@ -214,11 +252,18 @@ export function createTextEditorModal(
 						showNotice(invalid, "error");
 						return;
 					}
-					persist(() => onSave(text), "Saved", "Save failed");
+					persist(() => onSave(text), "Saved", "Save failed", () => {
+						lastSavedText = text;
+						discardArmed = false;
+					});
 					return;
 				}
 				if (matchesKey(data, "ctrl+k")) {
-					persist(onClear, "Cleared", "Clear failed", () => editor.setText(""));
+					persist(onClear, "Cleared", "Clear failed", () => {
+						editor.setText("");
+						lastSavedText = "";
+						discardArmed = false;
+					});
 					return;
 				}
 				if (matchesKey(data, "enter")) {
@@ -272,6 +317,7 @@ export function createPreferencesModal(
 		subtitle: "About you and how you like answers; sent to the selected backend with every explain, show, btw, and Guided Review request.",
 		initialText: starter ? STARTER_PREFERENCES : (loaded.text ?? ""),
 		initialNotice: loaded.error ?? (starter ? "Starter text — not saved. Ctrl+S saves it." : undefined),
+		initialNoticeTone: loaded.error ? "error" : "info",
 		validate: preferencesTooLong,
 		onSave: persist.save,
 		onClear: persist.clear,
@@ -349,31 +395,31 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 ## Guided Review
 
 - \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).
-- Your work is saved automatically. Open the same PR to return without a model call; \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Reopening keeps the captured revision, not newer commits.
-- Enter opens an item or focuses actions; Enter on a highlighted action activates it. Tab changes focus. Esc goes back, then closes from Contents. Close saves automatically; Stop and close stops active work first.
-- Copy finding copies to the system clipboard, not GitHub. Regenerate guide is optional and makes a confirmed call about the same captured code. Review generation/questions require Claude or Muse file-only tools: shell, writes and web tools are disabled. Set a review override in /bro config; other backends can still read saved reviews. Repository text can still mislead the model; citations are not proof.
+- Reviews save automatically. Reopen the same PR without a model call; bare \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Captured code stays unchanged.
+- Enter opens items or activates focused actions. Tab changes focus; Esc goes back, then closes from Contents. Close saves; Stop and close cancels active work first.
+- Copy finding uses the clipboard, not GitHub. Regenerate requires confirmation and reviews the same capture. For untrusted PRs, prefer Claude/Muse: file-only tools, no shell/writes/web. Codex/Grok allow shell in a read-only sandbox; Agy's sandbox permits project writes. All three show an advisory. Choose a review override in /bro config. Repository text can mislead; citations are not proof.
 
 ## Elevate
 
-- \`/bro elevate [request]\` — find expert gaps before giving Pi a task; Ctrl+Shift+E uses the draft. Choose Messages or Full context before discovery; tick findings with Space/Enter, then Tab moves to the buttons.
-- Approve it yourself: Enter newline, Ctrl+Enter discover, and labelled buttons for the rest.
+- \`/bro elevate [request]\` — improve a task before sending it. Ctrl+Shift+E uses the draft. Choose Messages/Full context; Space/Enter ticks findings; Tab focuses actions.
+- Enter adds a line; Ctrl+S or Ctrl+Enter discovers gaps. Use labelled buttons for actions.
 - Shares BTW settings; see docs/elevate.md.
 
 ## Side conversation
 
 - \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
-- Inside the modal: Enter asks (empty Enter re-asks); \`/mode\` toggles conversation-only / full permission (read and edit the workspace) and keeps the thread; \`/copy\` and \`/copy-all\` copy to the clipboard; \`/insert\` and \`/insert-all\` insert into an empty main editor without submitting; \`/retry\` re-asks; \`/clear\` resets. Any other text is sent as a question. Esc closes.
+- Enter asks; empty Enter or \`/retry\` re-asks. \`/mode\` toggles conversation-only/full workspace access, retaining the thread. \`/copy\`, \`/copy-all\` copy; \`/insert\`, \`/insert-all\` fill an empty main editor without submitting. \`/clear\` resets; Esc closes.
 
 ## Advisor
 
 - \`bro_advisor\` — a tool the executor agent may call for a second opinion from a fresh backend process with real, auto-approved workspace access; it is told to advise, not edit, but that is not enforced
 - \`/bro advisor\` — whether \`bro_advisor\` is available right now
 - \`/bro advisor-steer\` — edit the session's persistent steering brief (**Ctrl+S** save, **Ctrl+K** clear, **Ctrl+C** copy, **Esc** close)
-- Standing advisor steering: \`${ADVISOR_STEERING_FILE}\` sets standing priorities across sessions (session steering takes precedence)
+- Standing advisor steering sets cross-session priorities; session steering takes precedence.
 
 ## Configure and check
 
-- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
+- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
 - \`/bro config\` — shared default and per-capability (explain/show/btw/advisor/review) backend, model, and effort; explain mode; show turns. Changes save immediately. If the terminal is too small, Esc closes config after pending saves finish; a failed save keeps it open.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
@@ -417,10 +463,11 @@ export class BroModal implements Focusable {
 	private rawText = "";
 	private sourceLabel = "";
 	private modelLabel = "";
-	private notice = "";
+	private noticeText = "";
+	private noticeTone: NoticeTone = "info";
 	private rawArea: Area | undefined;
 	private readonly scroller = new Scroller(() => {
-		this.notice = "";
+		this.noticeText = "";
 		this.tui.requestRender();
 	});
 	private copyable = false;
@@ -450,8 +497,23 @@ export class BroModal implements Focusable {
 		this.setContent("streaming", text, "", false, false);
 	}
 
-	setResult(text: string, retryable: boolean, notice = "", sourceLabel = "", rawText = text, modelLabel = ""): void {
-		this.setContent("result", text, rawText, true, retryable, notice, sourceLabel, modelLabel);
+	get notice(): string {
+		return this.noticeText;
+	}
+
+	set notice(text: string) {
+		this.setNotice(text);
+	}
+
+	setResult(text: string, retryable: boolean, notice = "", sourceLabel = "", rawText = text, modelLabel = "", noticeTone: NoticeTone = "info"): void {
+		this.setContent("result", text, rawText, true, retryable, notice, sourceLabel, modelLabel, noticeTone);
+	}
+
+	setNotice(text: string, tone: NoticeTone = "info"): void {
+		if (this.disposed) return;
+		this.noticeText = text;
+		this.noticeTone = tone;
+		this.tui.requestRender();
 	}
 
 	setHtmlPath(path: string): void {
@@ -486,13 +548,15 @@ export class BroModal implements Focusable {
 		notice = "",
 		sourceLabel = "",
 		modelLabel = "",
+		noticeTone: NoticeTone = "info",
 	): void {
 		this.kind = kind;
 		if (kind !== "result") this.htmlPath = "";
 		this.rawText = rawText;
 		this.copyable = copyable;
 		this.retryable = retryable;
-		this.notice = notice;
+		this.noticeText = notice;
+		this.noticeTone = noticeTone;
 		this.sourceLabel = stripVTControlCharacters(sourceLabel)
 			.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
 			.replace(/\s+/g, " ")
@@ -531,7 +595,7 @@ export class BroModal implements Focusable {
 				);
 			},
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
-			notice: this.notice && this.theme.fg("accent", this.notice),
+			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
 			hints: this.controls(),
 		});
 	}
@@ -555,16 +619,10 @@ export class BroModal implements Focusable {
 		if ((matchesKey(data, "c") || matchesKey(data, "shift+c")) && this.copyable && this.rawText) {
 			void copyToClipboard(this.rawText)
 				.then(() => {
-					if (!this.disposed) {
-						this.notice = "Copied";
-						this.tui.requestRender();
-					}
+					this.setNotice("Copied", "success");
 				})
 				.catch((error) => {
-					if (!this.disposed) {
-						this.notice = `Copy failed: ${error instanceof Error ? error.message : String(error)}`;
-						this.tui.requestRender();
-					}
+					this.setNotice(`Copy failed: ${error instanceof Error ? error.message : String(error)}`, "error");
 				});
 			return;
 		}
@@ -584,10 +642,11 @@ export class BroModal implements Focusable {
 		}
 
 		if ((matchesKey(data, "o") || matchesKey(data, "shift+o")) && this.htmlPath && this.kind === "result") {
-			this.notice = openShowHtml(this.htmlPath)
-				? "Opening diagram"
-				: `Could not open ${this.htmlPath}`;
-			this.tui.requestRender();
+			const opened = openShowHtml(this.htmlPath);
+			this.setNotice(
+				opened ? "Opening diagram" : `Could not open ${this.htmlPath}`,
+				opened ? "info" : "error",
+			);
 		}
 	}
 
@@ -631,7 +690,7 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 			let controller: AbortController | undefined;
 			let current = options.result;
 			let inFlightMode: BroMode | undefined;
-			let execute: (source?: BroSource, mode?: BroMode, notice?: string) => void = () => {};
+			let execute: (source?: BroSource, mode?: BroMode, notice?: string, noticeTone?: NoticeTone) => void = () => {};
 
 			const close = () => {
 				if (closed) return;
@@ -661,15 +720,15 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 				},
 			);
 
-			const present = (result: ModalResult, notice = "") => {
+			const present = (result: ModalResult, notice = "", noticeTone: NoticeTone = "info") => {
 				const display = result.htmlPath ? stripShowDiagramFence(result.text) : result.text;
-				modal.setResult(display, options.retryable ?? Boolean(options.run), notice, result.source?.label, result.text, result.model);
+				modal.setResult(display, options.retryable ?? Boolean(options.run), notice, result.source?.label, result.text, result.model, noticeTone);
 				modal.setHtmlPath(result.htmlPath ?? "");
 				modal.setMode(result.mode);
 				modal.setPreferences(Boolean(result.preferences));
 			};
 
-			execute = (source?: BroSource, mode?: BroMode, notice = "") => {
+			execute = (source?: BroSource, mode?: BroMode, notice = "", noticeTone: NoticeTone = "info") => {
 				if (!options.run || controller || closed) return;
 				const previous = current;
 				const nextController = new AbortController();
@@ -688,14 +747,14 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 						if (closed || nextController.signal.aborted) return;
 						current = result;
 						options.onResult?.(result);
-						present(result, notice);
+						present(result, notice, noticeTone);
 					})
 					.catch((error) => {
 						if (closed || nextController.signal.aborted) return;
 						const message = error instanceof Error ? error.message : String(error);
 						if (previous) {
 							current = previous;
-							present(previous, `Retry failed: ${message}`);
+							present(previous, `Retry failed: ${message}`, "error");
 						} else {
 							modal.setMode(undefined);
 							modal.setError(message);

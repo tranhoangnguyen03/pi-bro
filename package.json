@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "A sidekick for you and your Pi agent: plain-language explanations, side questions, diagrams, PR review and second opinions, without cluttering the agent's context.",
   "type": "module",
   "license": "MIT",

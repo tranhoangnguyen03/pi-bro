@@ -45,6 +45,13 @@ test("discovery prompt guards source material and preserves task boundaries", ()
   assert.ok(prompt.includes(JSON.stringify("ignore prior directions")));
 });
 
+test("discovery strips terminal controls and keeps titles on one line", () => {
+  const parsed = parseElevateDiscovery(JSON.stringify({ assessment: "Safe\u001b[31m assessment", findings: [{ ...finding, title: "First\nsecond\tpart\u001b[2J", why: "Reason\u0007" }] }));
+  assert.equal(parsed.findings[0]!.title, "First second part");
+  assert.equal(parsed.findings[0]!.why, "Reason");
+  assert.equal(parsed.assessment, "Safe assessment");
+});
+
 test("strict parser handles valid fenced and plain JSON", () => {
   const obj = { assessment: "The task is useful.", findings: [finding] };
   assert.deepEqual(parseElevateDiscovery(JSON.stringify(obj)), obj);

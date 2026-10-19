@@ -647,7 +647,7 @@ test("acquisition shows observable elapsed progress and readable retry errors wi
 					notify() {},
 					custom: (factory, options) =>
 						new Promise((resolve) => {
-							assert.equal(options.overlayOptions.width, "100%");
+							assert.equal(options.overlayOptions.width, "70%");
 							resolveOpen = resolve;
 							panel = factory(
 								{ terminal: { rows: 20 }, requestRender() {} },
@@ -665,7 +665,7 @@ test("acquisition shows observable elapsed progress and readable retry errors wi
 		for (let i = 0; i < 500 && !panel.render(36).join("\n").includes("permission denied"); i++)
 			await new Promise((r) => setTimeout(r, 10));
 		assert.match(panel.render(36).join("\n"), /permission denied/);
-		assert.match(panel.render(36).join("\n"), /Esc close · Enter retry/);
+		assert.match(panel.render(36).join("\n"), /Enter retry · Esc close/);
 		assert.doesNotMatch(panel.render(36).join("\n"), /Error: gh/);
 		panel.handleInput("\x1b");
 		await opened;
@@ -673,6 +673,145 @@ test("acquisition shows observable elapsed progress and readable retry errors wi
 	} finally {
 		process.env.PATH = oldPath;
 		resolveOpen?.();
+		panel?.dispose();
+	}
+});
+
+test("a shell-capable review backend shows a non-fatal advisory during acquisition", async () => {
+	const bin = join(buildDir, "advisory-bin");
+	await mkdir(bin, { recursive: true });
+	// gh answers PR identity, then the fetch fails: the advisory must not replace the fetch error.
+	await writeFile(
+		join(bin, "gh"),
+		`#!/usr/bin/env node
+const args = process.argv.slice(2);
+// Pull metadata answers; the compare call (merge base) deliberately fails, which is the
+// first network step after identity and the one the test wants to see reported.
+if (args[0] === "api" && !args.some((arg) => String(arg).includes("/compare/"))) {
+	console.log(JSON.stringify({
+		title: "Fixture",
+		body: "",
+		html_url: "https://github.com/a/b/pull/7",
+		base: { sha: "a".repeat(40), ref: "main", repo: { id: 1, full_name: "a/b" } },
+		head: { sha: "b".repeat(40), ref: "topic" },
+	}));
+	process.exit(0);
+}
+console.error("fixture fetch offline");
+process.exit(1);
+`,
+	);
+	await chmod(join(bin, "gh"), 0o755);
+	await writeFile(
+		join(getAgentDir(), "bro-settings.json"),
+		JSON.stringify({
+			version: 2,
+			default: { backend: "codex", model: "test", effort: "default" },
+			overrides: { review: { backend: "codex", model: "test", effort: "default" } },
+		}),
+	);
+	const oldPath = process.env.PATH;
+	process.env.PATH = `${bin}:${oldPath}`;
+	let panel;
+	try {
+		const opened = openGuidedReview(
+			{
+				mode: "tui",
+				cwd: bin,
+				ui: {
+					notify() {},
+					custom: (factory, options) =>
+						new Promise((resolve) => {
+							panel = factory(
+								{ terminal: { rows: 20 }, requestRender() {} },
+								{ fg: (_c, s) => s, bold: (s) => s },
+								{},
+								resolve,
+							);
+						}),
+				},
+			},
+			"https://github.com/a/b/pull/7",
+			"",
+		);
+		for (let i = 0; i < 500 && !panel.render(70).join("\n").includes("fixture fetch offline"); i++)
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		const text = panel.render(70).join("\n");
+		assert.match(text, /fixture fetch offline/, "the fetch error is still the reported failure");
+		assert.match(text, /sandboxed shell in a read-only sandbox/, "the advisory shows");
+		assert.match(text, /Enter retry · Esc close/, "the advisory must not disable retry");
+		assert.doesNotMatch(text, /requires Claude or Muse|Claude or Muse file-only inspection\. Set/);
+		panel.handleInput("\x1b");
+		await opened;
+		panel.dispose();
+	} finally {
+		process.env.PATH = oldPath;
+		panel?.dispose();
+	}
+});
+
+test("reopening a saved review shows the backend advisory without any model call", async () => {
+	const root = join(getAgentDir(), "bro-reviews");
+	const id = "d".repeat(64);
+	await writeFile(
+		join(getAgentDir(), "bro-settings.json"),
+		JSON.stringify({
+			version: 2,
+			default: { backend: "codex", model: "test", effort: "default" },
+			overrides: { review: { backend: "codex", model: "test", effort: "default" } },
+		}),
+	);
+	await saveReview(root, {
+		version: 1,
+		id,
+		snapshot: {
+			target: { repository: "a/b", number: 42, head: "abcdef", base: "base" },
+			mergeBase: "merge",
+			gitDir: root,
+			checkout: root,
+			files: [],
+			diff: "",
+		},
+		turns: [],
+		guide: { summary: "Ready", topics: [] },
+		ui: newReviewView(),
+	});
+	let panel;
+	try {
+		const opened = openGuidedReview(
+			{
+				mode: "tui",
+				ui: {
+					notify() {},
+					select: async (_title, labels) => labels.find((label) => label.includes("#42")),
+					custom: (factory) =>
+						new Promise((resolve) => {
+							panel = factory(
+								{ terminal: { rows: 32 }, requestRender() {} },
+								{ fg: (_c, s) => s, bold: (s) => s },
+								{},
+								resolve,
+							);
+						}),
+				},
+			},
+			"resume",
+			"",
+		);
+		while (!panel) await new Promise((resolve) => setTimeout(resolve, 10));
+		let text = "";
+		for (let i = 0; i < 200; i++) {
+			text = panel.render(110).join("\n");
+			if (/read-only sandbox/.test(text)) break;
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		assert.match(text, /read-only sandbox/);
+		assert.match(text, /Claude or Muse is recommended for/);
+		assert.match(text, /untrusted PRs\./);
+		assert.doesNotMatch(text, /Request failed/);
+		panel.handleInput("\x1b");
+		await opened;
+	} finally {
 		panel?.dispose();
 	}
 });

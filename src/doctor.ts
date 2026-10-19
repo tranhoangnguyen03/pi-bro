@@ -10,7 +10,7 @@ import {
 	readAdvisorSteering,
 	resolveAdvisorState,
 } from "./advisor.ts";
-import { agyFailureMessage, reviewBackendError } from "./backend.ts";
+import { agyFailureMessage, reviewBackendNotice } from "./backend.ts";
 import { createConfigModal } from "./config-ui.ts";
 import { openBroOverlay } from "./modal-kit.ts";
 import {
@@ -400,15 +400,19 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 			const override = capabilityOverride(settings, capability);
 			const backend = capabilityBackend(settings, capability);
 			const pair = capabilityPair(settings, capability);
-			const reviewError = capability === "review" ? reviewBackendError(backend) : undefined;
-			if (reviewError) { lines.push(`- ℹ **${label}:** needs a Claude or Muse override in \`/bro config\` for model calls; saved reviews remain readable.`); continue; }
+			// Review on a shell-capable sandbox is informational, never a failure: report the capability
+			// normally, then append one advisory line. Every branch below goes through here.
+			const reviewNotice = capability === "review" ? reviewBackendNotice(backend) : undefined;
+			const passCapability = (detail: string) => {
+				pass(label, detail);
+				if (reviewNotice) lines.push(`- ℹ **${label}:** ${reviewNotice}`);
+			};
 			if (backend === "claude") {
 				if (!isClaudeEffort(pair.effort)) {
 					fail(label, `\`${pair.effort}\` is unsupported for claude \`${pair.model}\`. Run \`/bro config\` to fix this.`);
 					continue;
 				}
-				pass(
-					label,
+				passCapability(
 					override
 						? `override claude \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
 						: `claude \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
@@ -420,8 +424,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 					fail(label, `\`${pair.effort}\` is unsupported for grok \`${pair.model}\`. Run \`/bro config\` to fix this.`);
 					continue;
 				}
-				pass(
-					label,
+				passCapability(
 					override
 						? `override grok \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
 						: `grok \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
@@ -433,8 +436,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 					fail(label, `\`${pair.effort}\` is unsupported for codex \`${pair.model}\`. Run \`/bro config\` to fix this.`);
 					continue;
 				}
-				pass(
-					label,
+				passCapability(
 					override
 						? `override codex \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
 						: `codex \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
@@ -446,15 +448,19 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 					fail(label, `\`${pair.effort}\` is unsupported for muse \`${pair.model}\`. Run \`/bro config\` to fix this.`);
 					continue;
 				}
-				pass(
-					label,
+				passCapability(
 					override
 						? `override muse \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
 						: `muse \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
 				);
 				continue;
 			}
-			if (!models) continue;
+			// No Agy catalog available: the Agy branch above is the only one that gets here, so there is
+			// nothing to validate, but a shell-capable review override still deserves its advisory.
+			if (!models) {
+				if (reviewNotice) lines.push(`- ℹ **${label}:** ${reviewNotice}`);
+				continue;
+			}
 			const resolved = resolveCapabilitySettings(settings, capability, models);
 			if (!resolved.family) {
 				fail(label, `\`${resolved.pair.model}\` is unavailable. Run \`/bro config\` to fix this override.`);
@@ -467,8 +473,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 				fail(label, `\`${resolved.pair.effort}\` is unsupported for \`${resolved.family.id}\`. Run \`/bro config\` to fix this.`);
 				continue;
 			}
-			pass(
-				label,
+			passCapability(
 				override
 					? `override agy \`${resolved.family.id}\`${resolved.pair.effort === "default" ? "" : ` (${resolved.pair.effort})`}`
 					: "using the shared default",

@@ -61,7 +61,7 @@ File and webpage examples need your own real path or URL; see [how to explain th
 | `/bro show` | **[Show](docs/features/show.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
 | `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
 | `/bro btw` | **[Side questions](docs/features/btw.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
-| `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Needs the Claude or Muse backend. |
+| `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Claude or Muse is recommended for untrusted PRs. |
 | `bro_advisor` tool | **[Second opinion](docs/features/advisor.md#bro-advisor).** A tool your agent can call mid-task; a fresh backend process investigates and returns advice to the agent. ⚠️ [Runs with permissions bypassed](#what-leaves-your-machine). |
 | `/bro config`, `/bro preferences` | **[Settings](docs/reference/settings.md#settings) and [preferences](docs/user-guide.md#preferences).** Pick the backend, model and effort per feature, and tell Bro how you like answers. |
 
@@ -80,14 +80,14 @@ Guided Review has its own [guide](docs/guided-review.md).
 
 | Backend | CLI | Notes |
 | --- | --- | --- |
-| [Google Antigravity](https://antigravity.google/docs/cli-install) | `agy` | Default for new settings. Needs `>=1.1.15`. Not for Guided Review. |
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `claude` | Works for every feature, including Guided Review. |
-| [Grok Build](https://docs.x.ai/build/overview) | `grok` | Not for Guided Review. |
-| [Codex CLI](https://github.com/openai/codex) | `codex` | Not for Guided Review. |
-| [Muse Code](https://dev.meta.ai/docs/muse-code) | `muse` | Works for every feature, including Guided Review. |
+| [Google Antigravity](https://antigravity.google/docs/cli-install) | `agy` | Default for new settings. Needs `>=1.1.15`. Guided Review uses `--sandbox`, which restricts shell commands but still allows writes inside the project. |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `claude` | Works for every feature; strict file-only inspection for Guided Review. |
+| [Grok Build](https://docs.x.ai/build/overview) | `grok` | Guided Review uses its read-only sandbox (shell-enabled). |
+| [Codex CLI](https://github.com/openai/codex) | `codex` | Guided Review uses its read-only sandbox (shell-enabled). |
+| [Muse Code](https://dev.meta.ai/docs/muse-code) | `muse` | Works for every feature; strict file-only inspection for Guided Review. |
 
 - Guided Review also needs Git and an authenticated [`gh`](https://cli.github.com/).
-  Choose Claude or Muse for it in `/bro config`.
+  Claude or Muse is recommended for untrusted PRs (strict file-only inspection); Codex, Grok and Agy run with shell available under their sandbox, with an advisory.
 - [PiG](docs/pig-compatibility.md) support is experimental.
 
 ## What leaves your machine
@@ -101,7 +101,7 @@ which may keep it under their own policies. Paths below are under
 | Explain | The agent's last reply, your pasted text, or text extracted from your file or webpage, plus your preferences | Nothing; the last result stays in memory |
 | Show | User and assistant text from recent turns (no tool calls, tool results, reasoning or images), plus your preferences | Diagram pages in `pi-bro-<uid>/` in your system temp folder |
 | Side questions | Your questions and up to the last 8 turns of conversation text, plus your preferences | Nothing; the thread stays in memory |
-| Elevate | Your objective, selected findings, up to 8 conversation-text turns (12,000 characters), and preferences | Nothing; the workflow stays in memory |
+| Elevate | Your objective, selected findings, all current-branch user/assistant text; Full also includes tool-call arguments and text results, and preferences | Nothing; the workflow stays in memory |
 | Guided Review | The PR description and diff, the files the backend reads, your questions, plus your preferences | Reviews and captured source in `bro-reviews/`, with no automatic cleanup |
 | Advisor | The agent's system instructions, tool list and whole conversation, including tool calls and results (reasoning and images omitted), plus your steering | Steering in `bro-advisor.md` and the session file |
 
@@ -118,8 +118,9 @@ tool results.
 >   only an instruction.
 > - **BTW full-permission mode** (turned on with `/mode` inside BTW): it is
 >   meant to edit files and run commands.
-> - **Grok, wherever you use it:** its sandbox is always off. "Answer only from
->   the supplied context" is only an instruction.
+> - **Grok:** its sandbox is off except during Guided Review, which uses the
+>   read-only sandbox. "Answer only from the supplied context" is only an
+>   instruction.
 
 Details per backend:
 [Backends: access and retention](docs/reference/data-and-permissions.md#backends-access-and-retention)

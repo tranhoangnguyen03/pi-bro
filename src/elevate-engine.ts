@@ -1,4 +1,11 @@
 /** Pure, host-independent logic for Bro Elevate. No files, UI, or model access. */
+import { stripVTControlCharacters } from "node:util";
+
+/** Untrusted display text must not emit terminal controls; titles occupy exactly one row. */
+export function elevateDisplayText(value: string, singleLine = false): string {
+  const text = stripVTControlCharacters(value).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, " ");
+  return (singleLine ? text.replace(/\s+/g, " ") : text).trim();
+}
 export type ElevateDimension = "altitude" | "depth" | "range";
 export type ElevateFinding = {
   dimension: ElevateDimension;
@@ -103,13 +110,13 @@ export function parseElevateDiscovery(response: string): ElevateDiscovery {
     }
     return {
       dimension: dimension as ElevateDimension,
-      title: string(finding.title, "title", 120),
+      title: string(elevateDisplayText(string(finding.title, "title", 120), true), "title", 120),
       // A thorough justification regularly exceeds 1000 characters; that is detail, not corruption.
-      why: string(finding.why, "reason", 2000),
-      expertMove: string(finding.expertMove, "expert action", 2000),
+      why: string(elevateDisplayText(string(finding.why, "reason", 2000)), "reason", 2000),
+      expertMove: string(elevateDisplayText(string(finding.expertMove, "expert action", 2000)), "expert action", 2000),
     };
   });
-  const assessment = string(result.assessment, "assessment", 600);
+  const assessment = string(elevateDisplayText(string(result.assessment, "assessment", 600)), "assessment", 600);
   return { assessment, findings };
 }
 

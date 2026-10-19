@@ -37,7 +37,7 @@ tool before giving it to Bro.
   blocked, paginated, and media-first pages are not supported.
 - Direct webpage fetching does not currently use `HTTP_PROXY`, `HTTPS_PROXY`,
   or other proxy environment variables.
-- `/bro elevate` is pre-execution only. It does not validate expert claims, run source research or keep a persistent thread. Invalid discovery JSON can be retried with `r`; if it recurs, choose another BTW backend/model in `/bro config`. See [Elevate](../elevate.md).
+- `/bro elevate` is pre-execution only. It does not validate expert claims, run source research or keep a persistent thread. Invalid discovery JSON can be retried with the [Retry] button; if it recurs, choose another BTW backend/model in `/bro config`. See [Elevate](../elevate.md).
 - `/bro btw` threads are memory-only and do not survive reloads or restarts.
 - The Agy advisor requires Agy CLI `>=1.1.15`.
 - Show captures only the conversation text of what already happened in the

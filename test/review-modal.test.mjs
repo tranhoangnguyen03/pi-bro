@@ -727,3 +727,211 @@ test("tiny viewport ignores hidden actions but permits closing", () => {
 	modal.handleInput(esc);
 	assert.equal(closed, 1);
 });
+
+test("ReviewModal pins the shell-sandbox advisory in warning colour, whatever the scroll or pane state", () => {
+	const paints = [];
+	const modal = new ReviewModal(
+		makeRecord(),
+		{ terminal: { rows: 32 }, requestRender() {} },
+		{ fg: (color, text) => (paints.push([color, text]), text), bold: (s) => s },
+		{ ask() {}, prepare() {}, stop() {}, close() {}, changed() {} },
+	);
+	modal.advisory =
+		"Guided Review on codex uses sandboxed shell in a read-only sandbox, not strict file-only inspection. Claude or Muse is recommended for untrusted PRs.";
+	// Two-column rows interleave when flattened, so keep the right-hand (detail) cell of each row.
+	const detail = (width) =>
+		stripVTControlCharacters(modal.render(width).join("\n"))
+			.split("\n")
+			.map((line) => line.split("\u2502").at(-2) ?? "")
+			.join(" ")
+			.replace(/\s+/g, " ");
+	const wide = detail(103);
+	assert.ok(paints.some(([color, text]) => color === "warning" && /read-only|sandboxed shell/.test(text)), "warned, not errored");
+	assert.match(wide, /read-only sandbox/);
+	assert.match(wide, /Guide ready/, "the advisory is not an error state");
+	assert.doesNotMatch(wide, /Request failed|Not saved/);
+
+	// Pinned: a saved scroll offset and the narrow Contents-only layout must not hide it.
+	modal.view.offsets[modal.view.selected + ":reading:"] = 40;
+	assert.match(detail(103), /read-only sandbox/);
+	assert.match(detail(103), /recommended for untrusted PRs/);
+	modal.view.pane = "contents";
+	modal.focus = "contents";
+	const narrow = stripVTControlCharacters(modal.render(56).join("\n")).replace(/\s+/g, " ");
+	assert.match(narrow, /read-only sandbox/);
+	assert.match(narrow, /recommended for untrusted PRs/);
+});
+
+test("a pinned advisory and finding title always leave a readable row and keep Contents visible", () => {
+	const advisory =
+		"Guided Review on codex uses sandboxed shell in a read-only sandbox, not strict file-only inspection. Claude or Muse is recommended for untrusted PRs.";
+	const finding = {
+		id: "finding-1",
+		title: "Failure recovery gap",
+		kind: "risk",
+		severity: "high",
+		scenario: "Save fails",
+		impact: "Lose work",
+		reasoning: "No test",
+		uncertainty: "Static",
+		fix: "Add test",
+		check: "Assert",
+		evidence: [],
+	};
+	const build = (rows, columns) => {
+		const record = makeRecord();
+		record.guide.assessment = {
+			overview: "Risk",
+			inspected: [],
+			notExamined: [],
+			warnings: [],
+			findings: [finding],
+		};
+		record.ui = { ...newReviewView(), selected: "findings", screen: "finding", target: "finding-1", pane: "detail" };
+		const modal = new ReviewModal(
+			record,
+			{ terminal: { rows, columns }, requestRender() {} },
+			{ fg: (_c, s) => s, bold: (s) => s },
+			{ ask() {}, prepare() {}, stop() {}, close() {}, changed() {} },
+		);
+		modal.advisory = advisory;
+		modal.saveError = "Not saved: disk full";
+		// Scrolled down the finding: that is what pins the title and is the reported case.
+		modal.view.offsets[modal.view.selected + ":" + modal.view.screen + ":" + modal.view.target] = 8;
+		return modal;
+	};
+
+	// The left column of the wide layout: only rows that actually have both panes (an inner divider).
+	const contentsColumn = (m, width) =>
+		stripVTControlCharacters(m.render(width).join("\n"))
+			.split("\n")
+			.filter((line) => line.split("\u2502").length >= 4)
+			.map((line) => line.split("\u2502")[1].trim())
+			.filter(Boolean);
+	const detailColumn = (m, width) =>
+		stripVTControlCharacters(m.render(width).join("\n"))
+			.split("\n")
+			.map((line) => line.split("\u2502").at(-2) ?? "")
+			.join(" ");
+
+	// The reported case: 90x18 with the advisory (3 rows), the pinned title (1) and the save failure.
+	const modal = build(18, 90);
+	// layout is filled during render.
+	const frame = modal.render(90);
+	assert.equal(modal.layout.bodyRows >= 1, true, "at least one reading row is reserved");
+	assert.equal(frame.length <= 16, true, "the frame still fits the terminal");
+	const titles = modal.entries().map((entry) => entry.title);
+	// Map each rendered Contents cell back to a known entry: the marker and truncation are stripped,
+	// so the visible window can be compared entry-for-entry. The regression was pinned rows consuming
+	// the leading entries while the list still drew from index 0.
+	const toTitle = (line) =>
+		titles.find((title) => line.replace(/^[›▲▼]\s*/, "").startsWith(title.slice(0, 12)));
+	const contents = contentsColumn(modal, 90);
+	const visible = contents.map(toTitle).filter(Boolean);
+	const expectedWindow = titles.slice(modal.layout.contentsStart, modal.layout.contentsStart + modal.layout.navRows);
+	assert.deepEqual(
+		visible,
+		expectedWindow,
+		`Contents shows ${JSON.stringify(visible)}, expected ${JSON.stringify(expectedWindow)}`,
+	);
+	assert.equal(visible[0], titles[0], `the first Contents entry is visible, not replaced: ${JSON.stringify(visible)}`);
+	assert.equal(
+		contents.some((line) => line.startsWith("› ")),
+		true,
+		"the visible selection marker survives",
+	);
+	const detail = detailColumn(modal, 90);
+	assert.match(detail, /Failure recovery gap/, "the pinned title is still shown");
+	assert.match(stripVTControlCharacters(modal.render(90).join("\n")), /Retry saving/, "recovery stays reachable");
+	assert.match(detail, /sandboxed shell|read-only sandbox/, "the advisory is still shown");
+
+	// And the reading area really has the finding body, reachable by scrolling.
+	let reachesBody = false;
+	for (let i = 0; i < 40 && !reachesBody; i++) {
+		modal.handleInput("\x1b[B");
+		reachesBody = /What happens|Suggested fix|Reasoning/.test(detailColumn(modal, 90));
+	}
+	assert.equal(reachesBody, true, "the finding text is reachable by scrolling");
+
+	// Narrow Contents-only layout: the advisory prints first, then every entry (minus the advisory rows),
+	// and the selection marker is visible.
+	const narrow = build(32, 56);
+	narrow.view.pane = "contents";
+	narrow.focus = "contents";
+	const narrowText = stripVTControlCharacters(narrow.render(56).join("\n"));
+	assert.match(narrowText, /sandboxed shell|read-only sandbox/, "the advisory still shows in narrow mode");
+	const narrowTitles = narrow.entries().map((entry) => entry.title);
+	const narrowToTitle = (line) =>
+		narrowTitles.find((title) => line.replace(/^[›▲▼]\s*/, "").startsWith(title.slice(0, 12)));
+	const narrowLines = stripVTControlCharacters(narrow.render(56).join("\n"))
+		.split("\n")
+		.map((line) => line.replace(/^[\u2502\s]+/, "").replace(/[\u2502\s]+$/, ""))
+		.filter(Boolean);
+	const narrowVisible = narrowLines.map(narrowToTitle).filter(Boolean);
+	const narrowWindow = narrowTitles.slice(
+		narrow.layout.contentsStart,
+		narrow.layout.contentsStart + narrow.layout.navRows,
+	);
+	assert.deepEqual(
+		narrowVisible,
+		narrowWindow,
+		`narrow Contents shows ${JSON.stringify(narrowVisible)}, expected ${JSON.stringify(narrowWindow)}`,
+	);
+	assert.equal(narrowVisible[0], narrowTitles[0], "narrow Contents starts at the first entry");
+	assert.equal(
+		narrowLines.some((line) => line.startsWith("› ")),
+		true,
+		`narrow Contents keeps the selection marker: ${JSON.stringify(narrowLines.filter(Boolean))}`,
+	);
+
+	// A cramped viewport still keeps a reading row or shows the resize screen, never controls with no text.
+	for (const [rows, columns] of [[18, 56], [20, 40], [18, 36]]) {
+		const small = build(rows, columns);
+		const text = small.render(columns).join("\n");
+		assert.ok(
+			small.layout.bodyRows >= 1 || /Enlarge the terminal/.test(text),
+			`${columns}x${rows}: reading row or resize screen`,
+		);
+	}
+});
+
+test("Contents paging steps by the visible pane height, not the reading height", () => {
+	const record = makeRecord();
+	record.guide.topics = Array.from({ length: 30 }, (_, i) => ({
+		id: `topic-${i}`,
+		title: `Topic ${i}`,
+		explanation: "detail",
+		evidence: [],
+	}));
+	record.ui = { ...newReviewView(), selected: "overview", pane: "contents" };
+	const modal = make(record);
+	modal.advisory =
+		"Guided Review on codex uses sandboxed shell in a read-only sandbox, not strict file-only inspection. Claude or Muse is recommended for untrusted PRs.";
+	modal.render(103);
+	modal.focus = "contents";
+	assert.ok(modal.layout.navRows > modal.layout.bodyRows, "a pinned advisory makes the Contents pane taller than the reading pane");
+	modal.handleInput("\x1b[6~");
+	// pageDown moves by navRows - 1 entries, i.e. exactly one visible screen of Contents.
+	const expected = modal.entries()[modal.layout.navRows - 1].id;
+	assert.equal(modal.view.selected, expected);
+});
+
+test("a regenerated guide that drops the selected entry falls back to a visible selection", () => {
+	const record = makeRecord();
+	record.guide.topics = Array.from({ length: 6 }, (_, i) => ({
+		id: `topic-${i}`,
+		title: `Topic ${i}`,
+		explanation: "detail",
+		evidence: [],
+	}));
+	record.ui = newReviewView();
+	const modal = make(record);
+	modal.render(103);
+	modal.view.selected = "topic-4";
+	// Regeneration replaces the guide and the selected topic no longer exists.
+	modal.record.guide.topics = record.guide.topics.slice(0, 2);
+	modal.syncGuideView();
+	assert.equal(modal.view.selected, "overview", "the selection returns to a real entry");
+	modal.render(103);
+	assert.match(stripVTControlCharacters(modal.render(103).join("\n")), /› Overview/, "and shows its marker");
+});

@@ -5,9 +5,9 @@ import { runBackendText } from "./backend.ts";
 import {
   buildElevateDiscoveryPrompt, buildElevateUpgradePrompt, parseElevateDiscovery,
   selectedFindings, stripElevateFence, elevateInsertAllowed, captureElevateContext, isElevateContextOverflow,
-  reduceElevateContext, type ElevateContextMode, type ElevateDiscovery, type ElevateInput,
+  reduceElevateContext, elevateDisplayText, type ElevateContextMode, type ElevateDiscovery, type ElevateInput,
 } from "./elevate-engine.ts";
-import { BRO_OVERLAY, broOverlayArea, buttonLabels, delegateMouse, modalHeight, openBroOverlay, renderFrame, Scroller, wrapButtons, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, buttonLabels, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, wrapButtons, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel } from "./settings.ts";
 import { canBroInsertIntoEditor, insertBroDesktopText, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
@@ -163,7 +163,7 @@ export class ElevateModal implements Focusable {
       // The checklist stands alone: display order, the cursor, and the tick on each row. No markdown
       // document, so the approval target stays visible while its reason scrolls.
       const list = this.discovery.findings.map((f, i) =>
-        `${i === this.cursor && this.zone === "list" ? "›" : " "} ${this.accepted.has(i) ? "[x]" : "[ ]"} ${i + 1}. ${f.title} · ${f.dimension}`);
+        `${i === this.cursor && this.zone === "list" ? "›" : " "} ${this.accepted.has(i) ? "[x]" : "[ ]"} ${i + 1}. ${elevateDisplayText(f.title, true)} · ${f.dimension}`);
       this.listText = list;
       // The header already carries the count; keeping the intro to one dim line leaves the rows for
       // the checklist itself, which is the part the user acts on.
@@ -419,7 +419,7 @@ export class ElevateModal implements Focusable {
         }
         // Pin the approval target; only its explanation scrolls.
         const current = this.discovery.findings[this.cursor];
-        const label = (name: string, value: string) => wrapTextWithAnsi(`${this.theme.fg("dim", `${name}: `)}${value}`, innerWidth);
+        const label = (name: string, value: string) => wrapTextWithAnsi(`${this.theme.fg("dim", `${name}: `)}${elevateDisplayText(value)}`, innerWidth);
         const detail = current ? [
           ...label("Finding", `${current.title} · ${current.dimension}`),
           ...label("Why", current.why), ...label("Move", current.expertMove),
@@ -436,7 +436,7 @@ export class ElevateModal implements Focusable {
         return [...list, ...visibleDetail];
       },
       footer: [],
-      notice: this.notice ? this.theme.fg(this.stage === "failed" ? "warning" : "accent", this.notice) : undefined,
+      notice: this.notice ? formatNotice(this.theme, this.notice, this.stage === "failed" ? "error" : "info") : undefined,
       hints,
       footerAfterHints: buttonRow(),
     });

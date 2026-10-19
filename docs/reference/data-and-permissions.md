@@ -9,20 +9,27 @@ credentials, and does not copy credentials or rewrite backend configuration.
 Each backend and your model provider may retain sessions, logs, and request
 data under their own settings and policies.
 
-| | Explain / show / Elevate | BTW conversation-only | BTW full permission | Advisor | Guided Review |
+| | Explain / show | BTW conversation-only | BTW full permission | Advisor | Guided Review |
 | --- | --- | --- | --- | --- | --- |
-| **Agy** | Temporary directory, Agy sandbox | Temporary directory, Agy sandbox | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Unavailable; choose Claude/Muse |
+| **Agy** | Temporary directory, Agy sandbox | Temporary directory, Agy sandbox | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Captured checkout, Agy sandbox (shell and in-project writes allowed; advisory) |
 | **Claude Code** | Scratch directory, tools/MCP/skills disabled, no session persistence | Workspace, tools disabled | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Restricted Read/Grep/Glob only; confined checkout, no persistence |
-| **Grok** | Temporary directory, **prompt instruction only** | Workspace, **prompt instruction only** | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Unavailable; choose Claude/Muse |
-| **Codex** | Scratch directory, read-only sandbox, ephemeral session | Workspace, read-only sandbox | Workspace, approvals and sandbox bypassed | Fresh workspace process, approvals and sandbox bypassed | Unavailable; command execution is not allowed for review |
+| **Grok** | Temporary directory, **prompt instruction only** | Workspace, **prompt instruction only** | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Captured checkout, read-only sandbox (shell-enabled; advisory) |
+| **Codex** | Scratch directory, read-only sandbox, ephemeral session | Workspace, read-only sandbox | Workspace, approvals and sandbox bypassed | Fresh workspace process, approvals and sandbox bypassed | Captured checkout, read-only sandbox, ephemeral (shell-enabled; advisory) |
 | **Muse** | Scratch directory, approval/write/shell disabled, no session log | Workspace, approval/write/shell disabled | Workspace, permissions bypassed (`--yolo`) | Fresh workspace process, permissions bypassed (`--yolo`) | Captured checkout; writes/shell/web disabled, no session log |
 
-- Grok always runs with its sandbox off and permissions bypassed; its tools,
-  hooks, skills, plugins, and MCP may remain available. "Answer only from the
-  supplied context" is a request, not an enforced restriction.
+- Grok always runs explain, show, btw and the advisor with its sandbox off and
+  permissions bypassed; its tools, hooks, skills, plugins, and MCP may remain
+  available. "Answer only from the supplied context" is a request, not an
+  enforced restriction. Guided Review is the exception: it runs with
+  `--sandbox read-only --permission-mode dontAsk` but still executes shell
+  commands inside that sandbox.
 - Codex's read-only sandbox is not a tool-free mode: workspace reads and
-  sandboxed commands remain available. Bro does not disable configured MCP
-  servers or web search; their access is governed by Codex configuration.
+  sandboxed commands remain available, including for Guided Review. Bro does
+  not disable configured MCP servers or web search; their access is governed
+  by Codex configuration.
+- Agy's Guided Review runs under `--sandbox`, which restricts terminal
+  commands but still permits writes inside the project; it has no file-only
+  tool filter.
 - Muse's restricted mode disables write and shell tools and approval prompts,
   not all tools: workspace reads and web tools remain available without approval.
   It is not a tool-free or network-isolated mode.
@@ -73,7 +80,7 @@ When shaping an answer, each part has one owner:
   seeded main-session conversation text (plus earlier turns when a native
   session is reseeded) to the selected backend. In full permission mode the
   side agent can additionally read and edit the workspace.
-- **Guided Review requests**: PR identity/description, captured diff, relevant private discussion and preferences go to the selected backend, which can inspect captured files using Claude/Muse read-only tools. Main-session context is not attached. Review shell/write/web tools are disabled; Claude file tools are confined with `--restricted`, Muse uses workspace-scoped inspection. Prompt injection can still corrupt conclusions or reveal captured content to the provider; this is not a general confidentiality guarantee. See [Guided Review access and storage](../guided-review.md#access-privacy-and-storage).
+- **Guided Review requests**: PR identity/description, captured diff, relevant private discussion and preferences go to the selected backend, which can inspect captured files. Main-session context is not attached. Claude (`--restricted`, file tools only) and Muse (write/shell/web disabled) use strict file-only inspection and are recommended for untrusted PRs. Codex and Grok inspect the captured checkout under a read-only sandbox; Agy's `--sandbox` still allows in-project writes. All three run shell commands and show an advisory. Prompt injection can still corrupt conclusions or reveal captured content to the provider; this is not a general confidentiality guarantee. See [Guided Review access and storage](../guided-review.md#access-privacy-and-storage).
 - **Preferences**: `bro-preferences.md` is sent with every explain, Show,
   BTW, Elevate, and Guided Review request to the selected backend. It is never sent to the advisor or
   to Pi's main model.

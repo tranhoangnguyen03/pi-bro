@@ -82,6 +82,7 @@ export class ReviewModal {
 	operation: "guide" | "answer" | "regenerate" = "guide";
 	activeTurn: ReviewRecord["turns"][number] | undefined;
 	notice = "";
+	advisory = "";
 	saveError = "";
 	evidence = new Map<string, string>();
 	evidenceErrors = new Map<string, string>();
@@ -99,6 +100,7 @@ export class ReviewModal {
 	private layout = {
 		height: 0,
 		bodyRows: 0,
+		navRows: 0,
 		leftWidth: 0,
 		navigationOnly: false,
 		contentsStart: 0,
@@ -214,6 +216,13 @@ export class ReviewModal {
 	syncGuideView(): void {
 		if (!this.record.guide?.topics.some((topic) => topic.id === this.view.scope))
 			delete this.view.scope;
+		// A regenerated guide can drop the selected topic or finding; fall back rather than leaving
+		// the selection pointing at an entry that no longer exists (no marker, stale target).
+		if (!this.entries().some((entry) => entry.id === this.view.selected)) {
+			this.view.selected = "overview";
+			this.view.screen = "reading";
+			delete this.view.returnTo;
+		}
 		const origin = this.view.returnTo;
 		if (
 			origin &&
@@ -426,9 +435,9 @@ export class ReviewModal {
 			event.y >= this.layout.height
 		)
 			return { handled: true, render: false };
-		const { bodyRows, leftWidth, navigationOnly, contentsStart, bodyStart } = this.layout;
+		const { navRows, leftWidth, navigationOnly, contentsStart, bodyStart } = this.layout;
 		const start = 4;
-		const rows = bodyRows + bodyStart - 4;
+		const rows = this.layout.bodyRows + bodyStart - 4;
 		if (event.y < start || event.y >= start + rows || event.x === 0 || event.x === this.width - 1)
 			return { handled: true, render: false };
 		const delta = Math.trunc(event.wheelDelta ?? 0);
@@ -437,7 +446,7 @@ export class ReviewModal {
 			this.contentsOffset = Math.max(
 				0,
 				Math.min(
-					Math.max(0, this.entries().length - bodyRows),
+					Math.max(0, this.entries().length - navRows),
 					(this.contentsOffset ?? contentsStart) + delta,
 				),
 			);
@@ -505,7 +514,9 @@ export class ReviewModal {
 				]!;
 		} else if (matchesKey(data, "pageDown") || matchesKey(data, "pageUp")) {
 			this.render(this.width);
-			const delta = (matchesKey(data, "pageDown") ? 1 : -1) * Math.max(1, this.layout.bodyRows - 1);
+			// Page by the pane being paged: Contents shows navRows, the reading area shows bodyRows.
+			const page = this.focus === "contents" ? this.layout.navRows : this.layout.bodyRows;
+			const delta = (matchesKey(data, "pageDown") ? 1 : -1) * Math.max(1, page - 1);
 			if (this.focus === "contents") {
 				const entries = this.entries(),
 					index = entries.findIndex((entry) => entry.id === this.view.selected);
@@ -1082,21 +1093,49 @@ export class ReviewModal {
 				? wrapTextWithAnsi(buttons.join(" "), detailWidth)
 				: buttons.map((button) => "  " + button);
 		const availableRows = height - (narrow ? 7 : 8) - actionRows.length - (composer ? 1 : 0);
-		const sticky =
-			!navigationOnly &&
-			this.view.screen === "finding" &&
-			this.finding &&
-			availableRows >= 4 &&
-			(this.view.offsets[this.key] ?? 0) > 0
+		const actionGap = actionRows.length && availableRows >= 8 ? 1 : 0;
+		// Middle rows are one budget: the pinned advisory and finding title take detail rows from the
+		// top of it, and the reading area keeps everything else. Navigation renders on every middle
+		// row in the wide layout, so pinned chrome never removes a Contents entry; in the narrow
+		// Contents-only layout the pinned rows print first and navigation fills the remaining rows.
+		const budget = Math.max(0, availableRows - actionGap);
+		const resizeScreen = () =>
+			[
+				border("╭", "╮"),
+				row("Enlarge the terminal to read this review"),
+				row(this.busy ? "Esc stop and close" : "Esc close"),
+				border("╰", "╯"),
+			]
+				.slice(0, height)
+				.map((line) => truncateToWidth(line, width, ""));
+		const stickyRow =
+			!navigationOnly && budget >= 4 && this.view.screen === "finding" && this.finding && (this.view.offsets[this.key] ?? 0) > 0
 				? truncateToWidth(
 						`${this.findingBadge(this.finding)}  ${this.theme.bold(label(this.finding.title))}`,
 						detailWidth,
 						"…",
 					)
 				: undefined;
-		const actionGap = actionRows.length && availableRows >= 8 ? 1 : 0;
-		const bodyRows = availableRows - (sticky ? 1 : 0) - actionGap;
-		const bodyStart = 4 + (sticky ? 1 : 0);
+		const advisoryLines = this.advisory ? wrapTextWithAnsi(label(this.advisory), detailWidth) : [];
+		const advisoryCount = Math.min(advisoryLines.length, Math.max(0, budget - 1 - (stickyRow ? 1 : 0)));
+		// A viewport that cannot show the advisory plus one reading row (or a pinned title plus one)
+		// shows the resize screen instead of a frame with controls and no review text.
+		if ((advisoryLines.length && advisoryCount === 0) || budget - advisoryCount - (stickyRow ? 1 : 0) < 1)
+			return resizeScreen();
+		const advisoryRows = advisoryLines.slice(0, advisoryCount).map((line, index) =>
+			this.theme.fg(
+				"warning",
+				index === advisoryCount - 1 && advisoryCount < advisoryLines.length
+					? truncateToWidth(line, Math.max(1, detailWidth - 1), "") + "…"
+					: line,
+			),
+		);
+		const pinned = [...advisoryRows, ...(stickyRow ? [stickyRow] : [])];
+		const bodyRows = budget - pinned.length;
+		// Wide: every middle row carries a nav entry. Narrow: the pinned rows carry their own text and
+		// navigation starts right after them.
+		const navRows = navigationOnly ? bodyRows : budget;
+		const bodyStart = 4 + pinned.length;
 		if (this.isList)
 			this.view.row = Math.max(0, Math.min(Math.max(0, this.listLength - 1), this.view.row));
 		const body = [
@@ -1110,7 +1149,7 @@ export class ReviewModal {
 			...(this.notice && this.notice !== "Saved" && !this.busy
 				? [
 						...wrapTextWithAnsi(label(this.notice), detailWidth).map((line) =>
-							this.theme.fg("accent", line),
+							this.theme.fg(/failed|error|cannot/i.test(this.notice) ? "error" : "accent", line),
 						),
 						"",
 					]
@@ -1131,11 +1170,11 @@ export class ReviewModal {
 		const start = Math.max(
 			0,
 			Math.min(
-				this.contentsOffset ?? selected - Math.floor(bodyRows / 2),
-				Math.max(0, entries.length - bodyRows),
+				this.contentsOffset ?? selected - Math.floor(navRows / 2),
+				Math.max(0, entries.length - navRows),
 			),
 		);
-		this.layout = { height, bodyRows, leftWidth, navigationOnly, contentsStart: start, bodyStart };
+		this.layout = { height, bodyRows, navRows, leftWidth, navigationOnly, contentsStart: start, bodyStart };
 		const target = this.record.snapshot.target;
 		const paneRule = (title: string, size: number, active: boolean) =>
 			this.theme.fg(
@@ -1192,31 +1231,31 @@ export class ReviewModal {
 			),
 			divider,
 		];
-		for (let i = 0; i < bodyRows + (sticky ? 1 : 0); i++) {
-			const entry = entries[start + i];
+		for (let i = 0; i < budget; i++) {
+			const isPinned = i < pinned.length;
+			// Wide: nav index is the row index, so a pinned row still shows its Contents entry.
+			// Narrow: pinned rows print their own text, so nav starts at the first non-pinned row.
+			const navIndex = navigationOnly ? i - pinned.length : i;
+			const entry = navIndex >= 0 ? entries[start + navIndex] : undefined;
 			let nav = entry ? `${entry.id === this.view.selected ? "›" : " "} ${label(entry.title)}` : "";
 			if (entry?.id === this.view.selected)
 				nav =
 					this.focus === "contents"
 						? this.theme.bold(this.theme.fg("accent", nav))
 						: this.theme.fg("dim", nav);
-			if (i === 0 && start > 0) nav = "▲ " + nav.slice(2);
-			if (i === bodyRows + (sticky ? 1 : 0) - 1 && start + i + 1 < entries.length)
+			if (navIndex === 0 && start > 0) nav = "▲ " + nav.slice(2);
+			if (navIndex === navRows - 1 && start + navIndex + 1 < entries.length)
 				nav = "▼ " + nav.slice(2);
+			const detail = isPinned ? pinned[i]! : (body[offset + i - pinned.length] ?? "");
 			lines.push(
 				row(
 					navigationOnly
-						? nav
+						? isPinned
+							? pinned[i]!
+							: nav
 						: leftWidth
-							? fit(nav, leftWidth) +
-								this.theme.fg("border", " │ ") +
-								fit(
-									sticky && i === 0 ? sticky : (body[offset + i - (sticky ? 1 : 0)] ?? ""),
-									detailWidth,
-								)
-							: sticky && i === 0
-								? sticky
-								: (body[offset + i - (sticky ? 1 : 0)] ?? ""),
+							? fit(nav, leftWidth) + this.theme.fg("border", " │ ") + fit(detail, detailWidth)
+							: detail,
 				),
 			);
 		}
@@ -1247,7 +1286,7 @@ export class ReviewModal {
 									? "Enter actions"
 									: "↑↓ read";
 		const hint = `${exit} · ${primary} · Tab${narrow ? "" : this.focus === "input" ? " actions" : " focus"}`;
-		const more = navigationOnly ? start + bodyRows < entries.length : offset < this.maxOffset;
+		const more = navigationOnly ? start + navRows < entries.length : offset < this.maxOffset;
 		const paused =
 			this.busy &&
 			this.view.screen === "discussion" &&

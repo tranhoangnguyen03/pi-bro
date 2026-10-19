@@ -38,8 +38,8 @@ test('Developer and manual test guides cover Elevate', async () => {
 // no longer exists. Documented button labels are checked against the ones the modal actually builds,
 // so a renamed or missing button fails here instead of shipping.
 test('Elevate controls are documented as buttons, not retired bare keys', async () => {
-  const [guide, testing, help, readme, source] = await Promise.all([
-    file('docs/elevate.md'), file('docs/TESTING.md'), file('src/explain-modal.ts'), file('README.md'), file('src/elevate.ts'),
+  const [guide, testing, help, readme, source, troubleshooting] = await Promise.all([
+    file('docs/elevate.md'), file('docs/TESTING.md'), file('src/explain-modal.ts'), file('README.md'), file('src/elevate.ts'), file('docs/reference/troubleshooting.md'),
   ]);
   for (const phrase of [
     '## Controls in the modal', '[Rewrite with N selected]', '[Insert into editor]',
@@ -63,8 +63,8 @@ test('Elevate controls are documented as buttons, not retired bare keys', async 
   assert.match(source, /label: "Back"/, 'the guide documents [Back] but the modal has no Back button');
 
   // Retired instructions must not survive in shipped documentation or the built-in help.
-  for (const [name, text] of [['guide', guide], ['testing', testing], ['help', help], ['README', readme]]) {
-    for (const stale of [/`1`–`5`/, /`a` \/ `n`/, /\*\*All findings start selected\*\*/, /1–5 toggles/, /a all, n none/, /Press `i`/, /Press `r` to retry/, /\bi inserts\b/, /\bb revisits\b/, /single-line request field/, /press Enter, or pass it/]) {
+  for (const [name, text] of [['guide', guide], ['testing', testing], ['help', help], ['README', readme], ['troubleshooting', troubleshooting]]) {
+    for (const stale of [/`1`–`5`/, /`a` \/ `n`/, /\*\*All findings start selected\*\*/, /1–5 toggles/, /a all, n none/, /Press `i`/, /Press `r` to retry/, /retried with `r`/, /\bi inserts\b/, /\bb revisits\b/, /single-line request field/, /press Enter, or pass it/]) {
       assert.doesNotMatch(text, stale, `${name} still documents the retired control ${stale}`);
     }
   }
