@@ -100,7 +100,7 @@ Before release, manually follow the [getting-started guide](getting-started.md) 
 
 Use interactive Pi with a configured BTW backend and a non-sensitive sample task.
 
-1. `/bro elevate Design a document search system` should start discovery without sending a main-agent message. Check 0–5 findings with reasons and expert actions, and that **nothing starts ticked**. Stage 1 should accept a pasted **multi-line** objective and keep its line breaks. At 80×24, type more than five lines and confirm the editor scrolls without locking; Backspace must still work. On a very short terminal it must ask for a bigger one rather than let you edit blind, then restore editing when enlarged.
+1. `/bro elevate Design a document search system` should pre-fill Compose without a model call or main-agent message. Toggle Context: Messages/Full, then start discovery explicitly. Check 0–5 findings with reasons and expert actions, and that **nothing starts ticked**. Stage 1 should accept a pasted **multi-line** objective and keep its line breaks. At 80×24, type more than five lines and confirm the editor scrolls without locking; Backspace must still work. On a very short terminal it must ask for a bigger one rather than let you edit blind, then restore editing when enlarged.
 2. Press `Space` or `Enter` to tick the highlighted finding and `↑`/`↓` to move between them; `Tab` moves focus to the buttons. `[Rewrite with 0 selected]` must explain itself instead of rewriting. With a long explanation, Page Down and the wheel must reach its end while the highlighted finding stays visible; repeated renders must not change the scroll position. Tick at least one, choose `[Rewrite with N selected]`, and check that the output is an improved **request**, not a completed design.
 3. Choose `[Back]`, adjust the ticks, regenerate and choose `[Copy]` to copy the revised request.
 4. Type a multi-line task in the main editor, then use Ctrl+Shift+E where supported. Esc must leave the original draft unchanged. In terminal mode `[Insert into editor]` may **replace** that draft, but only the draft Elevate opened on, and only if it has not changed. With `/bro elevate <request>` the editor must be empty. Nothing is submitted.
@@ -111,7 +111,9 @@ Use interactive Pi with a configured BTW backend and a non-sensitive sample task
 
 Local verification for PR #152: the full suite and isolated Pi fullscreen terminal checks use an offline fake Agy backend. Terminal checks cover 30-line compose scrolling, discovery, long-detail paging with a pinned finding, rewrite and insertion without submission. These checks do not qualify physical terminal shortcuts, Desktop RPC, clipboard integration or live-model quality. Regression tests also cover intermediate-height list navigation, hidden Select all/Rewrite actions, returning to Compose and retrying a failed rewrite with unchanged approvals.
 
-Offline tests do not prove the quality of model-generated suggestions. Compare real results from original versus revised assignments in separate evaluations.
+Verify Messages excludes tool activity and Full includes text tool activity while excluding reasoning/images. Test an explicit context-overload failure: no automatic call, Retry reduces older history and preserves approvals; ordinary errors must retain history. Switching mode resets findings without a call.
+
+Output usefulness is intentionally left to user feedback, not AI scoring or a release qualification benchmark. Automated tests verify mechanics, privacy boundaries and recovery only.
 
 ## Guided Review
 

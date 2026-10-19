@@ -21,7 +21,7 @@ test('Elevate guide explains the goal, example, actions, editor replacement, and
     '## Start here', '## The two questions Elevate asks', '## Example: before and after',
     '## Controls in the modal', 'What happens to the original editor draft?',
     '## What Elevate can and cannot do', '## Troubleshooting',
-    'Grok', 'up to the last **eight**', '**not**',
+    'Grok', '**Messages (default):**', '**Full:**', '**no fixed history cap**', '**not**',
   ]) assert.ok(guide.includes(phrase), `Missing ${JSON.stringify(phrase)} in Elevate guide`);
 });
 

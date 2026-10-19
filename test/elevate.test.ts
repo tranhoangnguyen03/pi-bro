@@ -3,7 +3,35 @@ import { test } from "node:test";
 import {
   MAX_ELEVATE_FINDINGS, buildElevateDiscoveryPrompt, buildElevateUpgradePrompt,
   elevateInsertAllowed, parseElevateDiscovery, selectedFindings, stripElevateFence,
+  captureElevateContext, isElevateContextOverflow, reduceElevateContext,
 } from "../src/elevate-engine.ts";
+
+test("context modes include all branch messages but exclude reasoning and binary content", () => {
+  const entries = Array.from({ length: 20 }, (_, i) => ({ type: "message", message: { role: "user", content: `turn ${i}: ${"x".repeat(1000)}` } }));
+  const mixed = [...entries, { type: "message", message: { role: "assistant", content: [
+    { type: "text", text: "PLAN" }, { type: "thinking", thinking: "SECRET" },
+    { type: "toolCall", id: "call", name: "read", arguments: { path: "file" } }, { type: "image", data: "BINARY" },
+  ] } }, { type: "message", message: { role: "toolResult", toolCallId: "call", toolName: "read", content: [{ type: "text", text: "RESULT" }, { type: "image", data: "BINARY" }], details: "SECRET" } }];
+  const messages = captureElevateContext(mixed, "messages").join("\n");
+  const full = captureElevateContext(mixed, "full").join("\n");
+  assert.ok(messages.length > 12000);
+  assert.match(messages, /turn 0:/);
+  assert.match(messages, /turn 19:/);
+  assert.match(messages, /PLAN/);
+  assert.doesNotMatch(messages, /toolCall|RESULT|SECRET|BINARY/);
+  assert.match(full, /toolCall/);
+  assert.match(full, /RESULT/);
+  assert.doesNotMatch(full, /SECRET|BINARY/);
+});
+
+test("only context overflow permits progressive reduction", () => {
+  for (const error of ["context_length_exceeded", "prompt is too long", "maximum context length is 1000 tokens", "input tokens exceed limit", "Codex ran out of room in the model's context window", "This model's maximum prompt length is 131072", "The input token count (1200000) exceeds the maximum number of tokens allowed (1048576)"]) assert.equal(isElevateContextOverflow(error), true, error);
+  for (const error of ["rate limit exceeded", "network timeout", "max output tokens exceeded", "authentication failed"]) assert.equal(isElevateContextOverflow(error), false, error);
+  assert.deepEqual(reduceElevateContext(["old", "middle", "new"]), ["new"]);
+  let context = ["x".repeat(20000)];
+  for (let i = 0; i < 20 && context.length; i++) { const next = reduceElevateContext(context); assert.ok(next.join("").length < context.join("").length); context = next; }
+  assert.deepEqual(context, []);
+});
 
 const objective = "Design a retrieval system for documents, keeping our current DE pipelines.";
 const finding = { dimension: "depth" as const, title: "Independent tests", why: "Summaries may hide missed evidence.", expertMove: "Test with real business questions." };

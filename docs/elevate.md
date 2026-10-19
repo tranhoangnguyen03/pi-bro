@@ -8,7 +8,7 @@ Elevate works inside Pi's **separate Bro modal**. It does not post its discussio
 
 ## Start here (one minute)
 
-**Option A: Improve a draft already in Pi's editor.** Type your request normally, but **do not submit it**. Invoke the **Ctrl+Shift+E** shortcut, where your terminal sends that key combination to Pi. Elevate opens with your unsent draft. If the shortcut doesn't work in your terminal, use `/bro elevate <request>` instead.
+**Option A: Improve a draft already in Pi's editor.** Type your request normally, but **do not submit it**. Invoke the **Ctrl+Shift+E** shortcut, where your terminal sends that key combination to Pi. Elevate opens Compose with your unsent draft; choose a context mode before starting discovery. If the shortcut doesn't work in your terminal, use `/bro elevate <request>` instead.
 
 **Option B: Start with a slash command.**
 
@@ -22,9 +22,19 @@ Elevate works inside Pi's **separate Bro modal**. It does not post its discussio
 /bro elevate
 ```
 
-If the main editor contains a draft, Bro starts with that draft. Otherwise, it shows a multi-line objective field: type or paste the objective and choose **Ctrl+S** (or `Ctrl+Enter` on terminals that send it, or the `[Discover gaps]` button). `Enter` adds a new line, so a pasted multi-line task keeps its structure.
+If the main editor contains a draft, Bro pre-fills the objective with that draft. Elevate always opens Compose first so you can choose context before any model call. Otherwise, it shows a multi-line objective field: type or paste the objective and choose **Ctrl+S** (or `Ctrl+Enter` on terminals that send it, or the `[Discover gaps]` button). `Enter` adds a new line, so a pasted multi-line task keeps its structure.
 
 When both an explicit `/bro elevate <request>` argument and a draft exist, the **explicit argument takes priority**. The main editor is left untouched unless you later choose to insert the revision.
+
+## Conversation context and retry
+
+The **Context: Messages** button toggles to **Context: Full**. Use Tab to focus actions and Left/Right to reach it; Enter activates it. Short labels may show Messages or Full on narrow screens. The header always shows the active mode. While reviewing findings, choose **Edit request** to return to Compose and switch context; keeping the review action row short leaves space for explanations on small terminals.
+
+- **Messages (default):** all user and assistant text from the current conversation branch.
+- **Full:** also includes tool-call arguments and text tool results. This may send sensitive file contents, command arguments or tool output to the selected provider. Hidden reasoning, image binaries and provider metadata are excluded in both modes.
+- There is **no fixed history cap**. Provider context limits still apply. The separate 12,000-character objective limit remains.
+- Changing mode never makes a model call. It returns to Compose and clears old findings, approvals and rewrites. Start discovery again to use the new mode. Each new window defaults to Messages; history is captured when the window opens.
+- After an explicit context-overload error, **Retry** removes the oldest half of remaining messages and repeats the failed step. If only one oversized message remains, subsequent retries halve its text, then omit it. The header shows **reduced** and the prompt marks partial history. The objective and approved findings remain intact. There are no automatic retries and ordinary failures do not trim context. Once history is exhausted, shorten the objective or choose a larger-context backend.
 
 ## The two questions Elevate asks
 
@@ -93,7 +103,7 @@ If there are **no material findings**, the revised-request screen displays your 
 
 **Access and privacy:**
 
-- Bro sends the **request**, up to the last **eight** main-session turns of **user/assistant text** (capped at **12,000 characters**), your saved Bro preferences if any, and later your **approved findings**, to the selected backend/provider. Tool calls, tool results, images, and hidden reasoning are not included in this context capture. The limit may truncate older text.
+- Bro sends the **request**, conversation history selected by **Messages** or **Full**, saved Bro preferences if any, and later the **approved findings**, to the selected backend/provider. History is initially uncapped; Full includes tool-call arguments and text results. Hidden reasoning and image binaries are never captured. Explicit overload retries can remove older context as described above.
 - Elevate uses the **BTW backend/model/effort setting** from `/bro config`, falling back to Bro's shared default. There is **no separate Elevate setting** in this MVP. Each stage makes a **fresh, non-continuing** backend call; your Elevate selections live only in memory and clear on close/reload.
 - Requests use Bro's **restricted explain-style execution path**. Restrictions depend on the backend. For example, **Grok's restriction is prompt-only and its sandbox is off**; **Codex and Muse can have read tools**, including tools governed by local configuration. **Do not treat this as a firm sandbox or a guarantee of no file/network access.** Consult [backend access details](reference/data-and-permissions.md#backends-access-and-retention). Elevate itself has no file-read or file-write action.
 - Closing or cancelling does not submit anything to the main agent. Your backend and provider may still retain prompts or process data under their own policies. Clipboard copies may remain in clipboard history.

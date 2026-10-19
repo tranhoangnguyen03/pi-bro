@@ -355,7 +355,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 ## Elevate
 
-- \`/bro elevate [request]\` — find expert gaps before giving Pi a task; Ctrl+Shift+E uses the draft. Tick findings with Space, then Enter moves to the buttons.
+- \`/bro elevate [request]\` — find expert gaps before giving Pi a task; Ctrl+Shift+E uses the draft. Choose Messages or Full context before discovery; tick findings with Space/Enter, then Tab moves to the buttons.
 - Approve it yourself: Enter newline, Ctrl+Enter discover, and labelled buttons for the rest.
 - Shares BTW settings; see docs/elevate.md.
 

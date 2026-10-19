@@ -708,18 +708,34 @@ test("modal kit: elevate long explanations scroll without hiding the approval ta
 			assert.match(initial, /› \[ \] 1\./, "the first approval target is hidden");
 			component.handleInput(" ");
 			assert.match(view(), /› \[x\] 1\./);
-			for (let i = 0; i < 100; i++) component.handleInput("\x1b[6~");
+			let paged = "";
+			for (let i = 0; i < 100; i++) { component.handleInput("\x1b[6~"); paged += view(); }
 			const end = view();
-			assert.match(end, /DETAIL END/, "Page Down cannot reach the end of the explanation");
+			assert.match(paged, /DETAIL END/, "Page Down cannot reach the end of the explanation");
+			assert.match(end, /Assess the objective/, "the assessment is not reachable at the end");
 			assert.match(end, /› \[x\] 1\./, "scrolling hid the approval target");
 			assert.equal(view(), end, "a render undid manual scrolling");
 			component.handleInput("\x1b[B");
 			assert.match(view(), /› \[ \] 2\./);
-			assert.match(view(), /Why:/, "a new finding did not start at its explanation");
+			assert.match(view(), /Finding:/, "a new finding did not start at its full title");
 			component.setCompose("Edit the objective");
 			assert.doesNotMatch(view(), /↑\d+ ↓\d+/, "Compose inherited the explanation's scroll indicator");
 		} finally { component.handleInput("\x1b"); await mounted.closed; }
 	}
+});
+
+test("modal kit: complete finding title and assessment remain reachable", () => {
+  const modal = new elevate.ElevateModal({ mode: "fullscreen", terminal: { rows: 24, columns: 80 }, requestRender() {} }, theme, () => {}, () => {}, () => {}, () => {}, () => {}, () => {});
+  const title = "Detailed finding ".repeat(6) + "TITLE_END";
+  const assessment = "Assessment text ".repeat(30) + "ASSESSMENT_END";
+  modal.setDiscovery({ assessment, findings: [{ dimension: "depth", title, why: "Reason ".repeat(100), expertMove: "Check evidence" }] });
+  let seen = "";
+  for (let i = 0; i < 100; i++) {
+    seen += stripVTControlCharacters(modal.render(62).join("\n"));
+    modal.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: 1 });
+  }
+  assert.match(seen, /TITLE_END/);
+  assert.match(seen, /ASSESSMENT_END/);
 });
 
 test("modal kit: elevate preserves the checklist window and blocks hidden rewrite actions", () => {
@@ -741,6 +757,30 @@ test("modal kit: elevate preserves the checklist window and blocks hidden rewrit
 	view();
 	modal.handleInput("\r");
 	assert.equal(upgrades, 0, "Rewrite ran while the findings were hidden");
+});
+
+test("modal kit: context switch is visible, clears findings and never starts a call", () => {
+  const modes = [];
+  let calls = 0;
+  const modal = new elevate.ElevateModal({ mode: "fullscreen", terminal: { rows: 40, columns: 120 }, requestRender() {} }, theme,
+    () => {}, () => calls++, () => calls++, () => {}, () => calls++, () => {}, (mode) => modes.push(mode));
+  modal.setCompose("Preserve this objective");
+  assert.match(modal.render(94).join("\n"), /Context: Messages/);
+  modal.handleInput("\t"); modal.handleInput("\x1b[D"); modal.handleInput("\r");
+  assert.equal(modal.currentContextMode, "full");
+  assert.equal(modal.currentObjective, "Preserve this objective");
+  assert.equal(calls, 0);
+  modal.setDiscovery({ assessment: "a", findings: elevateFindings });
+  modal.render(94); modal.handleInput(" "); modal.handleInput("\t");
+  for (let i = 0; i < 3; i++) modal.handleInput("\x1b[C");
+  modal.handleInput("\r"); // Edit request retains mode until the user switches it.
+  modal.render(94);
+  modal.handleInput("\t"); modal.handleInput("\x1b[D"); modal.handleInput("\r");
+  assert.equal(modal.currentStage, "compose");
+  assert.equal(modal.currentDiscovery, undefined);
+  assert.equal(modal.currentSelection.size, 0);
+  assert.deepEqual(modes, ["full", "messages"]);
+  assert.equal(calls, 0);
 });
 
 test("modal kit: elevate multiline typing never locks a fitting editor", () => {
@@ -770,7 +810,9 @@ test("modal kit: elevate multiline typing never locks a fitting editor", () => {
 });
 
 // Exercise the real workflow and retry routing, not a replacement onRetry callback.
-test("modal kit: elevate retry repeats the failed step and keeps approvals", async () => {
+for (const failure of ["ordinary", "rewrite-overflow", "discovery-overflow"]) test(`modal kit: elevate retry preserves approvals (${failure})`, async () => {
+  const overflow = failure !== "ordinary";
+  const discoveryFailure = failure === "discovery-overflow";
 	const findings = [
 		{ dimension: "depth", title: "One", why: "w", expertMove: "m" },
 		{ dimension: "range", title: "Two", why: "w", expertMove: "m" },
@@ -784,30 +826,56 @@ const log = join(process.env.BIN_DIR, 'calls.jsonl');
 const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\\n').length : 0;
 const prompt = process.argv[process.argv.indexOf('--print') + 1];
 appendFileSync(log, JSON.stringify(prompt) + '\\n');
-if (calls === 1) { console.error('fixture: rewrite failed'); process.exit(1); }
-const text = calls === 0 ? JSON.stringify(${JSON.stringify({ assessment: "Check evidence.", findings })}) : 'Improved objective';
+if (calls === ${discoveryFailure ? 0 : 1}) { console.error(${JSON.stringify(overflow ? "context_length_exceeded" : "fixture: rewrite failed")}); process.exit(1); }
+const text = !prompt.includes('Approved improvements:') ? JSON.stringify(${JSON.stringify({ assessment: "Check evidence.", findings })}) : 'Improved objective';
 console.log(JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: text } }));
 `, async (bin) => {
-			const mounted = await mount((ctx) => elevate.openElevateModal(ctx, "Original objective"), "fullscreen", 80, 24);
+			const mounted = await mount((ctx) => {
+        ctx.sessionManager.getBranch = () => Array.from({ length: 20 }, (_, i) => ({ type: "message", message: { role: "user", content: `HISTORY-${i} ${"x".repeat(1000)}` } }));
+        return elevate.openElevateModal(ctx, "Original objective");
+      }, "fullscreen", 80, 24);
 			const modal = mounted.component;
 			const waitForStage = async (stage) => {
 				for (let i = 0; i < 1000 && modal.currentStage !== stage; i++) await new Promise((resolve) => setTimeout(resolve, 10));
 				assert.equal(modal.currentStage, stage, stripVTControlCharacters(modal.render(62).join("\n")));
 			};
 			try {
+				assert.equal(modal.currentStage, "compose");
+				modal.render(62);
+				modal.handleInput("\x13");
+        if (discoveryFailure) {
+          await waitForStage("failed");
+          assert.match(modal.render(94).join("\n"), /Edit request/);
+          const first = (await readFile(join(bin, "calls.jsonl"), "utf8")).trim().split("\n");
+          assert.equal(first.length, 1, "discovery automatically retried");
+          modal.handleInput("\r");
+        }
 				await waitForStage("review");
 				modal.render(62);
 				modal.handleInput(" ");
 				modal.handleInput("\t");
 				modal.handleInput("\r");
+        if (!discoveryFailure) {
 				await waitForStage("failed");
+        const beforeRetry = (await readFile(join(bin, "calls.jsonl"), "utf8")).trim().split("\n");
+        assert.equal(beforeRetry.length, 2, "failure automatically retried");
+        if (overflow) assert.match(modal.render(62).join("\n"), /Context overload/);
 				modal.handleInput("\r");
+        }
 				await waitForStage("ready");
 				const calls = (await readFile(join(bin, "calls.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
 				assert.equal(calls.length, 3);
 				assert.match(calls[0], /Find the few expert considerations/);
-				assert.match(calls[1], /Rewrite an assignment/);
-				assert.equal(calls[2], calls[1], "retry changed the rewrite prompt or reran discovery");
+				assert.match(calls[1], discoveryFailure ? /Find the few expert considerations/ : /Rewrite an assignment/);
+        assert.match(calls[0], /HISTORY-0 /);
+        assert.match(calls[0], /HISTORY-19 /);
+        if (overflow) {
+          assert.ok(calls[2].length < calls[discoveryFailure ? 0 : 1].length);
+          assert.doesNotMatch(calls[2], /HISTORY-0 /);
+          assert.match(calls[2], /HISTORY-19 /);
+          assert.match(calls[2], /Original objective/);
+          assert.match(modal.render(62).join("\n"), /reduced/);
+        } else assert.equal(calls[2], calls[1], "ordinary failure discarded context");
 				const approved = JSON.parse(calls[2].split("Approved improvements: ")[1]);
 				assert.deepEqual(approved, [findings[0]], "retry lost approvals or added rejected findings");
 				assert.equal(modal.currentRevised, "Improved objective");

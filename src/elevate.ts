@@ -4,16 +4,13 @@ import { Editor, Markdown, matchesKey, wrapTextWithAnsi, type EditorTheme, type 
 import { runBackendText } from "./backend.ts";
 import {
   buildElevateDiscoveryPrompt, buildElevateUpgradePrompt, parseElevateDiscovery,
-  selectedFindings, stripElevateFence, elevateInsertAllowed, type ElevateDiscovery, type ElevateInput,
+  selectedFindings, stripElevateFence, elevateInsertAllowed, captureElevateContext, isElevateContextOverflow,
+  reduceElevateContext, type ElevateContextMode, type ElevateDiscovery, type ElevateInput,
 } from "./elevate-engine.ts";
 import { BRO_OVERLAY, broOverlayArea, buttonLabels, delegateMouse, modalHeight, openBroOverlay, renderFrame, Scroller, wrapButtons, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel } from "./settings.ts";
-import { captureShowTranscript } from "./show.ts";
 import { canBroInsertIntoEditor, insertBroDesktopText, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
-
-export const ELEVATE_CONTEXT_TURNS = 8;
-export const ELEVATE_CONTEXT_MAX = 12_000;
 
 type Stage = "compose" | "discovering" | "review" | "upgrading" | "ready" | "failed";
 /** Which zone owns the keyboard. Tab switches; only the focused zone acts on Enter/Space. */
@@ -38,6 +35,8 @@ export class ElevateModal implements Focusable {
   private zone: Zone = "editor";
   private notice = "";
   private model = "";
+  private contextMode: ElevateContextMode = "messages";
+  private contextReduced = false;
   private discovery?: ElevateDiscovery;
   private readonly accepted = new Set<number>();
   private cursor = 0;
@@ -69,6 +68,7 @@ export class ElevateModal implements Focusable {
     private readonly onInsert: (text: string) => void,
     private readonly onRetry: () => void,
     private readonly onDispose: () => void,
+    private readonly onContextChange: (mode: ElevateContextMode) => void = () => {},
   ) {
     const editorTheme: EditorTheme = { borderColor: (value: string) => this.theme.fg("border", value), selectList: getSelectListTheme() };
     // Editor only needs terminal.rows and requestRender; keep its viewport local to this modal.
@@ -78,6 +78,19 @@ export class ElevateModal implements Focusable {
   }
 
   get currentStage(): Stage { return this.stage; }
+  get currentContextMode(): ElevateContextMode { return this.contextMode; }
+  setContextReduced(value: boolean): void { this.contextReduced = value; if (!this.disposed) this.tui.requestRender(); }
+
+  private switchContext(): void {
+    const objective = this.stage === "compose" ? this.editor.getExpandedText() : this.original;
+    this.contextMode = this.contextMode === "messages" ? "full" : "messages";
+    this.discovery = undefined;
+    this.accepted.clear();
+    this.revised = "";
+    this.contextReduced = false;
+    this.onContextChange(this.contextMode);
+    this.setCompose(objective);
+  }
   get currentZone(): Zone { return this.zone; }
   get currentDiscovery(): ElevateDiscovery | undefined { return this.discovery; }
   get currentObjective(): string { return this.original; }
@@ -180,12 +193,12 @@ export class ElevateModal implements Focusable {
   private buttonRow(): { label: string; short: string; run: () => void }[] {
     // `[Edit request]` belongs to screens that already have findings; never to compose, where it
     // would silently reset the text the user is typing.
-    const editRequest = this.discovery?.findings.length
-      ? [{ label: "Edit request", short: "Edit", run: () => this.setCompose(this.original) }]
-      : [];
+    const contextButton = { label: `Context: ${this.contextMode === "messages" ? "Messages" : "Full"}`, short: this.contextMode === "messages" ? "Messages" : "Full", run: () => this.switchContext() };
+    const editRequest = [{ label: "Edit request", short: "Edit", run: () => this.setCompose(this.original) }];
     if (this.stage === "compose") return [
       { label: "Discover gaps", short: "Discover", run: () => this.discoverFromEditor() },
       { label: "Cancel", short: "Cancel", run: () => this.onClose() },
+      contextButton,
     ];
     if (this.stage === "review" && this.discovery) {
       const count = this.accepted.size;
@@ -200,6 +213,7 @@ export class ElevateModal implements Focusable {
     if (this.stage === "ready") return [
       { label: "Insert into editor", short: "Insert", run: () => this.onInsert(this.revised) },
       { label: "Copy", short: "Copy", run: () => void this.copy(this.revised, "Copied revised request.") },
+      contextButton,
       // Back to the findings with the approvals intact, so a rewrite can be reconsidered without
       // paying for another discovery call.
       ...(this.discovery?.findings.length ? [{ label: "Back", short: "Back", run: () => this.setReview() }] : []),
@@ -208,6 +222,7 @@ export class ElevateModal implements Focusable {
     ];
     if (this.stage === "failed") return [
       { label: "Retry", short: "Retry", run: () => this.onRetry() },
+      contextButton,
       ...(this.discovery?.findings.length ? [{ label: "Back", short: "Back", run: () => this.setReview() }] : []),
       ...editRequest,
       { label: "Close", short: "Close", run: () => this.onClose() },
@@ -377,6 +392,7 @@ export class ElevateModal implements Focusable {
       : "Thinking… · Esc cancel";
     return renderFrame(this.theme, width, height, {
       header: () => this.theme.fg("accent", this.theme.bold("Bro · elevate"))
+        + this.theme.fg("dim", ` · ${this.contextMode === "messages" ? "Messages" : "Full"}${this.contextReduced ? " (reduced)" : ""}`)
         + (this.model ? this.theme.fg("dim", ` · ${this.model}`) : "")
         + (this.stage === "review" && this.discovery?.findings.length ? this.theme.fg("dim", ` · ${this.accepted.size}/${this.discovery.findings.length} selected`) : "")
         + (this.stage !== "compose" && this.scroller.indicator() ? this.theme.fg("dim", ` · ${this.scroller.indicator()}`) : ""),
@@ -404,18 +420,20 @@ export class ElevateModal implements Focusable {
         // Pin the approval target; only its explanation scrolls.
         const current = this.discovery.findings[this.cursor];
         const label = (name: string, value: string) => wrapTextWithAnsi(`${this.theme.fg("dim", `${name}: `)}${value}`, innerWidth);
-        const intro = this.markdown.render(innerWidth);
-        const detail = current ? [...label("Why", current.why), ...label("Move", current.expertMove)] : [];
-        const assessment = intro.length + this.listText.length + detail.length <= rows ? intro : [];
+        const detail = current ? [
+          ...label("Finding", `${current.title} · ${current.dimension}`),
+          ...label("Why", current.why), ...label("Move", current.expertMove),
+          "", ...label("Assessment", this.discovery.assessment),
+        ] : [];
         const listRows = Math.min(this.listText.length, Math.max(1, rows - 2));
         this.listOffset = Math.max(0, Math.min(this.listOffset, this.listText.length - listRows));
         if (this.cursor < this.listOffset) this.listOffset = this.cursor;
         else if (this.cursor >= this.listOffset + listRows) this.listOffset = this.cursor - listRows + 1;
         const list = this.listText.slice(this.listOffset, this.listOffset + listRows);
-        this.findingVisible = true;
-        const detailRows = rows - assessment.length - list.length;
+        const detailRows = rows - list.length;
+        this.findingVisible = detailRows > 0;
         const visibleDetail = this.scroller.view(detailRows > 0 ? detail : [], detailRows);
-        return [...assessment, ...list, ...visibleDetail];
+        return [...list, ...visibleDetail];
       },
       footer: [],
       notice: this.notice ? this.theme.fg(this.stage === "failed" ? "warning" : "accent", this.notice) : undefined,
@@ -439,13 +457,17 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
   const initialObjective = request.trim() || initialEditor.trim();
   // Whether the editor draft is the thing being elevated. Only then may insertion replace it.
   const elevatingEditorDraft = !request.trim() && !!initialEditor.trim();
-  const context = captureShowTranscript(ctx, ELEVATE_CONTEXT_TURNS, ELEVATE_CONTEXT_MAX)?.text;
+  const branch = ctx.sessionManager.getBranch();
   await openBroOverlay<void>(ctx, (tui, theme, _keybindings, done) => {
     let closed = false;
     let controller: AbortController | undefined;
     let inserting = false;
     let original = initialObjective;
-    let input: ElevateInput = { objective: original, context };
+    let contextMessages = captureElevateContext(branch, "messages");
+    let reduced = false;
+    let reduceOnRetry = false;
+    const contextText = () => (reduced ? "[Older context removed after a context-overload error; remaining history may be partial.]\n" : "") + contextMessages.join("\n");
+    let input: ElevateInput = { objective: original, context: contextText() };
     /** Which approvals a retry should reuse, and which call to repeat. */
     let pending: { kind: "discover" } | { kind: "upgrade"; indexes: ReadonlySet<number> } = { kind: "discover" };
     const close = () => {
@@ -455,12 +477,26 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
       done(undefined);
     };
 
-    const modal = new ElevateModal(tui, theme, close, discover, upgrade, insert, retryStage, close);
+    const modal = new ElevateModal(tui, theme, close, discover, upgrade, insert, retryStage, close, (mode) => {
+      contextMessages = captureElevateContext(branch, mode);
+      reduced = false;
+      reduceOnRetry = false;
+      pending = { kind: "discover" };
+    });
+
+    function fail(error: unknown): void {
+      const message = errorMessage(error);
+      reduceOnRetry = isElevateContextOverflow(message) && contextMessages.length > 0;
+      modal.setFailed((reduceOnRetry
+        ? "Context overload: Retry removes older history; objective and approvals stay.\n"
+        : isElevateContextOverflow(message) ? "No history remains to reduce. Shorten the objective or use a larger-context backend.\n" : "") + message);
+    }
 
     async function discover(objective: string): Promise<void> {
       if (closed || controller) return;
       original = objective.trim();
-      input = { objective: original, context };
+      input = { objective: original, context: contextText() };
+      reduceOnRetry = false;
       const run = new AbortController();
       controller = run;
       pending = { kind: "discover" };
@@ -475,7 +511,7 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
         if (closed || run.signal.aborted) return;
         modal.setDiscovery(parseElevateDiscovery(raw));
       } catch (error) {
-        if (!closed && !run.signal.aborted) modal.setFailed(errorMessage(error));
+        if (!closed && !run.signal.aborted) fail(error);
       } finally { if (controller === run) controller = undefined; }
     }
 
@@ -485,6 +521,8 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
       controller = run;
       // A failed rewrite retries the rewrite; re-running discovery would discard the user's choices.
       pending = { kind: "upgrade", indexes };
+      input.context = contextText();
+      reduceOnRetry = false;
       modal.setUpgrading();
       try {
         const settings = await readSettings();
@@ -507,13 +545,19 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
         if (!cleaned) throw new Error("Bro returned an empty request. Retry.");
         modal.setReady(cleaned);
       } catch (error) {
-        if (!closed && !run.signal.aborted) modal.setFailed(errorMessage(error));
+        if (!closed && !run.signal.aborted) fail(error);
       } finally { if (controller === run) controller = undefined; }
     }
 
     /** Retry whichever call failed, with the objective and approvals the user already chose. */
     function retryStage(): void {
       if (closed || controller) return;
+      if (reduceOnRetry) {
+        contextMessages = reduceElevateContext(contextMessages);
+        reduced = true;
+        reduceOnRetry = false;
+        modal.setContextReduced(true);
+      }
       if (pending.kind === "upgrade") void upgrade(pending.indexes);
       else void discover(original);
     }
@@ -547,7 +591,7 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
       if (result === "inserted") close();
     }
 
-    if (initialObjective) void Promise.resolve().then(() => discover(initialObjective));
+    modal.setCompose(initialObjective);
     return modal;
   }, { mouse: true });
 }

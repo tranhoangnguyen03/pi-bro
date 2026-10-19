@@ -117,6 +117,43 @@ export function selectedFindings(discovery: ElevateDiscovery, indexes: ReadonlyS
   return discovery.findings.filter((_, index) => indexes.has(index));
 }
 
+export type ElevateContextMode = "messages" | "full";
+
+/** Allowlist text fields: never forward reasoning, images or provider metadata. */
+export function captureElevateContext(entries: readonly unknown[], mode: ElevateContextMode): string[] {
+  const messages: string[] = [];
+  for (const entry of entries) {
+    const record = object(entry);
+    const message = record?.type === "message" ? object(record.message) : undefined;
+    if (!message || message.stopReason === "abort") continue;
+    const role = message.role;
+    if (role !== "user" && role !== "assistant" && !(mode === "full" && role === "toolResult")) continue;
+    const content: unknown[] = [];
+    if (typeof message.content === "string") content.push({ type: "text", text: message.content });
+    else if (Array.isArray(message.content)) for (const raw of message.content) {
+      const part = object(raw);
+      if (part?.type === "text" && typeof part.text === "string") content.push({ type: "text", text: part.text });
+      else if (mode === "full" && role === "assistant" && part?.type === "toolCall") content.push({ type: "toolCall", id: part.id, name: part.name, arguments: part.arguments });
+    }
+    if (content.length) messages.push(JSON.stringify({ role, ...(role === "toolResult" ? { toolCallId: message.toolCallId, toolName: message.toolName } : {}), content }));
+  }
+  return messages;
+}
+
+/** Only explicit input/context overflow warrants discarding history. */
+export function isElevateContextOverflow(message: string): boolean {
+  return /context[_ -](?:length[_ -]exceeded|window[_ -]exceeded)|(?:context|prompt|input|request) (?:length |size )?(?:is )?too (?:long|large)|maximum (?:prompt|context) length|input token count[^.\n]*exceeds|exceeds the maximum number of (?:input )?tokens|out of room in the model['’]?s context window|too many input tokens|input tokens exceed|exceeds? (?:the )?(?:maximum )?context (?:length|window)/i.test(message);
+}
+
+export function reduceElevateContext(messages: readonly string[]): string[] {
+  if (messages.length > 1) return messages.slice(Math.ceil(messages.length / 2));
+  const last = messages[0];
+  if (!last || last.length <= 256) return [];
+  return [last.slice(-Math.floor(last.length / 2))];
+}
+
+const CONTEXT_GUIDANCE = `Interpret the current request using the conversation: carry forward relevant user-stated objectives, constraints, decisions and corrections. Prefer the latest explicit user correction. Do not propose work already completed or reopen options the user rejected. If a material unresolved issue remains, raise it as a question, not a recommendation. An assistant suggestion is not a user decision; assistant and tool claims are not automatically verified facts. Resolve references from available context; if the intended task remains materially ambiguous, surface the uncertainty rather than inventing an objective. Context may be partial after overload recovery; do not infer missing agreements.`;
+
 export type ElevateInput = { objective: string; context?: string; preferences?: string };
 
 function inputGuard(input: ElevateInput): string {
@@ -132,6 +169,10 @@ export function buildElevateDiscoveryPrompt(input: ElevateInput): string {
   return `You are Bro Elevate. Your job is to help a person discover what they do not know to ask for BEFORE they send a task to their main AI agent.
 
 Find the few expert considerations that would materially improve the quality of this request. Think across altitude (is this the right problem?), depth (raw sources, methods, tests), and range (useful methods from other fields). Do not generate a solution, rewrite the request, or add a bigger project. Preserve the person's intent, constraints, and desired outcome. Do not force an improvement when the existing request is sound.
+
+Look for opportunities as well as omissions: simpler approaches, useful existing resources, and ways to remove unnecessary work. Do not force findings into every category.
+
+${CONTEXT_GUIDANCE}
 
 Give no more than ${MAX_ELEVATE_FINDINGS} NON-OVERLAPPING findings, ordered by expected effect on the result. Each finding must state WHY it matters and specifically what a skilled practitioner would investigate or do. Separate established practices from hypotheses. Do not claim to have checked sources, code, or facts unless you actually have. When evidence is missing, phrase it as something to check, not a conclusion. Fewer or zero findings are valid.
 
@@ -151,6 +192,10 @@ export function buildElevateUpgradePrompt(input: ElevateInput, approved: readonl
   return `You are Bro Elevate. Rewrite an assignment for a separate AI agent using ONLY the expert considerations the user approved.
 
 Keep the original outcome, explicit constraints, scope and level of effort. Make the task more rigorous, NOT larger. Incorporate approved methods, source evidence, critical questions and independent checks only where they improve that outcome. Do not add unapproved findings or pretend uncertain facts have been verified. If more evidence is required, ask the executing agent to obtain or check it. Use direct, clear wording and give the executing agent an actionable request.
+
+Approved insights are the permitted improvements. Integrate them proportionately and tighten or merge redundant wording, but never remove or weaken an explicit user instruction or constraint. Avoid appending tasks. Do not turn each insight into a separate deliverable. If an insight cannot fit the original scope or effort, express it as a focused question or check rather than expanding the assignment.
+
+${CONTEXT_GUIDANCE}
 
 Return ONLY the upgraded request itself, without a heading, preface, explanation, or code fence. Do not say you performed the work.
 
