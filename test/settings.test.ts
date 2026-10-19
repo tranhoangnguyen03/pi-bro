@@ -1026,3 +1026,28 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'AN
   rmSync(preferences, { force: true });
  }
 });
+
+// A broken optional shortcut must never take the working commands with it: /bro is the only way to
+// reach every other feature, and shortcuts are optional per Pi version.
+test("/bro still registers when the optional Elevate shortcut cannot", async () => {
+	let command: any;
+	const pi = {
+		on() {},
+		registerTool() {},
+		registerShortcut() { throw new Error("shortcut registration failed"); },
+		registerCommand(_name: string, def: any) { command = def; },
+	};
+	await bro.default(pi as any);
+	assert.ok(command, "/bro was not registered");
+	let error: unknown;
+	try { await command.handler("help", { mode: "tui", hasUI: true, cwd: process.cwd(), sessionManager: { getBranch: () => [] }, ui: { notify() {}, custom: async () => undefined } }); }
+	catch (thrown) { error = thrown; }
+	assert.equal(error, undefined, "/bro help failed after a shortcut registration error");
+});
+
+// Registering a key must not be required for Elevate itself; the command is the supported path.
+test("a host without registerShortcut still loads Bro", async () => {
+	let command: any;
+	await bro.default({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } } as any);
+	assert.ok(command, "/bro was not registered on a host without registerShortcut");
+});

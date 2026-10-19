@@ -395,25 +395,31 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 ## Guided Review
 
 - \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).
-- Your work is saved automatically. Open the same PR to return without a model call; \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Reopening keeps the captured revision, not newer commits.
-- Enter opens an item or focuses actions; Enter on a highlighted action activates it. Tab changes focus. Esc goes back, then closes from Contents. Close saves automatically; Stop and close stops active work first.
-- Copy finding copies to the system clipboard, not GitHub. Regenerate guide is optional and makes a confirmed call about the same captured code. Claude and Muse use strict file-only inspection (shell, writes and web tools disabled) and are recommended for untrusted PRs. Codex and Grok run shell commands in a read-only sandbox; Agy's sandboxed shell still allows project writes. All three show an advisory. Set a review override in /bro config; saved reviews remain readable with any backend. Repository text can still mislead the model; citations are not proof.
+- Reviews save automatically. Reopen the same PR without a model call; bare \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Captured code stays unchanged.
+- Enter opens items or activates focused actions. Tab changes focus; Esc goes back, then closes from Contents. Close saves; Stop and close cancels active work first.
+- Copy finding uses the clipboard, not GitHub. Regenerate requires confirmation and reviews the same capture. For untrusted PRs, prefer Claude/Muse: file-only tools, no shell/writes/web. Codex/Grok allow shell in a read-only sandbox; Agy's sandbox permits project writes. All three show an advisory. Choose a review override in /bro config. Repository text can mislead; citations are not proof.
+
+## Elevate
+
+- \`/bro elevate [request]\` — improve a task before sending it. Ctrl+Shift+E uses the draft. Choose Messages/Full context; Space/Enter ticks findings; Tab focuses actions.
+- Enter adds a line; Ctrl+S or Ctrl+Enter discovers gaps. Use labelled buttons for actions.
+- Shares BTW settings; see docs/elevate.md.
 
 ## Side conversation
 
 - \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
-- Inside the modal: Enter asks (empty Enter re-asks); \`/mode\` toggles conversation-only / full permission (read and edit the workspace) and keeps the thread; \`/copy\` and \`/copy-all\` copy to the clipboard; \`/insert\` and \`/insert-all\` insert into an empty main editor without submitting; \`/retry\` re-asks; \`/clear\` resets. Any other text is sent as a question. Esc closes.
+- Enter asks; empty Enter or \`/retry\` re-asks. \`/mode\` toggles conversation-only/full workspace access, retaining the thread. \`/copy\`, \`/copy-all\` copy; \`/insert\`, \`/insert-all\` fill an empty main editor without submitting. \`/clear\` resets; Esc closes.
 
 ## Advisor
 
 - \`bro_advisor\` — a tool the executor agent may call for a second opinion from a fresh backend process with real, auto-approved workspace access; it is told to advise, not edit, but that is not enforced
 - \`/bro advisor\` — whether \`bro_advisor\` is available right now
 - \`/bro advisor-steer\` — edit the session's persistent steering brief (**Ctrl+S** save, **Ctrl+K** clear, **Ctrl+C** copy, **Esc** close)
-- Standing advisor steering: \`${ADVISOR_STEERING_FILE}\` sets standing priorities across sessions (session steering takes precedence)
+- Standing advisor steering sets cross-session priorities; session steering takes precedence.
 
 ## Configure and check
 
-- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
+- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
 - \`/bro config\` — shared default and per-capability (explain/show/btw/advisor/review) backend, model, and effort; explain mode; show turns. Changes save immediately. If the terminal is too small, Esc closes config after pending saves finish; a failed save keeps it open.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn

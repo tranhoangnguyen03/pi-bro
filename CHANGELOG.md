@@ -2,6 +2,30 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.25.0] - 2026-10-19
+
+### Highlights
+
+- Improve a request before you send it: `/bro elevate <request>`, or **Ctrl+Shift+E** on an unsent draft, suggests up to five things an expert would check that you may have missed.
+- Pick the suggestions you want, and Bro rewrites your request using only those. Nothing is ticked for you, and Bro does not do the task itself.
+- Write or paste a **multi-line** objective: the request field grows like Bro's other editors instead of flattening it onto one line.
+- Insert the rewrite into Pi's editor with one button, or copy it. Nothing goes to the main agent until you press Enter.
+- Find what you need faster: the docs are split into a getting-started page, feature guides, a settings and commands reference, and examples.
+
+### Added
+
+- `/bro elevate [request]` and the **Ctrl+Shift+E** shortcut open Bro Elevate in a Bro modal: write the objective, review findings, then insert or copy. An explicit request takes priority over the editor draft; with neither, the modal asks for one. Discovery returns up to five findings, none selected at first. Pick them with **Space** on the highlighted row (**↑**/**↓** move, `Tab` reaches the buttons), then **Enter** rewrites using only the selected findings. **Nothing is selected for you and every action is a labelled button**, so a stray keypress cannot toggle a finding, trigger a rewrite, or replace your editor text. Some terminals don't send Ctrl+Shift+E; use the command instead.
+- Insertion never sends anything. Choose **[Insert into editor]** in the terminal, which replaces the editor only when Elevate was opened on that draft and it is still unchanged; if you passed an explicit request, the editor must be empty. In Pi Desktop it inserts only into an empty editor. Otherwise use **[Copy]**.
+- The objective is a multi-line editor: `Enter` adds a line and **Ctrl+S** (or `Ctrl+Enter` where the terminal delivers it) starts discovery. **Ctrl+C** copies your objective or the rewritten request whenever there is one, and on a terminal too short for the editor the modal asks for a bigger one rather than letting you type blind.
+- Elevate uses the btw backend, model and effort from `/bro config`; there is no separate Elevate setting. It sends the request, uncapped current-branch user/assistant text by default, saved preferences and approved findings. A visible **Context: Messages / Full** switch adds tool-call arguments and text results in Full mode; both exclude hidden reasoning and image binaries. Compose opens before any call, and changing mode resets discovery without sending. Explicit Retry after a recognized context-overload error progressively removes older history, visibly marks reduced context and preserves the objective and approvals; other failures do not trim history. Each step is a fresh call; selections are kept in memory only and cleared on close. Findings are model suggestions, not checked facts. **Retry** repeats the step that failed, so a failed rewrite keeps the findings you approved instead of re-running discovery. See [docs/elevate.md](docs/elevate.md).
+- `/bro help` has an Elevate section.
+
+### Changed
+
+- Elevate instructions explicitly carry forward user decisions and corrections, avoid completed or rejected work, seek simplifying opportunities, and integrate approved insights without adding separate deliverables. Output usefulness is left to user feedback rather than AI scoring.
+- The docs are reorganised. A docs home (`docs/README.md`) links to getting started, per-feature guides (`docs/features/`), commands, settings, data-and-permissions and troubleshooting references (`docs/reference/`), and examples. `docs/user-guide.md` now links to these pages, and the new pages ship in the package.
+- `npm run docs:check` checks docs links and quality, and `npm test` runs it.
+
 ## [0.24.0] - 2026-10-19
 
 ### Highlights

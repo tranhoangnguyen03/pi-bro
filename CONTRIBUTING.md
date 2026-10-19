@@ -29,8 +29,7 @@ manual end-to-end checklist for changes the offline tests cannot cover.
   the GitHub release.
 - Mark anything that breaks existing commands or settings under
   `### Breaking`, with migration steps.
-- Update the [user guide](docs/user-guide.md) and `/bro help` when
-  user-visible behavior changes.
+- Update the relevant [feature guide](docs/README.md), [command reference](docs/reference/commands.md), and `/bro help` when user-visible behavior changes. Check permissions, retention, examples and troubleshooting together. Preserve old links when moving sections; keep model outputs labeled as examples, not verified results.
 
 ## Security
 

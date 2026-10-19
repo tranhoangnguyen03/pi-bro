@@ -5,11 +5,12 @@ import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
 import { Editor, TuiMainScreen, visibleWidth } from "@earendil-works/pi-tui";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { withFakeExecutable } from "./test-fake-exec.ts";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { btw, buildDir, configUi, explainModal, settings as settingsModule } from "./test-build.mjs";
+import { btw, buildDir, configUi, elevate, explainModal, settings as settingsModule } from "./test-build.mjs";
 import { rm } from "node:fs/promises";
 
 const load = (name) => import(pathToFileURL(join(buildDir, name)).href);
@@ -62,8 +63,11 @@ async function mount(open, mode, cols, rows) {
 	const ctx = {
 		mode: "tui",
 		cwd: fakeBin,
+		sessionManager: { getBranch: () => [] },
 		ui: {
 			notify() {},
+			getEditorText: () => "",
+			setEditorText() {},
 			select: async (_title, labels) => labels.find((label) => label.includes("#88")),
 			custom: (factory, options) =>
 				new Promise((resolve) => {
@@ -84,11 +88,32 @@ async function mount(open, mode, cols, rows) {
 	mounted.closed = open(ctx);
 	// Some surfaces mount after async work (Guided Review reads and picks a saved record first).
 	await Promise.race([mountedOnce, mounted.closed]);
-	return { ...mounted, writes, rendersAfterDispose: () => rendersAfterDispose };
+	return { ...mounted, tui, writes, rendersAfterDispose: () => rendersAfterDispose };
 }
 
 // Mounted the way their /bro commands mount them, minus the file and settings reads.
 const factoryRow = (create) => (ctx) => kit.openBroOverlay(ctx, create());
+
+// Elevate's stages past compose need a discovery result, which only the backend can produce, so
+// build the modal and set the stage directly. The frame, wheel and dispose contract is the same.
+const elevateFindings = Array.from({ length: 5 }, (_, index) => ({
+	dimension: ["altitude", "depth", "range"][index % 3],
+	title: `Finding ${index + 1} with a reasonably long label`,
+	why: `Reason ${index + 1}: `.repeat(12) + "a summary can hide missed evidence.",
+	expertMove: `Move ${index + 1}: `.repeat(12) + "test against real business questions.",
+}));
+const elevateStage = (stage) => (ctx) =>
+	kit.openBroOverlay(
+		ctx,
+		(tui, theme, _keybindings, done) => {
+			const modal = new elevate.ElevateModal(tui, theme, () => done(), () => {}, () => {}, () => {}, () => {}, () => done());
+			if (stage === "review") modal.setDiscovery({ assessment: "The request is workable but misses concrete evidence.", findings: elevateFindings });
+			else if (stage === "ready") modal.setReady(Array.from({ length: 60 }, (_, index) => `Requirement ${index}: do the thing carefully.`).join("\n\n"));
+			else modal.setFailed("Bro did not return valid discovery JSON. Retry discovery.");
+			return modal;
+		},
+		{ mouse: true },
+	);
 
 const SURFACES = [
 	{ name: "explain result", scrolls: true, mouse: true, open: (ctx) => explainModal.showBroModal(ctx, { result: { text: long, model: "m" } }) },
@@ -132,6 +157,29 @@ const SURFACES = [
 	},
 	{ name: "Guided Review acquisition", open: (ctx) => openGuidedReview(ctx, "https://github.com/a/b/pull/99", "") },
 	{ name: "Guided Review workspace", mouse: true, open: (ctx) => openGuidedReview(ctx, "resume", "") },
+	// Elevate's compose stage mounts through its real /bro entry point; with no objective and an empty
+	// editor it makes no backend call. Presenting findings is what makes Elevated scroll, so those
+	// stages are constructed directly below.
+	{ name: "elevate compose", mouse: true, open: (ctx) => elevate.openElevateModal(ctx, "") },
+	{
+		name: "elevate review with findings",
+		scrolls: true,
+		mouse: true,
+		shows: [/Esc/],
+		// The action row is the target of every consequential keypress, so it must survive at every size.
+	fullShows: [/[\[›]Rewrite/],
+		smallShows: [/[\[›]Rewrite/],
+		open: elevateStage("review"),
+	},
+	{
+		name: "elevate ready with a long rewrite",
+		scrolls: true,
+		mouse: true,
+		shows: [/Esc/],
+		fullShows: [/[\[›]Insert/],
+		open: elevateStage("ready"),
+	},
+	{ name: "elevate failed", mouse: true, open: elevateStage("failed") },
 ];
 
 for (const surface of SURFACES) {
@@ -160,26 +208,31 @@ for (const surface of SURFACES) {
 
 				assert.equal(component.handleMouse?.({ type: "wheel", x: 1, y: 1, wheelDelta: 3 })?.handled, true, `${where}: wheel falls through to the chat`);
 				// Only where some body is left: on tiny terminals the frame keeps controls over content.
-				if (surface.scrolls && /Paragraph|Bro help|##|\/bro/.test(stripVTControlCharacters(lines.slice(2, -2).join("\n")))) {
+				// The surface's own header shows a scroller indicator only when the body overflows, so use
+				// that to decide whether wheel scrolling can be proven at this size.
+				const overflow = /↑\d+ ↓\d+/.test(stripVTControlCharacters(lines[1] ?? ""));
+				if (surface.scrolls && overflow && /Paragraph|Bro help|##|\/bro|Finding|Requirement/.test(stripVTControlCharacters(lines.slice(2, -2).join("\n")))) {
 					// Raw SGR wheel (Pi 0.84, regular mode): down from the top, or up from a view that starts at the end.
 					const view = () => stripVTControlCharacters(component.render(layout.width).join("\n"));
 					const before = view();
-					const row = layout.row + 5;
-					component.handleInput(`\x1b[<65;1;${row}M`);
-					assert.equal(view(), before, `${where}: raw wheel outside the overlay scrolls`);
-					const column = layout.col + 3;
-					component.handleInput(`\x1b[<65;${column};${row}M`);
-					const down = view();
-					component.handleInput(`\x1b[<64;${column};${row}M`);
-					component.handleInput(`\x1b[<64;${column};${row}M`);
-					assert.ok(down !== before || view() !== down, `${where}: raw wheel does not scroll`);
-					// Normalized wheel (Pi 1.x fullscreen) must move the view too, not just be handled.
-					const start = view();
-					component.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: 3 });
-					const moved = view();
-					component.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: -6 });
-					assert.ok(moved !== start || view() !== moved, `${where}: handleMouse wheel does not scroll`);
-					scrollChecks++;
+					{
+						const row = layout.row + 5;
+						component.handleInput(`\x1b[<65;1;${row}M`);
+						assert.equal(view(), before, `${where}: raw wheel outside the overlay scrolls`);
+						const column = layout.col + 3;
+						component.handleInput(`\x1b[<65;${column};${row}M`);
+						const down = view();
+						component.handleInput(`\x1b[<64;${column};${row}M`);
+						component.handleInput(`\x1b[<64;${column};${row}M`);
+						assert.ok(down !== before || view() !== down, `${where}: raw wheel does not scroll`);
+						// Normalized wheel (Pi 1.x fullscreen) must move the view too, not just be handled.
+						const start = view();
+						component.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: 3 });
+						const moved = view();
+						component.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: -6 });
+						assert.ok(moved !== start || view() !== moved, `${where}: handleMouse wheel does not scroll`);
+						scrollChecks++;
+					}
 				}
 
 				(surface.close ?? ((c) => c.handleInput("\x1b")))(component);
@@ -593,4 +646,360 @@ test("modal kit: the editor never shows without its full privacy sentence or cut
 		const lowerRule = lines.findLastIndex((line) => line.startsWith("├"));
 		assert.match(lines[lowerRule - 1], /^│─[─ ↓\w]*─│$/, `${cols}x${rows}: editor cut`);
 	}
+});
+
+// The checklist and the action row must never lose the user's place or their target. This replaces
+// the old number-key test: toggling is now Space on a highlighted row, so the row is always visible.
+test("modal kit: elevate keeps the target visible and the reader's place", async () => {
+	const mounted = await mount(elevateStage("review"), "fullscreen", 80, 24);
+	const { component } = mounted;
+	const layout = hostLayout(mounted.overlay, 80, 24);
+	const header = () => stripVTControlCharacters(component.render(layout.width)[1]);
+	const body = () => stripVTControlCharacters(component.render(layout.width).slice(3, -3).join("\n"));
+	component.render(layout.width);
+
+	// Space or Enter both toggle the highlighted finding, and the marker follows the cursor.
+	assert.match(body(), /› \[ \] 1\./, "the cursor is not on the first finding");
+	component.handleInput(" ");
+	assert.match(body(), /› \[x\] 1\./, "Space did not tick the highlighted finding");
+	component.handleInput("\x1b[B");
+	assert.match(body(), /› \[ \] 2\./, "Down did not move the cursor");
+	assert.match(body(), /  \[x\] 1\./, "moving the cursor unticked a finding");
+	component.handleInput(" ");
+	assert.equal(component.currentSelection.size, 2, "Space did not tick the second finding");
+
+	// The count on the button and in the header agree with the ticks. The label may shorten to fit,
+	// so match the count itself.
+	assert.match(stripVTControlCharacters(component.render(layout.width).join("\n")), /Rewrite (\(|with )2/, "the action row does not show the selected count");
+	assert.match(header(), /2\/5 selected/);
+
+	// Enter toggles the same way Space does; Tab is what moves focus to the buttons.
+	component.handleInput("\r");
+	assert.equal(component.currentSelection.size, 1, "Enter did not toggle the highlighted finding");
+	component.handleInput("\t");
+	assert.match(stripVTControlCharacters(component.render(layout.width).join("\n")), /›\[Rewrite/, "Tab did not focus the action row");
+	// Rewriting with nothing selected is refused with an explanation rather than doing nothing.
+	// Navigate to [Select none] and activate it, then try Rewrite.
+	component.handleInput("\x1b[C"); // right: Select all
+	component.handleInput("\x1b[C"); // right: Select none
+	component.handleInput("\r");
+	assert.equal(component.currentSelection.size, 0, "Select none did not clear the ticks");
+	component.handleInput("\x1b[D"); // left: Select all
+	component.handleInput("\x1b[D"); // left: Rewrite
+	component.handleInput("\r");
+	assert.equal(component.currentStage, "review", "rewrite ran with no findings selected");
+	assert.match(stripVTControlCharacters(component.render(layout.width).join("\n")), /at least one finding/);
+
+	component.handleInput("\x1b");
+	await mounted.closed;
+});
+
+// Compose is a real multi-line editor: a pasted objective must keep its structure, and the modal
+// must refuse to edit rather than draw the Editor cut short.
+test("modal kit: elevate compose accepts a multi-line objective and guards a tiny terminal", async () => {
+	const mounted = await mount((ctx) => kit.openBroOverlay(ctx, (tui, theme, _kb, done) => new elevate.ElevateModal(tui, theme, () => done(), () => {}, () => {}, () => {}, () => {}, () => done()), { mouse: true }), "fullscreen", 80, 24);
+	const { component, tui } = mounted;
+	const view = () => stripVTControlCharacters(component.render(78).join("\n"));
+	assert.match(view(), /Your objective/);
+	assert.match(view(), /Discover/, "the action row is missing in compose");
+	// A multi-line objective is typed straight in and rendered line by line, not flattened.
+	component.setCompose("Line one\nLine two");
+	assert.match(view(), /Line one/);
+	assert.match(view(), /Line two/, "the second line was dropped: compose is still single-line");
+	// On a terminal too short for the whole Editor the user is told to enlarge it.
+	tui.terminal.rows = 12;
+	const small = view();
+	assert.match(small, /Enlarge the terminal/i, "no small-terminal guard in compose");
+	assert.doesNotMatch(small, /Line one/, "an Editor too small to render whole was still drawn");
+	component.handleInput("\x1b");
+	await mounted.closed;
+});
+
+test("modal kit: elevate long explanations scroll without hiding the approval target", async () => {
+	for (const [cols, rows] of [[80, 24], [80, 16], [60, 14], [40, 8]]) {
+		const mounted = await mount(elevateStage("review"), "fullscreen", cols, rows);
+		const { component } = mounted;
+		const layout = hostLayout(mounted.overlay, cols, rows);
+		const findings = elevateFindings.map((finding) => ({ ...finding, why: "Evidence to check. ".repeat(100), expertMove: "Run this test. ".repeat(100) + "DETAIL END" }));
+		component.setDiscovery({ assessment: "Assess the objective.", findings });
+		const view = () => stripVTControlCharacters(component.render(layout.width).join("\n"));
+		try {
+			const initial = view();
+			assert.equal(view(), initial, `${cols}x${rows}: rendering moved the reader`);
+			if (layout.maxHeight < 10) {
+				component.handleInput(" ");
+				assert.equal(component.currentSelection.size, 0, "a hidden finding was approved");
+				component.handleInput("\t");
+				component.handleInput("\x1b[C");
+				component.handleInput("\r");
+				assert.equal(component.currentSelection.size, 0, "Select all approved hidden findings");
+				continue;
+			}
+			assert.match(initial, /› \[ \] 1\./, "the first approval target is hidden");
+			component.handleInput(" ");
+			assert.match(view(), /› \[x\] 1\./);
+			let paged = "";
+			for (let i = 0; i < 100; i++) { component.handleInput("\x1b[6~"); paged += view(); }
+			const end = view();
+			assert.match(paged, /DETAIL END/, "Page Down cannot reach the end of the explanation");
+			assert.match(end, /Assess the objective/, "the assessment is not reachable at the end");
+			assert.match(end, /› \[x\] 1\./, "scrolling hid the approval target");
+			assert.equal(view(), end, "a render undid manual scrolling");
+			component.handleInput("\x1b[B");
+			assert.match(view(), /› \[ \] 2\./);
+			assert.match(view(), /Finding:/, "a new finding did not start at its full title");
+			component.setCompose("Edit the objective");
+			assert.doesNotMatch(view(), /↑\d+ ↓\d+/, "Compose inherited the explanation's scroll indicator");
+		} finally { component.handleInput("\x1b"); await mounted.closed; }
+	}
+});
+
+test("modal kit: elevate checklist and notices sanitize terminal control sequences", () => {
+  const modal = new elevate.ElevateModal({ mode: "fullscreen", terminal: { rows: 24, columns: 80 }, requestRender() {} }, theme, () => {}, () => {}, () => {}, () => {}, () => {}, () => {});
+  modal.setDiscovery({ assessment: "a", findings: [{ dimension: "depth", title: "First\nsecond\u001b[2J", why: "reason", expertMove: "check" }] });
+  const list = modal.render(62);
+  assert.ok(list.every((line) => !line.includes("\n")), "a title injected physical rows");
+  assert.doesNotMatch(list.join("\n"), /\u001b\[2J/);
+  modal.setFailed("Backend\u001b[2J failed\u0007");
+  assert.doesNotMatch(modal.render(62).join("\n"), /\u001b\[2J|\u0007/);
+});
+
+test("modal kit: complete finding title and assessment remain reachable", () => {
+  const modal = new elevate.ElevateModal({ mode: "fullscreen", terminal: { rows: 24, columns: 80 }, requestRender() {} }, theme, () => {}, () => {}, () => {}, () => {}, () => {}, () => {});
+  const title = "Detailed finding ".repeat(6) + "TITLE_END";
+  const assessment = "Assessment text ".repeat(30) + "ASSESSMENT_END";
+  modal.setDiscovery({ assessment, findings: [{ dimension: "depth", title, why: "Reason ".repeat(100), expertMove: "Check evidence" }] });
+  let seen = "";
+  for (let i = 0; i < 100; i++) {
+    seen += stripVTControlCharacters(modal.render(62).join("\n"));
+    modal.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: 1 });
+  }
+  assert.match(seen, /TITLE_END/);
+  assert.match(seen, /ASSESSMENT_END/);
+});
+
+test("modal kit: elevate preserves the checklist window and blocks hidden rewrite actions", () => {
+	let upgrades = 0;
+	const tui = { mode: "fullscreen", terminal: { rows: 16, columns: 80 }, requestRender() {} };
+	const modal = new elevate.ElevateModal(tui, theme, () => {}, () => {}, () => upgrades++, () => {}, () => {}, () => {});
+	modal.setDiscovery({ assessment: "a", findings: elevateFindings });
+	const view = () => stripVTControlCharacters(modal.render(62).join("\n"));
+	view();
+	for (let i = 0; i < 4; i++) { modal.handleInput("\x1b[B"); view(); }
+	assert.match(view(), /› \[ \] 5\./);
+	modal.handleInput("\x1b[A");
+	const up = view();
+	assert.match(up, /› \[ \] 4\./);
+	assert.match(up, /  \[ \] 5\./, "moving within the list window shifted its contents");
+	modal.handleInput(" ");
+	modal.handleInput("\t");
+	tui.terminal.rows = 8;
+	view();
+	modal.handleInput("\r");
+	assert.equal(upgrades, 0, "Rewrite ran while the findings were hidden");
+});
+
+test("modal kit: context switch is visible, clears findings and never starts a call", () => {
+  const modes = [];
+  let calls = 0;
+  const modal = new elevate.ElevateModal({ mode: "fullscreen", terminal: { rows: 40, columns: 120 }, requestRender() {} }, theme,
+    () => {}, () => calls++, () => calls++, () => {}, () => calls++, () => {}, (mode) => modes.push(mode));
+  modal.setCompose("Preserve this objective");
+  assert.match(modal.render(94).join("\n"), /Context: Messages/);
+  modal.handleInput("\t"); modal.handleInput("\x1b[D"); modal.handleInput("\r");
+  assert.equal(modal.currentContextMode, "full");
+  assert.equal(modal.currentObjective, "Preserve this objective");
+  assert.equal(calls, 0);
+  modal.setDiscovery({ assessment: "a", findings: elevateFindings });
+  modal.render(94); modal.handleInput(" "); modal.handleInput("\t");
+  for (let i = 0; i < 3; i++) modal.handleInput("\x1b[C");
+  modal.handleInput("\r"); // Edit request retains mode until the user switches it.
+  modal.render(94);
+  modal.handleInput("\t"); modal.handleInput("\x1b[D"); modal.handleInput("\r");
+  assert.equal(modal.currentStage, "compose");
+  assert.equal(modal.currentDiscovery, undefined);
+  assert.equal(modal.currentSelection.size, 0);
+  assert.deepEqual(modes, ["full", "messages"]);
+  assert.equal(calls, 0);
+});
+
+test("modal kit: elevate multiline typing never locks a fitting editor", () => {
+	for (const [cols, rows] of [[80, 24], [120, 40]]) {
+		const tui = { mode: "fullscreen", terminal: { rows, columns: cols }, requestRender() {} };
+		const modal = new elevate.ElevateModal(
+			tui, theme, () => {}, () => {}, () => {}, () => {}, () => {}, () => {});
+		const width = hostLayout(kit.BRO_OVERLAY, cols, rows).width;
+		const view = () => stripVTControlCharacters(modal.render(width).join("\n"));
+		modal.setCompose("Line one\nLine two\nLine three\nLine four\nLine five");
+		for (let i = 0; i < 30; i++) {
+			assert.doesNotMatch(view(), /Enlarge the terminal/);
+			modal.handleInput("\r");
+			modal.handleInput(`Line ${i + 6}`);
+			assert.match(view(), new RegExp(`Line ${i + 6}`), "typing scrolled the cursor out of view");
+		}
+		const beforeDelete = modal.editor.getExpandedText();
+		modal.handleInput("\x7f");
+		assert.equal(modal.editor.getExpandedText(), beforeDelete.slice(0, -1), "Backspace was blocked");
+		assert.doesNotMatch(view(), /Enlarge the terminal/);
+		assert.equal(tui.terminal.rows, rows, "the editor changed the host terminal size");
+		tui.terminal.rows = 12;
+		assert.match(view(), /Enlarge the terminal/);
+		tui.terminal.rows = rows;
+		assert.doesNotMatch(view(), /Enlarge the terminal/, "resizing back did not restore the editor");
+	}
+});
+
+// Exercise the real workflow and retry routing, not a replacement onRetry callback.
+for (const failure of ["ordinary", "rewrite-overflow", "discovery-overflow"]) test(`modal kit: elevate retry preserves approvals (${failure})`, async () => {
+  const overflow = failure !== "ordinary";
+  const discoveryFailure = failure === "discovery-overflow";
+	const findings = [
+		{ dimension: "depth", title: "One", why: "w", expertMove: "m" },
+		{ dimension: "range", title: "Two", why: "w", expertMove: "m" },
+	];
+	await settingsModule.writeSettings(settingsModule.parseBroSettings({ version: 2, default: { backend: "agy", model: "test-model", effort: "default" } }));
+	try {
+		await withFakeExecutable("agy", `#!/usr/bin/env node
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const log = join(process.env.BIN_DIR, 'calls.jsonl');
+const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\\n').length : 0;
+const prompt = process.argv[process.argv.indexOf('--print') + 1];
+appendFileSync(log, JSON.stringify(prompt) + '\\n');
+if (calls === ${discoveryFailure ? 0 : 1}) { console.error(${JSON.stringify(overflow ? "context_length_exceeded" : "fixture: rewrite failed")}); process.exit(1); }
+const text = !prompt.includes('Approved improvements:') ? JSON.stringify(${JSON.stringify({ assessment: "Check evidence.", findings })}) : 'Improved objective';
+console.log(JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: text } }));
+`, async (bin) => {
+			const mounted = await mount((ctx) => {
+        ctx.sessionManager.getBranch = () => Array.from({ length: 20 }, (_, i) => ({ type: "message", message: { role: "user", content: `HISTORY-${i} ${"x".repeat(1000)}` } }));
+        return elevate.openElevateModal(ctx, "Original objective");
+      }, "fullscreen", 80, 24);
+			const modal = mounted.component;
+			const waitForStage = async (stage) => {
+				for (let i = 0; i < 1000 && modal.currentStage !== stage; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+				assert.equal(modal.currentStage, stage, stripVTControlCharacters(modal.render(62).join("\n")));
+			};
+			try {
+				assert.equal(modal.currentStage, "compose");
+				modal.render(62);
+				modal.handleInput("\x13");
+        if (discoveryFailure) {
+          await waitForStage("failed");
+          assert.match(modal.render(94).join("\n"), /Edit request/);
+          const first = (await readFile(join(bin, "calls.jsonl"), "utf8")).trim().split("\n");
+          assert.equal(first.length, 1, "discovery automatically retried");
+          modal.handleInput("\r");
+        }
+				await waitForStage("review");
+				modal.render(62);
+				modal.handleInput(" ");
+				modal.handleInput("\t");
+				modal.handleInput("\r");
+        if (!discoveryFailure) {
+				await waitForStage("failed");
+        const beforeRetry = (await readFile(join(bin, "calls.jsonl"), "utf8")).trim().split("\n");
+        assert.equal(beforeRetry.length, 2, "failure automatically retried");
+        if (overflow) assert.match(modal.render(62).join("\n"), /Context overload/);
+				modal.handleInput("\r");
+        }
+				await waitForStage("ready");
+				const calls = (await readFile(join(bin, "calls.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+				assert.equal(calls.length, 3);
+				assert.match(calls[0], /Find the few expert considerations/);
+				assert.match(calls[1], discoveryFailure ? /Find the few expert considerations/ : /Rewrite an assignment/);
+        assert.match(calls[0], /HISTORY-0 /);
+        assert.match(calls[0], /HISTORY-19 /);
+        if (overflow) {
+          assert.ok(calls[2].length < calls[discoveryFailure ? 0 : 1].length);
+          assert.doesNotMatch(calls[2], /HISTORY-0 /);
+          assert.match(calls[2], /HISTORY-19 /);
+          assert.match(calls[2], /Original objective/);
+          assert.match(modal.render(62).join("\n"), /reduced/);
+        } else assert.equal(calls[2], calls[1], "ordinary failure discarded context");
+				const approved = JSON.parse(calls[2].split("Approved improvements: ")[1]);
+				assert.deepEqual(approved, [findings[0]], "retry lost approvals or added rejected findings");
+				assert.equal(modal.currentRevised, "Improved objective");
+			} finally { modal.handleInput("\x1b"); await mounted.closed; }
+		});
+	} finally { await rm(settingsModule.settingsFile(), { force: true }); }
+});
+
+// Regression suite for the states that broke in review: dead zones, hidden editing, and the fit-guard
+// flip. Each assertion below failed against the first rebuild.
+test("modal kit: elevate has no dead zone and never edits an invisible Editor", async () => {
+	const mk = (rows, cols) => new elevate.ElevateModal(
+		{ mode: "fullscreen", terminal: { rows, columns: cols }, requestRender() {} }, theme, () => {}, () => {}, () => {}, () => {}, () => {}, () => {});
+	const findings = [{ dimension: "depth", title: "One", why: "w", expertMove: "m" }];
+
+	// Ready and failed offer only the action row: Tab must not move focus somewhere with no keys.
+	for (const stage of ["ready", "failed"]) {
+		const modal = mk(30, 80);
+		modal.setDiscovery({ assessment: "a", findings });
+		if (stage === "ready") modal.setReady("rewrite"); else modal.setFailed("nope");
+		modal.handleInput("\t");
+		assert.equal(modal.currentZone, "actions", `${stage}: Tab left the action row`);
+		modal.handleInput("\t");
+		assert.equal(modal.currentZone, "actions", `${stage}: Tab cycled into a dead zone`);
+	}
+
+	// A guard that flips on render makes the Editor and the warning alternate forever.
+	for (const [cols, rows] of [[70, 18], [84, 17], [90, 17], [98, 17], [120, 40]]) {
+		const modal = mk(rows, cols);
+		const seen = [];
+		for (let index = 0; index < 4; index++) { modal.render(cols - 2); seen.push(modal.tooSmall); }
+		assert.ok(seen.every((value) => value === seen[0]), `${cols}x${rows}: the fit guard flipped (${seen.join(",")})`);
+	}
+
+	// While the Editor cannot be drawn whole it must not accept edits that the user cannot see.
+	const small = mk(12, 80);
+	small.render(78);
+	assert.equal(small.tooSmall, true, "the tiny-terminal guard did not engage");
+	small.handleInput("H");
+	small.handleInput("I");
+	assert.equal(small.editor.getExpandedText(), "", "typing edited an Editor the user cannot see");
+
+	// Ctrl+C must always rescue the objective, in every stage that has one.
+	let copied = "";
+	const copier = new elevate.ElevateModal(
+		{ mode: "fullscreen", terminal: { rows: 30, columns: 80 }, requestRender() {} }, theme, () => {}, () => {}, () => {}, () => {}, () => {}, () => {});
+	copier.copy = (text) => { copied = text; return Promise.resolve(); };
+	copier.setDiscovering("MY VALUABLE OBJECTIVE");
+	copier.setDiscovery({ assessment: "a", findings });
+	copier.handleInput("\x03");
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(copied, "MY VALUABLE OBJECTIVE", "Ctrl+C copied nothing while reviewing findings");
+
+	// A click inside the Editor must map to the cell the user clicked. Pi 0.84's Editor has no
+	// handleMouse, so that version forwards nothing and leaves the click to host text selection; both
+	// cases must at least keep the wheel swallowed. Version-gated like the shared kit's own test.
+	const clicker = mk(30, 80);
+	clicker.setCompose("hello");
+	clicker.render(78);
+	const area = clicker.editorArea;
+	assert.ok(area.top >= 3, "editorArea ignores the frame rows above the body");
+	assert.equal(area.left, 1, "editorArea ignores the frame's left border");
+	const click = { type: "click", button: "left", x: 1, y: area.top };
+	if (typeof Editor.prototype.handleMouse === "function") {
+		assert.equal(clicker.handleMouse(click)?.handled, true, "a click on the Editor was dropped");
+	} else {
+		assert.equal(clicker.handleMouse(click), undefined, "Pi 0.84 must leave the click to host text selection");
+	}
+	assert.equal(clicker.handleMouse({ type: "wheel", x: 1, y: 1, wheelDelta: 3 })?.handled, true, "the wheel escaped the overlay");
+});
+
+// Ctrl+Enter needs the kitty keyboard protocol, so many terminals deliver nothing. Ctrl+S is the
+// fallback, and it must not be documented-only.
+test("modal kit: elevate starts discovery from the button and from Ctrl+S", async () => {
+	const started = [];
+	const modal = new elevate.ElevateModal(
+		{ mode: "fullscreen", terminal: { rows: 30, columns: 80 }, requestRender() {} }, theme, () => {}, (objective) => started.push(objective), () => {}, () => {}, () => {}, () => {});
+	modal.setCompose("the objective");
+	modal.render(78);
+	modal.handleInput("\x13"); // Ctrl+S
+	assert.deepEqual(started, ["the objective"], "Ctrl+S did not start discovery");
+	// The button path must work too, for terminals that deliver neither chord.
+	modal.render(78);
+	modal.handleInput("\t");
+	modal.handleInput("\r");
+	assert.deepEqual(started, ["the objective", "the objective"], "the [Discover gaps] button did not start discovery");
 });

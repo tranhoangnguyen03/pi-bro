@@ -8,6 +8,7 @@ import {
 	resolveBtwThread,
 } from "./btw.ts";
 import { doctorReport, showBroConfigModal } from "./doctor.ts";
+import { openElevateModal } from "./elevate.ts";
 import {
 	type BroResult,
 	type ModalResult,
@@ -53,6 +54,8 @@ export * from "./show.ts";
 export * from "./advisor.ts";
 export * from "./doctor.ts";
 export * from "./btw.ts";
+export * from "./elevate.ts";
+export * from "./elevate-engine.ts";
 export * from "./explain-modal.ts";
 
 const COMMANDS = [
@@ -67,6 +70,7 @@ const COMMANDS = [
 	{ value: "preferences", label: "preferences", description: "View or edit what Bro knows about you and how you like answers" },
 	{ value: "guided-review", label: "guided-review", description: "Understand and assess a PR with captured code and optional private questions" },
 	{ value: "btw", label: "btw", description: "Open a side conversation (starts conversation-only; /mode toggles full permission)" },
+	{ value: "elevate", label: "elevate", description: "Discover missing expert considerations, then improve a request" },
 	{ value: "config", label: "config", description: "Configure shared defaults and per-capability model/effort overrides" },
 	{ value: "advisor", label: "advisor", description: "Check whether the executor's advisor tool is available right now" },
 	{ value: "advisor-steer", label: "advisor-steer", description: "View, edit, save, or clear the advisor's persistent steering brief" },
@@ -281,6 +285,13 @@ export default async function bro(pi: ExtensionAPI) {
 				return;
 			}
 
+			if (action === "elevate") {
+				if (!hasBroCustomUi(ctx)) { ctx.ui.notify("Use /bro elevate in Pi interactive UI.", "warning"); return; }
+				try { await openElevateModal(ctx, value); }
+				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
+				return;
+			}
+
 			if (action === "config") {
 				if (parts.length !== 1) {
 					ctx.ui.notify("Use /bro config.", "warning");
@@ -418,6 +429,20 @@ export default async function bro(pi: ExtensionAPI) {
 			}
 		},
 	});
+
+	// Registered after /bro and isolated: a shortcut that cannot register must never remove the
+	// working commands. The shortcut can read an unsent draft and uses only context and UI methods
+	// shared by ExtensionContext and ExtensionCommandContext.
+	try {
+		if (typeof pi.registerShortcut === "function") pi.registerShortcut("ctrl+shift+e", {
+			description: "Bro Elevate: improve the current editor draft",
+			handler: async (ctx) => {
+				if (!hasBroCustomUi(ctx)) { ctx.ui.notify("Elevate requires Pi interactive UI.", "warning"); return; }
+				try { await openElevateModal(ctx as import("@earendil-works/pi-coding-agent").ExtensionCommandContext); }
+				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
+			},
+		});
+	} catch { /* /bro still works; the command is the supported path to Elevate */ }
 
 	// Keep the command available even when Bro cannot create its settings file; Doctor can then explain the problem.
 	await ensureSettingsFile().catch(() => undefined);
