@@ -64,6 +64,9 @@ spawning a CLI. It is deliberately isolated from the host session:
   (never trusting a review checkout), then seeds `SettingsManager.inMemory({ ...baseSettings,
   retry: { ...baseSettings.retry, enabled: false, provider: { ...baseSettings.retry?.provider,
   maxRetries: 0 } }, compaction: { ...baseSettings.compaction, enabled: false }, cacheWarming: "off" })`.
+  The same `projectTrusted` decision is passed to both settings managers: the resource loader
+  separately gates `.pi/SYSTEM.md` and `.pi/APPEND_SYSTEM.md` on that trust flag, even with
+  `noContextFiles: true`. Review checkouts and host-untrusted workspaces cannot supply those prompts.
   The overrides survive `resourceLoader.reload()` and cannot write the user's settings. Disabling
   cache warming here also prevents a later paid prompt replay; `applyOverrides` cannot disable it
   because the SDK reads that setting directly from global settings.

@@ -23,7 +23,7 @@ All notable changes to pi-bro are documented here.
 
 ### Changed
 
-- Guided Review accepts `pi` as a file-only backend (read/grep/find/ls, no shell) alongside Claude and Muse, and no longer treats it as a shell-capable sandbox. Its session also ignores the captured checkout's `.pi/settings.json`, so a PR cannot steer thinking levels, budgets or transport for the review.
+- Guided Review accepts `pi` as a file-only backend (read/grep/find/ls, no shell) alongside Claude and Muse, and no longer treats it as a shell-capable sandbox. Its session also ignores the captured checkout's `.pi/settings.json`, `.pi/SYSTEM.md` and `.pi/APPEND_SYSTEM.md`, so a PR cannot steer settings or inject system instructions for the review. Host-untrusted workspaces get the same protection.
 - Pi `btw` keeps its side session in memory only (nothing written under `~/.pi/agent/sessions`), resumes it within the same mode and preferences, and drops it on a `/mode` switch or preferences change, matching Agy. An expired or evicted side conversation now fails loudly instead of silently restarting without its history.
 - Settings version 2 accepts `"backend": "pi"` with a `"<provider>/<id>"` model (split on the first `/` only). A malformed custom model ID is reported in the field instead of throwing out of `/bro config`.
 - Pi model choices come from your configured scoped models (`enabledModels`), falling back to every model with configured credentials. The catalog now includes models authenticated by runtime keys, so the picker offers everything a run can actually use. Virtual (`pi-virtual`) models are filtered out and cannot be selected.

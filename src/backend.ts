@@ -1705,13 +1705,14 @@ async function executePi(
 		// cacheWarming must be set here: getCacheWarmingMode() reads globalSettings directly, so an
 		// applyOverrides({cacheWarming}) would be ignored, and the warmer replays the prompt (another
 		// paid request) once a prompt-cache TTL is close to expiring.
-		const baseSettings = SettingsManager.create(cwd, agentDir, { projectTrusted: request.feature !== "review" && hostTrustsProject }).getSettings();
+		const projectTrusted = request.feature !== "review" && hostTrustsProject;
+		const baseSettings = SettingsManager.create(cwd, agentDir, { projectTrusted }).getSettings();
 		const settingsManager = SettingsManager.inMemory({
 			...baseSettings,
 			retry: { ...baseSettings.retry, enabled: false, provider: { ...baseSettings.retry?.provider, maxRetries: 0 } },
 			compaction: { ...baseSettings.compaction, enabled: false },
 			cacheWarming: "off",
-		});
+		}, { projectTrusted });
 		const resourceLoader = new DefaultResourceLoader({
 			cwd,
 			agentDir,

@@ -1332,3 +1332,55 @@ test("pi rejects a corrupt selection as an outcome instead of throwing", async (
 		assert.match((outcome as { message: string }).message, /Unsupported Pi selection/);
 	}
 });
+
+
+test("pi preserves workspace trust for system prompt discovery after settings reload", async () => {
+	const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+	const { tmpdir } = await import("node:os");
+	const directory = await mkdtemp(join(tmpdir(), "pi-bro-system-trust-"));
+	const cwd = join(directory, "workspace");
+	const agentDir = join(directory, "agent");
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	try {
+		await mkdir(join(cwd, ".pi"), { recursive: true });
+		await mkdir(agentDir);
+		await writeFile(join(cwd, ".pi", "SYSTEM.md"), "REPO_SYSTEM_CANARY");
+		await writeFile(join(cwd, ".pi", "APPEND_SYSTEM.md"), "REPO_APPEND_CANARY");
+		for (const [feature, isProjectTrusted, expectedTrust] of [
+			["review", () => true, false],
+			["explain", () => false, false],
+			["explain", () => { throw Error("stale context"); }, false],
+			["explain", () => true, true],
+		] as const) {
+			let seen: { trusted: boolean; system: string | undefined; append: string[] } | undefined;
+			const outcome = await execute(
+				piRequest(feature, { cwd }),
+				{ backend: "pi", model: "test-provider/test-model" },
+				new AbortController().signal, undefined,
+				{ piCreateSession: (async (opts: {
+					settingsManager: { isProjectTrusted(): boolean };
+					resourceLoader: { reload(): Promise<void>; getSystemPrompt(): string | undefined; getAppendSystemPrompt(): string[] };
+				}) => {
+					await opts.resourceLoader.reload();
+					seen = {
+						trusted: opts.settingsManager.isProjectTrusted(),
+						system: opts.resourceLoader.getSystemPrompt(),
+						append: opts.resourceLoader.getAppendSystemPrompt(),
+					};
+					return { session: fakeSession({ text: "ok" }).session };
+				}) as never },
+				{ ...fakePiHost([PI_MODEL]), isProjectTrusted } as never,
+			);
+			assert.equal(outcome.status, "success");
+			assert.ok(seen);
+			assert.equal(seen.system, expectedTrust ? "REPO_SYSTEM_CANARY" : undefined, `${feature}: repo SYSTEM.md must follow trust`);
+			assert.deepEqual(seen.append, expectedTrust ? ["REPO_APPEND_CANARY"] : []);
+			assert.equal(seen.trusted, expectedTrust, `${feature}: child must preserve the trust decision`);
+		}
+	} finally {
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		await rm(directory, { recursive: true, force: true });
+	}
+});
