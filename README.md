@@ -72,7 +72,7 @@ Guided Review has its own [guide](docs/guided-review.md).
 
 ## Requirements
 
-- Pi `>=0.84.2` (tested on 0.84.2 and 1.2) and Node.js `>=22.19.0`.
+- Pi `>=1.3.0` and Node.js `>=22.19.0`.
 - macOS or Linux. Windows is untested; there, cancelling stops only the
   backend's direct process, not anything it started.
 - At least one backend on your `PATH`, signed in once from your terminal, **or the built-in Pi backend**. You only need the one you use:

@@ -10,6 +10,10 @@ All notable changes to pi-bro are documented here.
 - `/bro config` is now two steps: pick the backend, then its model. Esc steps back without saving.
 - Pi is the safest review option alongside Claude and Muse: Guided Review gets file-only tools and no shell.
 
+### Breaking
+
+- **pi-bro now requires Pi `>=1.3.0`** (previously `>=0.84.2`). The Pi backend is built on SDK APIs introduced after 0.84.2 — `SettingsManager.getSettings()`, `ModelRuntime.getAllModels()` and seeded `SessionManager.inMemory(cwd, { id }, entries)` (1.0.0), and the `disabledBuiltinExtensions` resource-loader option (1.1.0) — so an older host cannot load the extension at all. Update Pi before upgrading pi-bro; the five CLI backends need no other change. `pi-floor` in CI now pins 1.3.0, the oldest supported version.
+
 ### Added
 
 - New `pi` backend for `explain`, `show`, `elevate`, `btw` (restricted and full), `advisor`, and Guided Review. It runs `createAgentSession` inside this process, uses your Pi model registry and configured credentials, and needs no CLI.
