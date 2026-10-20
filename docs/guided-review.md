@@ -6,7 +6,7 @@ The normal journey is: **open a PR → read and investigate → leave when satis
 
 ## Open a review
 
-Requirements: local Pi interactive mode, Git, authenticated GitHub CLI (`gh`), and a configured review backend (Claude or Muse is recommended for untrusted PRs). Run `gh auth status` to check GitHub authentication; `/bro doctor` checks Bro's selected backend setup and shows an advisory when the review backend uses a shell-capable sandbox, without proving GitHub access or model connectivity.
+Requirements: local Pi interactive mode, Git, authenticated GitHub CLI (`gh`), and a configured review backend (Claude, Muse, or Pi is recommended for untrusted PRs). Run `gh auth status` to check GitHub authentication; `/bro doctor` checks Bro's selected backend setup and shows an advisory when the review backend uses a shell-capable sandbox, without proving GitHub access or model connectivity.
 
 ```text
 /bro guided-review https://github.com/OWNER/REPO/pull/123
@@ -83,9 +83,9 @@ Use Overview → Regenerate guide only when you want a fresh explanation/assessm
 
 ## Access, privacy and storage
 
-Review never runs with full-access or bypass flags. **Claude and Muse provide strict file-only inspection** and are recommended for untrusted PRs: Claude runs with `--restricted`, Read/Grep/Glob only, `dontAsk`, safe mode and no MCP; Muse disables write, shell and web tools, foreign personal context and native session logs, without trusting repository rules. No model-run project tests, commands, Git or network tools are available on Claude or Muse.
+Review never runs with full-access or bypass flags. **Claude, Muse, and Pi provide strict file-only inspection** and are recommended for untrusted PRs: Claude runs with `--restricted`, Read/Grep/Glob only, `dontAsk`, safe mode and no MCP; Muse disables write, shell and web tools, foreign personal context and native session logs, without trusting repository rules; Pi runs in-process with `read/grep/find/ls` only, no shell, and an isolated session. No model-run project tests, commands, Git or network tools are available on Claude, Muse, or Pi.
 
-**Codex, Grok and Agy run with shell available inside their own sandbox**, and each sandbox is different: Codex and Grok apply a read-only sandbox (`codex exec --sandbox read-only --ephemeral`, `grok --sandbox read-only --permission-mode dontAsk`), while Agy's `--sandbox` only restricts terminal commands and still lets them write inside the project. All three inspect the captured checkout with a 10-minute review deadline, and **none is shell-free**. When one of these backends is selected for review, Bro shows an advisory during acquisition, in the live review workspace, and in `/bro doctor` (as a non-fatal informational note). Set the **review** override to Claude or Muse in `/bro config` for untrusted PRs; saved reviews remain readable with any backend. Unsupported/older CLI flags fail visibly; there is no bypass fallback.
+**Codex, Grok and Agy run with shell available inside their own sandbox**, and each sandbox is different: Codex and Grok apply a read-only sandbox (`codex exec --sandbox read-only --ephemeral`, `grok --sandbox read-only --permission-mode dontAsk`), while Agy's `--sandbox` only restricts terminal commands and still lets them write inside the project. All three inspect the captured checkout with a 10-minute review deadline, and **none is shell-free**. When one of these backends is selected for review, Bro shows an advisory during acquisition, in the live review workspace, and in `/bro doctor` (as a non-fatal informational note). Set the **review** override to Claude, Muse, or Pi in `/bro config` for untrusted PRs; saved reviews remain readable with any backend. Unsupported/older CLI flags fail visibly; there is no bypass fallback.
 
 Captured evidence is read from pinned Git blobs, so a shell-capable backend that writes inside the checkout cannot alter the code shown as evidence — but it can still change what it later reads, so treat very large changes with suspicion when using Agy.
 
@@ -108,7 +108,7 @@ One open writer per review is supported within a Pi process. Concurrent editing 
 | Problem | What to do |
 | --- | --- |
 | GitHub unavailable when reopening | Use bare `/bro guided-review` to choose a saved review; the picker does not fetch |
-| Sandboxed shell review backend (Codex, Grok, Agy) | Advisory shown; choose Claude or Muse in `/bro config` for strict file-only inspection on untrusted PRs |
+| Sandboxed shell review backend (Codex, Grok, Agy) | Advisory shown; choose Claude, Muse, or Pi in `/bro config` for strict file-only inspection on untrusted PRs |
 | Git/gh authentication or fetch error | Read the acquisition error; check Git/`gh auth status`; retry explicitly |
 | Invalid/failed preparation | Changed files remain available; use Prepare guide to retry when ready for another call |
 | Failed regeneration | Current guide is kept; retry only if you want another call |

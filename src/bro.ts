@@ -8,6 +8,7 @@ import {
 	resolveBtwThread,
 } from "./btw.ts";
 import { doctorReport, showBroConfigModal } from "./doctor.ts";
+import { setPiHostContext } from "./backend.ts";
 import { openElevateModal } from "./elevate.ts";
 import {
 	type BroResult,
@@ -106,6 +107,8 @@ export default async function bro(pi: ExtensionAPI) {
 			return matches.length ? matches : null;
 		},
 		handler: async (args, ctx) => {
+			// Publish the host registry so the in-process Pi backend can resolve models and runtime keys.
+			setPiHostContext(ctx);
 			const raw = args.trim();
 			const normalized = raw.toLowerCase();
 			const parts = normalized ? normalized.split(/\s+/) : [];
@@ -438,6 +441,8 @@ export default async function bro(pi: ExtensionAPI) {
 			description: "Bro Elevate: improve the current editor draft",
 			handler: async (ctx) => {
 				if (!hasBroCustomUi(ctx)) { ctx.ui.notify("Elevate requires Pi interactive UI.", "warning"); return; }
+				// The shortcut bypasses the /bro handler, so publish the registry here for the Pi backend.
+				setPiHostContext(ctx);
 				try { await openElevateModal(ctx as import("@earendil-works/pi-coding-agent").ExtensionCommandContext); }
 				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
 			},

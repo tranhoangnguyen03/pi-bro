@@ -4,7 +4,7 @@ Pi-bro helps you understand agent replies, ask side questions, and review work w
 
 ## 1. Install
 
-You need **Pi**, Node.js 22.19.0 or later, and one supported backend CLI already installed and signed in (Agy, Claude, Grok, Codex, or Muse). See [requirements](../README.md#requirements).
+You need **Pi**, Node.js 22.19.0 or later, and one supported backend already installed and signed in (Agy, Claude, Grok, Codex, or Muse) — or the built-in **Pi** backend, which uses your Pi session's own models and needs no extra CLI. See [requirements](../README.md#requirements).
 
 ```sh
 pi install npm:pi-bro
@@ -44,4 +44,4 @@ See the [docs home](README.md) for detailed workflows.
 
 ## Data and access before you use Bro at work
 
-Bro sends your selected text and some context to the backend CLI and model provider you configure. BTW and the advisor have different access rules; some modes can read or change local files. Read [What leaves your machine](../README.md#what-leaves-your-machine) and the [backend access matrix](reference/data-and-permissions.md#backends-access-and-retention) before using private data. A model prompt saying 'do not access' is not a security boundary.
+Bro sends your selected text and some context to the backend CLI and model provider you configure. BTW and the advisor have different access rules; some modes can read or change local files. The Pi backend runs in-process but still sends the prompt to whichever Pi model provider you select. Read [What leaves your machine](../README.md#what-leaves-your-machine) and the [backend access matrix](reference/data-and-permissions.md#backends-access-and-retention) before using private data. A model prompt saying 'do not access' is not a security boundary.

@@ -358,12 +358,15 @@ test("modal kit: editor and config forward clicks and wheel to their pi-tui chil
 	config.handleMouse({ type: "wheel", x: 3, y: row, wheelDelta: 1 });
 	assert.notEqual(text(config).join("\n"), before, "a wheel over the list moves the selection");
 
-	// Custom model ID submenu mouse delegation
+	// Custom model ID submenu mouse delegation. Step 1 highlights Agy (the current default backend);
+	// Enter opens Agy's family list, then step Right/Down to "Claude" and into its models.
 	const freshConfig = configUi.createConfigModal(settings, [], async () => {})(tui, theme, {}, () => {});
 	freshConfig.render(62);
-	freshConfig.handleInput("\r"); // Open Default model picker
-	for (let i = 0; i < 8; i++) freshConfig.handleInput("\x1b[B"); // Navigate to Claude custom model ID
-	freshConfig.handleInput("\r"); // Open custom input
+	freshConfig.handleInput("\r"); // Open Default model picker (step 1: backends).
+	for (let i = 0; i < 5; i++) freshConfig.handleInput("\x1b[B"); // Agy -> Claude.
+	freshConfig.handleInput("\r"); // Enter step 2 (Claude models).
+	for (let i = 0; i < 2; i++) freshConfig.handleInput("\x1b[B"); // Claude Sonnet -> Opus -> custom.
+	freshConfig.handleInput("\r"); // Open custom input.
 	const customLines = text(freshConfig);
 	const labelRow = customLines.findIndex((l) => l.includes("model ID:"));
 	const inputRow = labelRow + 1;

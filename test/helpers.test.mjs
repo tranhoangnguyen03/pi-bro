@@ -118,6 +118,35 @@ function deferred() {
 
 const withFakeAgy = (script, run) => withFakeExecutable("agy", script, run);
 
+// Drives the two-step config picker deterministically from the keyboard. Step 1 lists backends
+// ([Default], Agy, Claude, Grok, Codex, Muse, Pi); step 2 lists that backend's models. The opener's
+// highlighting depends on the current selection, so these helpers read the rendered cursor and press
+// Down until it matches, instead of assuming a fixed number of presses.
+function configCursor(component) {
+	const line = stripVTControlCharacters(component.render(96).join("\n"))
+		.split("\n")
+		.find((row) => row.includes("→"));
+	return line ? line.replace(/[\s\S]*→\s*/, "").trim() : "";
+}
+
+function configReach(component, match, limit = 14) {
+	for (let i = 0; i <= limit; i++) {
+		if (match(configCursor(component))) return;
+		if (i === limit) break;
+		component.handleInput("\u001b[B");
+	}
+	throw new Error(`config picker could not reach target; cursor is ${JSON.stringify(configCursor(component))}`);
+}
+
+/** Opens the model submenu, steps into Agy's families, and commits the family whose label matches. */
+function pickAgyModel(component, label) {
+	component.handleInput("\r"); // Open the model submenu (step 1).
+	configReach(component, (line) => line.includes("Agy"));
+	component.handleInput("\r"); // Enter step 2 for Agy.
+	if (label) configReach(component, (line) => line.startsWith(label));
+	component.handleInput("\r"); // Commit.
+}
+
 await t.test("Modal interactions: default model/effort resolution, an override that starts out identical", async (t) => {
 	// Modal interactions: default model/effort resolution, an override that starts out identical
 	// to the shared default (must still be stored explicitly -- see below), effort-compatibility
@@ -139,9 +168,7 @@ await t.test("Modal interactions: default model/effort resolution, an override t
 
 	// Switch the shared default to a fixed-effort model: effort must resolve to "fixed",
 	// not a stale low/medium/high, and previously-inherited capability rows follow it.
-	component.handleInput('\r'); // Open "Default model" submenu (first row).
-	component.handleInput('\u001b[B'); // gemini-a -> gemini-b.
-	component.handleInput('\r'); // Commit.
+	pickAgyModel(component, "Gemini B");
 	await settle();
 	assert.match(text(), /Default model\s+gemini-b/);
 	assert.match(text(), /Default effort\s+fixed/, "a fixed-effort default model resolves effort coherently");
@@ -155,9 +182,7 @@ await t.test("Modal interactions: default model/effort resolution, an override t
 	component.handleInput('\u001b[B'); // -> Explain mode.
 	component.handleInput('\u001b[B'); // -> Show turns.
 	component.handleInput('\u001b[B'); // -> Explain model.
-	component.handleInput('\r'); // Open submenu: [Default, gemini-a, gemini-b, gemini-c].
-	component.handleInput('\u001b[B'); // Default -> gemini-a.
-	component.handleInput('\r'); // Commit override.
+	pickAgyModel(component, "Gemini A"); // No override yet, so step 2 opens on the first family.
 	await settle();
 	assert.match(text(), /Explain model\s+gemini-a/);
 	assert.match(text(), /Explain effort\s+low/, "overriding a model auto-selects a compatible effort");
@@ -177,9 +202,7 @@ await t.test("Modal interactions: default model/effort resolution, an override t
 	// default. An override is only ever cleared by an explicit "Default" selection, never because
 	// it happens to equal the default, so this must still be stored as a real override.
 	component.handleInput('\u001b[A'); // -> Explain model.
-	component.handleInput('\r'); // Open submenu (preselects gemini-a, the current override).
-	component.handleInput('\u001b[B'); // gemini-a -> gemini-b.
-	component.handleInput('\r'); // Commit: explain now overrides to gemini-b (== the shared default).
+	pickAgyModel(component, "Gemini B"); // The override's current model is Gemini A, so step 2 opens there.
 	await settle();
 	assert.match(text(), /Explain model\s+gemini-b/);
 	assert.deepEqual(
@@ -194,9 +217,7 @@ await t.test("Modal interactions: default model/effort resolution, an override t
 	component.handleInput('\u001b[A'); // -> Explain mode.
 	component.handleInput('\u001b[A'); // -> Default effort.
 	component.handleInput('\u001b[A'); // -> Default model.
-	component.handleInput('\r'); // Open submenu (preselects gemini-b, the current shared default).
-	component.handleInput('\u001b[B'); // gemini-b -> gemini-c.
-	component.handleInput('\r'); // Commit: the shared default is now gemini-c.
+	pickAgyModel(component, "Gemini C");
 	await settle();
 	assert.match(text(), /Default model\s+gemini-c/);
 	assert.match(text(), /Default effort\s+low/);
@@ -209,19 +230,22 @@ await t.test("Modal interactions: default model/effort resolution, an override t
 	component.handleInput('\u001b[B'); // -> Explain mode.
 	component.handleInput('\u001b[B'); // -> Show turns.
 	component.handleInput('\u001b[B'); // -> Explain model.
-	component.handleInput('\r'); // Open submenu (preselects gemini-b, the current override).
-	component.handleInput('\u001b[A'); // gemini-b -> gemini-a.
-	component.handleInput('\u001b[A'); // gemini-a -> Default.
+	component.handleInput('\r'); // Open submenu (step 1: [Default, Agy, ...]).
+	configReach(component, (line) => line.includes("Default")); // Back to the Default row.
 	component.handleInput('\r'); // Commit: clear the override.
 	await settle();
 	assert.match(text(), /Explain model\s+Default/);
 	assert.equal(persisted.at(-1).overrides.explain, undefined, "an explicit Default selection clears the override");
 
-	// Esc inside a submenu cancels without mutating anything.
+	// Esc inside a submenu cancels without mutating anything. In the two-step picker the first Esc
+	// leaves step 2 for the backend list; the second closes the submenu entirely.
 	const persistedBeforeCancel = persisted.length;
-	component.handleInput('\r'); // Open "Explain model" submenu again.
+	component.handleInput('\r'); // Open "Explain model" submenu again (step 1).
+	configReach(component, (line) => line.includes("Agy"));
+	component.handleInput('\r'); // Confirm Agy -> step 2 family list.
 	component.handleInput('\u001b[B'); // Preview a different model.
-	component.handleInput('\u001b'); // Escape cancels the picker.
+	component.handleInput('\u001b'); // Step 2 -> step 1 (backend list).
+	component.handleInput('\u001b'); // Close the submenu.
 	assert.match(text(), /Explain model\s+Default/, "escaping a submenu leaves the previous value in place");
 	assert.equal(persisted.length, persistedBeforeCancel, "a cancelled submenu never calls persistSettings");
 	assert.equal(isClosed(), false, "escaping a submenu does not close the modal");
@@ -257,7 +281,6 @@ await t.test("Regression: a capability effort-only edit must pin the RESOLVED fa
 	assert.match(text(), /Explain effort\s+high/);
 	assert.equal(persisted.at(-1).overrides.explain.model, "gemini-a", 'must store the resolved family id, not the raw "gemini-a-low" string');
 	assert.equal(persisted.at(-1).overrides.explain.effort, "high");
-
 });
 
 await t.test("Same regression, but for the SHARED default's own effort row: editing \"Default effort\" from", async (t) => {
@@ -291,9 +314,7 @@ await t.test("Advisor is a real capability like explain/show/btw: same model/eff
 
 	// 4 shared rows + explain/show/btw (2 rows each) = 10 rows before "Advisor model".
 	for (let i = 0; i < 10; i++) component.handleInput('\u001b[B');
-	component.handleInput('\r'); // Open "Advisor model" submenu.
-	component.handleInput('\u001b[B'); // Default -> gemini-a.
-	component.handleInput('\r'); // Commit.
+	pickAgyModel(component, "Gemini A");
 	await settle();
 	assert.match(text(), /Advisor model\s+gemini-a/);
 	assert.equal(persisted.at(-1).overrides.advisor.model, "gemini-a");

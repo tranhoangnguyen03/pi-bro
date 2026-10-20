@@ -11,14 +11,20 @@ import {
 	type AgySelection,
 	type BackendProgress,
 	type BackendRequest,
+	type PiHostContext,
 	MAX_STDOUT_LINE_CHARS,
 	REVIEW_DEADLINE_MS,
 	agySelection,
 	backendDeadlineMs,
 	beginAttempt,
+	bridgePiRuntimeForCatalog,
 	execute,
 	frameStdoutLines,
+	getPiHostContext,
+	piToolAllowlist,
 	reviewBackendNotice,
+	setPiHostContext,
+	splitPiModel,
 } from "../src/backend.ts";
 
 const withFakeAgy = (script: string, run: (binDir: string) => Promise<void>) => withFakeExecutable("agy", script, run);
@@ -26,12 +32,14 @@ const withFakeAgy = (script: string, run: (binDir: string) => Promise<void>) => 
 test("review backend notice recommends file-only inspection only for shell-capable sandboxes", () => {
 	assert.equal(reviewBackendNotice("claude"), undefined);
 	assert.equal(reviewBackendNotice("muse"), undefined);
+	// Pi's Guided Review runs with read/grep/find/ls only: no shell, so no shell advisory.
+	assert.equal(reviewBackendNotice("pi"), undefined);
 	for (const backend of ["agy", "grok", "codex"] as const) {
 		const notice = reviewBackendNotice(backend)!;
 		assert.ok(notice.trim(), backend);
 		assert.match(notice, /sandboxed shell/);
 		assert.match(notice, /not strict file-only inspection/);
-		assert.match(notice, /Claude or Muse is recommended for untrusted PRs/);
+		assert.match(notice, /Claude, Muse, or Pi is recommended for untrusted PRs/);
 		assert.doesNotMatch(notice, /[\x00-\x1f\x7f]/);
 	}
 	// Agy's sandbox only restricts terminal commands; it must not be sold as read-only.
@@ -66,7 +74,265 @@ test("every adapter derives its deadline from backendDeadlineMs, never a local l
 		"610_000 may appear only once, in REVIEW_DEADLINE_MS (no adapter literal)",
 	);
 	// Every adapter routes through the helper; a new adapter that forgets to is caught here.
-	assert.equal((source.match(/deadlineMsOverride \?\? backendDeadlineMs\(/g) ?? []).length, 6);
+	// 6 CLI adapters (Agy argv/stdin, Claude, Grok, Codex, Muse) plus the in-process Pi executor.
+	assert.equal((source.match(/deadlineMsOverride \?\? backendDeadlineMs\(/g) ?? []).length, 7);
+});
+
+test("pi tool allowlists isolate every capability: no tools for explain/show/elevate, read-only for review, workspace tools for advisor/btw-full", () => {
+	// Restricted, non-review features only ever see the prompt: this is the isolation guarantee.
+	for (const feature of ["explain", "show"] as const) {
+		assert.deepEqual(piToolAllowlist(feature, "restricted"), { tools: [] }, feature);
+	}
+	assert.deepEqual(piToolAllowlist("btw", "restricted"), { tools: [] });
+	// Guided Review gets file-only inspection in the captured checkout, never a shell.
+	assert.deepEqual(piToolAllowlist("review", "restricted"), { tools: ["read", "grep", "find", "ls"] });
+	for (const [feature, access] of [["advisor", "workspace-full"], ["btw", "workspace-full"]] as const) {
+		const allowlist = piToolAllowlist(feature, access);
+		assert.deepEqual(allowlist.tools, ["read", "bash", "edit", "write"]);
+		// Nested Bro delegation and MCP must never be reachable from a Bro-run Pi child.
+		for (const excluded of ["bro_advisor", "external_delegate", "external_workflow", "mcp__*"]) assert.ok(allowlist.excludeTools?.includes(excluded), `${feature}: ${excluded}`);
+	}
+});
+
+test("splitPiModel splits on the first slash only and rejects malformed pairs", () => {
+	assert.deepEqual(splitPiModel("9-router/glm-5.3"), { providerId: "9-router", modelId: "glm-5.3" });
+	// Model IDs may contain slashes; only the first one separates provider from model.
+	assert.deepEqual(splitPiModel("vendor/family/model-v2"), { providerId: "vendor", modelId: "family/model-v2" });
+	assert.equal(splitPiModel("noslash"), undefined);
+	assert.equal(splitPiModel("/missing-provider"), undefined);
+	assert.equal(splitPiModel("missing-model/"), undefined);
+	assert.equal(splitPiModel(""), undefined);
+});
+
+test("pi dispatch fails closed without a host registry instead of falling through to a CLI backend", async () => {
+	// A physical-looking selection with no host context cannot resolve a model, so execute must fail
+	// with a Pi-specific message rather than silently spawning Agy.
+	setPiHostContext(undefined);
+	assert.equal(getPiHostContext(), undefined);
+	const outcome = await execute(
+		{ feature: "explain", access: "restricted", prompt: "hi" },
+		{ backend: "pi", model: "noslash" },
+		new AbortController().signal,
+	);
+	assert.equal(outcome.status, "failure");
+	assert.match((outcome as { message: string }).message, /not a `<provider>\/<id>` model/);
+});
+
+test("pi dispatch rejects a virtual model before session construction", async () => {
+	setPiHostContext(undefined);
+	const outcome = await execute(
+		{ feature: "explain", access: "restricted", prompt: "hi" },
+		{ backend: "pi", model: "some-provider/pi-virtual-thing" },
+		new AbortController().signal,
+	);
+	assert.equal(outcome.status, "failure");
+	assert.match((outcome as { message: string }).message, /not in your Pi model catalog/);
+});
+
+// Offline Pi harness: a fake host registry + a fake createAgentSession, so the adapter's real setup,
+// cancellation, timeout, terminal-verification and continuation paths run without a provider.
+type PiEvent = { type: string; message?: { role: string; content: unknown; stopReason?: string; errorMessage?: string }; toolName?: string; willRetry?: boolean };
+
+function fakePiHost(models: Array<Record<string, unknown>>) {
+	const byKey = new Map(models.map((m) => [`${m.provider}/${m.id}`, m]));
+	return {
+		modelRegistry: {
+			getRegisteredProviderIds: () => [],
+			getRegisteredNativeProvider: () => undefined,
+			getRegisteredProviderConfig: () => undefined,
+			getProviderAuthStatus: () => ({ source: "stored" }),
+			getApiKeyForProvider: async () => undefined,
+			find: (provider: string, id: string) => byKey.get(`${provider}/${id}`),
+		},
+		scopedModels: [],
+	} as unknown as PiHostContext;
+}
+
+// A model whose "api" is not pi-virtual, so the physical-only guard lets it through.
+const PI_MODEL = { provider: "test-provider", id: "test-model", api: "openai-responses", reasoning: true };
+
+function fakeSession(options: {
+	events?: PiEvent[];
+	stopReason?: string;
+	text?: string;
+	agentEnd?: boolean;
+	willRetry?: boolean;
+	promptNeverSettles?: boolean;
+	createDelayMs?: number;
+	entries?: unknown[];
+	sessionId?: string;
+	// Runs inside prompt() so a test can trigger cancellation deterministically instead of on a timer.
+	onPrompt?: () => void;
+}) {
+	const listeners: Array<(event: PiEvent) => void> = [];
+	// Counted separately: dispose() also aborts, so a single "aborted" flag would make an
+	// abort-was-called assertion pass even if abort() itself never ran.
+	let abortCalls = 0;
+	let disposed = false;
+	const session = {
+		sessionId: options.sessionId ?? "fake-session-id",
+		messages: [] as unknown[],
+		sessionManager: { getEntries: () => options.entries ?? [{ type: "message" }] },
+		subscribe(fn: (event: PiEvent) => void) { listeners.push(fn); return () => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }; },
+		async abort() { abortCalls++; },
+		// Mirrors AgentSession.dispose(), which aborts the underlying agent.
+		dispose() { disposed = true; },
+		async prompt(_text?: string, _promptOptions?: unknown) {
+			options.onPrompt?.();
+			for (const event of options.events ?? []) for (const fn of [...listeners]) fn(event);
+			if (options.agentEnd !== false) for (const fn of [...listeners]) fn({ type: "agent_end", willRetry: options.willRetry === true });
+			const text = options.text ?? "done";
+			session.messages = [{ role: "assistant", content: [{ type: "text", text }], stopReason: options.stopReason ?? "stop" }];
+			if (options.promptNeverSettles) await new Promise(() => {});
+		},
+	};
+	return { session, aborted: () => abortCalls > 0, abortCalls: () => abortCalls, disposed: () => disposed, listeners };
+}
+
+const piRequest = (feature: BackendRequest["feature"] = "explain", extra: Partial<BackendRequest> = {}): BackendRequest => ({
+	feature, access: feature === "advisor" ? "workspace-full" : "restricted", prompt: "hello",
+	...(feature === "advisor" || feature === "review" ? { cwd: process.cwd() } : {}), ...extra,
+});
+
+const runPi = (request: BackendRequest, session: ReturnType<typeof fakeSession>, options: Record<string, unknown> = {}, signal = new AbortController().signal) =>
+	execute(request, { backend: "pi", model: "test-provider/test-model" }, signal, undefined, {
+		...options,
+		piCreateSession: (async () => ({ session: session.session })) as never,
+	}, fakePiHost([PI_MODEL]));
+
+test("pi returns the final assistant text on a clean turn", async () => {
+	const outcome = await runPi(piRequest(), fakeSession({ text: "PONG" }));
+	assert.equal(outcome.status, "success");
+	assert.equal((outcome as { text: string }).text, "PONG");
+});
+
+test("pi rejects model.api === pi-virtual", async () => {
+	setPiHostContext(undefined);
+	const outcome = await execute(
+		{ feature: "explain", access: "restricted", prompt: "hi" },
+		{ backend: "pi", model: "test-provider/virtual" },
+		new AbortController().signal,
+		undefined,
+		undefined,
+		fakePiHost([{ provider: "test-provider", id: "virtual", api: "pi-virtual", reasoning: false }]),
+	);
+	assert.equal(outcome.status, "failure");
+	assert.match((outcome as { message: string }).message, /virtual model/);
+});
+
+for (const stopReason of ["error", "aborted", "length"]) {
+	test(`pi refuses to report a ${stopReason} turn as success`, async () => {
+		const outcome = await runPi(piRequest(), fakeSession({ stopReason, text: "partial answer" }));
+		assert.equal(outcome.status, "failure", stopReason);
+		assert.match((outcome as { message: string }).message, /stopReason|did not complete/);
+	});
+}
+
+test("pi fails when the turn never settles with an agent_end event", async () => {
+	const outcome = await runPi(piRequest(), fakeSession({ agentEnd: false, text: "text but no end" }));
+	assert.equal(outcome.status, "failure");
+	assert.match((outcome as { message: string }).message, /without an agent_end/);
+});
+
+test("pi treats an agent_end that still wants to retry as a failure", async () => {
+	const outcome = await runPi(piRequest(), fakeSession({ willRetry: true, text: "retrying" }));
+	assert.equal(outcome.status, "failure");
+	assert.match((outcome as { message: string }).message, /intended to retry/);
+});
+
+test("pi fails on an empty final answer", async () => {
+	const outcome = await runPi(piRequest(), fakeSession({ text: "" }));
+	assert.equal(outcome.status, "failure");
+	assert.match((outcome as { message: string }).message, /no final explanation/);
+});
+
+test("pi reports cancellation when the signal is already aborted, without starting a turn", async () => {
+	const controller = new AbortController();
+	controller.abort();
+	let created = false;
+	const session = fakeSession({ text: "should not run" });
+	const outcome = await execute(
+		piRequest(), { backend: "pi", model: "test-provider/test-model" }, controller.signal, undefined,
+		{ piCreateSession: (async () => { created = true; return { session: session.session }; }) as never },
+		fakePiHost([PI_MODEL]),
+	);
+	assert.equal(outcome.status, "cancelled");
+	assert.equal(created, false, "a pre-aborted signal must not construct a session");
+});
+
+test("pi reports cancellation when aborted mid-turn", async () => {
+	const controller = new AbortController();
+	// Abort from inside the turn, not on a wall clock: setup does real file I/O (~20ms), so a fixed
+	// timer can fire before the session exists and then only exercise the pre-setup path.
+	const session = fakeSession({ promptNeverSettles: true, text: "late", onPrompt: () => controller.abort() });
+	const started = Date.now();
+	const outcome = await runPi(piRequest(), session, {}, controller.signal);
+	assert.equal(outcome.status, "cancelled");
+	assert.ok(Date.now() - started < 2_000, "an uncooperative prompt must not hold the caller");
+	assert.ok(session.aborted(), "the session must be asked to abort");
+});
+
+test("pi reports a timeout even when the deadline fires during setup", async () => {
+	// The deadline elapses while createAgentSession is still pending: a timeout does not abort the
+	// caller's signal, so only the latch can stop the attempt from starting a paid turn.
+	const session = fakeSession({ text: "should not run" });
+	let promptCalls = 0;
+	const started = Date.now();
+	const outcome = await execute(
+		piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
+		{
+			deadlineMs: 30,
+			piCreateSession: (async () => { await new Promise((r) => setTimeout(r, 300)); session.session.prompt = async () => { promptCalls++; }; return { session: session.session }; }) as never,
+		},
+		fakePiHost([PI_MODEL]),
+	);
+	assert.equal(outcome.status, "timeout");
+	assert.equal(promptCalls, 0, "a timed-out attempt must not start a model request");
+	// The race must return AT the deadline, not after construction finally resolves 270ms later.
+	assert.ok(Date.now() - started < 200, "a deadline during setup must not hold the caller");
+});
+
+test("pi reports a timeout when the deadline fires during the turn", async () => {
+	const session = fakeSession({ promptNeverSettles: true });
+	const started = Date.now();
+	const outcome = await runPi(piRequest(), session, { deadlineMs: 40 });
+	assert.equal(outcome.status, "timeout");
+	assert.ok(Date.now() - started < 2_000);
+});
+
+test("pi btw continues the retained in-memory session and fails loudly once it is gone", async () => {
+	const first = await runPi(piRequest("btw"), fakeSession({ text: "turn one", sessionId: "pi-btw-1" }));
+	assert.equal(first.status, "success");
+	assert.equal((first as { continuation?: { id: string } }).continuation?.id, "pi-btw-1");
+
+	const resumed = await runPi(piRequest("btw", { continuation: { id: "pi-btw-1" } }), fakeSession({ text: "turn two", sessionId: "pi-btw-1" }));
+	assert.equal(resumed.status, "success", "a retained thread must continue");
+
+	const missing = await runPi(piRequest("btw", { continuation: { id: "never-stored" } }), fakeSession({ text: "must not answer" }));
+	assert.equal(missing.status, "failure");
+	assert.match((missing as { message: string }).message, /expired/);
+});
+
+test("pi review refuses to load the captured checkout's project settings", async () => {
+	// A PR-controlled .pi/settings.json must not be merged into the reviewing session.
+	const { mkdtemp, mkdir, writeFile } = await import("node:fs/promises");
+	const { tmpdir } = await import("node:os");
+	const checkout = await mkdtemp(join(tmpdir(), "pi-bro-review-trust-"));
+	await mkdir(join(checkout, ".pi"), { recursive: true });
+	await writeFile(join(checkout, ".pi", "settings.json"), JSON.stringify({ defaultThinkingLevel: "max" }));
+
+	let seen: { getDefaultThinkingLevel?: () => string } | undefined;
+	const session = fakeSession({ text: "reviewed" });
+	const outcome = await execute(
+		{ feature: "review", access: "restricted", cwd: checkout, prompt: "review" },
+		{ backend: "pi", model: "test-provider/test-model" },
+		new AbortController().signal,
+		undefined,
+		{ piCreateSession: (async (opts: { settingsManager: { getDefaultThinkingLevel?: () => string } }) => { seen = opts.settingsManager; return { session: session.session }; }) as never },
+		fakePiHost([PI_MODEL]),
+	);
+	assert.equal(outcome.status, "success");
+	assert.notEqual(seen?.getDefaultThinkingLevel?.(), "max", "PR project settings must be ignored for review");
 });
 
 test("grok review fails closed when its permission mode is missing or auto-approving", async () => {
@@ -904,4 +1170,165 @@ if (mode === 'split') {
 			delete process.env.TEST_MODE;
 		}
 	});
+});
+
+test("pi disposes a session that resolves after the stop race was already lost", async () => {
+	// When the stop wins the construction race, construction can still finish later. That session is
+	// never prompted, so it must be torn down here or its listeners and resources leak.
+	const session = fakeSession({ text: "must not run" });
+	let disposed = 0;
+	let prompted = 0;
+	session.session.dispose = () => { disposed++; };
+	session.session.prompt = async () => { prompted++; };
+	// A gate the test opens itself, and a cancellation driven from inside construction: a wall-clock
+	// deadline could fire during runtime preparation, before a session is ever created.
+	let releaseConstruction: () => void = () => {};
+	const constructionGate = new Promise<void>((resolve) => { releaseConstruction = resolve; });
+	const controller = new AbortController();
+	const outcome = await execute(
+		piRequest(), { backend: "pi", model: "test-provider/test-model" }, controller.signal, undefined,
+		{ piCreateSession: (async () => { controller.abort(); await constructionGate; return { session: session.session }; }) as never },
+		fakePiHost([PI_MODEL]),
+	);
+	assert.equal(outcome.status, "cancelled");
+	assert.equal(prompted, 0, "a stopped attempt must not start a model request");
+	// Now let construction finish and wait for its cleanup to be observed, rather than guessing a delay.
+	releaseConstruction();
+	for (let i = 0; i < 400 && disposed === 0; i++) await new Promise((r) => setTimeout(r, 5));
+	assert.equal(disposed, 1, "the late session must be disposed exactly once");
+});
+
+test("pi re-issues abort when a stop is latched during prompt preflight", async () => {
+	// session.prompt() awaits an auth check before any run exists, and abort() only latches while a run
+	// is active, so a stop in that window would be forgotten. preflightResult must re-issue it.
+	const session = fakeSession({});
+	let aborts = 0;
+	const controller = new AbortController();
+	session.session.abort = async () => { aborts++; };
+	session.session.prompt = async (_text: string, options?: { preflightResult?: (d: string) => void }) => {
+		// Emulate the SDK's asynchronous preflight, aborting from inside it so the stop is guaranteed to
+		// land after the run starts regardless of machine load.
+		controller.abort();
+		options?.preflightResult?.("started");
+		await new Promise(() => {});
+	};
+	const outcome = await runPi(piRequest(), session, {}, controller.signal);
+	assert.equal(outcome.status, "cancelled");
+	// The latch aborts immediately; the preflight callback re-issues it. Poll rather than guess a delay.
+	for (let i = 0; i < 200 && aborts < 2; i++) await new Promise((r) => setTimeout(r, 5));
+	assert.ok(aborts >= 2, `abort must be re-issued at preflight (saw ${aborts})`);
+});
+
+test("pi catalog bridge copies runtime keys for providers that are only in the model catalog", async () => {
+	// getRegisteredProviderIds() lists extension registrations only, so a runtime key set on a built-in
+	// provider (Pi's own --api-key) must be found through the model catalog instead.
+	const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
+	const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
+	const { join } = await import("node:path");
+	const agentDir = getAgentDir();
+	const hostRuntime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
+	const provider = hostRuntime.getAllModels()[0]?.provider;
+	assert.ok(provider, "the fixture needs at least one installed model");
+	await hostRuntime.setRuntimeApiKey(provider, "sk-fixture-runtime-key");
+	const catalogRuntime = await bridgePiRuntimeForCatalog(
+		{ modelRegistry: new (await import("@earendil-works/pi-coding-agent")).ModelRegistry(hostRuntime) } as never,
+		agentDir,
+	);
+	assert.equal(catalogRuntime.getProviderAuthStatus(provider).source, "runtime", "the runtime key must be carried across");
+});
+
+test("pi bounds runtime preparation by the deadline", async () => {
+	// Credential preparation is real I/O and sits inside the latch: a slow lookup must not extend the
+	// deadline. (A never-resolving lookup would only let the process exit, since the timer is unref'd.)
+	const baseRegistry = fakePiHost([PI_MODEL]).modelRegistry as unknown as Record<string, unknown>;
+	const slowHost = {
+		modelRegistry: {
+			...baseRegistry,
+			getProviderAuthStatus: () => ({ source: "runtime" }),
+			getApiKeyForProvider: () => new Promise((r) => setTimeout(() => r("sk-late"), 5_000)),
+		},
+		scopedModels: [],
+	} as unknown as PiHostContext;
+	const started = Date.now();
+	const outcome = await execute(
+		piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
+		{ deadlineMs: 40 },
+		slowHost,
+	);
+	assert.equal(outcome.status, "timeout", "a slow credential lookup must be bounded by the deadline");
+	assert.ok(Date.now() - started < 2_000, "preparation must not hold the caller past the deadline");
+});
+
+test("pi turns a throwing host registry into a failure outcome, not a rejection", async () => {
+	// A stale extension ctx throws from its getters; execute() must still return an outcome.
+	const throwingHost = { get modelRegistry(): never { throw new Error("stale extension ctx"); }, scopedModels: [] } as never;
+	const outcome = await execute(
+		piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
+		undefined,
+		throwingHost,
+	);
+	assert.equal(outcome.status, "failure");
+	assert.match((outcome as { message: string }).message, /stale extension ctx/);
+});
+
+test("pi builds the child session with retry, compaction and cache warming off", async () => {
+	// These must hold in the manager the session actually receives. Cache warming matters most: it is
+	// read from globalSettings, so an applyOverrides() would not take, and a warm replay is a paid
+	// request Bro's single attempt never asked for.
+	let seen: { getCacheWarmingMode: () => string; getRetrySettings: () => { enabled: boolean }; getProviderRetrySettings: () => { maxRetries?: number }; getCompactionSettings: () => { enabled: boolean } } | undefined;
+	await execute(
+		piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
+		{ piCreateSession: (async (opts: { settingsManager: typeof seen }) => { seen = opts.settingsManager; return { session: fakeSession({ text: "ok" }).session }; }) as never },
+		fakePiHost([PI_MODEL]),
+	);
+	assert.ok(seen, "the session must receive a settings manager");
+	assert.equal(seen!.getRetrySettings().enabled, false, "SDK retry must be off");
+	assert.equal(seen!.getProviderRetrySettings().maxRetries, 0, "provider retries must be off");
+	assert.equal(seen!.getCompactionSettings().enabled, false, "compaction must be off");
+	assert.equal(seen!.getCacheWarmingMode(), "off", "cache warming must be off (it can replay a paid request)");
+});
+
+test("pi does not trust project settings when the host has not trusted the workspace", async () => {
+	const { mkdtemp, mkdir, writeFile } = await import("node:fs/promises");
+	const { tmpdir } = await import("node:os");
+	const cwd = await mkdtemp(join(tmpdir(), "pi-bro-untrusted-"));
+	await mkdir(join(cwd, ".pi"), { recursive: true });
+	await writeFile(join(cwd, ".pi", "settings.json"), JSON.stringify({ defaultThinkingLevel: "max" }));
+
+	let seen: { getSettings: () => { defaultThinkingLevel?: string } } | undefined;
+	const host = { ...(fakePiHost([PI_MODEL]) as unknown as Record<string, unknown>), isProjectTrusted: () => false };
+	await execute(
+		{ feature: "explain", access: "restricted", prompt: "hi", cwd },
+		{ backend: "pi", model: "test-provider/test-model" },
+		new AbortController().signal, undefined,
+		{ piCreateSession: (async (opts: { settingsManager: typeof seen }) => { seen = opts.settingsManager; return { session: fakeSession({ text: "ok" }).session }; }) as never },
+		host as never,
+	);
+	assert.ok(seen, "the session must have been constructed");
+	assert.notEqual(seen.getSettings().defaultThinkingLevel, "max", "an untrusted workspace's settings must not apply");
+	// Control: with a trusting host the same file IS read, so the assertion above is not vacuous.
+	let trusted: { getSettings: () => { defaultThinkingLevel?: string } } | undefined;
+	await execute(
+		{ feature: "explain", access: "restricted", prompt: "hi", cwd },
+		{ backend: "pi", model: "test-provider/test-model" },
+		new AbortController().signal, undefined,
+		{ piCreateSession: (async (opts: { settingsManager: typeof trusted }) => { trusted = opts.settingsManager; return { session: fakeSession({ text: "ok" }).session }; }) as never },
+		{ ...(fakePiHost([PI_MODEL]) as unknown as Record<string, unknown>), isProjectTrusted: () => true } as never,
+	);
+	assert.equal(trusted?.getSettings().defaultThinkingLevel, "max", "a trusting host must still honour the workspace's settings");
+});
+
+test("pi rejects a corrupt selection as an outcome instead of throwing", async () => {
+	// Every CLI adapter validates its selection first; without this a bad runtime tag throws a
+	// TypeError out of execute() and violates the "always an outcome" contract.
+	for (const selection of [
+		{ backend: "pi", model: "" },
+		{ backend: "pi", model: "ok/model", effort: "turbo" },
+	]) {
+		const outcome = await execute(
+			piRequest(), selection as never, new AbortController().signal, undefined, undefined, fakePiHost([PI_MODEL]),
+		);
+		assert.equal(outcome.status, "failure", JSON.stringify(selection));
+		assert.match((outcome as { message: string }).message, /Unsupported Pi selection/);
+	}
 });

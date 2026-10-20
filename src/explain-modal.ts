@@ -397,7 +397,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 - \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).
 - Reviews save automatically. Reopen the same PR without a model call; bare \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Captured code stays unchanged.
 - Enter opens items or activates focused actions. Tab changes focus; Esc goes back, then closes from Contents. Close saves; Stop and close cancels active work first.
-- Copy finding uses the clipboard, not GitHub. Regenerate requires confirmation and reviews the same capture. For untrusted PRs, prefer Claude/Muse: file-only tools, no shell/writes/web. Codex/Grok allow shell in a read-only sandbox; Agy's sandbox permits project writes. All three show an advisory. Choose a review override in /bro config. Repository text can mislead; citations are not proof.
+- Copy finding uses the clipboard, not GitHub. Regenerate requires confirmation and reviews the same capture. For untrusted PRs, prefer Claude/Muse/Pi: file-only tools, no shell/writes/web. Codex/Grok allow shell in a read-only sandbox; Agy's sandbox permits project writes. All three show an advisory. Choose a review override in /bro config. Repository text can mislead; citations are not proof.
 
 ## Elevate
 
@@ -420,7 +420,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 ## Configure and check
 
 - \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
-- \`/bro config\` — shared default and per-capability (explain/show/btw/advisor/review) backend, model, and effort; explain mode; show turns. Changes save immediately. If the terminal is too small, Esc closes config after pending saves finish; a failed save keeps it open.
+- \`/bro config\` — shared default and per-capability (explain/show/btw/advisor/review) backend, model, and effort; explain mode; show turns. Two steps: choose the backend (Agy, Claude, Grok, Codex, Muse, Pi), then its model; Esc steps back without saving. Changes save immediately. If the terminal is too small, Esc closes config after pending saves finish; a failed save keeps it open.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
 

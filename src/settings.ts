@@ -9,20 +9,22 @@ import {
 	GROK_EFFORTS,
 	CODEX_EFFORTS,
 	MUSE_EFFORTS,
+	PI_EFFORTS,
 } from "./backend.ts";
 import { type BroMode, DEFAULT_BRO_MODE, MAX_PREFERENCES_CHARS, parseBroMode } from "./prompt.ts";
 import { errorMessage, isRecord } from "./util.ts";
 
 export const EFFORTS = ["default", "low", "medium", "high"] as const;
-export const BACKENDS = ["agy", "claude", "grok", "codex", "muse"] as const;
+export const BACKENDS = ["agy", "claude", "grok", "codex", "muse", "pi"] as const;
 export type BackendName = (typeof BACKENDS)[number];
 export type BroEffort = "default" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type AgyEffort = Exclude<BroEffort, "default" | "minimal" | "xhigh" | "max">;
 export type ClaudeEffort = (typeof CLAUDE_EFFORTS)[number];
-export { GROK_EFFORTS, CODEX_EFFORTS, MUSE_EFFORTS };
+export { GROK_EFFORTS, CODEX_EFFORTS, MUSE_EFFORTS, PI_EFFORTS };
 export type GrokEffort = (typeof GROK_EFFORTS)[number];
 export type CodexEffort = (typeof CODEX_EFFORTS)[number];
 export type MuseEffort = (typeof MUSE_EFFORTS)[number];
+export type PiEffort = (typeof PI_EFFORTS)[number];
 
 export const CAPABILITIES = ["explain", "show", "btw", "advisor", "review"] as const;
 export type Capability = (typeof CAPABILITIES)[number];
@@ -75,7 +77,7 @@ export const DEFAULT_SHOW_TURNS = 1;
 
 export function parseBackend(value: unknown, context: string): BackendName {
 	if (typeof value !== "string" || !BACKENDS.some((backend) => backend === value)) {
-		throw new Error(`${context} backend must be "agy", "claude", "grok", "codex", or "muse".`);
+		throw new Error(`${context} backend must be "agy", "claude", "grok", "codex", "muse", or "pi".`);
 	}
 	return value as BackendName;
 }
@@ -98,6 +100,12 @@ export function isCodexEffort(effort: unknown): effort is CodexEffort | "default
 
 export function isMuseEffort(effort: unknown): effort is MuseEffort | "default" {
 	return effort === "default" || MUSE_EFFORTS.some((item) => item === effort);
+}
+
+// The in-process Pi backend accepts the whole BroEffort range; createAgentSession clamps it to
+// what the chosen physical model actually supports.
+export function isPiEffort(effort: unknown): effort is BroEffort {
+	return effort === "default" || PI_EFFORTS.some((item) => item === effort);
 }
 
 // Sonnet/opus aliases resolve case-insensitively; any other non-empty string passes
@@ -133,7 +141,18 @@ export function resolveMuseModel(input: string): string {
 	return trimmed;
 }
 
-export type ExternalBackend = "claude" | "grok" | "codex" | "muse";
+// Pi models are physical registry entries addressed as a non-empty "<provider>/<id>" pair;
+// only the first "/" separates the two so model IDs containing slashes survive intact.
+export function resolvePiModel(input: string): string {
+	const trimmed = input.trim();
+	const separator = trimmed.indexOf("/");
+	if (separator <= 0 || separator === trimmed.length - 1) {
+		throw new Error("Pi model must be a non-empty <provider>/<id> pair from your Pi model catalog.");
+	}
+	return trimmed;
+}
+
+export type ExternalBackend = "claude" | "grok" | "codex" | "muse" | "pi";
 
 export interface ExternalBackendMeta {
 	readonly name: ExternalBackend;
@@ -144,6 +163,8 @@ export interface ExternalBackendMeta {
 	readonly effortHelp: string;
 	isEffort(effort: unknown): effort is BroEffort;
 	resolveModel(input: string): string;
+	/** How this backend's stored model reads in the config list. Defaults to `prefix + model`. */
+	displayModel?(model: string): string;
 }
 
 export const EXTERNAL_BACKENDS: Record<ExternalBackend, ExternalBackendMeta> = {
@@ -187,7 +208,34 @@ export const EXTERNAL_BACKENDS: Record<ExternalBackend, ExternalBackendMeta> = {
 		isEffort: isMuseEffort,
 		resolveModel: resolveMuseModel,
 	},
+	// Pi models are addressed by "<provider>/<id>" and resolved live from the host registry,
+	// so there are no fixed seed models and no prefix form. The `pi:` prefix is only the transport
+	// tag the picker uses to carry the choice back into applyModelChange; the stored and displayed
+	// value is the bare "<provider>/<id>".
+	pi: {
+		name: "pi",
+		label: "Pi",
+		prefix: "pi:",
+		efforts: PI_EFFORTS,
+		models: [],
+		effortHelp: '"default", "minimal", "low", "medium", "high", "xhigh", or "max"',
+		isEffort: isPiEffort,
+		resolveModel: resolvePiModel,
+		displayModel: (model) => model,
+	},
 };
+
+/** The config-list text for a backend's stored model, using the backend's own display rule. */
+export function externalModelDisplay(backend: ExternalBackend, model: string): string {
+	const meta = EXTERNAL_BACKENDS[backend];
+	return meta.displayModel ? meta.displayModel(model) : `${meta.prefix}${model}`;
+}
+
+// Narrows a BackendName to one that has an EXTERNAL_BACKENDS catalog entry. Agy is the only
+// backend without one, so this is exactly "not Agy" and keeps index lookups type-safe.
+export function isExternalBackend(backend: BackendName): backend is ExternalBackend {
+	return backend !== "agy";
+}
 
 export function parseBackendOption(value: string): { backend: ExternalBackend; id: string } | undefined {
 	for (const meta of Object.values(EXTERNAL_BACKENDS)) {
@@ -196,6 +244,37 @@ export function parseBackendOption(value: string): { backend: ExternalBackend; i
 		}
 	}
 	return undefined;
+}
+
+// A single selectable Pi model: a physical, deduplicated "<provider>/<id>" entry.
+export interface PiModelChoice {
+	/** Canonical "<provider>/<id>" value stored in settings. */
+	value: string;
+	/** Human label for the picker. */
+	label: string;
+}
+
+/** Builds the `value` for a Pi model, splitting on the first "/" only. */
+export function piModelValue(providerId: string, modelId: string): string {
+	return `${providerId}/${modelId}`;
+}
+
+// Turns resolved scoped-model entries (or registry models) into deduplicated, physical-only choices.
+// Models reported as "pi-virtual" are dropped: they route elsewhere at request time and cannot be
+// driven as a standalone in-process session.
+export function toPiModelChoices(
+	entries: readonly { model: { provider: string; id: string; name?: string; api?: string } }[],
+): PiModelChoice[] {
+	const seen = new Set<string>();
+	const choices: PiModelChoice[] = [];
+	for (const { model } of entries) {
+		if (model.api === "pi-virtual") continue;
+		const value = piModelValue(model.provider, model.id);
+		if (seen.has(value)) continue;
+		seen.add(value);
+		choices.push({ value, label: model.name ? `${model.name} · ${value}` : value });
+	}
+	return choices;
 }
 
 export function parseModelEffortPair(value: unknown, context: string): ModelEffortPair {
@@ -373,8 +452,8 @@ export function capabilityBackend(settings: BroSettings, capability: Capability)
 export function selectionForCapability(settings: BroSettings, capability: Capability): BackendSelection {
 	const pair = capabilityPair(settings, capability);
 	const backend = capabilityBackend(settings, capability);
-	if (backend in EXTERNAL_BACKENDS) {
-		const meta = EXTERNAL_BACKENDS[backend as ExternalBackend];
+	if (isExternalBackend(backend)) {
+		const meta = EXTERNAL_BACKENDS[backend];
 		if (!meta.isEffort(pair.effort)) {
 			throw new Error(`\`${pair.effort}\` is not supported on the ${meta.label} backend. Run \`/bro config\` to fix this.`);
 		}

@@ -1,7 +1,13 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+	getAgentDir,
+	resolveModelScopeWithDiagnostics,
+	SettingsManager,
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
 import {
 	ADVISOR_COMPATIBILITY,
 	ADVISOR_STEERING_FILE,
@@ -10,7 +16,7 @@ import {
 	readAdvisorSteering,
 	resolveAdvisorState,
 } from "./advisor.ts";
-import { agyFailureMessage, reviewBackendNotice } from "./backend.ts";
+import { agyFailureMessage, bridgePiRuntimeForCatalog, piEffectiveEffort, piPhysicalModel, reviewBackendNotice, splitPiModel } from "./backend.ts";
 import { createConfigModal } from "./config-ui.ts";
 import { openBroOverlay } from "./modal-kit.ts";
 import {
@@ -18,6 +24,7 @@ import {
 	type AgyModelFamily,
 	type BackendName,
 	type BroSettings,
+	type PiModelChoice,
 	CAPABILITIES,
 	CAPABILITY_LABELS,
 	EFFORTS,
@@ -28,10 +35,12 @@ import {
 	isCodexEffort,
 	isGrokEffort,
 	isMuseEffort,
+	isPiEffort,
 	readPreferences,
 	readSettings,
 	resolveCapabilitySettings,
 	resolveModelEffort,
+	toPiModelChoices,
 	writeSettings,
 } from "./settings.ts";
 import { hasBroCustomUi } from "./ui-capabilities.ts";
@@ -101,6 +110,42 @@ export async function listAgyModels(pi: ExtensionAPI, signal?: AbortSignal): Pro
 	} finally {
 		await rm(runDirectory, { recursive: true, force: true });
 	}
+}
+
+// The Pi backend's selectable models: the configured scoped models (enabledModels) when present,
+// else every model with configured auth. Physical models only -- a virtual model routes elsewhere
+// and cannot be driven as a standalone in-process session. This never makes a model request.
+export async function listPiModels(
+	ctx: ExtensionCommandContext,
+	signal?: AbortSignal,
+): Promise<{ models: PiModelChoice[]; scope: "scoped" | "available"; diagnostics: string[] }> {
+	const settingsManager = SettingsManager.create(ctx.cwd, getAgentDir());
+	// Share the executor's bridge: without the host's runtime credentials this catalog would hide
+	// models that a run can actually use, so `/bro config` and `/bro doctor` would disagree with it.
+	const modelRuntime = await bridgePiRuntimeForCatalog(ctx, getAgentDir());
+	if (signal?.aborted) throw new Error("Canceled.");
+
+	const patterns = settingsManager.getEnabledModels() ?? [];
+	if (patterns.length) {
+		const resolved = await resolveModelScopeWithDiagnostics(patterns, modelRuntime);
+		const diagnostics = resolved.diagnostics.map((entry) => entry.message);
+		// A configured scope is authoritative even when it resolves to nothing: silently substituting
+		// every authenticated model would offer choices the user never scoped in, and would hide the
+		// diagnostics that explain why. The caller shows them.
+		return { models: toPiModelChoices(resolved.scopedModels), scope: "scoped", diagnostics };
+	}
+
+	const available = modelRuntime.getAvailableSnapshot().map((model) => ({ model }));
+	return { models: toPiModelChoices(available), scope: "available", diagnostics: [] };
+}
+
+// The requested and effective Pi effort, computed rather than assumed: a model that cannot reason
+// runs at "off", and a level the model does not offer is clamped by the SDK. Reporting the real
+// value is what makes this line truthful instead of a blanket clamp claim.
+function piEffortDetail(model: Parameters<typeof piEffectiveEffort>[0], effort: string): string {
+	const effective = piEffectiveEffort(model, effort);
+	if (effective === effort) return effort === "default" ? "Pi's configured default" : effort;
+	return `${effort} → ${effective} (clamped)`;
 }
 
 async function checkAgyVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
@@ -242,6 +287,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 	const grokInUse = backendInUse("grok");
 	const codexInUse = backendInUse("codex");
 	const museInUse = backendInUse("muse");
+	const piInUse = backendInUse("pi");
 
 	let agyStarted = false;
 	if (agyInUse) {
@@ -340,6 +386,22 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 		pass("Muse", "not probed — no feature selects the Muse backend");
 	}
 
+	// Pi is in-process: validate the selected physical model against the host registry without a
+	// CLI spawn or a live model turn. A passing answer means the model resolves and has configured
+	// auth; it is not a connectivity test.
+	if (piInUse) {
+		try {
+			const { models: piModels, scope, diagnostics } = await listPiModels(ctx, signal);
+			pass("Pi model catalog", `${piModels.length} physical model${piModels.length === 1 ? "" : "s"} selectable · ${scope === "scoped" ? "from enabledModels (scoped)" : "all models with configured auth"}`);
+			for (const diagnostic of diagnostics) lines.push(`- ℹ **Pi scoped models:** ${diagnostic}`);
+		} catch (error) {
+			if (signal.aborted) throw error;
+			fail("Pi model catalog", error);
+		}
+	} else {
+		pass("Pi", "not probed — no feature selects the Pi backend");
+	}
+
 	if (settings) {
 		const defaultBackend = settings.backend ?? "agy";
 		if (defaultBackend === "claude") {
@@ -377,6 +439,26 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 				pass("Reasoning effort", "built into the selected model");
 			} else {
 				pass("Reasoning effort", settings.effort);
+			}
+		} else if (defaultBackend === "pi") {
+			const parts = splitPiModel(settings.model);
+			const physical = parts ? piPhysicalModel(ctx.modelRegistry, parts.providerId, parts.modelId) : undefined;
+			if (!parts) {
+				fail("Selected model", `\`${settings.model}\` is not a \`<provider>/<id>\` Pi model. Run \`/bro config\` to choose another.`);
+			} else if (!physical) {
+				fail("Selected model", `pi \`${settings.model}\` is unavailable or virtual. Run \`/bro config\` to choose another.`);
+			} else {
+				const model = ctx.modelRegistry.find(parts.providerId, parts.modelId);
+				if (!model || !ctx.modelRegistry.hasConfiguredAuth(model)) {
+					fail("Selected model", `pi \`${settings.model}\` has no configured auth. Sign in with Pi's /login, then run \`/bro doctor\`.`);
+				} else {
+					pass("Selected model", `pi \`${settings.model}\``);
+				}
+			}
+			if (!isPiEffort(settings.effort)) {
+				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
+			} else {
+				pass("Reasoning effort", piEffortDetail(physical, settings.effort));
 			}
 		} else if (models) {
 			const current = resolveCatalogSettings(settings, models);
@@ -455,6 +537,42 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 				);
 				continue;
 			}
+			if (backend === "pi") {
+				if (!isPiEffort(pair.effort)) {
+					fail(label, `\`${pair.effort}\` is unsupported for pi \`${pair.model}\`. Run \`/bro config\` to fix this.`);
+					continue;
+				}
+				const parts = splitPiModel(pair.model);
+				if (!parts) {
+					fail(label, `\`${pair.model}\` is not a \`<provider>/<id>\` Pi model. Run \`/bro config\` to fix this.`);
+					continue;
+				}
+				const physical = piPhysicalModel(ctx.modelRegistry, parts.providerId, parts.modelId);
+				if (!physical) {
+					fail(label, `\`${pair.model}\` is unavailable or virtual. Run \`/bro config\` to choose a physical model.`);
+					continue;
+				}
+				const model = ctx.modelRegistry.find(parts.providerId, parts.modelId);
+				if (!model || !ctx.modelRegistry.hasConfiguredAuth(model)) {
+					fail(label, `\`${pair.model}\` resolves but has no configured auth. Sign in with Pi's /login, then run \`/bro doctor\`.`);
+					continue;
+				}
+				// Scope membership is reported separately from catalog membership: a model can be usable
+				// without being in enabledModels, and the picker would not offer it as a scoped choice.
+				const scoped = (ctx.scopedModels ?? []).some((entry) => entry.model.provider === parts.providerId && entry.model.id === parts.modelId);
+				const tools =
+					capability === "advisor"
+						? "read/bash/edit/write in the workspace, no nested delegation or MCP"
+						: capability === "btw"
+							? "none in conversation-only; read/bash/edit/write in the workspace in full permission"
+							: capability === "review"
+								? "read/grep/find/ls in the captured checkout, no shell"
+								: "no tools";
+						passCapability(
+							`${override ? "override " : ""}pi \`${pair.model}\` · effort ${piEffortDetail(physical, pair.effort)} · ${scoped ? "in your scoped models" : "not in your scoped models"} · tools: ${tools}`,
+						);
+				continue;
+			}
 			// No Agy catalog available: the Agy branch above is the only one that gets here, so there is
 			// nothing to validate, but a shell-capable review override still deserves its advisory.
 			if (!models) {
@@ -504,6 +622,8 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 		pass("Advisor compatibility", "Codex backend — no Agy version floor applies");
 	} else if (settings && capabilityBackend(settings, "advisor") === "muse") {
 		pass("Advisor compatibility", "Muse backend — no Agy version floor applies; auth/connectivity unverified (no probe)");
+	} else if (settings && capabilityBackend(settings, "advisor") === "pi") {
+		pass("Advisor compatibility", "Pi backend — runs in-process; no Agy version floor or CLI probe applies");
 	} else if (agyVersion && advisorAgyCompatible(agyVersion)) pass("Advisor compatibility", ADVISOR_COMPATIBILITY);
 	else if (agyVersion) fail("Advisor compatibility", `installed \`${agyVersion}\`; requires Agy >=1.1.15. Run \`agy update\`.`);
 
@@ -534,5 +654,16 @@ export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: Exten
 		families = [];
 		ctx.ui.notify("Agy model catalog unavailable — showing other backend settings without Agy choices.", "warning");
 	}
-	await openBroOverlay<void>(ctx, createConfigModal(settings, families, writeSettings));
+	// The Pi catalog is loaded independently so /bro config still works when Agy is offline.
+	let piModels: PiModelChoice[] = [];
+	try {
+		const catalog = await listPiModels(ctx);
+		piModels = catalog.models;
+		// A configured scope that resolves to nothing leaves the Pi model list empty; say why instead of
+		// showing a silently empty picker.
+		for (const diagnostic of catalog.diagnostics) ctx.ui.notify(`Pi scoped models: ${diagnostic}`, "warning");
+	} catch (error) {
+		ctx.ui.notify(`Pi model catalog unavailable — Pi choices will be empty. ${errorMessage(error)}`, "warning");
+	}
+	await openBroOverlay<void>(ctx, createConfigModal(settings, families, writeSettings, piModels));
 }

@@ -737,7 +737,7 @@ test("ReviewModal pins the shell-sandbox advisory in warning colour, whatever th
 		{ ask() {}, prepare() {}, stop() {}, close() {}, changed() {} },
 	);
 	modal.advisory =
-		"Guided Review on codex uses sandboxed shell in a read-only sandbox, not strict file-only inspection. Claude or Muse is recommended for untrusted PRs.";
+		"Guided Review on codex uses sandboxed shell in a read-only sandbox, not strict file-only inspection. Claude, Muse, or Pi is recommended for untrusted PRs.";
 	// Two-column rows interleave when flattened, so keep the right-hand (detail) cell of each row.
 	const detail = (width) =>
 		stripVTControlCharacters(modal.render(width).join("\n"))
@@ -764,7 +764,7 @@ test("ReviewModal pins the shell-sandbox advisory in warning colour, whatever th
 
 test("a pinned advisory and finding title always leave a readable row and keep Contents visible", () => {
 	const advisory =
-		"Guided Review on codex uses sandboxed shell in a read-only sandbox, not strict file-only inspection. Claude or Muse is recommended for untrusted PRs.";
+		"Guided Review on codex uses sandboxed shell in a read-only sandbox, not strict file-only inspection. Claude, Muse, or Pi is recommended for untrusted PRs.";
 	const finding = {
 		id: "finding-1",
 		title: "Failure recovery gap",
@@ -906,7 +906,7 @@ test("Contents paging steps by the visible pane height, not the reading height",
 	record.ui = { ...newReviewView(), selected: "overview", pane: "contents" };
 	const modal = make(record);
 	modal.advisory =
-		"Guided Review on codex uses sandboxed shell in a read-only sandbox, not strict file-only inspection. Claude or Muse is recommended for untrusted PRs.";
+		"Guided Review on codex uses sandboxed shell in a read-only sandbox, not strict file-only inspection. Claude, Muse, or Pi is recommended for untrusted PRs.";
 	modal.render(103);
 	modal.focus = "contents";
 	assert.ok(modal.layout.navRows > modal.layout.bodyRows, "a pinned advisory makes the Contents pane taller than the reading pane");

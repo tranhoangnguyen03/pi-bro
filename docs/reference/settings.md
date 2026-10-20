@@ -32,7 +32,8 @@ Settings live in this user-editable file, created when the extension loads
   "showTurns": 1,
   "overrides": {
     "explain": { "backend": "claude", "model": "sonnet", "effort": "medium" },
-    "advisor": { "backend": "grok", "model": "grok-4.7", "effort": "high" }
+    "advisor": { "backend": "grok", "model": "grok-4.7", "effort": "high" },
+    "review": { "backend": "pi", "model": "anthropic/claude-sonnet-4-5", "effort": "high" }
   }
 }
 ```
@@ -47,7 +48,11 @@ Bro reads the file again before each request, so manual edits apply next time.
   model decide). Agy selections are normalized against Agy's installed model
   catalog. Claude, Grok, Codex, and Muse accept seeded or custom model IDs; a model/effort
   combination the account does not support fails with the backend's own error
-  instead of silently falling back.
+  instead of silently falling back. **Pi** selections are a `"<provider>/<id>"` pair
+  from your Pi model catalog, chosen from your configured scoped models
+  (`enabledModels`, falling back to every model with configured credentials).
+  Explicit Pi efforts are clamped to the model's supported reasoning levels; the
+  picker's own step 1 chooses the backend and step 2 the model.
 - `mode` is `brief`, `balanced` (the default), or `faithful`. `showTurns` is
   the default number of turns `/bro show` draws (default 1); `/bro show
   <n-turns>` overrides it for one run.

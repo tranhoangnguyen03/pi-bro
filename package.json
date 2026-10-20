@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "version": "0.25.1",
+  "version": "0.26.0",
   "description": "A sidekick for you and your Pi agent: plain-language explanations, side questions, diagrams, PR review and second opinions, without cluttering the agent's context.",
   "type": "module",
   "license": "MIT",
@@ -98,11 +98,13 @@
     "image": "https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/social-preview.png"
   },
   "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "1.2.0",
     "@earendil-works/pi-coding-agent": "1.2.0",
     "@earendil-works/pi-tui": "1.2.0",
     "@types/node": "^24.0.0",

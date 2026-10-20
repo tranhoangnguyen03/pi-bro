@@ -4,7 +4,7 @@ import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-wor
 import { convertToLlm, getAgentDir, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { execute as executeBackend, type BackendSelection } from "./backend.ts";
+import { execute as executeBackend, setPiHostContext, type BackendSelection } from "./backend.ts";
 import { MAX_ADVISOR_STEERING_CHARS, buildAdvisorPrompt } from "./prompt.ts";
 import { type BackendName, readSettings, selectionForCapability } from "./settings.ts";
 import { errorMessage, isRecord } from "./util.ts";
@@ -376,7 +376,7 @@ export function advisorAttemptLabel(details: AdvisorToolDetails): string {
 		return `Bro advisor · ${details.model ?? "unknown model"} · ${Math.ceil((details.durationMs ?? details.elapsedMs) / 1_000)}s`;
 	}
 	const latest = details.activity?.at(-1);
-	const backendLabel = details.backend === "claude" ? "Claude" : details.backend === "grok" ? "Grok" : details.backend === "codex" ? "Codex" : details.backend === "muse" ? "Muse" : "Agy";
+	const backendLabel = details.backend === "claude" ? "Claude" : details.backend === "grok" ? "Grok" : details.backend === "codex" ? "Codex" : details.backend === "muse" ? "Muse" : details.backend === "pi" ? "Pi" : "Agy";
 	// "last reported" + freshness, never a claim about what the backend is doing right now and never
 	// "stalled" -- silence since lastActivityAt is not itself evidence of a stuck run.
 	const activityLabel = latest
@@ -404,6 +404,8 @@ export function registerAdvisorTool(pi: ExtensionAPI): void {
 			),
 		}),
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
+			// The in-process Pi backend needs the host registry; publish it before any consultation.
+			setPiHostContext(ctx);
 			const state = resolveAdvisorState(ctx.sessionManager.getBranch());
 			const durableSteering = await readAdvisorSteering();
 			const settings = await readSettings();
