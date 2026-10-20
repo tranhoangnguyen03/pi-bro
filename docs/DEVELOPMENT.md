@@ -60,20 +60,23 @@ spawning a CLI. It is deliberately isolated from the host session:
 - **Physical models only.** A `pi-virtual` model routes to another model at request time and cannot
   be driven standalone, so it is rejected before session construction. Stored values are
   `<provider>/<id>`, split on the FIRST `/` only (model IDs may contain slashes).
-- **Single attempt.** `executePi` calls `await resourceLoader.reload()` first and only then applies
-  `settingsManager.applyOverrides({ retry: { enabled: false, provider: { maxRetries: 0 } },
-  compaction: { enabled: false } })`, because `reload()` re-reads settings from disk. This keeps
-  the SDK's auto-retry from violating Bro's one-attempt contract.
+- **Single attempt.** `executePi` reads effective on-disk settings, respecting workspace trust
+  (never trusting a review checkout), then seeds `SettingsManager.inMemory({ ...baseSettings,
+  retry: { ...baseSettings.retry, enabled: false, provider: { ...baseSettings.retry?.provider,
+  maxRetries: 0 } }, compaction: { ...baseSettings.compaction, enabled: false }, cacheWarming: "off" })`.
+  The overrides survive `resourceLoader.reload()` and cannot write the user's settings. Disabling
+  cache warming here also prevents a later paid prompt replay; `applyOverrides` cannot disable it
+  because the SDK reads that setting directly from global settings.
 - **Isolation.** `DefaultResourceLoader` with `noExtensions: true`,
   `disabledBuiltinExtensions: ["mcp", "codemode"]`, `noSkills`, `noPromptTemplates`, `noThemes`,
   `noContextFiles`. Tool allowlists are per capability (`piToolAllowlist`): explain/show/elevate
   and restricted btw get `noTools: "all"` with an empty list; review gets
   `read/grep/find/ls`; advisor and workspace-full btw get `read/bash/edit/write` with
   `bro_advisor`/`external_delegate`/`external_workflow`/`mcp__*` excluded.
-- **Verification.** Success requires no `error`/`aborted` stopReason on the final assistant
-  message, an observed `agent_end`, and non-empty final assistant text. Provider failures
-  surface as an error turn, not an exception, so this check is what makes a hollow success
-  impossible.
+- **Verification.** Success requires an observed `agent_end`, `willRetry === false`, and non-empty
+  final assistant text. The final assistant message must not have an `error`, `aborted`, `length`,
+  `pending`, `deferred`, or `toolUse` stop reason. Provider failures can surface as an error turn
+  rather than an exception, so terminal events and messages are checked before reporting success.
 - **Continuation.** btw uses `SessionManager.inMemory(cwd)`; the returned session id keys entries
   in a bounded in-process map (`rememberPiBtwSession`). Nothing is written under
   `~/.pi/agent/sessions`. A `/mode` change or a preferences change drops the continuation and

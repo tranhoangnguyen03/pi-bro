@@ -2,7 +2,7 @@
 
 `npm test` is fully offline (see [DEVELOPMENT.md](DEVELOPMENT.md)). Run this
 checklist before a release that changes backend, BTW, Guided Review, config, or modal
-behavior. It uses real CLIs and your real accounts.
+behavior. It uses real CLIs or the in-process Pi SDK and your real accounts.
 
 ## Setup
 
@@ -17,14 +17,15 @@ cd "$TEST"
 pi --no-extensions -e "$BRO/src/bro.ts" --no-skills --no-prompt-templates --no-context-files --session "$TEST/session.jsonl"
 ```
 
-Run the shared steps once per backend (Agy, Claude Code, Grok, Codex, Muse), selecting it
+Run the shared steps once per backend (Agy, Claude Code, Grok, Codex, Muse, Pi), selecting it
 in `/bro config` as the shared default or as the capability under test.
 
 ## Shared steps
 
-1. **Config**: `/bro config` — pick the backend+model as one choice for the
-   shared default and for one override. Switching backend resets effort to
-   that backend's default; Esc in a picker cancels; Esc on the screen keeps
+1. **Config**: `/bro config` — choose a backend, then a model, for the shared
+   default and for one override. Switching backend resets effort to that
+   backend's default; Esc in the model step returns to the backend step without
+   saving, and Esc there cancels; Esc on the screen keeps
    saved changes. Restart Pi: selections persist. An override stays pinned
    until set back to Default.
 2. **Doctor**: `/bro doctor` shows the effective backend/model/effort per
@@ -174,6 +175,17 @@ Historical full-access record (not qualification of the later file-only controls
   default/minimal/low/medium/high/xhigh/max passed via `--reasoning-effort`.
   `none` and `off` are rejected by `--provider meta`. Doctor probes version;
   auth is unverified (no probe exists).
+
+- **Pi**: requires Pi `>=1.3.0`; no extra CLI. Choose a physical `<provider>/<id>`
+  from the scoped catalog or enter a custom ID. Verify an untrusted workspace's
+  `.pi/settings.json` cannot change the picker scope. Doctor sees current disk
+  models/auth even if the host registry is stale; it makes no model request.
+  Conversation-only BTW has no tools; full permission has `read/bash/edit/write`.
+  Guided Review has `read/grep/find/ls` and no shell. BTW continuation is memory-only:
+  changing mode or preferences reseeds it, and an expired continuation warns and
+  reseeds from the original context plus prior turns. Explicit reasoning levels
+  are clamped to the model's support. Verify cancellation/deadline returns promptly
+  without late output; provider abort is cooperative, not a process kill.
 
 Restore the settings backup afterwards if desired.
 

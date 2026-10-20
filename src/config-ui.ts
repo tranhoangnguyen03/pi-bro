@@ -103,7 +103,7 @@ export function createConfigModal(
 				...(capability ? [{ value: "__default__", label: `Default (${defaultResolved.family?.label ?? settings.model})` }] : []),
 				...BACKEND_CHOICES.map((choice) => ({
 					value: `${BACKEND_SENTINEL}${choice.value}`,
-					label: choice.value === "agy" ? `${choice.label} · ${defaultResolved.family?.label ?? settings.model}` : choice.label,
+					label: choice.label,
 				})),
 			];
 			const backendIndex = capability && current === "Default" ? 0 : backendOptions.findIndex((option) => option.value === `${BACKEND_SENTINEL}${currentBackend ?? "agy"}`);

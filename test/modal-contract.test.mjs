@@ -363,9 +363,9 @@ test("modal kit: editor and config forward clicks and wheel to their pi-tui chil
 	const freshConfig = configUi.createConfigModal(settings, [], async () => {})(tui, theme, {}, () => {});
 	freshConfig.render(62);
 	freshConfig.handleInput("\r"); // Open Default model picker (step 1: backends).
-	for (let i = 0; i < 5; i++) freshConfig.handleInput("\x1b[B"); // Agy -> Claude.
-	freshConfig.handleInput("\r"); // Enter step 2 (Claude models).
-	for (let i = 0; i < 2; i++) freshConfig.handleInput("\x1b[B"); // Claude Sonnet -> Opus -> custom.
+	for (let i = 0; i < 5; i++) freshConfig.handleInput("\x1b[B"); // Agy -> Pi.
+	freshConfig.handleInput("\r"); // Enter step 2 (Pi models).
+	for (let i = 0; i < 2; i++) freshConfig.handleInput("\x1b[B"); // Pi has only the custom-model row in this empty catalog.
 	freshConfig.handleInput("\r"); // Open custom input.
 	const customLines = text(freshConfig);
 	const labelRow = customLines.findIndex((l) => l.includes("model ID:"));

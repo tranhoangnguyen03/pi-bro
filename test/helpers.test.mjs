@@ -147,6 +147,20 @@ function pickAgyModel(component, label) {
 	component.handleInput("\r"); // Commit.
 }
 
+await t.test("Backend picker keeps Agy's label independent of a non-Agy shared default", () => {
+	for (const [backend, model] of [["pi", "openai-codex/gpt-5.6-sol"], ["claude", "sonnet"]]) {
+		const { component, text } = driveConfigModal(
+			{ backend, model, effort: "default", mode: "balanced", showTurns: 1, overrides: {} },
+			configFamilies,
+			async () => {},
+		);
+		component.handleInput("\r");
+		configReach(component, (line) => line.startsWith("Agy"));
+		assert.match(configCursor(component), /^Agy\s*│?$/);
+		assert.doesNotMatch(text(), /Agy ·/);
+	}
+});
+
 await t.test("Modal interactions: default model/effort resolution, an override that starts out identical", async (t) => {
 	// Modal interactions: default model/effort resolution, an override that starts out identical
 	// to the shared default (must still be stored explicitly -- see below), effort-compatibility

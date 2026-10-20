@@ -16,7 +16,7 @@ import {
 	readAdvisorSteering,
 	resolveAdvisorState,
 } from "./advisor.ts";
-import { agyFailureMessage, bridgePiRuntimeForCatalog, piEffectiveEffort, piPhysicalModel, reviewBackendNotice, splitPiModel } from "./backend.ts";
+import { agyFailureMessage, bridgePiRuntimeForCatalog, piEffectiveEffort, reviewBackendNotice, splitPiModel } from "./backend.ts";
 import { createConfigModal } from "./config-ui.ts";
 import { openBroOverlay } from "./modal-kit.ts";
 import {
@@ -118,8 +118,10 @@ export async function listAgyModels(pi: ExtensionAPI, signal?: AbortSignal): Pro
 export async function listPiModels(
 	ctx: ExtensionCommandContext,
 	signal?: AbortSignal,
-): Promise<{ models: PiModelChoice[]; scope: "scoped" | "available"; diagnostics: string[] }> {
-	const settingsManager = SettingsManager.create(ctx.cwd, getAgentDir());
+): Promise<{ models: PiModelChoice[]; scope: "scoped" | "available"; diagnostics: string[]; modelRuntime: Awaited<ReturnType<typeof bridgePiRuntimeForCatalog>> }> {
+	let projectTrusted = true;
+	try { projectTrusted = ctx.isProjectTrusted?.() ?? true; } catch { projectTrusted = false; }
+	const settingsManager = SettingsManager.create(ctx.cwd, getAgentDir(), { projectTrusted });
 	// Share the executor's bridge: without the host's runtime credentials this catalog would hide
 	// models that a run can actually use, so `/bro config` and `/bro doctor` would disagree with it.
 	const modelRuntime = await bridgePiRuntimeForCatalog(ctx, getAgentDir());
@@ -132,11 +134,11 @@ export async function listPiModels(
 		// A configured scope is authoritative even when it resolves to nothing: silently substituting
 		// every authenticated model would offer choices the user never scoped in, and would hide the
 		// diagnostics that explain why. The caller shows them.
-		return { models: toPiModelChoices(resolved.scopedModels), scope: "scoped", diagnostics };
+		return { models: toPiModelChoices(resolved.scopedModels), scope: "scoped", diagnostics, modelRuntime };
 	}
 
 	const available = modelRuntime.getAvailableSnapshot().map((model) => ({ model }));
-	return { models: toPiModelChoices(available), scope: "available", diagnostics: [] };
+	return { models: toPiModelChoices(available), scope: "available", diagnostics: [], modelRuntime };
 }
 
 // The requested and effective Pi effort, computed rather than assumed: a model that cannot reason
@@ -257,6 +259,13 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 	let settings: BroSettings | undefined;
 	let models: AgyModelFamily[] | undefined;
 	let agyVersion: string | undefined;
+	let piRuntime: Awaited<ReturnType<typeof bridgePiRuntimeForCatalog>> | undefined;
+	const findPiModel = (provider: string, id: string) => {
+		const model = piRuntime?.getModel(provider, id) ?? ctx.modelRegistry.find(provider, id);
+		return model?.api === "pi-virtual" ? undefined : model;
+	};
+	const hasPiAuth = (model: NonNullable<ReturnType<typeof findPiModel>>) =>
+		piRuntime?.hasConfiguredAuth(model.provider) || ctx.modelRegistry.hasConfiguredAuth(model);
 	const pass = (name: string, detail: string) => lines.push(`- ✓ **${name}:** ${detail}`);
 	const fail = (name: string, error: unknown) => {
 		failed = true;
@@ -386,12 +395,13 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 		pass("Muse", "not probed — no feature selects the Muse backend");
 	}
 
-	// Pi is in-process: validate the selected physical model against the host registry without a
+	// Pi is in-process: validate the selected physical model against the bridged runtime without a
 	// CLI spawn or a live model turn. A passing answer means the model resolves and has configured
 	// auth; it is not a connectivity test.
 	if (piInUse) {
 		try {
-			const { models: piModels, scope, diagnostics } = await listPiModels(ctx, signal);
+			const { models: piModels, scope, diagnostics, modelRuntime } = await listPiModels(ctx, signal);
+			piRuntime = modelRuntime;
 			pass("Pi model catalog", `${piModels.length} physical model${piModels.length === 1 ? "" : "s"} selectable · ${scope === "scoped" ? "from enabledModels (scoped)" : "all models with configured auth"}`);
 			for (const diagnostic of diagnostics) lines.push(`- ℹ **Pi scoped models:** ${diagnostic}`);
 		} catch (error) {
@@ -442,14 +452,13 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 			}
 		} else if (defaultBackend === "pi") {
 			const parts = splitPiModel(settings.model);
-			const physical = parts ? piPhysicalModel(ctx.modelRegistry, parts.providerId, parts.modelId) : undefined;
+			const physical = parts ? findPiModel(parts.providerId, parts.modelId) : undefined;
 			if (!parts) {
 				fail("Selected model", `\`${settings.model}\` is not a \`<provider>/<id>\` Pi model. Run \`/bro config\` to choose another.`);
 			} else if (!physical) {
 				fail("Selected model", `pi \`${settings.model}\` is unavailable or virtual. Run \`/bro config\` to choose another.`);
 			} else {
-				const model = ctx.modelRegistry.find(parts.providerId, parts.modelId);
-				if (!model || !ctx.modelRegistry.hasConfiguredAuth(model)) {
+				if (!hasPiAuth(physical)) {
 					fail("Selected model", `pi \`${settings.model}\` has no configured auth. Sign in with Pi's /login, then run \`/bro doctor\`.`);
 				} else {
 					pass("Selected model", `pi \`${settings.model}\``);
@@ -547,13 +556,12 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 					fail(label, `\`${pair.model}\` is not a \`<provider>/<id>\` Pi model. Run \`/bro config\` to fix this.`);
 					continue;
 				}
-				const physical = piPhysicalModel(ctx.modelRegistry, parts.providerId, parts.modelId);
+				const physical = findPiModel(parts.providerId, parts.modelId);
 				if (!physical) {
 					fail(label, `\`${pair.model}\` is unavailable or virtual. Run \`/bro config\` to choose a physical model.`);
 					continue;
 				}
-				const model = ctx.modelRegistry.find(parts.providerId, parts.modelId);
-				if (!model || !ctx.modelRegistry.hasConfiguredAuth(model)) {
+				if (!hasPiAuth(physical)) {
 					fail(label, `\`${pair.model}\` resolves but has no configured auth. Sign in with Pi's /login, then run \`/bro doctor\`.`);
 					continue;
 				}

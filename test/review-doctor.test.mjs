@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { bro } from "./test-build.mjs";
+import { bro, doctor } from "./test-build.mjs";
 
 test("doctor probes each backend selected only by the review capability", async () => {
 	const directory = process.env.PI_CODING_AGENT_DIR;
@@ -95,7 +95,7 @@ const piRegistry = (models) => {
 		getProviderAuthStatus: () => ({ source: "stored" }),
 		getApiKeyForProvider: async () => undefined,
 		find: (provider, id) => byKey.get(`${provider}/${id}`),
-		hasConfiguredAuth: (model) => model.auth !== false,
+		hasConfiguredAuth: (model) => byKey.get(`${model.provider}/${model.id}`)?.auth !== false && byKey.has(`${model.provider}/${model.id}`),
 	};
 };
 
@@ -197,4 +197,56 @@ test("Pi doctor reports the effective effort instead of a blanket clamp claim", 
 		{ version: 2, default: { backend: "pi", model: "anthropic/low-only", effort: "high" } },
 	);
 	assert.match(lowOnly.report, /- ✓ \*\*Reasoning effort:\*\* high → low \(clamped\)/);
+});
+
+test("Pi catalog honors workspace trust, including a throwing trust getter", async () => {
+	const directory = process.env.PI_CODING_AGENT_DIR;
+	const workspace = await mkdtemp(join(directory, "pi-trust-"));
+	await mkdir(join(workspace, ".pi"));
+	await writeFile(join(workspace, ".pi", "settings.json"), JSON.stringify({ enabledModels: ["repo-controlled/missing"] }));
+	const globalSettings = join(directory, "settings.json");
+	await writeFile(globalSettings, JSON.stringify({ enabledModels: ["global-only/missing"] }));
+	try {
+		for (const [isProjectTrusted, expected] of [
+			[() => true, "repo-controlled/missing"],
+			[() => false, "global-only/missing"],
+			[() => { throw Error("stale context"); }, "global-only/missing"],
+			[undefined, "repo-controlled/missing"],
+		]) {
+			const catalog = await doctor.listPiModels({ cwd: workspace, modelRegistry: piRegistry([]), isProjectTrusted });
+			assert.equal(catalog.scope, "scoped");
+			assert.deepEqual(catalog.models, []);
+			assert.ok(catalog.diagnostics.some((message) => message.includes(expected)), JSON.stringify(catalog.diagnostics));
+		}
+	} finally {
+		await rm(workspace, { recursive: true, force: true });
+		await rm(globalSettings, { force: true });
+	}
+});
+
+test("Pi doctor uses disk model and auth updates even when the host registry is stale", async () => {
+	const directory = process.env.PI_CODING_AGENT_DIR;
+	const modelsPath = join(directory, "models.json");
+	const authPath = join(directory, "auth.json");
+	const settings = { version: 2, default: { backend: "pi", model: "doctor-disk/fresh", effort: "default" } };
+	await writeFile(modelsPath, JSON.stringify({ providers: {
+		"doctor-disk": { api: "openai-completions", baseUrl: "https://example.invalid/v1", models: [{ id: "fresh" }] },
+	} }));
+	try {
+		const missingAuth = await piDoctor([], settings);
+		assert.match(missingAuth.report, /- ✗ \*\*Selected model:\*\* .*has no configured auth/);
+		assert.match(missingAuth.report, /- ✗ \*\*Explain:\*\* .*has no configured auth/);
+
+		await writeFile(authPath, JSON.stringify({ "doctor-disk": { type: "api_key", key: "offline-fixture" } }));
+		const { report, calls } = await piDoctor([], settings);
+		assert.deepEqual(calls, []);
+		assert.match(report, /- ✓ \*\*Pi model catalog:\*\* [1-9]/);
+		assert.match(report, /- ✓ \*\*Selected model:\*\* pi `doctor-disk\/fresh`/);
+		assert.match(report, /- ✓ \*\*Explain:\*\* pi `doctor-disk\/fresh`/);
+		assert.match(report, /- ✓ \*\*Guided review:\*\* pi `doctor-disk\/fresh`/);
+		assert.doesNotMatch(report, /✗/);
+	} finally {
+		await rm(modelsPath, { force: true });
+		await rm(authPath, { force: true });
+	}
 });
