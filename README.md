@@ -61,7 +61,7 @@ File and webpage examples need your own real path or URL; see [how to explain th
 | `/bro show` | **[Show](docs/features/show.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
 | `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
 | `/bro btw` | **[Side questions](docs/features/btw.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
-| `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Claude or Muse is recommended for untrusted PRs. |
+| `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Claude, Muse, or Pi is recommended for untrusted PRs. |
 | `bro_advisor` tool | **[Second opinion](docs/features/advisor.md#bro-advisor).** A tool your agent can call mid-task; a fresh backend process reviews the session snapshot, can inspect the workspace when needed, and returns advice to the agent. ⚠️ [Runs with permissions bypassed](#what-leaves-your-machine). |
 | `/bro config`, `/bro preferences` | **[Settings](docs/reference/settings.md#settings) and [preferences](docs/user-guide.md#preferences).** Pick the backend, model and effort per feature, and tell Bro how you like answers. |
 
@@ -72,11 +72,10 @@ Guided Review has its own [guide](docs/guided-review.md).
 
 ## Requirements
 
-- Pi `>=0.84.2` (tested on 0.84.2 and 1.2) and Node.js `>=22.19.0`.
+- Pi `>=1.3.0` and Node.js `>=22.19.0`.
 - macOS or Linux. Windows is untested; there, cancelling stops only the
   backend's direct process, not anything it started.
-- At least one backend CLI on your `PATH`, signed in once from your terminal.
-  You only need the one you use:
+- At least one backend on your `PATH`, signed in once from your terminal, **or the built-in Pi backend**. You only need the one you use:
 
 | Backend | CLI | Notes |
 | --- | --- | --- |
@@ -85,9 +84,10 @@ Guided Review has its own [guide](docs/guided-review.md).
 | [Grok Build](https://docs.x.ai/build/overview) | `grok` | Guided Review uses its read-only sandbox (shell-enabled). |
 | [Codex CLI](https://github.com/openai/codex) | `codex` | Guided Review uses its read-only sandbox (shell-enabled). |
 | [Muse Code](https://dev.meta.ai/docs/muse-code) | `muse` | Works for every feature; strict file-only inspection for Guided Review. |
+| **Pi** (in-process) | none | Runs a Pi SDK session inside this process using your Pi models and credentials. No extra install. Restricted features get no tools; Guided Review is file-only; the advisor and full-access BTW get workspace tools. |
 
 - Guided Review also needs Git and an authenticated [`gh`](https://cli.github.com/).
-  Claude or Muse is recommended for untrusted PRs (strict file-only inspection); Codex, Grok and Agy run with shell available under their sandbox, with an advisory.
+  Claude, Muse, or Pi is recommended for untrusted PRs (strict file-only inspection); Codex, Grok and Agy run with shell available under their sandbox, with an advisory.
 - [PiG](docs/pig-compatibility.md) support is experimental.
 
 ## What leaves your machine
@@ -106,11 +106,13 @@ which may keep it under their own policies. Paths below are under
 | Advisor | The agent's system instructions, tool list and whole conversation, including tool calls and results (reasoning and images omitted), plus your steering | Steering in `bro-advisor.md` and the session file |
 
 `/bro url` also connects straight to the website, which sees your IP address.
-Bro runs each CLI as you, with your environment. It never reads or copies Pi's
-provider credentials, but the CLI signs in its own way, which can include API
-keys set in your environment. Nothing Bro produces enters Pi's conversation
-unless you insert it, except advisor answers, which return to the agent as
-tool results.
+Bro runs each CLI as you, with your environment. It never reads or copies an
+external CLI's provider credentials, but a CLI signs in its own way, which can
+include API keys set in your environment. The built-in **Pi** backend is the
+exception: it runs in-process, so it reads your Pi `auth.json` and reuses your
+Pi provider credentials for the model you select. Nothing Bro produces enters
+Pi's conversation unless you insert it, except advisor answers, which return to
+the agent as tool results.
 
 > [!WARNING]
 > These run the backend in your workspace with its permission checks bypassed:

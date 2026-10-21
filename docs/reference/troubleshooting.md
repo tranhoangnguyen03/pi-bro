@@ -16,6 +16,11 @@ feature. Failed checks explain what to fix.
 - **Codex**: installed version and configured authentication.
 - **Muse**: installed version only; authentication and connectivity are not
   verified.
+- **Pi**: physical model catalog, configured authentication, scope membership,
+  effective reasoning effort, and each feature's tool set. Uses the in-process
+  SDK with host registrations and runtime credentials plus current on-disk
+  models/auth; workspace settings follow the host's trust decision. No CLI or
+  connectivity probe runs.
 
 Doctor never sends source text or runs a model completion. A successful check
 confirms the setup but cannot guarantee that a later provider request will

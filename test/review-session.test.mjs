@@ -806,7 +806,7 @@ test("reopening a saved review shows the backend advisory without any model call
 			await new Promise((resolve) => setTimeout(resolve, 10));
 		}
 		assert.match(text, /read-only sandbox/);
-		assert.match(text, /Claude or Muse is recommended for/);
+		assert.match(text, /Claude, Muse, or Pi is recommended for/);
 		assert.match(text, /untrusted PRs\./);
 		assert.doesNotMatch(text, /Request failed/);
 		panel.handleInput("\x1b");

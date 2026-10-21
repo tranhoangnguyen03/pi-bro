@@ -42,9 +42,12 @@ const {
 	applyEffortChange,
 	EXTERNAL_BACKENDS,
 	helpText,
+	piModelValue,
+	resolvePiModel,
 	selectionForCapability,
 	selectionLabel,
 	settingsPayload,
+	toPiModelChoices,
 	withCapabilityOverride,
 } = bro;
 
@@ -81,7 +84,9 @@ test("published manifest includes release and runtime documentation", () => {
 
 test("host-provided packages are wildcard peers, not runtime dependencies", () => {
 	const manifest = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8"));
-	for (const name of ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"]) {
+	// pi-ai is imported directly for clampThinkingLevel, which the pi-coding-agent root does not
+	// re-export, so it is a peer too rather than something Bro may bundle its own copy of.
+	for (const name of ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai", "@earendil-works/pi-tui", "typebox"]) {
 		assert.equal(manifest.dependencies[name], undefined, name);
 		assert.equal(manifest.peerDependencies[name], "*", name);
 		assert.ok(manifest.devDependencies[name], `${name} remains available for development`);
@@ -788,7 +793,7 @@ test("Muse default effort omits effort; none/off rejected, backend-less override
 	assert.deepEqual(pinned.overrides.advisor, { backend: "muse", model: "muse-spark-1.3", effort: "high" });
 });
 
-for (const backend of ["claude", "grok", "codex", "muse"] as const) {
+for (const backend of ["claude", "grok", "codex", "muse", "pi"] as const) {
 	test(`${EXTERNAL_BACKENDS[backend].label} custom picker cancels atomically and resets cross-backend effort`, async () => {
 		const { initTheme } = await import("@earendil-works/pi-coding-agent");
 		initTheme();
@@ -805,36 +810,76 @@ for (const backend of ["claude", "grok", "codex", "muse"] as const) {
 			async (s: unknown) => { saved.push(s); },
 		)({ requestRender() {} }, { fg: (_: string, s: string) => s, bold: (s: string) => s }, {}, () => {});
 
-		const totalModels = Object.values(EXTERNAL_BACKENDS).reduce((acc: number, b: any) => acc + b.models.length, 0);
-		const backendIndex = Object.keys(EXTERNAL_BACKENDS).indexOf(backend);
-		const downArrows = totalModels + backendIndex;
+		// Two-step picker: step 1 lists backends (Agy, Claude, Grok, Codex, Muse, Pi); step 2 lists that
+		// backend's models with a "custom model ID…" row last. Esc in step 2 returns to step 1 unsaved.
+		const BACKEND_ORDER = ["agy", "claude", "grok", "codex", "muse", "pi"] as const;
+		const backendIndex = BACKEND_ORDER.indexOf(backend);
+		// The step-1 list opens on the initially selected backend (the shared default's backend).
+		const startingBackendIndex = BACKEND_ORDER.indexOf(initialBackend);
+		const customRowIndex = EXTERNAL_BACKENDS[backend].models.length; // after the seed models
+		// Pi addresses models as "<provider>/<id>", so its custom entry must be shaped that way.
+		const customModel = backend === "pi" ? "acme/pi-custom" : `${backend}-custom`;
 
 		const openCustom = () => {
-			modal.handleInput("\r");
-			for (let i = 0; i < downArrows; i++) modal.handleInput("\u001b[B");
-			modal.handleInput("\r");
+			modal.handleInput("\r"); // Open the Default model submenu (step 1: backends).
+			const delta = backendIndex - startingBackendIndex;
+			for (let i = 0; i < Math.abs(delta); i++) modal.handleInput(delta > 0 ? "\u001b[B" : "\u001b[A");
+			modal.handleInput("\r"); // Enter step 2 for the chosen backend.
+			for (let i = 0; i < customRowIndex; i++) modal.handleInput("\u001b[B");
+			modal.handleInput("\r"); // Select "custom model ID…".
 		};
 
 		openCustom();
-		modal.handleInput(`${backend}-custom`);
+		modal.handleInput(customModel);
+		// Esc walks back: custom → model list → backend list → submenu closed (nothing saved).
+		modal.handleInput("\u001b");
+		modal.handleInput("\u001b");
 		modal.handleInput("\u001b");
 		assert.equal(saved.length, 0);
 
 		openCustom();
-		modal.handleInput(`${backend}-custom`);
+		modal.handleInput(customModel);
 		modal.handleInput("\r");
 		await new Promise((r) => setTimeout(r, 0));
 
 		assert.equal(saved.length, 1);
 		assert.equal(saved[0].backend, backend);
-		assert.equal(saved[0].model, `${backend}-custom`);
+		assert.equal(saved[0].model, customModel);
 		assert.equal(saved[0].effort, "default");
 		assert.doesNotMatch(modal.render(120).join("\n"), /unsupported backend/);
 	});
 }
 
+test("Pi settings round-trip a physical <provider>/<id> model and reject virtual or shapeless ones", () => {
+	assert.equal(resolvePiModel("  openai-codex/gpt-5.6-sol  "), "openai-codex/gpt-5.6-sol");
+	assert.equal(resolvePiModel("9-router/glm-5.3"), "9-router/glm-5.3");
+	// Split on the FIRST slash only: model ids may contain their own slashes.
+	assert.equal(resolvePiModel("openrouter/anthropic/claude-sonnet-4-5"), "openrouter/anthropic/claude-sonnet-4-5");
+	for (const bad of ["", "   ", "no-slash", "/missing-provider", "missing-model/"]) {
+		assert.throws(() => resolvePiModel(bad), /<provider>\/<id>/, `must reject ${JSON.stringify(bad)}`);
+	}
+
+	const parsed = parseBroSettings({
+		version: 2,
+		default: { backend: "pi", model: "openai-codex/gpt-5.6-sol", effort: "high" },
+		overrides: { review: { backend: "pi", model: "9-router/glm-5.3", effort: "max" } },
+	});
+	assert.equal(parsed.backend, "pi");
+	assert.deepEqual(selectionForCapability(parsed, "review"), { backend: "pi", model: "9-router/glm-5.3", effort: "max" });
+	assert.equal(selectionLabel(parsed), "openai-codex/gpt-5.6-sol · high");
+
+	// Virtual models cannot be produced by the picker helper; physical ones are deduped by value.
+	const choices = toPiModelChoices([
+		{ model: { provider: "openai-codex", id: "gpt-5.6-sol", api: "openai-responses", name: "GPT-5.6 Sol" } },
+		{ model: { provider: "openai-codex", id: "gpt-5.6-sol", api: "openai-responses", name: "duplicate" } },
+		{ model: { provider: "pi", id: "virtual-model", api: "pi-virtual", name: "Virtual" } },
+	]);
+	assert.deepEqual(choices.map((c: any) => c.value), ["openai-codex/gpt-5.6-sol"]);
+	assert.equal(piModelValue("openai-codex", "gpt-5.6-sol"), "openai-codex/gpt-5.6-sol");
+});
+
 test("BTW backend changes clear native continuation for every backend, same backend preserves them", () => {
-	for (const backend of ["agy", "claude", "grok", "codex", "muse"] as const) {
+	for (const backend of ["agy", "claude", "grok", "codex", "muse", "pi"] as const) {
 		const thread = { turns: [{ question: "q", answer: "a" }], conversationId: `${backend}-session`, full: false, backend };
 		assert.equal(bro.bindBtwBackend(thread, backend), false);
 		assert.equal(thread.conversationId, `${backend}-session`);
@@ -844,17 +889,19 @@ test("BTW backend changes clear native continuation for every backend, same back
 	}
 });
 
-test("BTW /mode keeps the transcript; only Agy drops its native session on an access change", () => {
+test("BTW /mode keeps the transcript; only Agy and Pi drop their native session on an access change", () => {
  const turns=[{question:"q",answer:"a"}];
  for (const backend of ["claude","grok","codex","muse"]) {
   const thread={turns:[...turns],conversationId:"sess",full:false,backend,sessionFull:false};
   bro.toggleBtwMode(thread); assert.equal(thread.full,true); assert.deepEqual(thread.turns,turns);
   assert.equal(bro.nativeBtwContinuation(thread,backend),"sess",backend);
  }
- const agy={turns:[...turns],conversationId:"conv",full:false,backend:"agy",sessionFull:false};
- assert.equal(bro.nativeBtwContinuation(agy,"agy"),"conv");
- bro.toggleBtwMode(agy); assert.equal(agy.full,true);
- assert.equal(bro.nativeBtwContinuation(agy,"agy"),undefined); assert.equal(agy.conversationId,undefined); assert.deepEqual(agy.turns,turns);
+ for (const backend of ["agy","pi"] as const) {
+  const thread={turns:[...turns],conversationId:"conv",full:false,backend,sessionFull:false};
+  assert.equal(bro.nativeBtwContinuation(thread,backend),"conv");
+  bro.toggleBtwMode(thread); assert.equal(thread.full,true);
+  assert.equal(bro.nativeBtwContinuation(thread,backend),undefined); assert.equal(thread.conversationId,undefined); assert.deepEqual(thread.turns,turns);
+ }
  assert.equal(bro.btwModeLabel(false),"conversation-only"); assert.equal(bro.btwModeLabel(true),"full permission");
 });
 
@@ -1050,4 +1097,35 @@ test("a host without registerShortcut still loads Bro", async () => {
 	let command: any;
 	await bro.default({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } } as any);
 	assert.ok(command, "/bro was not registered on a host without registerShortcut");
+});
+
+test("Pi custom model rejects a malformed ID in place instead of throwing out of the modal", async () => {
+	const { initTheme } = await import("@earendil-works/pi-coding-agent");
+	initTheme();
+	const saved: any[] = [];
+	const modal = bro.createConfigModal(
+		parseBroSettings({ version: 2, default: { backend: "pi", model: "acme/ok", effort: "default" } }),
+		[],
+		async (s: unknown) => { saved.push(s); },
+	)({ requestRender() {} }, { fg: (_: string, s: string) => s, bold: (s: string) => s }, {}, () => {});
+
+	// Pi → custom model → a bare id with no "<provider>/" must not escape as an exception.
+	modal.handleInput("\r"); // open the Default model picker (step 1: backends, Pi pre-selected)
+	modal.handleInput("\r"); // step 2 for Pi
+	modal.handleInput("\u001b[B"); // the single "custom model ID…" row (Pi has no seed models)
+	modal.handleInput("\r");
+	modal.handleInput("noslash");
+	modal.handleInput("\r"); // submit: invalid, so it must stay put and report, not throw
+
+	assert.equal(saved.length, 0, "a malformed model must not be saved");
+	const text = modal.render(120).join("\n");
+	assert.match(text, /<provider>\/<id>/, "the field must still be open and explain the required shape");
+
+	// Correcting the value saves normally.
+	modal.handleInput("\u0015"); // clear the input line
+	modal.handleInput("acme/fixed");
+	modal.handleInput("\r");
+	await new Promise((r) => setTimeout(r, 0));
+	assert.equal(saved.length, 1);
+	assert.equal(saved[0].model, "acme/fixed");
 });

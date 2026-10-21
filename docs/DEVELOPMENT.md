@@ -28,13 +28,15 @@ Production code lives in `src/` and is published as TypeScript source (no build 
   selection policy, pure model/effort transitions, and settings/preferences file persistence.
 - **`sources.ts`** — self-contained document text extraction (PDF, DOCX) and public webpage
   scraping with SSRF protection.
-- **`config-ui.ts`** — the `/bro config` modal, settings items, model pickers, and
-  async save queue.
+- **`config-ui.ts`** — the `/bro config` modal, settings items, the two-step
+  backend→model pickers (with Agy families and the live Pi catalog), and async save queue.
 - **`util.ts`** — shared leaf utility helpers (`isRecord`, `errorMessage`, `withDoctor`, etc.).
 - **`backend.ts`** — the shared execution layer. `execute()` runs one request
-  on Agy, Claude Code, Grok, Codex, or Muse: argv/stdin construction per backend and
-  feature, private temp prompt files, streaming parse, native continuation
-  IDs, deadlines, cancellation, and process-group cleanup. Feature behavior
+  on Agy, Claude Code, Grok, Codex, Muse, or the in-process Pi SDK backend: argv/stdin
+  construction per backend and feature, private temp prompt files, streaming parse, native
+  continuation IDs, deadlines, cancellation, and process-group cleanup. The Pi backend
+  (`executePi`) instead rehydrates the host `ModelRuntime` and drives `createAgentSession`
+  in-process with an isolated resource loader and per-feature tool allowlists. Feature behavior
   (retries, UI, settings) stays out of it.
 - **`prompt.ts`** — pure prompt builders: explain modes, show, BTW (reader guidance, access mode, and reseeded history), and the
   advisor. Prompts are backend-neutral; backend differences belong in
@@ -43,12 +45,59 @@ Production code lives in `src/` and is published as TypeScript source (no build 
 - **`modal-kit.ts`** — shared overlay building blocks: the `Theme`/`TuiLike` types, the `BRO_OVERLAY` preset and `modalHeight`, `renderFrame`, `Scroller`, `delegateMouse`, the regular-mode mouse lease and `openBroOverlay`. See [Modals](#modals).
 - **`dev/`** — manual review launcher and recorded #102 source fixture, not shipped or included in the normal typecheck. `review-live.ts` uses the production controller but omits preferences; use `bro.ts` for a production-equivalent journey. The JSON fixture is kept as historical acquisition/rendering source data, not an automated test or generated-answer substitute.
 
+## Pi backend (in-process SDK)
+
+`src/backend.ts`'s `executePi` runs a real `AgentSession` inside this process instead of
+spawning a CLI. It is deliberately isolated from the host session:
+
+- **Model runtime bridge.** The host extension context exposes a `ModelRegistry`, not its owning
+  runtime, so the executor rebuilds `ModelRuntime.create({ authPath, modelsPath })` and copies
+  every host-registered provider (`getRegisteredProviderIds`/`getRegisteredNativeProvider`/
+  `getRegisteredProviderConfig`) plus runtime credentials (`setRuntimeApiKey`) when
+  `getProviderAuthStatus(provider).source === "runtime"`. `setPiHostContext(ctx)` publishes the
+  host registry; `/bro` and the advisor tool call it before any Pi feature runs.
+  `execute(..., host)` may also pass a context explicitly.
+- **Physical models only.** A `pi-virtual` model routes to another model at request time and cannot
+  be driven standalone, so it is rejected before session construction. Stored values are
+  `<provider>/<id>`, split on the FIRST `/` only (model IDs may contain slashes).
+- **Single attempt.** `executePi` reads effective on-disk settings, respecting workspace trust
+  (never trusting a review checkout), then seeds `SettingsManager.inMemory({ ...baseSettings,
+  retry: { ...baseSettings.retry, enabled: false, provider: { ...baseSettings.retry?.provider,
+  maxRetries: 0 } }, compaction: { ...baseSettings.compaction, enabled: false }, cacheWarming: "off" })`.
+  The same `projectTrusted` decision is passed to both settings managers: the resource loader
+  separately gates `.pi/SYSTEM.md` and `.pi/APPEND_SYSTEM.md` on that trust flag, even with
+  `noContextFiles: true`. Review checkouts and host-untrusted workspaces cannot supply those prompts.
+  The overrides survive `resourceLoader.reload()` and cannot write the user's settings. Disabling
+  cache warming here also prevents a later paid prompt replay; `applyOverrides` cannot disable it
+  because the SDK reads that setting directly from global settings.
+- **Isolation.** `DefaultResourceLoader` with `noExtensions: true`,
+  `disabledBuiltinExtensions: ["mcp", "codemode"]`, `noSkills`, `noPromptTemplates`, `noThemes`,
+  `noContextFiles`. Tool allowlists are per capability (`piToolAllowlist`): explain/show/elevate
+  and restricted btw get `noTools: "all"` with an empty list; review gets
+  `read/grep/find/ls`; advisor and workspace-full btw get `read/bash/edit/write` with
+  `bro_advisor`/`external_delegate`/`external_workflow`/`mcp__*` excluded.
+- **Verification.** Success requires an observed `agent_end`, `willRetry === false`, and non-empty
+  final assistant text. The final assistant message must not have an `error`, `aborted`, `length`,
+  `pending`, `deferred`, or `toolUse` stop reason. Provider failures can surface as an error turn
+  rather than an exception, so terminal events and messages are checked before reporting success.
+- **Continuation.** btw uses `SessionManager.inMemory(cwd)`; the returned session id keys entries
+  in a bounded in-process map (`rememberPiBtwSession`). Nothing is written under
+  `~/.pi/agent/sessions`. A `/mode` change or a preferences change drops the continuation and
+  reseeds, matching Agy.
+- **Cancellation.** First stop cause (`cancelled` vs `timeout`) latches, `session.abort()` is
+  called, and the subscription and session are always torn down in `finally`. Session construction
+  and the model turn are both raced against that latch, so Bro returns at the deadline instead of
+  waiting for an uncooperative provider, and late progress is suppressed. Aborting a run Bro has
+  already returned from is cooperative: it asks the SDK to stop, and a provider or tool that never
+  yields may keep working in the background after the outcome is decided.
+
 ## Settings
 
 Saved settings are version 2: a shared `default` selection plus optional
 `overrides` for `explain`, `show`, `btw`, `advisor`, and `review`. Every selection is an
 atomic `{ backend, model, effort }` — an override replaces the whole
 selection, never merges fields, and stays pinned until reset to Default.
+Backends are `agy`, `claude`, `grok`, `codex`, `muse`, and the in-process `pi`.
 Legacy flat files (root `model`/`effort`, no backend) still parse and mean
 Agy; reads never rewrite the file.
 
@@ -84,13 +133,15 @@ BTW keeps one in-memory thread bound to a backend and an access mode
   the workspace, so an access change drops the Agy conversation ID. The next
   turn starts a fresh native session reseeded with the main-session context
   and every earlier turn. Any thread with turns but no native ID reseeds the
-  same way.
+  same way. Pi behaves like Agy here: its restricted mode has no tools at all
+  while full access has workspace tools, so an access change drops its
+  in-memory session too.
 - Changing the BTW backend starts a fresh thread; IDs never cross backends.
 
 ## Modals
 
 Bro's overlays share `src/modal-kit.ts` so they behave the same on every
-supported Pi (0.84.2 and up) in regular and fullscreen mode. Pi clips an overlay
+supported Pi (1.3.0 and up) in regular and fullscreen mode. Pi clips an overlay
 that is taller than its `maxHeight` from the bottom, and Pi 1.2 sends the wheel
 only to `handleMouse` (a wheel left unhandled scrolls the chat behind).
 
@@ -151,7 +202,7 @@ Normal journey: open PR → read/investigate → close. Automatic persistence su
 - `ReviewView` holds destination, screen, row, drafts and offsets; optional return point/topic scope are validated convenience state. Back preserves the real origin. List rows are clamped after membership changes. Wheel scrolling does not alter keyboard focus or list selection.
 - Controller debounce/serial write queue saves atomic snapshots; close aborts/awaits execution and flushes before exiting. Save failures retain the modal/in-memory work. Do not claim Saved on a failed write.
 - `execute({feature:'review',access:'restricted',cwd:capturedCheckout,...})` runs on every backend but always without bypass flags. Claude uses strict file-only tools (`--restricted` Read/Grep/Glob, dontAsk, no MCP); Muse disables write/shell/web without trusting workspace rules. Codex (`--sandbox read-only --ephemeral`) and Grok (`--sandbox read-only --permission-mode dontAsk`) inspect the captured checkout under a read-only sandbox; Agy's `--sandbox` restricts terminal commands but still permits in-project writes. All three run shell commands, share `backendDeadlineMs` (610 s for review), and are disclosed through `reviewBackendNotice` in the UI and doctor. Displayed evidence comes from pinned Git blobs, not the working tree, so sandboxed writes cannot rewrite it. Review rejects native continuation and reconstructs context from records. It disables persistence where supported; it must not change BTW session semantics. No automatic paid retry/fallback.
-- Shell-free means the backend has no shell tool (Claude, Muse); it is not a claim about Codex/Grok/Agy. Never add a bypass flag to review. Captured text remains a prompt-injection/model-quality risk. Source ranges are validated, but inspected paths, conclusions, reported access errors and execution remain model-reported. Preserve the non-fatal advisory in doctor (no `✗`).
+- Shell-free means the backend has no shell tool (Claude, Muse, and Pi review); it is not a claim about Codex/Grok/Agy. Never add a bypass flag to review. Captured text remains a prompt-injection/model-quality risk. Source ranges are validated, but inspected paths, conclusions, reported access errors and execution remain model-reported. Preserve the non-fatal advisory in doctor (no `✗`).
 - Fresh guide calls omit prior guide/discussion; question calls include current guide, original target context and latest 12 relevant nonfailed turns. First 100,000 diff characters are seeded with disclosure. Preferences are included; main-session context is not.
 - Copy delegates to Pi's clipboard helper and reports errors. It does not insert into the editor, mutate code or publish; clipboard retention is outside Bro.
 - One active writer per target in-process; no cross-process locking/sync guarantee. Do not delete user review/source data as part of a simplification.
@@ -179,7 +230,7 @@ node .github/scripts/release-utils.mjs selftest
 npm run benchmark:dry-run                  # manual live benchmark: see benchmark/README.md
 ```
 
-Extension tests and their helpers live in `test/`; benchmark tests stay in `benchmark/`. CI runs `npm test` on Linux with Node 24 and Node 22.19.0 (the `engines` floor), and on macOS with Node 24, all with the pinned Pi (1.2.0). The `pi-floor` job reruns it with Pi 0.84.2, the oldest supported version.
+Extension tests and their helpers live in `test/`; benchmark tests stay in `benchmark/`. CI runs `npm test` on Linux with Node 24 and Node 22.19.0 (the `engines` floor), and on macOS with Node 24, all with the pinned Pi (1.3.0). The `pi-floor` job reruns it on the oldest supported Pi, which is also that pin: it catches the floor drifting up unnoticed when the dev pin is next bumped.
 
 Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs` and `review-ux.test.mjs` (rendering/interaction), `review-session.test.mjs` and `review-regeneration.test.mjs` (fake-CLI controller/save/recovery), `review-versions.test.mjs` (single-guide/current validation and rejected prototype schemas), `review-ui.test.mjs` (evidence/save presentation), `review-doctor.test.mjs` (review-only backend selection). Adapter tests keep BTW/native-session behavior separate from stateless review. Add regressions to the existing owner; do not create another generic harness.
 

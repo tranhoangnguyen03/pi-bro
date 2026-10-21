@@ -75,11 +75,13 @@ export function toggleBtwMode(thread: BtwThread): void {
 // Claude, Grok, Codex, and Muse run btw in the workspace for both modes and resume one native session across
 // /mode switches. An Agy conversation stays bound to the workspace it started in (a sandbox scratch
 // dir vs. the repo), so an access change drops it; the next turn reseeds a fresh native session
-// with the main-session context and the whole thread.
+// with the main-session context and the whole thread. Pi behaves like Agy here: its restricted mode
+// exposes no tools at all while full access uses read/bash/edit/write, so an access change must not
+// continue a session whose tool loadout is now wrong.
 // A native session remembers every earlier prompt, including old preferences, so a preferences
 // change (or deletion) on any backend starts a fresh session reseeded with the quoted thread.
 export function nativeBtwContinuation(thread: BtwThread, backend: BackendName, preferences = ""): string | undefined {
-	if (backend === "agy" && thread.conversationId && thread.sessionFull !== undefined && thread.sessionFull !== thread.full) {
+	if ((backend === "agy" || backend === "pi") && thread.conversationId && thread.sessionFull !== undefined && thread.sessionFull !== thread.full) {
 		thread.conversationId = undefined;
 	}
 	if (thread.conversationId && (thread.sessionPreferences ?? "") !== preferences) thread.conversationId = undefined;
@@ -129,13 +131,15 @@ export function parseBtwComposerCommand(value: string): BtwComposerAction {
 // existing throw-on-failure / { text, conversationId } contract. A conversationId is only ever
 // returned on success (see backend.ts's continuation handling), preserving current behavior on
 // failed turns.
+// An expired continuation is reported as `continuationExpired` so the caller can forget the dead id;
+// otherwise every later turn would resend it and the thread would stay stuck.
 export async function runBtwTurn(
 	prompt: string,
 	selection: BackendSelection,
 	options: { full: boolean; cwd: string; conversationId?: string },
 	signal: AbortSignal,
 	onProgress?: (text: string) => void,
-): Promise<{ text: string; conversationId?: string }> {
+): Promise<{ text: string; conversationId?: string; expiredContinuation?: true }> {
 	let updateTimer: ReturnType<typeof setTimeout> | undefined;
 	let latest: string | undefined;
 	const throttledProgress = onProgress
@@ -165,6 +169,7 @@ export async function runBtwTurn(
 			throttledProgress,
 		);
 		if (outcome.status === "success") return { text: outcome.text, conversationId: outcome.continuation?.id };
+		if (outcome.continuationExpired) return { text: "", expiredContinuation: true };
 		throw new Error(outcome.message);
 	} finally {
 		if (updateTimer) clearTimeout(updateTimer);
@@ -410,7 +415,7 @@ export async function openBtwModal(
 					thread.model = selectionLabel(selection);
 					thread.preferences = Boolean(preferences);
 					modal.setModel(btwHeaderLabel(thread));
-					const result = await runBtwTurn(
+					let result = await runBtwTurn(
 						buildBtwPrompt(context, question, { full, history, preferences }),
 						selection,
 						{ full, cwd: ctx.cwd, conversationId },
@@ -422,6 +427,25 @@ export async function openBtwModal(
 						},
 					);
 					if (turnController.signal.aborted) return;
+					if (result.expiredContinuation) {
+						// The native session is gone. Drop the dead id, rebuild the prompt from this thread's own
+						// transcript AND its captured main-session context (the local `context` is undefined
+						// whenever a continuation existed), and run once more so nothing is silently lost.
+						thread.conversationId = undefined;
+						modal.setNotice("Side thread expired — reseeded from the transcript and session context.", "warning");
+						const reseeded = await runBtwTurn(
+							buildBtwPrompt(thread.context, question, { full, history: formatBtwTranscript(thread.turns.slice(0, -1)), preferences }),
+							selection,
+							{ full, cwd: ctx.cwd },
+							turnController.signal,
+							(partial) => {
+								if (closed || turnController.signal.aborted) return;
+								thread.turns[thread.turns.length - 1]!.answer = partial;
+								modal.setText(transcript());
+							},
+						);
+						result = reseeded;
+					}
 					if (result.conversationId) {
 						thread.conversationId = result.conversationId;
 						thread.sessionFull = full;

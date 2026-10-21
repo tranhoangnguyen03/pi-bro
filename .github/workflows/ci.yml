@@ -28,7 +28,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-  # Dev dependencies pin the newest Pi; this keeps the oldest supported Pi (README) tested.
+  # Dev dependencies pin the newest Pi; this reruns the suite on the oldest Pi the Pi backend can
+  # actually run on. The Pi backend uses APIs introduced in 1.0.0 (SettingsManager.getSettings,
+  # ModelRuntime.getAllModels, seeded SessionManager.inMemory) and 1.3.0 is the floor we verify and
+  # test against (README), so this job pins exactly that rather than an older, unsupported version.
   pi-floor:
     runs-on: ubuntu-latest
     steps:
@@ -38,7 +41,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm install --no-save @earendil-works/pi-coding-agent@0.84.2 @earendil-works/pi-tui@0.84.2 typebox@1.3.7
+      - run: npm install --no-save @earendil-works/pi-coding-agent@1.3.0 @earendil-works/pi-tui@1.3.0 typebox@1.3.27
       - run: npm test
   test:
     runs-on: ubuntu-latest

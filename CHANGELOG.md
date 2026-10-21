@@ -2,6 +2,35 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.26.0] - 2026-10-20
+
+### Highlights
+
+- Run any Bro feature on **Pi itself**: a new `pi` backend drives an in-process Pi SDK session with your own Pi models and credentials. No extra CLI to install.
+- `/bro config` is now two steps: pick the backend, then its model. Esc steps back without saving.
+- Pi is the safest review option alongside Claude and Muse: Guided Review gets file-only tools and no shell.
+
+### Breaking
+
+- **pi-bro now requires Pi `>=1.3.0`** (previously `>=0.84.2`). The Pi backend is built on SDK APIs introduced after 0.84.2 — `SettingsManager.getSettings()`, `ModelRuntime.getAllModels()` and seeded `SessionManager.inMemory(cwd, { id }, entries)` (1.0.0), and the `disabledBuiltinExtensions` resource-loader option (1.1.0) — so an older host cannot load the extension at all. Update Pi before upgrading pi-bro; the five CLI backends need no other change. `pi-floor` in CI now pins 1.3.0, the oldest supported version.
+
+### Added
+
+- New `pi` backend for `explain`, `show`, `elevate`, `btw` (restricted and full), `advisor`, and Guided Review. It runs `createAgentSession` inside this process, uses your Pi model registry and configured credentials, and needs no CLI.
+- `/bro config` two-step picker: step 1 chooses the backend (Default for capability overrides, Agy, Claude, Grok, Codex, Muse, Pi), step 2 chooses that backend's model. Esc in step 2 returns to step 1 without saving; a selection only saves on a complete model pick. The Agy family list and the Pi catalog load independently, so `/bro config` works when Agy is offline.
+- Pi model choices come from your configured scoped models (`enabledModels`), falling back to every model with configured credentials. Virtual (`pi-virtual`) models are filtered out and cannot be selected.
+- A `/bro doctor` Pi section that checks the selected physical model, its auth and scope membership, the effective effort, and the curated tool set for each capability, all without a CLI spawn or a live model turn.
+
+### Changed
+
+- Guided Review accepts `pi` as a file-only backend (read/grep/find/ls, no shell) alongside Claude and Muse, and no longer treats it as a shell-capable sandbox. Its session also ignores the captured checkout's `.pi/settings.json`, `.pi/SYSTEM.md` and `.pi/APPEND_SYSTEM.md`, so a PR cannot steer settings or inject system instructions for the review. Host-untrusted workspaces get the same protection.
+- Pi `btw` keeps its side session in memory only (nothing written under `~/.pi/agent/sessions`), resumes it within the same mode and preferences, and drops it on a `/mode` switch or preferences change, matching Agy. An expired or evicted side conversation now fails loudly instead of silently restarting without its history.
+- Settings version 2 accepts `"backend": "pi"` with a `"<provider>/<id>"` model (split on the first `/` only). A malformed custom model ID is reported in the field instead of throwing out of `/bro config`.
+- Pi model choices come from your configured scoped models (`enabledModels`), falling back to every model with configured credentials. The catalog now includes models authenticated by runtime keys, so the picker offers everything a run can actually use. Virtual (`pi-virtual`) models are filtered out and cannot be selected.
+- Pi `btw` and `advisor` runs are raced against the deadline and cancellation latch, so an uncooperative provider can no longer hold the caller or start a model request after its deadline.
+- `/bro doctor` now computes and reports the effective Pi reasoning effort (`requested → effective` only when they differ) instead of claiming a clamp it never checked, and describes both BTW access modes. Scoped-model `:thinking` suffixes are honoured when the Bro effort is `default`.
+- Docs, README, and `/bro help` document the Pi backend and the two-step picker.
+
 ## [0.25.1] - 2026-10-19
 
 ### Highlights

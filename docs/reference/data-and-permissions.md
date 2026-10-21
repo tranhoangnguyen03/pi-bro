@@ -9,6 +9,10 @@ credentials, and does not copy credentials or rewrite backend configuration.
 Each backend and your model provider may retain sessions, logs, and request
 data under their own settings and policies.
 
+The **Pi** backend is the in-process exception: it does not spawn a CLI. It runs a
+Pi SDK session inside the host process using your own Pi model registry and its
+configured credentials, so it uses the same account route as your Pi session.
+
 | | Explain / show | BTW conversation-only | BTW full permission | Advisor | Guided Review |
 | --- | --- | --- | --- | --- | --- |
 | **Agy** | Temporary directory, Agy sandbox | Temporary directory, Agy sandbox | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Captured checkout, Agy sandbox (shell and in-project writes allowed; advisory) |
@@ -16,6 +20,7 @@ data under their own settings and policies.
 | **Grok** | Temporary directory, **prompt instruction only** | Workspace, **prompt instruction only** | Workspace, permissions bypassed | Fresh workspace process, permissions bypassed | Captured checkout, read-only sandbox (shell-enabled; advisory) |
 | **Codex** | Scratch directory, read-only sandbox, ephemeral session | Workspace, read-only sandbox | Workspace, approvals and sandbox bypassed | Fresh workspace process, approvals and sandbox bypassed | Captured checkout, read-only sandbox, ephemeral (shell-enabled; advisory) |
 | **Muse** | Scratch directory, approval/write/shell disabled, no session log | Workspace, approval/write/shell disabled | Workspace, permissions bypassed (`--yolo`) | Fresh workspace process, permissions bypassed (`--yolo`) | Captured checkout; writes/shell/web disabled, no session log |
+| **Pi** | No tools at all (isolated in-process session) | No tools at all | Workspace, read/bash/edit/write (no nested delegation or MCP) | Workspace, read/bash/edit/write (no nested delegation or MCP) | Captured checkout, read/grep/find/ls only (no shell) |
 
 - Grok always runs explain, show, btw and the advisor with its sandbox off and
   permissions bypassed; its tools, hooks, skills, plugins, and MCP may remain
@@ -41,7 +46,15 @@ data under their own settings and policies.
   including across `/mode` switches. An Agy conversation stays bound to the
   workspace it started in, so after a `/mode` switch — or whenever a thread
   has turns but no native session ID — Bro starts a fresh native session
-  seeded with the main-session context and every earlier turn.
+  seeded with the main-session context and every earlier turn. Pi keeps its side
+  session in memory only (nothing is written under `~/.pi/agent/sessions`) and,
+  like Agy, drops it on a `/mode` switch.
+- Pi runs in-process with no CLI, no extensions, no skills, no prompt templates,
+  no context files, MCP or codemode, and auto-retry and compaction disabled. Its
+  Guided Review uses read/grep/find/ls only and cannot run shell commands, and it
+  ignores the captured checkout's `.pi/settings.json` so an untrusted PR cannot
+  steer the reviewing session. In restricted explain/show/elevate/btw it has no
+  tools at all.
 - Cancellation, deadlines, and invalid output streams stop the backend's
   process group on POSIX, escalating after a five-second grace period. On
   Windows only the direct child is targeted. Detached shell work or external
@@ -53,7 +66,7 @@ data under their own settings and policies.
 When resolving backend, model, and reasoning effort:
 1. **Per-capability override**: `overrides.<capability>` (`explain`, `show`, `btw`, `advisor`, or `review`) pins that capability's complete selection.
 2. **Shared default**: otherwise the capability inherits `default` (root `model`/`effort` in older flat files).
-3. **Agy catalog normalization**: for Agy selections, Bro maps suffixed variant IDs and handles fixed-effort models.
+3. **Backend-specific normalization**: Agy selections are mapped against its installed catalog (suffixed variants, fixed-effort models); Pi selections are `<provider>/<id>` physical models resolved against your Pi registry.
 4. **Initial file creation only**: `PI_BRO_MODEL` has no effect once the settings file exists.
 
 When resolving turn count for `/bro show`:
@@ -80,7 +93,7 @@ When shaping an answer, each part has one owner:
   seeded main-session conversation text (plus earlier turns when a native
   session is reseeded) to the selected backend. In full permission mode the
   side agent can additionally read and edit the workspace.
-- **Guided Review requests**: PR identity/description, captured diff, relevant private discussion and preferences go to the selected backend, which can inspect captured files. Main-session context is not attached. Claude (`--restricted`, file tools only) and Muse (write/shell/web disabled) use strict file-only inspection and are recommended for untrusted PRs. Codex and Grok inspect the captured checkout under a read-only sandbox; Agy's `--sandbox` still allows in-project writes. All three run shell commands and show an advisory. Prompt injection can still corrupt conclusions or reveal captured content to the provider; this is not a general confidentiality guarantee. See [Guided Review access and storage](../guided-review.md#access-privacy-and-storage).
+- **Guided Review requests**: PR identity/description, captured diff, relevant private discussion and preferences go to the selected backend, which can inspect captured files. Main-session context is not attached. Claude (`--restricted`, file tools only), Muse (write/shell/web disabled), and Pi (`read/grep/find/ls` only, in-process) use strict file-only inspection and are recommended for untrusted PRs. Codex and Grok inspect the captured checkout under a read-only sandbox; Agy's `--sandbox` still allows in-project writes. All three run shell commands and show an advisory. Prompt injection can still corrupt conclusions or reveal captured content to the provider; this is not a general confidentiality guarantee. See [Guided Review access and storage](../guided-review.md#access-privacy-and-storage).
 - **Preferences**: `bro-preferences.md` is sent with every explain, Show,
   BTW, Elevate, and Guided Review request to the selected backend. It is never sent to the advisor or
   to Pi's main model.
