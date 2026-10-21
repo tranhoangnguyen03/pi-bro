@@ -1,45 +1,66 @@
-# [experimental] Bro simplify Claude Mod
+# [experimental] Bro for Claude Code
 
-Tracks [issue #161](https://github.com/tranhoangnguyen03/pi-bro/issues/161).
+Tracks [issue #161](https://github.com/tranhoangnguyen03/pi-bro/issues/161) and [draft PR #162](https://github.com/tranhoangnguyen03/pi-bro/pull/162).
 
-Prototype of vanilla Pi `/bro` and `/bro simplify`, isolated from the Pi extension. The Mod captures the latest completed **main-agent** answer and uses the existing balanced Bro prompt with a separate model completion. It draws a private pane with retry, copy and close, and `/bro open` reopens the last explanation.
+An installable Claude Code Mod for vanilla **/bro** and **/bro simplify**. It privately simplifies the latest completed main-agent answer using the same balanced prompt as the Pi extension. The pane has Retry, Copy, Close, and **/bro open**. Nothing enters Claude's main conversation.
 
 ## Install from GitHub
 
-The repository root carries `.claude-plugin/marketplace.json`, so on a branch that has it:
+While PR #162 is still a draft, pin the **marketplace** to the experimental branch:
 
-```sh
-/plugin install bro-simplify-experimental --marketplace tranhoangnguyen03/pi-bro
-```
+~~~text
+/plugin marketplace add tranhoangnguyen03/pi-bro@experimental/claude-mod-simplify
+/plugin install bro-simplify-experimental@pi-bro
+~~~
 
-Needs Claude Code 2.1.275 or later. The manifest is on `main` only once this PR merges.
+After the marketplace file reaches the main branch, new users can install with:
 
-## Run locally
+~~~text
+/plugin marketplace add tranhoangnguyen03/pi-bro
+/plugin install bro-simplify-experimental@pi-bro
+~~~
 
-Requires a Claude Code build with Mods support (minimum version unconfirmed; the declarations reviewed were 2.1.277), signed-in model access, and terminal with adequate width. From the repository root:
+**pi-bro** is the marketplace name, not the plugin name. The repository contains the complete plugin under **experiments/claude-mod**, including the Node bridge. No checked-out Pi source tree is required after installation. Restart or reload Claude Code afterward. Only install trusted plugins: Mods and backend CLIs run local code as your user.
 
-```sh
+## /bro config
+
+Run **/bro config**. Choose a backend, enter a model, choose a supported reasoning effort, then **Save**. The selection survives restarts in Claude's per-plugin store; it never overwrites the original Pi settings file. It applies to **Explain** only for this experimental version. Changes apply on the next request or Retry.
+
+| Backend | Model | Effort | Prerequisite |
+| --- | --- | --- | --- |
+| Claude Native | current (default) or explicit Claude model ID/alias | default (host-managed) | Signed-in Claude Code |
+| Agy | e.g. gemini-3.7-flash | default/low/medium/high | Signed-in agy CLI |
+| Codex | e.g. gpt-5.4 | default/low/medium/high/xhigh | Signed-in codex CLI |
+| Pi CLI | physical provider/model | default/minimal/low/medium/high/xhigh/max | Signed-in pi CLI |
+
+**Pi CLI** is not the Pi SDK in-process backend from the original pi-bro. It invokes the installed Pi binary with an isolated one-shot session. Claude Native uses the current Claude account and does not accept an effort override.
+
+Unsupported backend/model/effort requests produce an error rather than silently switching backend.
+
+## Permissions and privacy
+
+For external CLI calls the Mod invokes a bundled Node.js 22+ bridge with the selected model and Bro prompt. The bridge runs in a private scratch directory, reads the canonical result and cleans up.
+
+- **Agy:** sandbox flag and scratch directory; Agy sandbox does not make it tool-free, and network/other tooling may still be available.
+- **Codex:** read-only sandbox and ephemeral execution. This restricts Codex tool commands, not arbitrary plugins or hooks.
+- **Pi:** disables sessions, extensions, MCP, skills, prompt templates, context files, tools, and project trust using Pi CLI flags.
+
+Claude Native uses the tool-free model completion API. Every backend uses its own credentials and billing route. The Mod does not copy credential files. Only the selected answer and Bro's instructions are sent.
+
+**Cancellation limit:** the reviewed Claude Mod API returns whole completions. External backends also currently return their result only after completion. Closing the pane discards late results but may not stop the underlying API call or process.run call. The Node bridge has a deadline and process cleanup on timeout/termination, but do not treat this as full Pi cancellation parity.
+
+## Current scope and testing
+
+Only Explain is available. Show, BTW, Elevate, Advisor, Guided Review and the original in-process Pi SDK path are not ported. The native /bro prototype worked in the user's Claude environment after PR fixes; the new backend choices and /bro config still require live validation.
+
+From the repository root:
+
+~~~sh
+node --test experiments/claude-mod/tests/*.test.mjs
 claude plugin validate ./experiments/claude-mod
 claude --plugin-dir ./experiments/claude-mod
-```
+~~~
 
-Ask Claude a question, let it finish, then use `/bro` or `/bro simplify`. Try `/bro open` and Retry. In a second run, try the command while a main turn is active. `claude plugin test ./experiments/claude-mod` is a suggested host-specific check if tests are added for the installed version.
+Try /bro after a completed answer. In /bro config choose each installed backend, test Save/restart, retry, Copy and Close. Check that no simplification enters Claude's main context.
 
-Offline tests (no model calls):
-
-```sh
-node --test experiments/claude-mod/tests/*.test.mjs
-```
-
-## Current limits and validation
-
-- **Not yet live-validated in Claude Code.** Confirm `$.model.complete` and pane behavior using declarations generated by *your installed build*; Mods are evolving.
-- Calls use the main Claude model, not Bro's per-capability backend chooser. This prototype does **not** include BTW, Show, Elevate or external backends.
-- The 2.1.277 API returns whole completions without a stream or cancellation handle. Closing the pane **discards late output** but may not halt the underlying API call. This is *not* full cancellation parity.
-- Clipboard needs `pbcopy`, `wl-copy` or `xclip`. Full text remains in memory; the pane renders chunks up to the per-Markdown limit.
-- No result enters Claude's conversation: the command returns empty text and the completion uses a separate API call. Check this boundary in a live run.
-- Busy-turn handling depends on main `turn.start`/`turn.complete` events. Verify it in the interactive host.
-- Source text is in memory and resets on reload; no persistent history.
-- The balanced prompt is copied from `src/prompt.ts` because the Mod's imports must stay inside its plugin directory. `tests/prompt-drift.test.mjs` fails if the copy diverges.
-- Pane buttons call back into the `$` handle captured at render time. Confirm in a live run that it stays valid after the render event returns (Retry, Copy, Close).
-- **Do not merge or publish based on these offline tests alone.**
+Offline tests use fake CLI responses and cost no model tokens. The existing Pi extension remains unchanged.
