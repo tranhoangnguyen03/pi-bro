@@ -1,6 +1,8 @@
 import { buildBroPrompt, lastAssistantText, broAction, chunkMarkdown } from "./core.js";
+import { BACKENDS, EFFORTS, DEFAULT_CONFIG, CONFIG_KEY, fromStore, validateConfig, changeBackend, settingsLabel } from "./settings.js";
 
 const PANE = "bro_simplify_experimental";
+const CONFIG_PANE = "bro_config_experimental";
 const LIMIT = 9000;
 function message(error) { return error instanceof Error ? error.message : String(error); }
 
@@ -15,11 +17,16 @@ let error = "";
 let modelName = "";
 let loading = false;
 let epoch = 0;
+let activeConfig = { ...DEFAULT_CONFIG };
+let configDraft = { ...DEFAULT_CONFIG };
+let configError = "";
+let configSaving = false;
 
 function resetState() {
   dropWaiters("Session restarted.");
   epoch++;
   lastCompleted = ""; inMainTurn = false; source = ""; output = ""; error = ""; loading = false;
+  configError = ""; configSaving = false;
 }
 
 function repaint($) { $.ui.invalidate("ui.render"); }
@@ -54,27 +61,81 @@ async function waitForReply($) {
   if (lastCompleted.trim()) return lastCompleted;
   return lastAssistantText(await $.session.messages());
 }
+async function readConfig($) {
+  // The real Mod has a plugin-scoped persistent store; old offline test fakes may not.
+  return $.store?.get ? fromStore(await $.store.get(CONFIG_KEY)) : { ...DEFAULT_CONFIG };
+}
+async function saveConfig($) {
+  if (configSaving) return;
+  configSaving = true;
+  try {
+    const chosen = validateConfig(configDraft);
+    if (!$.store?.set) throw new Error("Claude Mod persistent store unavailable");
+    await $.store.set(CONFIG_KEY, chosen);
+    activeConfig = chosen;
+    configError = "";
+    $.ui.toast("Bro backend: " + settingsLabel(chosen));
+    await $.ui.close({id:CONFIG_PANE});
+  } catch (err) {
+    configError = message(err);
+  } finally {
+    configSaving = false;
+    repaint($);
+  }
+}
+async function showConfig($) {
+  try {
+    activeConfig = await readConfig($);
+    configDraft = {...activeConfig};
+    configError = "";
+  } catch (err) {
+    configDraft = {...DEFAULT_CONFIG};
+    configError = message(err);
+  }
+  await $.ui.open({id:CONFIG_PANE,title:"Bro — config",focus:true,closeOnEscape:true,rows:17});
+  repaint($);
+}
+async function runSelectedBackend($, config, prompt) {
+  if (config.backend === "native") {
+    const model = config.model === "current" ? await $.session.model() : config.model;
+    const reply = await $.model.complete({model,prompt,maxTokens:8192});
+    const text = typeof reply === "string" ? reply
+      : reply && reply.isAnswered !== false && typeof reply.text === "string" ? reply.text : "";
+    return {text, label:"Claude Native · "+model+" · host effort"};
+  }
+  // Process.run only reads settled output. Node executes in a private scratch directory.
+  // The runner's allowlists are mandatory; it does not accept caller-supplied flags.
+  const response = await $.process.run(["node",$.plugin.root+"/runner/execute.mjs"],{
+    stdin:JSON.stringify({...config,prompt}),
+    timeoutMs:140000
+  });
+  let body;
+  try { body=JSON.parse(response.stdout.trim()); }
+  catch { throw new Error("Backend bridge returned invalid JSON: "+(response.stderr||"").slice(0,250)); }
+  if(response.exitCode!==0||body?.ok!==true)throw new Error(body?.error||"Backend bridge failed");
+  if (typeof body.result?.text !== "string") throw new Error("Backend returned no text");
+  return {text:body.result.text,label:settingsLabel(config)};
+}
 async function simplify($, captured, id = ++epoch) {
   source = captured || "";
   output = ""; error = ""; loading = true;
   repaint($);
   try {
-    const model = await $.session.model();
-    const reply = await $.model.complete({ model, prompt: buildBroPrompt(source), maxTokens: 8192 });
-    // Completion responses differ across early Mod API builds.
-    const text = typeof reply === "string" ? reply
-      : reply && reply.isAnswered !== false && typeof reply.text === "string" ? reply.text : "";
+    const config = await readConfig($);
+    const reply = await runSelectedBackend($,config,buildBroPrompt(source));
     if (id !== epoch) return; // Pane was closed or a newer request won.
-    modelName = model;
-    if (!text.trim()) throw new Error("The model returned no explanation.");
-    output = text;
+    modelName = reply.label;
+    if (!reply.text.trim()) throw new Error("The backend returned no explanation.");
+    output = reply.text;
   } catch (err) {
     if (id === epoch) error = message(err);
   } finally {
     if (id === epoch) { loading = false; repaint($); }
   }
 }
+
 async function launch($, action) {
+  if (action === "config") { await showConfig($); return {text:""}; }
   if (action === "open") {
     if (!source) return { text: "Nothing to reopen yet. Use /bro after Claude replies." };
     await $.ui.open({ id: PANE, title: "Bro — simplify", focus: true, closeOnEscape: true, rows: 16 });
@@ -108,7 +169,7 @@ export function register(on) {
     await $.command.register({
       name: "bro",
       description: "Privately simplify the latest completed Claude reply",
-      argumentHint: "[simplify|open]",
+      argumentHint: "[simplify|open|config]",
       immediate: true
     });
     return next(e);
@@ -136,6 +197,40 @@ export function register(on) {
     return next(e);
   });
   on("ui.render", { component: "Pane" }, ($, e, next) => {
+    if (e.requestId === CONFIG_PANE) {
+      const {Box,Text,Button,Input,Select} = $.ui.resolve(e);
+      const children=[
+        Text({bold:true,children:"Explanation backend"}),
+        Text({dimColor:true,children:"Saved: "+settingsLabel(activeConfig)}),
+        Text({children:"Choose backend, then set model and effort. Save to apply."})
+      ];
+      children.push(Box({flexDirection:"row",flexWrap:"wrap",children:BACKENDS.map(backend=>
+        Button({key:"choose_"+backend,label:(configDraft.backend===backend?"✓ ":"")+({native:"Claude Native",agy:"Agy",codex:"Codex",pi:"Pi"}[backend]),onPress:()=>{
+          configDraft=changeBackend(configDraft,backend);configError="";repaint($);
+        }}))}));
+      if (Input) children.push(Input({
+        key:"bro_model",
+        label:"Model:",
+        placeholder:configDraft.backend==="pi"?"provider/model":configDraft.backend==="native"?"current, sonnet, opus":"Model ID",
+        value:configDraft.model,
+        onInput:value=>{configDraft={...configDraft,model:value};},
+        onSubmit:value=>{configDraft={...configDraft,model:value};repaint($);}
+      }));
+      else children.push(Text({children:"Model: "+configDraft.model+" (edit on terminal or desktop)"}));
+      if (Select) children.push(Select({
+        key:"bro_effort",
+        label:"Reasoning:",
+        value:configDraft.effort,
+        options:EFFORTS[configDraft.backend].map(value=>({label:value,value})),
+        onSelect:value=>{configDraft={...configDraft,effort:value};repaint($);}
+      }));
+      if (configError) children.push(Text({children:"Error: "+configError}));
+      children.push(Box({flexDirection:"row",children:[
+        Button({key:"bro_save_config",label:configSaving?"Saving...":"Save",onPress:()=>{void saveConfig($);}}),
+        Button({key:"bro_cancel_config",label:"Close",onPress:()=>{void $.ui.close({id:CONFIG_PANE});}})
+      ]}));
+      return Box({flexDirection:"column",padding:1,children});
+    }
     if (e.requestId !== PANE) return next(e);
     const { Box, Text, Markdown, Button } = $.ui.resolve(e);
     const body = [];
