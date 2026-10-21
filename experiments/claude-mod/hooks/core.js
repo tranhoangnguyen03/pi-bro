@@ -24,7 +24,8 @@ export function broAction(args) {
   const value = args.trim();
   if (value === "" || value === "simplify") return "simplify";
   if (value === "open") return "open";
-  throw new Error("Use /bro, /bro simplify, or /bro open.");
+  if (value === "config") return "config";
+  throw new Error("Use /bro, /bro simplify, /bro open, or /bro config.");
 }
 
 /**
