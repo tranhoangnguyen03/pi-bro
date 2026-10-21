@@ -1,0 +1,8 @@
+{
+  "name": "bro-simplify-experimental",
+  "version": "0.1.0",
+  "description": "Experimental private /bro simplification pane for Claude Code",
+  "author": {
+    "name": "pi-bro contributors"
+  }
+}
