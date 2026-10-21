@@ -1,4 +1,4 @@
-import { buildBroPrompt, lastAssistantText, broAction } from "./core.js";
+import { buildBroPrompt, lastAssistantText, broAction, chunkMarkdown } from "./core.js";
 
 const PANE = "bro_simplify_experimental";
 const LIMIT = 9000;
@@ -18,7 +18,12 @@ export function register(on) {
   let open = false;
 
   function repaint($) { $.ui.invalidate("ui.render"); }
-  async function close($) { epoch++; loading = false; open = false; await $.ui.close({ id: PANE }); }
+  // Settle every request still waiting on a main turn so none outlives its pane or a newer request.
+  function dropWaiters(reason) {
+    const waiting = queued; queued = [];
+    for (const w of waiting) w.reject(new Error(reason));
+  }
+  async function close($) { epoch++; dropWaiters("Closed."); loading = false; open = false; await $.ui.close({ id: PANE }); }
   async function copy($) {
     if (!output) return;
     // CLI clipboard transports; no transcript, model message or shell interpolation.
@@ -38,8 +43,7 @@ export function register(on) {
     if (lastCompleted.trim()) return lastCompleted;
     return lastAssistantText(await $.session.messages());
   }
-  async function simplify($, captured) {
-    const id = ++epoch;
+  async function simplify($, captured, id = ++epoch) {
     source = captured || "";
     output = ""; error = ""; loading = true;
     repaint($);
@@ -67,25 +71,30 @@ export function register(on) {
       repaint($);
       return { text: "" };
     }
-    // Open before waiting so the user sees that the command was accepted.
+    // A new request supersedes any in-flight one (including one still waiting on a main turn) and
+    // must not leave the previous reply behind for Retry.
+    const id = ++epoch;
+    dropWaiters("Superseded by a newer /bro.");
     open = true;
     loading = true;
-    error = ""; output = "";
+    source = ""; output = ""; error = "";
+    // Open before waiting so the user sees that the command was accepted.
     await $.ui.open({ id: PANE, title: "Bro — simplify", focus: true, closeOnEscape: true, rows: 16 });
     repaint($);
     try {
       const captured = await waitForReply($);
-      if (!open) return { text: "" };
+      if (id !== epoch) return { text: "" };
       if (!captured) throw new Error("No completed assistant response found.");
-      await simplify($, captured);
+      await simplify($, captured, id);
     } catch (err) {
-      if (open) { error = message(err); loading = false; repaint($); }
+      if (id === epoch) { error = message(err); loading = false; repaint($); }
     }
     return { text: "" }; // Never print the private answer into the transcript.
   }
 
   on("session.start", async ($, e, next) => {
-    lastCompleted = ""; inMainTurn = false; queued = []; source = ""; output = ""; open = false;
+    epoch++; dropWaiters("Session restarted.");
+    lastCompleted = ""; inMainTurn = false; source = ""; output = ""; error = ""; loading = false; open = false;
     await $.command.register({
       name: "bro",
       description: "Privately simplify the latest completed Claude reply",
@@ -94,14 +103,15 @@ export function register(on) {
     });
     return next(e);
   });
-  on("turn.start", ($, e, next) => { inMainTurn = true; return next(e); });
+  on("turn.start", ($, e, next) => { if (!e.agentId) inMainTurn = true; return next(e); });
   on("turn.complete", ($, e, next) => {
     if (!e.agentId) {
       inMainTurn = false;
       if (e.reason === "answer" && e.answer.trim()) lastCompleted = e.answer;
+      const ok = e.reason === "answer" && e.answer.trim();
       const waiting = queued; queued = [];
       for (const w of waiting) {
-        if (e.reason === "answer" && e.answer.trim()) w.resolve(e.answer);
+        if (ok) w.resolve(e.answer);
         else w.reject(new Error("The current main turn ended without a completed answer."));
       }
     }
@@ -122,15 +132,17 @@ export function register(on) {
     body.push(Text({ bold: true, children: loading ? "Simplifying…" : error ? "Bro failed" : "Simplified reply" }));
     body.push(Text({ dimColor: true, children: modelName ? modelName + " · balanced" : "balanced" }));
     if (error) body.push(Text({ children: error }));
-    if (output) {
-      for (let i = 0; i < output.length; i += LIMIT) body.push(Markdown({ text: output.slice(i, i + LIMIT) }));
+    if (output) for (const text of chunkMarkdown(output, LIMIT)) body.push(Markdown({ text }));
+    if (loading) {
+      body.push(Button({ key: "bro_cancel", label: "Close / dismiss pending result", onPress: () => { void close($); } }));
+    } else {
+      // Close is always offered, including after a failure that captured no source.
+      const buttons = [];
+      if (source) buttons.push(Button({ key: "bro_retry", label: "Retry", hotkey: "r", onPress: () => { void simplify($, source); } }));
+      if (output) buttons.push(Button({ key: "bro_copy", label: "Copy", hotkey: "c", onPress: () => { void copy($); } }));
+      buttons.push(Button({ key: "bro_close", label: "Close", hotkey: "q", onPress: () => { void close($); } }));
+      body.push(Box({ flexDirection: "row", children: buttons }));
     }
-    if (!loading && source) body.push(Box({ flexDirection: "row", children: [
-      Button({ key: "bro_retry", label: "Retry", hotkey: "r", onPress: () => { void simplify($, source); } }),
-      Button({ key: "bro_copy", label: "Copy", hotkey: "c", onPress: () => { void copy($); } }),
-      Button({ key: "bro_close", label: "Close", hotkey: "q", onPress: () => { void close($); } })
-    ] }));
-    if (loading) body.push(Button({ key: "bro_cancel", label: "Close / dismiss pending result", onPress: () => { void close($); } }));
     return Box({ flexDirection: "column", padding: 1, children: body });
   });
 }
