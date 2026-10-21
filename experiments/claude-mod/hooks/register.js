@@ -15,7 +15,6 @@ export function register(on) {
   let modelName = "";
   let loading = false;
   let epoch = 0;
-  let open = false;
 
   function repaint($) { $.ui.invalidate("ui.render"); }
   // Settle every request still waiting on a main turn so none outlives its pane or a newer request.
@@ -23,7 +22,13 @@ export function register(on) {
     const waiting = queued; queued = [];
     for (const w of waiting) w.reject(new Error(reason));
   }
-  async function close($) { epoch++; dropWaiters("Closed."); loading = false; open = false; await $.ui.close({ id: PANE }); }
+  // Shared by the Close button and Escape: invalidate in-flight work and settle waiters. A run that was
+  // still loading is marked cancelled so reopening never shows an empty "Simplified reply".
+  function cancel() {
+    epoch++; dropWaiters("Closed.");
+    if (loading) { loading = false; error = "Cancelled."; }
+  }
+  async function close($) { cancel(); await $.ui.close({ id: PANE }); }
   async function copy($) {
     if (!output) return;
     // CLI clipboard transports; no transcript, model message or shell interpolation.
@@ -66,7 +71,6 @@ export function register(on) {
   async function launch($, action) {
     if (action === "open") {
       if (!source) return { text: "Nothing to reopen yet. Use /bro after Claude replies." };
-      open = true;
       await $.ui.open({ id: PANE, title: "Bro — simplify", focus: true, closeOnEscape: true, rows: 16 });
       repaint($);
       return { text: "" };
@@ -75,7 +79,6 @@ export function register(on) {
     // must not leave the previous reply behind for Retry.
     const id = ++epoch;
     dropWaiters("Superseded by a newer /bro.");
-    open = true;
     loading = true;
     source = ""; output = ""; error = "";
     // Open before waiting so the user sees that the command was accepted.
@@ -94,7 +97,7 @@ export function register(on) {
 
   on("session.start", async ($, e, next) => {
     epoch++; dropWaiters("Session restarted.");
-    lastCompleted = ""; inMainTurn = false; source = ""; output = ""; error = ""; loading = false; open = false;
+    lastCompleted = ""; inMainTurn = false; source = ""; output = ""; error = ""; loading = false;
     await $.command.register({
       name: "bro",
       description: "Privately simplify the latest completed Claude reply",
@@ -122,7 +125,7 @@ export function register(on) {
     catch (err) { return { text: "Bro could not open: " + message(err) }; }
   });
   on("ui.close", ($, e, next) => {
-    if (e.id === PANE) { open = false; epoch++; loading = false; }
+    if (e.id === PANE) cancel();
     return next(e);
   });
   on("ui.render", { component: "Pane" }, ($, e, next) => {

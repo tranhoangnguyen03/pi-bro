@@ -19,3 +19,13 @@ test("a long code fence is closed and reopened per chunk", () => {
   for (const c of chunks) assert.equal((c.match(/^```/gm) ?? []).length % 2, 0, c);
   assert.equal(chunks.join("\n").match(/line \d+/g).length, 30);
 });
+
+test("a tilde fence is closed with a tilde fence, and a backtick line inside it does not end it", () => {
+  const code = Array.from({ length: 30 }, (_, i) => i === 3 ? "```" : `line ${i}`).join("\n");
+  const chunks = chunkMarkdown("~~~\n" + code + "\n~~~", 80);
+  assert.ok(chunks.length > 1);
+  for (const c of chunks) {
+    assert.equal((c.match(/^~~~/gm) ?? []).length % 2, 0, c);
+    assert.ok(c.startsWith("~~~"), c);
+  }
+});

@@ -118,3 +118,30 @@ test("/bro open without a prior result explains itself", async () => {
   await h.fire("session.start", {});
   assert.match((await h.run("open")).text, /Nothing to reopen/);
 });
+
+test("Escape (ui.close) settles a waiting request without a later turn", async () => {
+  const h = harness();
+  await h.fire("session.start", {});
+  await h.fire("turn.start", {});
+  let settled = false;
+  const pending = h.run().then(() => { settled = true; });
+  await tick();
+  await h.fire("ui.close", { id: "bro_simplify_experimental" });
+  await pending;
+  assert.ok(settled, "command.run should settle on Escape");
+});
+
+test("reopening after a cancelled run shows Cancelled with Retry, not an empty reply", async () => {
+  const h = harness();
+  await h.fire("session.start", {});
+  await h.turn("the reply");
+  const p = h.run(); await tick();
+  await h.fire("ui.close", { id: "bro_simplify_experimental" });
+  h.completions[0].resolve({ text: "late" });
+  await p;
+  await h.run("open");
+  const pane = JSON.stringify(h.render());
+  assert.ok(pane.includes("Cancelled."));
+  assert.ok(!pane.includes("Simplified reply"));
+  assert.deepEqual(h.labels(h.render()), ["Retry", "Close"]);
+});
