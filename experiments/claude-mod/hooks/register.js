@@ -45,7 +45,10 @@ export function register(on) {
     repaint($);
     try {
       const model = await $.session.model();
-      const text = await $.model.complete({ model, prompt: buildBroPrompt(source), maxTokens: 8192 });
+      const reply = await $.model.complete({ model, prompt: buildBroPrompt(source), maxTokens: 8192 });
+      // Completion responses differ across early Mod API builds.
+      const text = typeof reply === "string" ? reply
+        : reply && reply.isAnswered !== false && typeof reply.text === "string" ? reply.text : "";
       if (id !== epoch) return; // Pane was closed or a newer request won.
       modelName = model;
       if (!text.trim()) throw new Error("The model returned no explanation.");
