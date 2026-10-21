@@ -4,100 +4,107 @@ const PANE = "bro_simplify_experimental";
 const LIMIT = 9000;
 function message(error) { return error instanceof Error ? error.message : String(error); }
 
-/** Separate Mod state: never place prompts or explanations in the main agent thread. */
-export function register(on) {
-  let lastCompleted = "";
-  let inMainTurn = false;
-  let queued = [];
-  let source = "";
-  let output = "";
-  let error = "";
-  let modelName = "";
-  let loading = false;
-  let epoch = 0;
+// Mod state lives at module level so helpers can be top-level functions: the host only lets `$` be passed to
+// functions declared at the top of this file. Never place prompts or explanations in the main agent thread.
+let lastCompleted = "";
+let inMainTurn = false;
+let queued = [];
+let source = "";
+let output = "";
+let error = "";
+let modelName = "";
+let loading = false;
+let epoch = 0;
 
-  function repaint($) { $.ui.invalidate("ui.render"); }
-  // Settle every request still waiting on a main turn so none outlives its pane or a newer request.
-  function dropWaiters(reason) {
-    const waiting = queued; queued = [];
-    for (const w of waiting) w.reject(new Error(reason));
-  }
-  // Shared by the Close button and Escape: invalidate in-flight work and settle waiters. A run that was
-  // still loading is marked cancelled so reopening never shows an empty "Simplified reply".
-  function cancel() {
-    epoch++; dropWaiters("Closed.");
-    if (loading) { loading = false; error = "Cancelled."; }
-  }
-  async function close($) { cancel(); await $.ui.close({ id: PANE }); }
-  async function copy($) {
-    if (!output) return;
-    // CLI clipboard transports; no transcript, model message or shell interpolation.
-    for (const argv of [["pbcopy"], ["wl-copy"], ["xclip", "-selection", "clipboard"]]) {
-      try {
-        const r = await $.process.run(argv, { stdin: output, timeoutMs: 5000 });
-        if (r.exitCode === 0) { $.ui.toast("Copied explanation"); return; }
-      } catch { /* try next installed clipboard tool */ }
-    }
-    $.ui.toast("Clipboard tool unavailable; select text from the pane instead");
-  }
-  async function waitForReply($) {
-    if (inMainTurn) {
-      // Only the main turn's successful completion resolves this promise.
-      return new Promise((resolve, reject) => queued.push({resolve, reject}));
-    }
-    if (lastCompleted.trim()) return lastCompleted;
-    return lastAssistantText(await $.session.messages());
-  }
-  async function simplify($, captured, id = ++epoch) {
-    source = captured || "";
-    output = ""; error = ""; loading = true;
-    repaint($);
+function resetState() {
+  dropWaiters("Session restarted.");
+  epoch++;
+  lastCompleted = ""; inMainTurn = false; source = ""; output = ""; error = ""; loading = false;
+}
+
+function repaint($) { $.ui.invalidate("ui.render"); }
+// Settle every request still waiting on a main turn so none outlives its pane or a newer request.
+function dropWaiters(reason) {
+  const waiting = queued; queued = [];
+  for (const w of waiting) w.reject(new Error(reason));
+}
+// Shared by the Close button and Escape: invalidate in-flight work and settle waiters. A run that was
+// still loading is marked cancelled so reopening never shows an empty "Simplified reply".
+function cancel() {
+  epoch++; dropWaiters("Closed.");
+  if (loading) { loading = false; error = "Cancelled."; }
+}
+async function close($) { cancel(); await $.ui.close({ id: PANE }); }
+async function copy($) {
+  if (!output) return;
+  // CLI clipboard transports; no transcript, model message or shell interpolation.
+  for (const argv of [["pbcopy"], ["wl-copy"], ["xclip", "-selection", "clipboard"]]) {
     try {
-      const model = await $.session.model();
-      const reply = await $.model.complete({ model, prompt: buildBroPrompt(source), maxTokens: 8192 });
-      // Completion responses differ across early Mod API builds.
-      const text = typeof reply === "string" ? reply
-        : reply && reply.isAnswered !== false && typeof reply.text === "string" ? reply.text : "";
-      if (id !== epoch) return; // Pane was closed or a newer request won.
-      modelName = model;
-      if (!text.trim()) throw new Error("The model returned no explanation.");
-      output = text;
-    } catch (err) {
-      if (id === epoch) error = message(err);
-    } finally {
-      if (id === epoch) { loading = false; repaint($); }
-    }
+      const r = await $.process.run(argv, { stdin: output, timeoutMs: 5000 });
+      if (r.exitCode === 0) { $.ui.toast("Copied explanation"); return; }
+    } catch { /* try next installed clipboard tool */ }
   }
-  async function launch($, action) {
-    if (action === "open") {
-      if (!source) return { text: "Nothing to reopen yet. Use /bro after Claude replies." };
-      await $.ui.open({ id: PANE, title: "Bro — simplify", focus: true, closeOnEscape: true, rows: 16 });
-      repaint($);
-      return { text: "" };
-    }
-    // A new request supersedes any in-flight one (including one still waiting on a main turn) and
-    // must not leave the previous reply behind for Retry.
-    const id = ++epoch;
-    dropWaiters("Superseded by a newer /bro.");
-    loading = true;
-    source = ""; output = ""; error = "";
-    // Open before waiting so the user sees that the command was accepted.
+  $.ui.toast("Clipboard tool unavailable; select text from the pane instead");
+}
+async function waitForReply($) {
+  if (inMainTurn) {
+    // Only the main turn's successful completion resolves this promise.
+    return new Promise((resolve, reject) => queued.push({resolve, reject}));
+  }
+  if (lastCompleted.trim()) return lastCompleted;
+  return lastAssistantText(await $.session.messages());
+}
+async function simplify($, captured, id = ++epoch) {
+  source = captured || "";
+  output = ""; error = ""; loading = true;
+  repaint($);
+  try {
+    const model = await $.session.model();
+    const reply = await $.model.complete({ model, prompt: buildBroPrompt(source), maxTokens: 8192 });
+    // Completion responses differ across early Mod API builds.
+    const text = typeof reply === "string" ? reply
+      : reply && reply.isAnswered !== false && typeof reply.text === "string" ? reply.text : "";
+    if (id !== epoch) return; // Pane was closed or a newer request won.
+    modelName = model;
+    if (!text.trim()) throw new Error("The model returned no explanation.");
+    output = text;
+  } catch (err) {
+    if (id === epoch) error = message(err);
+  } finally {
+    if (id === epoch) { loading = false; repaint($); }
+  }
+}
+async function launch($, action) {
+  if (action === "open") {
+    if (!source) return { text: "Nothing to reopen yet. Use /bro after Claude replies." };
     await $.ui.open({ id: PANE, title: "Bro — simplify", focus: true, closeOnEscape: true, rows: 16 });
     repaint($);
-    try {
-      const captured = await waitForReply($);
-      if (id !== epoch) return { text: "" };
-      if (!captured) throw new Error("No completed assistant response found.");
-      await simplify($, captured, id);
-    } catch (err) {
-      if (id === epoch) { error = message(err); loading = false; repaint($); }
-    }
-    return { text: "" }; // Never print the private answer into the transcript.
+    return { text: "" };
   }
+  // A new request supersedes any in-flight one (including one still waiting on a main turn) and
+  // must not leave the previous reply behind for Retry.
+  const id = ++epoch;
+  dropWaiters("Superseded by a newer /bro.");
+  loading = true;
+  source = ""; output = ""; error = "";
+  // Open before waiting so the user sees that the command was accepted.
+  await $.ui.open({ id: PANE, title: "Bro — simplify", focus: true, closeOnEscape: true, rows: 16 });
+  repaint($);
+  try {
+    const captured = await waitForReply($);
+    if (id !== epoch) return { text: "" };
+    if (!captured) throw new Error("No completed assistant response found.");
+    await simplify($, captured, id);
+  } catch (err) {
+    if (id === epoch) { error = message(err); loading = false; repaint($); }
+  }
+  return { text: "" }; // Never print the private answer into the transcript.
+}
 
+export function register(on) {
+  resetState();
   on("session.start", async ($, e, next) => {
-    epoch++; dropWaiters("Session restarted.");
-    lastCompleted = ""; inMainTurn = false; source = ""; output = ""; error = ""; loading = false;
+    resetState();
     await $.command.register({
       name: "bro",
       description: "Privately simplify the latest completed Claude reply",
