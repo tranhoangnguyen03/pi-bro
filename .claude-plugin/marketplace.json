@@ -1,0 +1,15 @@
+{
+  "name": "pi-bro",
+  "description": "Experimental Claude Code Mods from pi-bro",
+  "owner": {
+    "name": "Tran Hoang Nguyen"
+  },
+  "plugins": [
+    {
+      "name": "bro-simplify-experimental",
+      "source": "./experiments/claude-mod",
+      "description": "Experimental private /bro simplification pane for Claude Code",
+      "version": "0.1.0"
+    }
+  ]
+}

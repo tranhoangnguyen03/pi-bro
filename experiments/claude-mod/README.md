@@ -4,6 +4,16 @@ Tracks [issue #161](https://github.com/tranhoangnguyen03/pi-bro/issues/161).
 
 Prototype of vanilla Pi `/bro` and `/bro simplify`, isolated from the Pi extension. The Mod captures the latest completed **main-agent** answer and uses the existing balanced Bro prompt with a separate model completion. It draws a private pane with retry, copy and close, and `/bro open` reopens the last explanation.
 
+## Install from GitHub
+
+The repository root carries `.claude-plugin/marketplace.json`, so on a branch that has it:
+
+```sh
+/plugin install bro-simplify-experimental --marketplace tranhoangnguyen03/pi-bro
+```
+
+Needs Claude Code 2.1.275 or later. The manifest is on `main` only once this PR merges.
+
 ## Run locally
 
 Requires a Claude Code build with Mods support (minimum version unconfirmed; the declarations reviewed were 2.1.277), signed-in model access, and terminal with adequate width. From the repository root:
