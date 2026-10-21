@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "description": "Experimental Claude Code Mods from pi-bro",
+  "description": "Claude Code Bro experimental plugin marketplace",
   "owner": {
     "name": "Tran Hoang Nguyen"
   },
@@ -8,8 +8,8 @@
     {
       "name": "bro-simplify-experimental",
       "source": "./experiments/claude-mod",
-      "description": "Experimental private /bro simplification pane for Claude Code",
-      "version": "0.1.0"
+      "description": "Experimental private /bro with Native Claude, Agy, Codex, Pi CLI backends",
+      "version": "0.2.0"
     }
   ]
 }
