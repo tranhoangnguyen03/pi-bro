@@ -6,7 +6,7 @@ Prototype of vanilla Pi `/bro` and `/bro simplify`, isolated from the Pi extensi
 
 ## Run locally
 
-Requires Claude Code with Mods support (2.1.287+), signed-in model access, and terminal with adequate width. From the repository root:
+Requires a Claude Code build with Mods support (minimum version unconfirmed; the declarations reviewed were 2.1.277), signed-in model access, and terminal with adequate width. From the repository root:
 
 ```sh
 claude plugin validate ./experiments/claude-mod
@@ -30,5 +30,6 @@ node --test experiments/claude-mod/tests/*.test.mjs
 - No result enters Claude's conversation: the command returns empty text and the completion uses a separate API call. Check this boundary in a live run.
 - Busy-turn handling depends on main `turn.start`/`turn.complete` events. Verify it in the interactive host.
 - Source text is in memory and resets on reload; no persistent history.
-- The balanced prompt is copied from `src/prompt.ts` because the Mod's imports must stay inside its plugin directory. Review for drift.
+- The balanced prompt is copied from `src/prompt.ts` because the Mod's imports must stay inside its plugin directory. `tests/prompt-drift.test.mjs` fails if the copy diverges.
+- Pane buttons call back into the `$` handle captured at render time. Confirm in a live run that it stays valid after the render event returns (Retry, Copy, Close).
 - **Do not merge or publish based on these offline tests alone.**
