@@ -3,19 +3,22 @@
 // The existing Pi backend does NOT run here: this deliberately invokes the Pi CLI.
 // No project cwd, no shell interpolation, no extra tools, no hidden fallback.
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const DEADLINE_MS = 125_000;
 const MAX_INPUT = 500_000;
 const MAX_STDOUT = 6_000_000;
 const MAX_STDERR = 20_000;
 const WRITER = /[\n\r]/;
+const KILL_GRACE_MS = 3_000;
 
 export function commandFor({ backend, model, effort, prompt }) {
   if (!["agy", "codex", "pi"].includes(backend)) throw new Error("Unsupported external backend");
-  if (typeof model !== "string" || !model.trim() || model.length > 180 || WRITER.test(model)) throw new Error("Invalid model");
+  if (typeof model !== "string" || !model.trim() || model.length > 180 || WRITER.test(model) || model.trim().startsWith("-")) throw new Error("Invalid model");
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > MAX_INPUT) throw new Error("Invalid prompt size");
   const effortSet = {
     agy: ["default","low","medium","high"],
@@ -97,12 +100,18 @@ export async function run(request, options={}) {
   let timedOut=false;
   let closed=false;
   let stdout="", stderr="";
+  let escalation;
+  function signal(sig) {
+    if (process.platform !== "win32" && child.pid) {
+      try { process.kill(-child.pid,sig); return; } catch {}
+    }
+    try { child.kill(sig); } catch {}
+  }
   function kill() {
     if (!child || closed) return;
-    if (process.platform !== "win32" && child.pid) {
-      try { process.kill(-child.pid,"SIGTERM"); return; } catch {}
-    }
-    try { child.kill("SIGTERM"); } catch {}
+    signal("SIGTERM");
+    // A child that ignores SIGTERM must not hang the bridge.
+    escalation ??= setTimeout(()=>{ if (!closed) signal("SIGKILL"); },KILL_GRACE_MS);
   }
   const abort = () => kill();
   process.on("SIGTERM", abort); process.on("SIGINT", abort);
@@ -129,6 +138,7 @@ export async function run(request, options={}) {
     clearTimeout(deadline);
     process.off("SIGTERM",abort);process.off("SIGINT",abort);
     kill();
+    clearTimeout(escalation);
     await rm(dir,{recursive:true,force:true});
   }
 }
@@ -141,7 +151,7 @@ async function readInput() {
   }
   return JSON.parse(text);
 }
-if (process.argv[1] && import.meta.url === new URL("file://"+process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
     const result=await run(await readInput());
     process.stdout.write(JSON.stringify({ok:true,result})+"\n");

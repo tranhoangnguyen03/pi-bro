@@ -51,3 +51,27 @@ test("unknown backends and invalid models are refused",()=>{
   assert.throws(()=>commandFor({...req("pi"),model:"sonnet"}),/provider\/model/);
   assert.throws(()=>commandFor({...req("codex"),effort:"max"}),/Unsupported effort/);
 });
+
+test("model names that start with a dash are refused",()=>{
+  assert.throws(()=>commandFor({...req("codex"),model:"--oss"}),/Invalid model/);
+});
+test("a child that ignores SIGTERM is killed after the grace period",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"bro-test-"));
+  const file=join(dir,"stubborn.mjs");
+  await writeFile(file,'process.on("SIGTERM",()=>{});setInterval(()=>{},1000);');
+  try {
+    const started=Date.now();
+    await assert.rejects(run(req("codex"),{commandOverride:process.execPath,argsOverride:[file],deadlineMs:300}),/deadline/);
+    assert.ok(Date.now()-started<8000);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+test("the CLI entry point runs from a path containing a space",async()=>{
+  const {spawnSync}=await import("node:child_process");
+  const {cp}=await import("node:fs/promises");
+  const dir=await mkdtemp(join(tmpdir(),"bro test "));
+  try {
+    await cp(new URL("../runner/execute.mjs",import.meta.url),join(dir,"execute.mjs"));
+    const out=spawnSync(process.execPath,[join(dir,"execute.mjs")],{input:JSON.stringify({backend:"nope"}),encoding:"utf8"});
+    assert.match(out.stdout,/Unsupported external backend/);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});

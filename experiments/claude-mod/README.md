@@ -42,7 +42,9 @@ Unsupported backend/model/effort requests produce an error rather than silently 
 For external CLI calls the Mod invokes a bundled Node.js 22+ bridge with the selected model and Bro prompt. The bridge runs in a private scratch directory, reads the canonical result and cleans up.
 
 - **Agy:** sandbox flag and scratch directory; Agy sandbox does not make it tool-free, and network/other tooling may still be available.
-- **Codex:** read-only sandbox and ephemeral execution. This restricts Codex tool commands, not arbitrary plugins or hooks.
+- **Codex:** read-only sandbox and ephemeral execution. This restricts Codex tool commands, not arbitrary plugins or hooks. Read-only still allows reading files outside the scratch directory.
+- **Agy and Codex are agentic.** The simplified reply is untrusted text. Injected instructions in it could make these CLIs read local files, and that content would reach the provider. The "treat as data" prompt guard is a request, not a control. Use Pi (tool-free) or Claude Native if that matters.
+- **Environment:** the bridge passes its full environment to the selected CLI so it can authenticate.
 - **Pi:** disables sessions, extensions, MCP, skills, prompt templates, context files, tools, and project trust using Pi CLI flags.
 
 Claude Native uses the tool-free model completion API. Every backend uses its own credentials and billing route. The Mod does not copy credential files. Only the selected answer and Bro's instructions are sent.

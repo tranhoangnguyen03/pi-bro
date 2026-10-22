@@ -38,7 +38,7 @@ export function chunkMarkdown(text, limit) {
   let cur = [];
   let blank = -1; // index in cur of the last blank line outside a fence
   let fence = ""; // opening fence line while inside a code block
-  let marker = ""; // fence character (` or ~) that must close it
+  let marker = ""; // fence run (3+ ` or ~) that must close it
   const size = (lines) => lines.reduce((n, l) => n + l.length + 1, 0);
   for (const line of text.split("\n")) {
     if (cur.length && size(cur) + line.length + 1 > limit) {
@@ -46,15 +46,15 @@ export function chunkMarkdown(text, limit) {
         chunks.push(cur.slice(0, blank).join("\n"));
         cur = cur.slice(blank + 1);
       } else {
-        chunks.push(cur.join("\n") + (fence ? "\n" + marker.repeat(3) : ""));
+        chunks.push(cur.join("\n") + (fence ? "\n" + marker : ""));
         cur = fence ? [fence] : [];
       }
       blank = -1;
     }
     cur.push(line);
     const m = line.match(/^\s*(`{3,}|~{3,})/);
-    if (m && !fence) { fence = line.trim(); marker = m[1][0]; }
-    else if (m && fence && m[1][0] === marker) fence = "";
+    if (m && !fence) { fence = line.trim(); marker = m[1]; }
+    else if (m && fence && m[1][0] === marker[0] && m[1].length >= marker.length) fence = "";
     else if (!fence && line.trim() === "") blank = cur.length - 1;
   }
   if (cur.join("\n").trim()) chunks.push(cur.join("\n"));

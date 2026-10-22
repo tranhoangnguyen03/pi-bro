@@ -29,3 +29,10 @@ test("a tilde fence is closed with a tilde fence, and a backtick line inside it 
     assert.ok(c.startsWith("~~~"), c);
   }
 });
+
+test("a split four-backtick fence is closed with four backticks", () => {
+  const body = Array.from({ length: 20 }, (_, i) => "line " + i).join("\n");
+  const chunks = chunkMarkdown("````\n" + body + "\n````", 60);
+  assert.ok(chunks.length > 1);
+  assert.ok(chunks[0].endsWith("\n````"));
+});

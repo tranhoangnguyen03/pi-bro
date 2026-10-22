@@ -17,6 +17,7 @@ export function validateConfig(value) {
   if (typeof model !== "string" || model.length > 180 || /[\r\n\x00-\x1f]/.test(model))
     throw new Error("Model must be a single line of up to 180 characters.");
   if (!model.trim()) throw new Error("Choose a model. For Pi, use provider/model.");
+  if (model.trim().startsWith("-")) throw new Error("Model must not start with a dash.");
   if (backend === "pi" && !/^[^/\s]+\/[^/\s].*$/.test(model.trim())) throw new Error("Pi requires provider/model.");
   if (backend === "native" && effort !== "default")
     throw new Error("Claude native completions do not expose an effort setting.");
