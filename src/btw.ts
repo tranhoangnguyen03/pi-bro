@@ -197,6 +197,13 @@ export class BtwModal implements Focusable {
 	private customMode = "";
 	private disposed = false;
 	onInput?: () => void;
+	onKey?: (data: string) => boolean;
+	private suggestions = "";
+
+	setSuggestions(text: string): void {
+		this.suggestions = text;
+		this.tui.requestRender();
+	}
 
 	get focused(): boolean {
 		return this._focused;
@@ -293,6 +300,7 @@ export class BtwModal implements Focusable {
 	}
 
 	handleInput(data: string): void {
+		if (this.onKey?.(data)) return;
 		if (matchesKey(data, "escape")) {
 			this.onClose();
 			return;
@@ -320,6 +328,7 @@ export class BtwModal implements Focusable {
 			// The frame drops lines from the top when space runs out, so the composer goes last.
 			footer: [
 				...(this.appearance.commands === "" ? [] : wrapTextWithAnsi(this.appearance.commands ?? "Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner)),
+				...(this.suggestions ? wrapTextWithAnsi(this.theme.fg("accent", this.suggestions), inner) : []),
 				this.theme.fg("accent", this.theme.bold(this.appearance.inputLabel ?? "Your message to Bro")),
 				this.input.render(inner)[0] ?? "",
 			],

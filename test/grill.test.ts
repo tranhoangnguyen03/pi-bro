@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildGrillPrompt, DEFAULT_GRILL_DEPTH, grillExecution,
-  parseGrillArguments, parseGrillCommand, GRILL_DEPTHS,
+  parseGrillArguments, parseGrillCommand, GRILL_DEPTHS, grillCommandSuggestions,
 } from "../src/grill-engine.ts";
 
 test("depth modes and topic routing are explicit, default balanced", () => {
@@ -29,6 +29,15 @@ test("modal commands are exact and never mistaken for depth changes", () => {
   assert.deepEqual(parseGrillCommand("/insert-last-message"), { kind: "insert" });
   assert.deepEqual(parseGrillCommand(""), { kind: "empty" });
   assert.deepEqual(parseGrillCommand("I think /finish is premature."), { kind: "message", text: "I think /finish is premature." });
+});
+
+test("slash suggestions filter by prefix and never suggest ordinary answers", () => {
+  assert.deepEqual(grillCommandSuggestions("/con"), ["/consolidate"]);
+  assert.deepEqual(grillCommandSuggestions("/depth e"), ["/depth exhaustive"]);
+  assert.deepEqual(grillCommandSuggestions("/unknown"), []);
+  assert.deepEqual(grillCommandSuggestions("A"), []);
+  assert.deepEqual(grillCommandSuggestions("/consolidate"), []);
+  assert.ok(grillCommandSuggestions("/").includes("/insert-last-message"));
 });
 
 test("the default uses inspection; full permission is an explicit user decision", () => {
@@ -74,6 +83,9 @@ for (const scenario of cases) {
     assert.match(first, /End your reply with exactly one substantive question/);
     assert.match(first, /multiple choices labelled A, B, C/);
     assert.match(first, /Other — explain in your own words/);
+    assert.match(first, /Markdown horizontal rule/);
+    assert.match(first, /level-two heading 'Question'/);
+    assert.match(first, /exactly one option '\(Recommended\)'/);
     const second = buildGrillPrompt({
       topic: scenario.topic, reply: scenario.reply, depth: scenario.depth,
       history: [{ question: scenario.topic, answer: "What downside could change your mind?" }],

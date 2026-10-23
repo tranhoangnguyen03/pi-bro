@@ -9,7 +9,7 @@
 /bro grill-me
 ```
 
-With a topic, start a new interview. Without one, reopen the current interview or enter a topic inside the modal. A proposal prompts scrutiny; an open question prompts discovery. Bro offers reasoned pushback, then one question with lettered choices, including an open-ended alternative. Answer with a letter or your own words. Model adherence is not guaranteed.
+With a topic, start a new interview. Without one, reopen the current interview or enter a topic inside the modal. A proposal prompts scrutiny; an open question prompts discovery. Bro offers reasoned pushback, then one question with lettered choices, including an open-ended alternative. Answer with a letter or your own words. Questions request a horizontal divider, a distinct **Question** heading, and exactly one **(Recommended)** option with a short reason. Recommendations are provisional; model adherence is not guaranteed.
 
 ## Controls
 
@@ -24,8 +24,10 @@ With a topic, start a new interview. Without one, reopen the current interview o
 | `/new <topic>` | Start over after confirmation. Resets depth to balanced and access to inspection. |
 | `/access inspect` | Request inspection tools; enforcement depends on backend |
 | `/access full` | Request full permissions; requires typing `yes` after a warning |
-| `/help` | Show commands on demand |
+| `/help` | Show commands on demand; **Esc returns to the interview** |
 | Esc | Close and cancel active work; preserve completed discussion |
+
+Type `/` to see matching commands; keep typing to narrow suggestions and press **Tab** to complete the first match. Completion never submits. From help, Esc returns to the discussion; a second Esc closes the modal.
 
 For confirmation prompts, type `yes` to proceed; anything else cancels. Depth can change between replies without losing the discussion. There are no question quotas or finished/locked states. Consolidate whenever useful, inspect the brief, then explicitly insert it or continue talking. The brief includes the current position, reasons, objections, unresolved questions and next actions. Insertion never overwrites a draft or submits it.
 

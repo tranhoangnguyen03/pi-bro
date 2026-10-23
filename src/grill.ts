@@ -1,8 +1,9 @@
+import { matchesKey } from "@earendil-works/pi-tui";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { execute as executeBackend } from "./backend.ts";
 import { BtwModal, BTW_CONTEXT_MAX, BTW_CONTEXT_TURNS, formatBtwTranscript } from "./btw.ts";
 import {
-  buildGrillPrompt, grillExecution, parseGrillCommand,
+  buildGrillPrompt, grillExecution, parseGrillCommand, grillCommandSuggestions,
   type GrillThread, type GrillTurn,
 } from "./grill-engine.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel, capabilityBackend } from "./settings.ts";
@@ -32,8 +33,9 @@ export async function openGrillModal(
       let pendingSummary: string | undefined;
       let pendingReply: string | undefined;
       let activeBackend = openingBackend;
+      let showingHelp = false;
       let confirmation: "full" | string | undefined;
-      const help = "## Commands\n\n- /consolidate — draft a decision brief; keep talking afterward\n- /insert-last-message — insert the latest Bro reply into an empty Pi editor, without sending\n- /depth light|balanced|exhaustive — change depth\n- /retry — retry a failed operation or regenerate the latest reply\n- /new <topic> — start over (confirmation required)\n- /access inspect|full — choose access (full requires confirmation)\n- /help — show this list\n\nAnswer with a letter or your own words. Esc closes without discarding completed discussion.";
+      const help = "## Commands\n\n- /consolidate — draft a decision brief; keep talking afterward\n- /insert-last-message — insert the latest Bro reply into an empty Pi editor, without sending\n- /depth light|balanced|exhaustive — change depth\n- /retry — retry a failed operation or regenerate the latest reply\n- /new <topic> — start over (confirmation required)\n- /access inspect|full — choose access (full requires confirmation)\n- /help — show this list\n\nAnswer with a letter or your own words. Esc returns to the interview. Type / and use Tab to complete a command.";
 
       const transcript = () => {
         const conversation = formatBtwTranscript(pendingTurn ? [...thread.turns, pendingTurn] : thread.turns);
@@ -66,7 +68,29 @@ export async function openGrillModal(
         inputLabel: "Your answer (letter or your own words)",
         idleHint: "Enter answer · Esc close · /help commands",
       });
-      modal.onInput = () => { composerTouched = true; };
+      const updateSuggestions = () => {
+        const suggestions = controller || confirmation ? [] : grillCommandSuggestions(modal.getComposerText());
+        modal.setSuggestions(suggestions.length ? `${suggestions.join(" · ")} · Tab complete` : "");
+      };
+      modal.onInput = () => { composerTouched = true; updateSuggestions(); };
+      modal.onKey = (data) => {
+        if (showingHelp && matchesKey(data, "escape")) {
+          showingHelp = false;
+          modal.setText(transcript());
+          modal.scrollToEnd();
+          return true;
+        }
+        if (!controller && !confirmation && matchesKey(data, "tab")) {
+          const suggestion = grillCommandSuggestions(modal.getComposerText())[0];
+          if (suggestion) {
+            modal.setComposerText(suggestion);
+            composerTouched = true;
+            updateSuggestions();
+            return true;
+          }
+        }
+        return false;
+      };
       if (thread.draft && !options.start) modal.setComposerText(thread.draft);
 
       const permissionNotice = (backend: string) =>
@@ -206,6 +230,8 @@ export async function openGrillModal(
 
       function submit(value: string): void {
         if (controller || closed) return;
+        if (showingHelp) { showingHelp = false; modal.setText(transcript()); modal.scrollToEnd(); }
+        modal.setSuggestions("");
         if (confirmation) {
           const pending = confirmation;
           confirmation = undefined;
@@ -240,7 +266,7 @@ export async function openGrillModal(
           }
           return;
         }
-        if (action.kind === "help") { modal.clearComposer(); modal.setText(help); modal.scrollToEnd(); return; }
+        if (action.kind === "help") { showingHelp = true; modal.clearComposer(); modal.setText(help); modal.scrollToEnd(); return; }
         if (action.kind === "new") {
           modal.clearComposer();
           if (thread.topic || thread.turns.length) {

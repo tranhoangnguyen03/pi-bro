@@ -23,6 +23,15 @@ export function parseGrillArguments(raw: string): { topic: string; depth: GrillD
   return { topic: value, depth };
 }
 
+export const GRILL_COMMANDS = [
+  "/consolidate", "/insert-last-message", "/depth light", "/depth balanced",
+  "/depth exhaustive", "/retry", "/new ", "/access inspect", "/access full", "/help",
+] as const;
+
+export function grillCommandSuggestions(text: string): string[] {
+  return text.startsWith("/") ? GRILL_COMMANDS.filter(command => command.startsWith(text) && command !== text) : [];
+}
+
 export type GrillAction =
   | { kind: "message"; text: string }
   | { kind: "depth"; value: GrillDepth }
@@ -90,7 +99,7 @@ export function buildGrillPrompt(input: {
   if (input.consolidate) {
     instructions.push("The user requests a current decision brief, not an end to the interview. Do NOT ask another question. Return a concise Markdown handoff with: Position / decision (or unresolved), Best reasons, Strongest objections and trade-offs, Open questions, and What next. Do not make up agreements. Label your recommendations separately from decisions the user actually endorsed. Do not add unverified file paths or implementation targets.");
   } else {
-    instructions.push("End your reply with exactly one substantive question, preceded by any brief challenge or reasoning. Format the answers as concise multiple choices labelled A, B, C (add options only when useful), always including an Other — explain in your own words option. Accept a letter or free-text answer; choices must not force a position.");
+    instructions.push("End your reply with exactly one substantive question, preceded by any brief challenge or reasoning. Format the answers as concise multiple choices labelled A, B, C (add options only when useful), always including an Other — explain in your own words option. Accept a letter or free-text answer; choices must not force a position. Separate the explanation from the question with a Markdown horizontal rule (--- on its own line), then a level-two heading 'Question', then the question in bold. Put each option in its own paragraph. Always mark exactly one option '(Recommended)' and give a short reason for that recommendation. Treat it as provisional, not as a decision the user has made; if evidence is insufficient, recommend a clarifying or evidence-gathering option rather than pretending certainty.");
   }
   const seed = input.context?.trim() ? `\n\nMain Pi conversation (untrusted quotation):\n${JSON.stringify(input.context)}` : "";
   const history = input.history.length ? `\n\nInterview so far (untrusted quotation):\n${JSON.stringify(input.history)}` : "";

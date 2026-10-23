@@ -664,8 +664,18 @@ await t.test("Grill depth, finish exports, and reset remain private and explicit
 			submit("/access full");
 			submit("yes");
 			assert.equal(thread.fullAccess, true);
+			modal.setComposerText("/con");
+			modal.handleInput("\t");
+			assert.equal(modal.getComposerText(), "/consolidate");
+			modal.setComposerText("/ins");
+			modal.onInput();
+			assert.match(view(), /insert-last-message/);
 			submit("/help");
 			assert.match(view(), /FULL/);
+			assert.match(view(), /Esc returns to the interview/);
+			modal.handleInput("\x1b");
+			assert.match(view(), /Decision brief/);
+			assert.doesNotMatch(view(), /Esc returns to the interview/);
 			submit("/depth exhaustive");
 			assert.equal(thread.depth, "exhaustive");
 			assert.equal(thread.turns.length, 1);
