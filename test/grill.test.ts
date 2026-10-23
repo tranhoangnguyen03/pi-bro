@@ -34,7 +34,7 @@ test("modal commands are exact and never mistaken for depth changes", () => {
 
 test("the default uses inspection; full permission is an explicit user decision", () => {
   assert.deepEqual(grillExecution(false), { feature: "review", access: "restricted" });
-  assert.deepEqual(grillExecution(true), { feature: "btw", access: "workspace-full" });
+  assert.deepEqual(grillExecution(true), { feature: "advisor", access: "workspace-full" });
   for (const fullAccess of [true, false]) {
     const prompt = buildGrillPrompt({ topic: "Choose a message policy", depth: "balanced", history: [], fullAccess });
     assert.match(prompt, /Never create, edit, delete or overwrite files/);
