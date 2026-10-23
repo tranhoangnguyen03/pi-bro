@@ -29,17 +29,23 @@ export async function openGrillModal(
       let closed = false;
       let controller: AbortController | undefined;
       let composerTouched = false;
+      let pendingTurn: GrillTurn | undefined;
+      let pendingSummary: string | undefined;
+      let pendingReply: string | undefined;
+      let activeBackend = openingBackend;
 
       const transcript = () => {
-        const conversation = formatBtwTranscript(thread.turns);
-        const ending = thread.summary ? `## Decision brief\n\n${thread.summary}` : "";
+        const conversation = formatBtwTranscript(pendingTurn ? [...thread.turns, pendingTurn] : thread.turns);
+        const summary = pendingSummary ?? thread.summary;
+        const ending = summary ? `## Decision brief\n\n${summary}` : "";
         return [conversation, ending].filter(Boolean).join("\n\n---\n\n")
           || "Tell Bro what you want to be grilled on. It can be a proposal or an open question.";
       };
-      const refreshHeader = () => modal.setCustomMode(`${thread.depth} · ${thread.fullAccess ? "FULL (prompt-only no-edits)" : openingBackend === "agy" ? "Agy (writes possible)" : "inspection"}`);
+      const refreshHeader = () => modal.setCustomMode(`${thread.depth} · ${thread.fullAccess ? "FULL (prompt-only no-edits)" : activeBackend === "agy" ? "Agy (writes possible)" : "inspection"}`);
       const saveDraft = () => {
         const draft = modal.getComposerText();
         if (draft.trim()) thread.draft = draft;
+        else if (pendingReply) thread.draft = pendingReply;
         else if (composerTouched) delete thread.draft;
       };
       const close = () => {
@@ -73,11 +79,14 @@ export async function openGrillModal(
         const attempt = new AbortController();
         controller = attempt;
         modal.setRunning(true);
-        let added = false;
+        pendingReply = reply;
         try {
           const [settings, preferences] = await Promise.all([readSettings(), readPreferences()]);
           if (closed || attempt.signal.aborted) return;
           const backend = capabilityBackend(settings, "btw");
+          activeBackend = backend;
+          refreshHeader();
+          modal.setNotice(permissionNotice(backend), thread.fullAccess || backend === "agy" ? "warning" : "info");
           const selection = selectionForCapability(settings, "btw");
           thread.model = selectionLabel(selection);
           thread.preferences = Boolean(preferences);
@@ -85,26 +94,26 @@ export async function openGrillModal(
           if (!thread.context && !thread.turns.length) {
             thread.context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS, BTW_CONTEXT_MAX)?.text;
           }
-          const history = [...thread.turns];
+          const history = replaced ? thread.turns.slice(0, -1) : [...thread.turns];
           const prompt = buildGrillPrompt({
             topic: thread.topic, reply, depth: thread.depth, context: thread.context,
             history, preferences, fullAccess: thread.fullAccess,
           });
-          thread.turns.push({ question: reply, answer: "…" });
-          added = true;
+          pendingTurn = { question: reply, answer: "…" };
           modal.setText(transcript());
           modal.scrollToEnd();
           const outcome = await executeBackend({
             ...grillExecution(thread.fullAccess), cwd: ctx.cwd, prompt,
           }, selection, attempt.signal, (event) => {
             if (!closed && !attempt.signal.aborted && event.kind === "text") {
-              thread.turns[thread.turns.length - 1]!.answer = event.text;
+              pendingTurn!.answer = event.text;
               modal.setText(transcript());
             }
           });
           if (closed || attempt.signal.aborted) return;
           if (outcome.status !== "success") throw new Error(outcome.message);
-          thread.turns[thread.turns.length - 1]!.answer = outcome.text;
+          if (replaced) thread.turns.pop();
+          thread.turns.push({ question: reply, answer: outcome.text });
           modal.setNotice(permissionNotice(backend), thread.fullAccess || backend === "agy" ? "warning" : "info");
           delete thread.draft;
         } catch (error) {
@@ -112,16 +121,9 @@ export async function openGrillModal(
             modal.setNotice(errorMessage(error), "error");
             modal.setComposerText(reply);
           }
-          if (added) {
-            thread.turns.pop();
-            added = false;
-          }
-          if (replaced) thread.turns.push(replaced);
         } finally {
-          if ((closed || attempt.signal.aborted) && added) {
-            thread.turns.pop();
-            if (replaced) thread.turns.push(replaced);
-          }
+          pendingTurn = undefined;
+          pendingReply = undefined;
           if (controller === attempt) controller = undefined;
           if (!closed) { modal.setRunning(false); modal.setText(transcript()); }
         }
@@ -137,7 +139,13 @@ export async function openGrillModal(
         try {
           const [settings, preferences] = await Promise.all([readSettings(), readPreferences()]);
           if (closed || attempt.signal.aborted) return;
+          activeBackend = capabilityBackend(settings, "btw");
+          refreshHeader();
+          modal.setNotice(permissionNotice(activeBackend), thread.fullAccess || activeBackend === "agy" ? "warning" : "info");
           const selection = selectionForCapability(settings, "btw");
+          thread.model = selectionLabel(selection);
+          thread.preferences = Boolean(preferences);
+          modal.setModel(`${thread.model}${thread.preferences ? " · prefs" : ""}`);
           const prompt = buildGrillPrompt({
             topic: thread.topic, depth: thread.depth, context: thread.context,
             history: thread.turns, preferences, finish: true, fullAccess: thread.fullAccess,
@@ -145,7 +153,7 @@ export async function openGrillModal(
           const outcome = await executeBackend({ ...grillExecution(thread.fullAccess), cwd: ctx.cwd, prompt },
             selection, attempt.signal, (event) => {
               if (!closed && !attempt.signal.aborted && event.kind === "text") {
-                thread.summary = event.text;
+                pendingSummary = event.text;
                 modal.setText(transcript());
                 modal.scrollToEnd();
               }
@@ -155,10 +163,9 @@ export async function openGrillModal(
           thread.summary = outcome.text;
           modal.setNotice("Interview finished. /copy or /insert puts the brief in your hands.", "success");
         } catch (error) {
-          delete thread.summary;
           if (!closed && !attempt.signal.aborted) modal.setNotice(errorMessage(error), "error");
         } finally {
-          if (closed || attempt.signal.aborted) delete thread.summary;
+          pendingSummary = undefined;
           if (controller === attempt) controller = undefined;
           if (!closed) { modal.setRunning(false); modal.setText(transcript()); }
         }
@@ -198,6 +205,7 @@ export async function openGrillModal(
       };
 
       function submit(value: string): void {
+        if (controller || closed) return;
         const action = parseGrillCommand(value);
         if (action.kind === "empty") return;
         if (action.kind === "invalid") { modal.setNotice(action.message, "warning"); return; }
@@ -224,7 +232,7 @@ export async function openGrillModal(
         if (action.kind === "retry") {
           modal.clearComposer();
           if (thread.summary) { modal.setNotice("Already finished. /clear to start over.", "warning"); return; }
-          const last = thread.turns.pop();
+          const last = thread.turns.at(-1);
           if (!last) { modal.setNotice("Nothing to retry yet.", "warning"); return; }
           void runTurn(last.question, last);
           return;

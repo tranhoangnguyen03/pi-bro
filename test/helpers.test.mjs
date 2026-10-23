@@ -616,6 +616,61 @@ await t.test("btw retains unsubmitted composer draft across modal reopen", async
 	await btw.openBtwModal(ctxSpaces, { thread: threadSpaces });
 });
 
+await t.test("Grill cancellation preserves completed turns and submitted input across reopen", async () => {
+	const original = { question: "Topic", answer: "Why?" };
+	const thread = { topic: "Topic", depth: "balanced", fullAccess: false, turns: [original] };
+	const open = async (interact) => bro.openGrillModal({
+		cwd: process.cwd(),
+		ui: { custom: factory => new Promise(resolve => {
+			const modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {} }, fakeTheme, {}, resolve);
+			interact(modal);
+		}) },
+	}, thread);
+	await open(modal => {
+		modal.setComposerText("My counterargument");
+		modal.handleInput("\r");
+		modal.handleInput("\x1b");
+	});
+	assert.equal(thread.draft, "My counterargument");
+	assert.deepEqual(thread.turns, [original]);
+	await open(modal => {
+		assert.equal(modal.getComposerText(), "My counterargument");
+		modal.setComposerText("/retry");
+		modal.handleInput("\r");
+		assert.deepEqual(thread.turns, [original], "retry never removes completed history before success");
+		modal.handleInput("\x1b");
+	});
+	await new Promise(resolve => setTimeout(resolve, 30));
+	assert.deepEqual(thread.turns, [original], "late cancellation cannot change reopened history");
+});
+
+await t.test("Grill depth, finish exports, and reset remain private and explicit", async () => {
+	let editor = "existing draft";
+	const thread = { topic: "Topic", depth: "balanced", fullAccess: true,
+		turns: [{ question: "Topic", answer: "Why?" }], summary: "Decision brief" };
+	await bro.openGrillModal({ cwd: process.cwd(), hasUI: true, mode: "tui", ui: {
+		getEditorText: () => editor, setEditorText: text => { editor = text; },
+		custom: factory => new Promise(resolve => {
+			const modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {} }, fakeTheme, {}, resolve);
+			const submit = text => { modal.setComposerText(text); modal.handleInput("\r"); };
+			submit("/depth exhaustive");
+			assert.equal(thread.depth, "exhaustive");
+			assert.equal(thread.turns.length, 1);
+			submit("/insert");
+			assert.equal(editor, "existing draft");
+			editor = "";
+			submit("/insert");
+			assert.equal(editor, "Decision brief");
+			submit("/clear");
+			assert.equal(thread.fullAccess, false);
+			assert.equal(thread.topic, "");
+			assert.equal(thread.summary, undefined);
+			assert.deepEqual(thread.turns, []);
+			modal.handleInput("\x1b");
+		}) },
+	}, thread);
+});
+
 await t.test("Agy CLI usage formatting and model catalog parsing", () => {
 	const usage = formatAgyUsage({
 		status: "SUCCESS",

@@ -10,7 +10,7 @@ This is a **manual model-evaluation plan**, not a claim that model behavior has 
 | Find a position | "Should room roles come from profiles or external consultant offices?" | Elicit constraints and discover the simplest design without assuming one option is right | Treat an open question as a fixed proposal; force profiles |
 | Stress-test a bet | "Should we port more Pi-bro features to Claude-native plugins?" | Examine native vs adapters, support cost, parity and what to test first | Wander into unrelated coding details, offer vague advice |
 
-All three use real *decision topics* from earlier project design work. They are not yet real-model comparative runs.
+All three use real *decision topics* from earlier project design work. See the live probe below; matched comparative runs remain outstanding.
 
 ## A/B/C procedure
 
@@ -31,6 +31,20 @@ Record for each: questions that changed your mind, unsupported claims, repeated 
 - Permission constraints and Agy/full-access risks are visible and tested.
 - At least one *manual* run of each case; capture actual outputs and record where Grill Me wins and loses.
 - All CI checks pass.
+
+## Live continuation probe
+
+A direct production-backend probe used Claude Sonnet, medium effort, restricted inspection, balanced depth, no main-session context or preferences. Each case had an opening, one scripted counterargument, and `/finish`: **nine successful real model calls**, roughly 7–19 seconds each. These were not interactive terminal sessions or user-authored evolving interviews. Raw replies and timings are recorded in `grill-me-live-results.json`.
+
+- **Child messaging:** explicitly dropped the runaway-loop objection after caps/opt-in, then identified per-recipient overload and blocking-vs-FYI semantics. The brief overstated provisional agreement and added an irrelevant `src/grill.ts` implementation target.
+- **Role sourcing:** identified independence from pi-consultants and snapshot-vs-live drift. Prematurely preferred profiles; three users do not establish that migration is cheap. No Pi-room source was supplied.
+- **Plugins/adapters:** inspected backend code and revised its adapter-refactor preference after the one-week constraint. It assumed plugin loading *inside* Bro rather than clarifying portability intent, and ended with multiple substantive questions.
+
+These findings motivated small prompt clarifications: clarify materially ambiguous topics, ask one decision rather than compound questions, and separate recommendations from user decisions without invented file targets. **Those changes have not yet been live re-evaluated.** No workspace changes were observed in `git status` during the restricted calls; this is not a general sandbox proof.
+
+Controller regressions now cover cancellation draft recovery, preserving completed turns during retry/reopen, depth changes, non-overwriting explicit insertion, and permission reset. Streaming is modal-local until successful completion, preventing late cancelled attempts from deleting newer thread content. Automated checks are not human terminal UX verification.
+
+Still required before release: longer adaptive interviews, light/exhaustive trials, matched Elevate and standalone-skill comparisons, real terminal cancellation/reopening and clipboard checks, and live backend coverage beyond Claude. No comparative quality scores are assigned from this short probe.
 
 ## Known prototype gaps
 

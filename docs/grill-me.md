@@ -34,7 +34,7 @@ A proposal ("I think X") prompts scrutiny; an open question ("What should we do 
 | `/access read-only` | Switch back to inspection mode |
 | Esc | Close, preserving the thread in memory; abort any running response |
 
-Depth is **guidance**, not a forced question count. You may switch it at any point. You can also finish early, or return after closing. The resulting brief includes the position or decision, reasons, strongest objections, open questions, and next action. You must request `/copy` or `/insert`; Bro does not automatically submit anything to Pi.
+Depth is **guidance**, not a forced question count. You may switch it between responses. You can also finish early, or return after closing. The resulting brief includes the position or decision, reasons, strongest objections, open questions, and next action. You must request `/copy` or `/insert`; Bro does not automatically submit anything to Pi.
 
 Grill Me uses your **BTW model/backend/effort** selection from `/bro config`; it has no separate model setting in v0.1. Its interview state is separate from BTW's conversation, so one never overwrites the other.
 
@@ -44,8 +44,8 @@ Grill Me uses your **BTW model/backend/effort** selection from `/bro config`; it
 - If inspection fails or cannot do what you need, you can explicitly type `/access full`, which uses a fresh full-permission backend call. **The backend can read, edit and execute commands with permissions bypassed.** Bro instructs it never to change files, but that is *only an instruction*. There is no automatic escalation. Use this only with a workspace you trust.
 - Each interview turn makes a **fresh backend call**, replaying the interview so far instead of retaining a native backend session. This keeps the prototype isolated but means exhaustive interviews cost more tokens and may eventually hit model context limits. There is no automatic truncation or hidden fallback.
 - The topic, your answers, earlier interview turns, optional Bro preferences, and **up to eight recent main-session user/assistant text turns (40,000 characters)** are sent to the selected backend/provider. Tool calls/results, hidden reasoning and images are not included in the captured seed. Additional workspace content may be read through the selected backend tools.
-- Interview and decision brief remain **in memory only** and are lost on extension reload, Pi session change or exit. Clipboard copies may outlive the session. Bro doesn't write transcripts to disk.
-- Closing cancels the backend attempt. It does not reverse work a full-permission backend may already have performed, and it does not guarantee detached processes stop on Windows.
+- Interview and decision brief remain **in memory only** and are lost on extension reload, Pi session change or exit. Clipboard copies may outlive the session. Bro doesn't write transcripts to disk. Backend/provider retention is separate; see [backend retention](reference/data-and-permissions.md#backends-access-and-retention).
+- Closing cancels the backend attempt. Completed turns remain intact; partial replies and partial briefs are discarded. A cancelled submitted answer is restored as the draft unless you typed a newer draft while waiting. A failed retry preserves the previous completed reply. It does not reverse work a full-permission backend may already have performed, and it does not guarantee detached processes stop on Windows.
 - Grill Me may challenge a weak idea, but it cannot guarantee a good decision. The summary describes the exchange, not independently verified truth.
 
 ## How it differs from other tools

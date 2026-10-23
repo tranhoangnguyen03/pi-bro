@@ -40,6 +40,8 @@ test("the default uses inspection; full permission is an explicit user decision"
     assert.match(prompt, /Never create, edit, delete or overwrite files/);
     assert.match(prompt, /exactly ONE focused question/);
     assert.match(prompt, /User alone decides when to end/);
+    assert.match(prompt, /clarify the user's intended meaning/);
+    assert.match(prompt, /one decision to answer/);
   }
   assert.match(buildGrillPrompt({ topic: "X", depth: "balanced", history: [], fullAccess: true }), /NOT a technical safeguard/);
   assert.throws(() => buildGrillPrompt({ topic: " ", depth: "light", history: [] }), /Name a topic/);
@@ -87,6 +89,8 @@ for (const scenario of cases) {
     });
     assert.match(last, /Do NOT ask another question/);
     assert.match(last, /Strongest objections and trade-offs/);
+    assert.match(last, /recommendations separately from decisions the user actually endorsed/);
+    assert.match(last, /Do not add unverified file paths/);
     assert.doesNotMatch(last, /End your reply with exactly one substantive question/);
   });
 }
