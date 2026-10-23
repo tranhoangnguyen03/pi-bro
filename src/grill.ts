@@ -226,6 +226,7 @@ export async function openGrillModal(
           void runTurn(last.question, last);
           return;
         }
+        if (action.kind !== "message") return;
         if (thread.summary) { modal.setNotice("This interview has ended. /clear to start another.", "warning"); return; }
         composerTouched = true;
         delete thread.draft;
