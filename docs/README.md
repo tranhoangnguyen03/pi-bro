@@ -13,6 +13,7 @@ Start with what you want to do. The [README](../README.md) explains the product,
 - [Explain a local file](features/explain.md#explain-a-document) or [webpage](features/explain.md#explain-a-webpage).
 - [Visualize a conversation](features/show.md#bro-show) — Show diagrams.
 - [Ask a private side question](features/btw.md#bro-btw-side-conversation) — BTW.
+- [Get grilled on a decision](grill-me.md) — one question at a time in a private modal, then copy a decision brief.
 - [Improve a request before sending it](elevate.md) — Elevate: discover expert gaps, choose improvements, rewrite the task.
 - [Investigate a PR](guided-review.md) — Guided Review.
 - [Get an agent's second opinion](features/advisor.md#bro-advisor) — Advisor; review its permissions first.
