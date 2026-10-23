@@ -35,6 +35,7 @@ text directly captures a new source the same way.
 | `/bro config` | Open settings for the shared backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor/review) overrides. |
 | `/bro guided-review <PR number or URL>` | Automatically explain and assess a captured PR in local Pi, with source evidence and optional private questions. Opening the same PR restores its saved review. |
 | `/bro guided-review` | List saved reviews; `resume` is an alias. |
+| `/bro grill-me [topic]` | Private one-question-at-a-time decision interview. Supply a topic to start fresh; omit it to resume. `/consolidate` drafts a brief; `/insert-last-message` inserts explicitly without sending. `/help` lists modal controls. [Guide](../grill-me.md). |
 | `/bro elevate [request]` | Improve an assignment before execution. Discover up to five gaps, choose useful findings, and insert a revised request without submitting it. **Ctrl+Shift+E** can use your unsent draft. See [Elevate](../elevate.md). |
 | `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; type `/mode` inside to toggle full permission (read and edit the workspace) without losing the thread. |
 | `/bro advisor` | Quick notice of whether the executor's `bro_advisor` tool is available right now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`. |

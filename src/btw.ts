@@ -194,8 +194,16 @@ export class BtwModal implements Focusable {
 	private running = false;
 	private full = false;
 	private model = "";
+	private customMode = "";
 	private disposed = false;
 	onInput?: () => void;
+	onKey?: (data: string) => boolean;
+	private suggestions = "";
+
+	setSuggestions(text: string): void {
+		this.suggestions = text;
+		this.tui.requestRender();
+	}
 
 	get focused(): boolean {
 		return this._focused;
@@ -212,6 +220,7 @@ export class BtwModal implements Focusable {
 		private readonly onClose: () => void,
 		private readonly onSubmit: (value: string) => void,
 		private readonly onDispose: () => void,
+		private readonly appearance: { title?: string; commands?: string; inputLabel?: string; idleHint?: string } = {},
 	) {
 		this.input.onSubmit = (value) => {
 			if (!this.running) this.onSubmit(value);
@@ -260,6 +269,12 @@ export class BtwModal implements Focusable {
 		this.tui.requestRender();
 	}
 
+	/** Reuse the BTW modal for independent interview flows without sharing BTW state. */
+	setCustomMode(label: string): void {
+		this.customMode = label;
+		this.tui.requestRender();
+	}
+
 	clearComposer(): void {
 		this.input.setValue("");
 		this.tui.requestRender();
@@ -285,6 +300,7 @@ export class BtwModal implements Focusable {
 	}
 
 	handleInput(data: string): void {
+		if (this.onKey?.(data)) return;
 		if (matchesKey(data, "escape")) {
 			this.onClose();
 			return;
@@ -303,18 +319,24 @@ export class BtwModal implements Focusable {
 			header: () => {
 				const scroll = this.scroller.indicator();
 				const model = this.model ? this.theme.fg("dim", ` · ${this.model}`) : "";
-				const mode = this.theme.fg("dim", " · ") + (this.full ? this.theme.fg("accent", this.theme.bold(btwModeLabel(true))) : this.theme.fg("dim", btwModeLabel(false)));
-				return this.theme.fg("accent", this.theme.bold("Bro · btw")) + model + mode + this.theme.fg("dim", scroll ? ` · ${scroll}` : "");
+				const mode = this.customMode
+					? this.theme.fg("dim", this.customMode)
+					: this.theme.fg("dim", " · ") + (this.full ? this.theme.fg("accent", this.theme.bold(btwModeLabel(true))) : this.theme.fg("dim", btwModeLabel(false)));
+				const title = this.theme.fg("accent", this.theme.bold(this.appearance.title ?? "Bro · btw"));
+				// Keep Grill's access warning ahead of text the frame may truncate.
+				const header = this.customMode ? `${mode} · ${title}${model}` : title + model + mode;
+				return header + this.theme.fg("dim", scroll ? ` · ${scroll}` : "");
 			},
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
 			// The frame drops lines from the top when space runs out, so the composer goes last.
 			footer: [
-				...wrapTextWithAnsi("Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner),
-				this.theme.fg("accent", this.theme.bold("Your message to Bro")),
+				...(this.appearance.commands === "" ? [] : wrapTextWithAnsi(this.appearance.commands ?? "Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner)),
+				...(this.suggestions ? wrapTextWithAnsi(this.theme.fg("accent", this.suggestions), inner) : []),
+				this.theme.fg("accent", this.theme.bold(this.appearance.inputLabel ?? "Your message to Bro")),
 				this.input.render(inner)[0] ?? "",
 			],
 			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
-			hints: this.running ? "Bro is thinking… · Esc close (stops reply)" : "Enter send · Esc close",
+			hints: this.running ? "Bro is thinking… · Esc close (stops reply)" : (this.appearance.idleHint ?? "Enter send · Esc close"),
 		});
 	}
 

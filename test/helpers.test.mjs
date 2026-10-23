@@ -616,6 +616,203 @@ await t.test("btw retains unsubmitted composer draft across modal reopen", async
 	await btw.openBtwModal(ctxSpaces, { thread: threadSpaces });
 });
 
+await t.test("Grill access warnings survive narrow headers and unrelated notices", async () => {
+	for (const fullAccess of [false, true]) {
+		const thread = { topic: "Topic", depth: "exhaustive", fullAccess,
+			model: "claude-sonnet-4-6-with-a-long-model-name · medium", preferences: true, turns: [] };
+		await bro.openGrillModal({ cwd: process.cwd(), ui: {
+			custom: factory => new Promise(resolve => {
+				const modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {} }, fakeTheme, {}, resolve);
+				modal.setNotice("Brief ready.", "success");
+				for (const width of [48, 62, 78]) {
+					const header = stripVTControlCharacters(modal.render(width)[1]);
+					assert.match(header, /exhaustive/);
+					assert.ok(header.includes(fullAccess ? "FULL (prompt-only no-edits)" : "Agy (writes possible)"), header);
+				}
+				modal.handleInput("\x1b");
+			}),
+		} }, thread);
+	}
+});
+
+await t.test("Grill backend failures restore submitted input without overwriting a newer draft", async () => {
+	await withFakeAgy('#!/usr/bin/env node\nconsole.error("simulated backend failure"); process.exit(1);\n', async () => {
+		for (const draft of ["", "newer unsent draft"]) {
+			const original = { question: "Topic", answer: "Why?" };
+			const thread = { topic: "Topic", depth: "balanced", fullAccess: false, turns: [original] };
+			const failed = deferred();
+			let modal;
+			const opened = bro.openGrillModal({ cwd: process.cwd(), ui: {
+				custom: factory => new Promise(resolve => {
+					modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {
+						if (modal?.notice.includes("simulated backend failure")) failed.resolve();
+					} }, fakeTheme, {}, resolve);
+					modal.setComposerText("submitted answer");
+					modal.handleInput("\r");
+					if (draft) modal.handleInput(draft);
+				}),
+			} }, thread);
+			try {
+				await failed.promise;
+				assert.equal(modal.getComposerText(), draft || "submitted answer");
+				assert.deepEqual(thread.turns, [original]);
+			} finally {
+				modal.handleInput("\x1b");
+				await opened;
+			}
+			assert.equal(thread.draft, draft || "submitted answer");
+		}
+	});
+});
+
+await t.test("Grill cancellation preserves completed turns and submitted input across reopen", async () => {
+	const original = { question: "Topic", answer: "Why?" };
+	const thread = { topic: "Topic", depth: "balanced", fullAccess: false, turns: [original] };
+	const open = async (interact) => bro.openGrillModal({
+		cwd: process.cwd(),
+		ui: { custom: factory => new Promise(resolve => {
+			const modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {} }, fakeTheme, {}, resolve);
+			interact(modal);
+		}) },
+	}, thread);
+	await open(modal => {
+		modal.setComposerText("My counterargument");
+		modal.handleInput("\r");
+		modal.handleInput("\x1b");
+	});
+	assert.equal(thread.draft, "My counterargument");
+	assert.deepEqual(thread.turns, [original]);
+	await open(modal => {
+		assert.equal(modal.getComposerText(), "My counterargument");
+		modal.setComposerText("/retry");
+		modal.handleInput("\r");
+		assert.deepEqual(thread.turns, [original], "retry never removes completed history before success");
+		modal.handleInput("\x1b");
+	});
+	await new Promise(resolve => setTimeout(resolve, 30));
+	assert.deepEqual(thread.turns, [original], "late cancellation cannot change reopened history");
+});
+
+await t.test("Grill completes an interview, consolidates, continues, and inserts only the latest reply", { timeout: 15_000 }, async () => {
+	await withFakeAgy(`#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const file = path.join(process.env.BIN_DIR, "prompts.json");
+const prompts = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : [];
+prompts.push(process.argv[process.argv.indexOf("--print") + 1]);
+fs.writeFileSync(file, JSON.stringify(prompts));
+console.log(JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "Completed reply " + prompts.length } }));
+`, async binDir => {
+		const thread = { topic: "Should we use a shared queue?", depth: "balanced", fullAccess: false, turns: [] };
+		const mainBranch = [{ type: "message", message: { role: "user", content: "Keep working on the main task." } }];
+		const originalBranch = structuredClone(mainBranch);
+		let editor = "existing draft";
+		let modal;
+		let expectedTurns = 1;
+		let completed = deferred();
+		const opened = bro.openGrillModal({ cwd: process.cwd(), mode: "tui",
+			sessionManager: { getBranch: () => mainBranch },
+			ui: {
+				getEditorText: () => editor,
+				setEditorText: text => { editor = text; },
+				custom: factory => new Promise(resolve => {
+					modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {
+						if (thread.turns.length === expectedTurns && !thread.retry) completed.resolve();
+					} }, fakeTheme, {}, resolve);
+				}),
+			},
+		}, thread, { start: true });
+		const submit = text => { modal.setComposerText(text); modal.handleInput("\r"); };
+		const reply = async text => {
+			expectedTurns++;
+			completed = deferred();
+			submit(text);
+			await completed.promise;
+		};
+		try {
+			await completed.promise;
+			assert.deepEqual(thread.turns, [{ question: thread.topic, answer: "Completed reply 1" }]);
+			await reply("A");
+			await reply("/consolidate");
+			assert.deepEqual(thread.turns.at(-1), { question: "/consolidate", answer: "Completed reply 3" });
+			submit("/insert-last-message");
+			assert.equal(editor, "existing draft", "export must not overwrite the main draft");
+			editor = "";
+			submit("/insert-last-message");
+			assert.equal(editor, "Completed reply 3");
+			await reply("What if the queue is unavailable?");
+			assert.equal(editor, "Completed reply 3", "continuing must not export automatically");
+			editor = "";
+			submit("/insert-last-message");
+			assert.equal(editor, "Completed reply 4", "export the latest answer, not the older brief");
+			assert.deepEqual(mainBranch, originalBranch, "private turns must not enter the main session");
+			const prompts = JSON.parse(await readFile(join(binDir, "prompts.json"), "utf8"));
+			assert.equal(prompts.length, 4, "insertion must not make a model call");
+			assert.ok(prompts[1].includes(JSON.stringify(thread.turns[0])), "answers replay completed history");
+			assert.match(prompts[2], /User instruction: consolidate the discussion so far/);
+			assert.ok(prompts[3].includes(JSON.stringify(thread.turns[2])), "continuation includes the brief");
+			assert.match(prompts[3], /End your reply with exactly one substantive question/);
+			assert.equal(thread.retry, undefined);
+		} finally {
+			modal?.handleInput("\x1b");
+			await opened;
+		}
+		assert.equal(thread.turns.length, 4, "closing preserves the completed interview");
+	});
+});
+
+await t.test("Grill depth, consolidation exports, and reset remain private and explicit", async () => {
+	let editor = "existing draft";
+	const thread = { topic: "Topic", depth: "balanced", fullAccess: true,
+		turns: [{ question: "Topic", answer: "Decision brief" }] };
+	await bro.openGrillModal({ cwd: process.cwd(), hasUI: true, mode: "tui", ui: {
+		getEditorText: () => editor, setEditorText: text => { editor = text; },
+		custom: factory => new Promise(resolve => {
+			const modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {} }, fakeTheme, {}, resolve);
+			const submit = text => { modal.setComposerText(text); modal.handleInput("\r"); };
+			const view = () => stripVTControlCharacters(modal.render(100).join("\n"));
+			assert.doesNotMatch(view(), /Commands:|Inspection mode:/);
+			assert.match(view(), /\/help commands/);
+			submit("/access inspect");
+			submit("/access full");
+			assert.equal(thread.fullAccess, false);
+			submit("no");
+			assert.equal(thread.fullAccess, false);
+			submit("/access full");
+			submit("yes");
+			assert.equal(thread.fullAccess, true);
+			modal.setComposerText("/con");
+			modal.handleInput("\t");
+			assert.equal(modal.getComposerText(), "/consolidate");
+			modal.setComposerText("/ins");
+			modal.onInput();
+			assert.match(view(), /insert-last-message/);
+			submit("/help");
+			assert.match(view(), /FULL/);
+			assert.match(view(), /Esc returns to the interview/);
+			modal.handleInput("\x1b");
+			assert.match(view(), /Decision brief/);
+			assert.doesNotMatch(view(), /Esc returns to the interview/);
+			submit("/depth exhaustive");
+			assert.equal(thread.depth, "exhaustive");
+			assert.equal(thread.turns.length, 1);
+			submit("/insert-last-message");
+			assert.equal(editor, "existing draft");
+			editor = "";
+			submit("/insert-last-message");
+			assert.equal(editor, "Decision brief");
+			submit("/new Another topic");
+			assert.equal(thread.topic, "Topic", "reset requires confirmation");
+			submit("yes");
+			assert.equal(thread.fullAccess, false);
+			assert.equal(thread.depth, "balanced");
+			assert.equal(thread.topic, "Another topic");
+			assert.deepEqual(thread.turns, []);
+			modal.handleInput("\x1b");
+		}) },
+	}, thread);
+});
+
 await t.test("Agy CLI usage formatting and model catalog parsing", () => {
 	const usage = formatAgyUsage({
 		status: "SUCCESS",
