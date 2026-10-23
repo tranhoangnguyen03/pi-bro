@@ -104,6 +104,6 @@ export function buildGrillPrompt(input: {
 }
 
 /** Review runs restricted/file-only where possible; the full-access fallback is opt-in, not silent. */
-export function grillExecution(fullAccess: boolean): { feature: "review" | "btw"; access: "restricted" | "workspace-full" } {
-  return fullAccess ? { feature: "btw", access: "workspace-full" } : { feature: "review", access: "restricted" };
+export function grillExecution(fullAccess: boolean): { feature: "review" | "advisor"; access: "restricted" | "workspace-full" } {
+  return fullAccess ? { feature: "advisor", access: "workspace-full" } : { feature: "review", access: "restricted" };
 }
