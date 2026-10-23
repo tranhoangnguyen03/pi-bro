@@ -405,6 +405,10 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 - Enter adds a line; Ctrl+S or Ctrl+Enter discovers gaps. Use labelled buttons for actions.
 - Shares BTW settings; see docs/elevate.md.
 
+## Grill Me (experimental)
+
+- \`/bro grill-me [--light|--balanced|--exhaustive] [topic]\` — private interview: one question at a time, with depth balanced by default. Type /finish for a brief, /copy or /insert to return it; /access full is prompt-only no-edits and can write files. See docs/grill-me.md.
+
 ## Side conversation
 
 - \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
