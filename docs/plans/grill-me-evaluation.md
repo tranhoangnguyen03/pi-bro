@@ -1,12 +1,17 @@
 # Grill Me v0.1 — comparison spike
 
-## Command redesign follow-up
+## Current interface and evidence
 
-User-approved redesign replaces `/finish` with `/consolidate` (no locked end state), removes copy/all-export commands and entry depth flags, and makes `/insert-last-message` the only explicit editor export. `/new <topic>` and `/access full` require confirmation; `/access inspect`, `/help`, `/retry` and `/depth` round out the controls. Questions now request lettered multiple choices with an open-ended alternative. The shorter footer hides the command catalogue; write risks remain in the header. BTW is unchanged.
+`/consolidate` creates a decision brief without ending the interview. `/insert-last-message` is the only export: it inserts the latest completed reply into an empty Pi editor without submitting. `/new <topic>` and `/access full` require confirmation. `/access inspect`, `/help`, `/retry` and `/depth` provide the other controls. Questions request lettered choices, an open-ended alternative and one provisional recommendation. BTW is unchanged.
 
-The historical procedure and live evidence below predate this redesign. For new runs use `/consolidate`, then `/insert-last-message`, and confirm that another answer continues the interview. Check letter-only and free-text answers, rejected old commands, both confirmation outcomes, retry after failure, and the latest-message export after a brief followed by another exchange. Full offline suite: 482 passing plus RPC smoke. Revised live interview/terminal behavior remains to be verified.
+The PR description and design issue contain historical commands. Use the procedure below, not `/finish`, `/copy`, `/insert`, all-export commands or entry depth flags. Clipboard checks do not apply to the current interface.
 
-This is a **manual model-evaluation plan**, not a claim that model behavior has been validated. Offline tests in `test/grill.test.ts` exercise prompt construction, three example topics and control routing. They cannot establish interview quality. Run all cases in Pi with the same model and similar context before treating this prototype as ready.
+Evidence has separate limits:
+
+- Offline prompt tests in `test/grill.test.ts` check instructions and routing, not model quality.
+- The successful controller journey in `test/helpers.test.mjs` uses a fake CLI through the real modal/controller/backend path: opening question, letter answer, consolidation, continued free-text discussion and explicit latest-message insertion. It checks history replay, draft protection, no automatic export, no model call on insertion and unchanged main-session messages. Other controller tests cover cancellation, failure, confirmations, depth and access reset. These are not human terminal tests.
+- The fresh Claude probe below uses the current prompt and production backend, with scripted replies. It is not an adaptive user interview, terminal test or comparison with another product.
+- The user reported local UX acceptance in [the PR comment](https://github.com/tranhoangnguyen03/pi-bro/pull/164#issuecomment-6361291419). That report is not independent verification of all backends or interview quality.
 
 ## Decision cases
 
@@ -16,42 +21,53 @@ This is a **manual model-evaluation plan**, not a claim that model behavior has 
 | Find a position | "Should room roles come from profiles or external consultant offices?" | Elicit constraints and discover the simplest design without assuming one option is right | Treat an open question as a fixed proposal; force profiles |
 | Stress-test a bet | "Should we port more Pi-bro features to Claude-native plugins?" | Examine native vs adapters, support cost, parity and what to test first | Wander into unrelated coding details, offer vague advice |
 
-All three use real *decision topics* from earlier project design work. See the live probe below; matched comparative runs remain outstanding.
+All three use real decision topics from earlier project design work. Matched comparative runs remain outstanding.
 
-## A/B/C procedure
+## Current manual A/B/C procedure
 
-Use the *same* starting topic for:
+Use the same starting topic, backend/model/effort and comparable context for:
 
-1. **Grill Me** in its own Bro modal; balanced mode first, then repeat one case in light and exhaustive. End with `/finish`. Note whether only the summary needs to be returned to Pi.
-2. **Elevate** with the same topic as an objective. Capture discovery findings and any rewritten task. It is **not** a live interview; compare whether interactive questions add useful understanding.
-3. **Standalone Grill Me skill** in the main Pi conversation. Use the closest equivalent depth available. Note interaction value and main-session context growth.
+1. **Grill Me:** open its modal, use balanced depth first, and answer both with a letter and free text. Use `/consolidate`, check the brief, then answer again to confirm the interview continues. With a draft in the main editor, `/insert-last-message` must refuse to overwrite it. With an empty editor, insert explicitly without submission. After another exchange, insertion must export the latest reply, not the older brief. Repeat one case in light and exhaustive depth.
+2. **Elevate:** use the topic as an objective. Capture discovery findings and the rewritten task. It is not a live interview; compare whether interactive questions add useful understanding.
+3. **Standalone Grill Me skill:** use it in the main Pi conversation with the closest equivalent depth. Record interaction value and main-session context growth. Record the skill revision used so the comparison can be repeated.
 
-Record for each: questions that changed your mind, unsupported claims, repeated questions, usefulness of the final decision brief, number of calls/turns, rough token cost, and whether you could return to Pi cleanly without losing the main task. Score **1–5** for decision quality, question focus, adaptive pushback and UX; include brief evidence for each score. Expect the standalone skill to compete well on question quality. Bro's claim is the *modal boundary*, not a smarter base model.
+For Grill Me, also check `/help` and Esc return, slash completion, rejected old commands, both confirmation outcomes, retry after failure, and cancellation/reopening with an unsent answer. Confirm that `/new <topic>` resets full access. Check effective access and workspace state before and after calls; do not treat a no-edits prompt as a sandbox.
 
-## Acceptance criteria before merge
+Record questions that changed your mind, unsupported claims, repeated questions, the usefulness of the brief, calls/turns, rough token cost when available, and whether returning to Pi preserved the main task. Score **1–5** for decision quality, question focus, adaptive pushback and UX, with evidence for each score. Expect the standalone skill to compete well on question quality. Bro's claim is the modal boundary, not a smarter base model.
 
-- Can resume a separate Grill Me session without touching BTW or main Pi conversation.
-- The modal defaults to balanced, clearly shows depth and permissions, and allows changes mid-interview.
-- Each completed reply asks no more than one main question; the interview ends only on user request.
-- `/finish` generates a usable brief; `/insert` never silently submits or overwrites an existing draft.
-- Permission constraints and Agy/full-access risks are visible and tested.
-- At least one *manual* run of each case; capture actual outputs and record where Grill Me wins and loses.
-- All CI checks pass.
+## Acceptance criteria before production merge
 
-## Live continuation probe
+- Resume a separate Grill Me session without touching BTW or main Pi messages.
+- Balanced is the default; depth, model and effective access are visible; depth changes preserve discussion.
+- Each completed interview reply asks one focused question with lettered choices, an open-ended alternative and one provisional recommended option. Check actual output, not just prompt text.
+- `/consolidate` generates a faithful brief, distinguishes recommendations from endorsed decisions, and does not end the interview.
+- `/insert-last-message` exports only on request, never submits and never overwrites a draft.
+- Access warnings match effective backend permissions; there is no silent escalation.
+- Complete manual runs of all three cases and matched comparisons; record specific benefits and failures.
+- All CI checks pass. Before shipping, remove `release:none`, bump the package version and add the matching CHANGELOG entry under the repository's release policy.
 
-A direct production-backend probe used Claude Sonnet, medium effort, restricted inspection, balanced depth, no main-session context or preferences. Each case had an opening, one scripted counterargument, and `/finish`: **nine successful real model calls**, roughly 7–19 seconds each. These were not interactive terminal sessions or user-authored evolving interviews. Raw replies and timings are recorded in `grill-me-live-results.json`.
+## Fresh current-prompt probe
 
-- **Child messaging:** explicitly dropped the runaway-loop objection after caps/opt-in, then identified per-recipient overload and blocking-vs-FYI semantics. The brief overstated provisional agreement and added an irrelevant `src/grill.ts` implementation target.
-- **Role sourcing:** identified independence from pi-consultants and snapshot-vs-live drift. Prematurely preferred profiles; three users do not establish that migration is cheap. No Pi-room source was supplied.
-- **Plugins/adapters:** inspected backend code and revised its adapter-refactor preference after the one-week constraint. It assumed plugin loading *inside* Bro rather than clarifying portability intent, and ended with multiple substantive questions.
+Source: `f96c6e9f84d0dbe883011531813e6ff02ac686c3`. The probe called the production backend and current `buildGrillPrompt` directly, using Claude `sonnet` (the CLI alias), medium effort, restricted file-only inspection and balanced depth. No main-session context or preferences were supplied. Raw inputs, outputs and elapsed times are in [grill-me-current-live-results.json](grill-me-current-live-results.json).
 
-These findings motivated small prompt clarifications: clarify materially ambiguous topics, ask one decision rather than compound questions, and separate recommendations from user decisions without invented file targets. **Those changes have not yet been live re-evaluated.** No workspace changes were observed in `git status` during the restricted calls; this is not a general sandbox proof.
+Each case had an opening, a scripted counterargument/clarification, `/consolidate`, and a further question that explicitly withheld agreement. **All 12 calls succeeded**, taking about 5–16 seconds each. All nine interview replies displayed a divider, Question heading, bold question, lettered choices, an Other alternative and one recommended option. All three briefs avoided another interview question, identified unresolved decisions and separated the model's recommendation from user endorsement. Discussion resumed after each brief.
 
-Controller regressions now cover cancellation draft recovery, preserving completed turns during retry/reopen, depth changes, non-overwriting explicit insertion, and permission reset. Streaming is modal-local until successful completion, preventing late cancelled attempts from deleting newer thread content. Automated checks are not human terminal UX verification.
+Qualitative observations, not comparative scores:
 
-Still required before release: longer adaptive interviews, light/exhaustive trials, matched Elevate and standalone-skill comparisons, real terminal cancellation/reopening and clipboard checks, and live backend coverage beyond Claude. No comparative quality scores are assigned from this short probe.
+- **Child messaging:** distinguished delivery from authority, explained why caps do not prevent injection, and proposed checking real demand after the user clarified that messages were mostly FYIs. It did not treat the brief as permission to implement messaging.
+- **Role sourcing:** identified standalone runtime requirements and the snapshot/live trade-off, then focused on where users would edit roles. **A known weakness persists:** it inferred cheap migration from a population of three users without evidence about role complexity. The current prompt does not eliminate premature design recommendations.
+- **Claude plugins:** asked about the purpose of porting rather than assuming plugins would load inside Bro. It accepted the clarification and later proposed a smaller evidence-gathering experiment. However, it first recommended shared-core extraction without inspecting feasibility, and still preferred a coding spike over asking the two users what they need. These are provisional judgments, not established project facts.
 
-## Known prototype gaps
+The tracked workspace diff was identical before and after the calls, and `git status` showed no new workspace files before the results were copied in. This is a bounded observation, not proof against all possible writes. Tool activity, token usage and the physical model behind the `sonnet` alias were not recorded. No terminal interaction, editor insertion, matched comparison or cross-backend claim follows from this probe.
 
-Every backend call replays the full transcript (no native continuation), so long interviews may be expensive. The only access escalation is explicit `/access full`. Some backends can still write despite a prompt asking them not to. We should not add further modes or config switches until the first real usage feedback.
+## Historical probe (superseded interface)
+
+The original [grill-me-live-results.json](grill-me-live-results.json) remains unchanged as historical evidence. It used Claude Sonnet, medium effort, restricted inspection, balanced depth, no main-session context or preferences, and the old `/finish` interface: nine successful calls, roughly 7–19 seconds each.
+
+That probe exposed overstated agreement, an irrelevant implementation target in a brief, premature recommendations, compound questions and an incorrect interpretation of Claude plugins. It motivated prompt changes. It must not be used to validate the current commands or presentation.
+
+## Remaining release gates and known limits
+
+Still required: longer adaptive interviews, live light/exhaustive trials, matched Elevate and standalone-skill comparisons, and live coverage beyond Claude. Independent terminal cancellation/reopening and editor-insertion checks remain outside the probes here; the user's reported local UX acceptance is recorded separately above. No comparative quality scores are assigned.
+
+Every backend call replays the full transcript, so long interviews may be expensive or exceed context limits. Full access is explicit; it is not enforced read-only. Agy inspection can also write inside the project. Do not add modes or configuration switches merely to compensate for unmeasured interview-quality problems.

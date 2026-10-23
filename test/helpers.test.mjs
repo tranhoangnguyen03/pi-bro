@@ -693,7 +693,75 @@ await t.test("Grill cancellation preserves completed turns and submitted input a
 	assert.deepEqual(thread.turns, [original], "late cancellation cannot change reopened history");
 });
 
-await t.test("Grill depth, finish exports, and reset remain private and explicit", async () => {
+await t.test("Grill completes an interview, consolidates, continues, and inserts only the latest reply", { timeout: 15_000 }, async () => {
+	await withFakeAgy(`#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const file = path.join(process.env.BIN_DIR, "prompts.json");
+const prompts = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : [];
+prompts.push(process.argv[process.argv.indexOf("--print") + 1]);
+fs.writeFileSync(file, JSON.stringify(prompts));
+console.log(JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "Completed reply " + prompts.length } }));
+`, async binDir => {
+		const thread = { topic: "Should we use a shared queue?", depth: "balanced", fullAccess: false, turns: [] };
+		const mainBranch = [{ type: "message", message: { role: "user", content: "Keep working on the main task." } }];
+		const originalBranch = structuredClone(mainBranch);
+		let editor = "existing draft";
+		let modal;
+		let expectedTurns = 1;
+		let completed = deferred();
+		const opened = bro.openGrillModal({ cwd: process.cwd(), mode: "tui",
+			sessionManager: { getBranch: () => mainBranch },
+			ui: {
+				getEditorText: () => editor,
+				setEditorText: text => { editor = text; },
+				custom: factory => new Promise(resolve => {
+					modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {
+						if (thread.turns.length === expectedTurns && !thread.retry) completed.resolve();
+					} }, fakeTheme, {}, resolve);
+				}),
+			},
+		}, thread, { start: true });
+		const submit = text => { modal.setComposerText(text); modal.handleInput("\r"); };
+		const reply = async text => {
+			expectedTurns++;
+			completed = deferred();
+			submit(text);
+			await completed.promise;
+		};
+		try {
+			await completed.promise;
+			assert.deepEqual(thread.turns, [{ question: thread.topic, answer: "Completed reply 1" }]);
+			await reply("A");
+			await reply("/consolidate");
+			assert.deepEqual(thread.turns.at(-1), { question: "/consolidate", answer: "Completed reply 3" });
+			submit("/insert-last-message");
+			assert.equal(editor, "existing draft", "export must not overwrite the main draft");
+			editor = "";
+			submit("/insert-last-message");
+			assert.equal(editor, "Completed reply 3");
+			await reply("What if the queue is unavailable?");
+			assert.equal(editor, "Completed reply 3", "continuing must not export automatically");
+			editor = "";
+			submit("/insert-last-message");
+			assert.equal(editor, "Completed reply 4", "export the latest answer, not the older brief");
+			assert.deepEqual(mainBranch, originalBranch, "private turns must not enter the main session");
+			const prompts = JSON.parse(await readFile(join(binDir, "prompts.json"), "utf8"));
+			assert.equal(prompts.length, 4, "insertion must not make a model call");
+			assert.ok(prompts[1].includes(JSON.stringify(thread.turns[0])), "answers replay completed history");
+			assert.match(prompts[2], /User instruction: consolidate the discussion so far/);
+			assert.ok(prompts[3].includes(JSON.stringify(thread.turns[2])), "continuation includes the brief");
+			assert.match(prompts[3], /End your reply with exactly one substantive question/);
+			assert.equal(thread.retry, undefined);
+		} finally {
+			modal?.handleInput("\x1b");
+			await opened;
+		}
+		assert.equal(thread.turns.length, 4, "closing preserves the completed interview");
+	});
+});
+
+await t.test("Grill depth, consolidation exports, and reset remain private and explicit", async () => {
 	let editor = "existing draft";
 	const thread = { topic: "Topic", depth: "balanced", fullAccess: true,
 		turns: [{ question: "Topic", answer: "Decision brief" }] };
