@@ -10,6 +10,8 @@ import {
 import { doctorReport, showBroConfigModal } from "./doctor.ts";
 import { setPiHostContext } from "./backend.ts";
 import { openElevateModal } from "./elevate.ts";
+import { openGrillModal } from "./grill.ts";
+import { parseGrillArguments, type GrillThread } from "./grill-engine.ts";
 import {
 	type BroResult,
 	type ModalResult,
@@ -57,6 +59,8 @@ export * from "./doctor.ts";
 export * from "./btw.ts";
 export * from "./elevate.ts";
 export * from "./elevate-engine.ts";
+export * from "./grill.ts";
+export * from "./grill-engine.ts";
 export * from "./explain-modal.ts";
 
 const COMMANDS = [
@@ -72,6 +76,7 @@ const COMMANDS = [
 	{ value: "guided-review", label: "guided-review", description: "Understand and assess a PR with captured code and optional private questions" },
 	{ value: "btw", label: "btw", description: "Open a side conversation (starts conversation-only; /mode toggles full permission)" },
 	{ value: "elevate", label: "elevate", description: "Discover missing expert considerations, then improve a request" },
+	{ value: "grill-me", label: "grill-me", description: "A private, one-question-at-a-time decision interview" },
 	{ value: "config", label: "config", description: "Configure shared defaults and per-capability model/effort overrides" },
 	{ value: "advisor", label: "advisor", description: "Check whether the executor's advisor tool is available right now" },
 	{ value: "advisor-steer", label: "advisor-steer", description: "View, edit, save, or clear the advisor's persistent steering brief" },
@@ -83,6 +88,7 @@ export default async function bro(pi: ExtensionAPI) {
 	let lastResult: ModalResult | undefined;
 	let lastShowSteering: string | undefined;
 	let btwThread: BtwThread | undefined;
+	let grillThread: GrillThread | undefined;
 	const remember = (result: ModalResult, showSteering?: string) => {
 		if (result.source) {
 			lastResult = result;
@@ -95,6 +101,7 @@ export default async function bro(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, _ctx) => {
 		lastResult = undefined;
 		btwThread = undefined;
+		grillThread = undefined;
 	});
 
 	registerAdvisorTool(pi);
@@ -285,6 +292,18 @@ export default async function bro(pi: ExtensionAPI) {
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");
 				}
+				return;
+			}
+
+			if (action === "grill-me") {
+				if (!hasBroCustomUi(ctx)) { ctx.ui.notify("Use /bro grill-me in Pi's interactive UI.", "warning"); return; }
+				const parsed = parseGrillArguments(value);
+				if (parsed.invalid) { ctx.ui.notify(parsed.invalid, "warning"); return; }
+				const start = Boolean(parsed.topic);
+				if (start) grillThread = { topic: parsed.topic, depth: parsed.depth, turns: [], fullAccess: false };
+				else grillThread ??= { topic: "", depth: parsed.depth, turns: [], fullAccess: false };
+				try { await openGrillModal(ctx, grillThread, { start }); }
+				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
 				return;
 			}
 
