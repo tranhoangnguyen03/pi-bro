@@ -36,7 +36,7 @@ export async function openGrillModal(
         return [conversation, ending].filter(Boolean).join("\n\n---\n\n")
           || "Tell Bro what you want to be grilled on. It can be a proposal or an open question.";
       };
-      const refreshHeader = () => modal.setCustomMode(`${thread.depth} · ${thread.fullAccess ? "FULL (prompt-only no-edits)" : "inspection"}`);
+      const refreshHeader = () => modal.setCustomMode(`${thread.depth} · ${thread.fullAccess ? "FULL (prompt-only no-edits)" : openingBackend === "agy" ? "Agy (writes possible)" : "inspection"}`);
       const saveDraft = () => {
         const draft = modal.getComposerText();
         if (draft.trim()) thread.draft = draft;
