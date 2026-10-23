@@ -407,7 +407,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 ## Grill Me (experimental)
 
-- \`/bro grill-me [--light|--balanced|--exhaustive] [topic]\` — private interview: one question at a time, with depth balanced by default. Type /finish for a brief, /copy or /insert to return it; /access full is prompt-only no-edits and can write files. See docs/grill-me.md.
+- \`/bro grill-me [topic]\` — private decision interview. Use /depth, /finish, /copy or /insert. Full-access risk: docs/grill-me.md.
 
 ## Side conversation
 
