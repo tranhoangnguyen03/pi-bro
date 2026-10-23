@@ -48,6 +48,8 @@
     "src/btw.ts",
     "src/elevate.ts",
     "src/elevate-engine.ts",
+    "src/grill.ts",
+    "src/grill-engine.ts",
     "src/explain-modal.ts",
     "src/review.ts",
     "src/review-source.ts",
@@ -72,6 +74,7 @@
     "docs/pig-compatibility.md",
     "docs/guided-review.md",
     "docs/elevate.md",
+    "docs/grill-me.md",
     "docs/examples.md",
     "docs/features",
     "docs/reference"
@@ -85,7 +88,7 @@
   "scripts": {
     "docs:check": "node scripts/check-docs.mjs && node --test test/docs-quality.test.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run docs:check && node .github/scripts/release-utils.mjs selftest && node --test test/elevate-docs.test.mjs test/elevate.test.ts test/review-ux.test.mjs test/review-doctor.test.mjs test/review-versions.test.mjs test/review-regeneration.test.mjs test/review-modal.test.mjs test/review.test.ts test/review-ui.test.mjs test/review-session.test.mjs test/helpers.test.mjs test/prompt.test.ts test/backend.test.ts test/claude.test.ts test/grok.test.ts test/codex.test.ts test/muse.test.ts test/settings.test.ts test/sources.test.ts test/release.test.ts test/show-html.test.ts test/smoke-rpc.test.ts test/ui-capabilities.test.ts test/modal-contract.test.mjs benchmark/*.test.ts && sh ./test/smoke-test.sh",
+    "test": "npm run typecheck && npm run docs:check && node .github/scripts/release-utils.mjs selftest && node --test test/elevate-docs.test.mjs test/elevate.test.ts test/grill.test.ts test/review-ux.test.mjs test/review-doctor.test.mjs test/review-versions.test.mjs test/review-regeneration.test.mjs test/review-modal.test.mjs test/review.test.ts test/review-ui.test.mjs test/review-session.test.mjs test/helpers.test.mjs test/prompt.test.ts test/backend.test.ts test/claude.test.ts test/grok.test.ts test/codex.test.ts test/muse.test.ts test/settings.test.ts test/sources.test.ts test/release.test.ts test/show-html.test.ts test/smoke-rpc.test.ts test/ui-capabilities.test.ts test/modal-contract.test.mjs benchmark/*.test.ts && sh ./test/smoke-test.sh",
     "benchmark:dry-run": "node benchmark/run.ts dry-run",
     "benchmark:run": "node benchmark/run.ts run",
     "benchmark:report": "node benchmark/run.ts report",
