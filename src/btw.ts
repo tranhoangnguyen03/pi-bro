@@ -320,9 +320,12 @@ export class BtwModal implements Focusable {
 				const scroll = this.scroller.indicator();
 				const model = this.model ? this.theme.fg("dim", ` · ${this.model}`) : "";
 				const mode = this.customMode
-					? this.theme.fg("dim", ` · ${this.customMode}`)
+					? this.theme.fg("dim", this.customMode)
 					: this.theme.fg("dim", " · ") + (this.full ? this.theme.fg("accent", this.theme.bold(btwModeLabel(true))) : this.theme.fg("dim", btwModeLabel(false)));
-				return this.theme.fg("accent", this.theme.bold(this.appearance.title ?? "Bro · btw")) + model + mode + this.theme.fg("dim", scroll ? ` · ${scroll}` : "");
+				const title = this.theme.fg("accent", this.theme.bold(this.appearance.title ?? "Bro · btw"));
+				// Keep Grill's access warning ahead of text the frame may truncate.
+				const header = this.customMode ? `${mode} · ${title}${model}` : title + model + mode;
+				return header + this.theme.fg("dim", scroll ? ` · ${scroll}` : "");
 			},
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
 			// The frame drops lines from the top when space runs out, so the composer goes last.

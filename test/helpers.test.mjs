@@ -616,6 +616,55 @@ await t.test("btw retains unsubmitted composer draft across modal reopen", async
 	await btw.openBtwModal(ctxSpaces, { thread: threadSpaces });
 });
 
+await t.test("Grill access warnings survive narrow headers and unrelated notices", async () => {
+	for (const fullAccess of [false, true]) {
+		const thread = { topic: "Topic", depth: "exhaustive", fullAccess,
+			model: "claude-sonnet-4-6-with-a-long-model-name · medium", preferences: true, turns: [] };
+		await bro.openGrillModal({ cwd: process.cwd(), ui: {
+			custom: factory => new Promise(resolve => {
+				const modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {} }, fakeTheme, {}, resolve);
+				modal.setNotice("Brief ready.", "success");
+				for (const width of [48, 62, 78]) {
+					const header = stripVTControlCharacters(modal.render(width)[1]);
+					assert.match(header, /exhaustive/);
+					assert.ok(header.includes(fullAccess ? "FULL (prompt-only no-edits)" : "Agy (writes possible)"), header);
+				}
+				modal.handleInput("\x1b");
+			}),
+		} }, thread);
+	}
+});
+
+await t.test("Grill backend failures restore submitted input without overwriting a newer draft", async () => {
+	await withFakeAgy('#!/usr/bin/env node\nconsole.error("simulated backend failure"); process.exit(1);\n', async () => {
+		for (const draft of ["", "newer unsent draft"]) {
+			const original = { question: "Topic", answer: "Why?" };
+			const thread = { topic: "Topic", depth: "balanced", fullAccess: false, turns: [original] };
+			const failed = deferred();
+			let modal;
+			const opened = bro.openGrillModal({ cwd: process.cwd(), ui: {
+				custom: factory => new Promise(resolve => {
+					modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {
+						if (modal?.notice.includes("simulated backend failure")) failed.resolve();
+					} }, fakeTheme, {}, resolve);
+					modal.setComposerText("submitted answer");
+					modal.handleInput("\r");
+					if (draft) modal.handleInput(draft);
+				}),
+			} }, thread);
+			try {
+				await failed.promise;
+				assert.equal(modal.getComposerText(), draft || "submitted answer");
+				assert.deepEqual(thread.turns, [original]);
+			} finally {
+				modal.handleInput("\x1b");
+				await opened;
+			}
+			assert.equal(thread.draft, draft || "submitted answer");
+		}
+	});
+});
+
 await t.test("Grill cancellation preserves completed turns and submitted input across reopen", async () => {
 	const original = { question: "Topic", answer: "Why?" };
 	const thread = { topic: "Topic", depth: "balanced", fullAccess: false, turns: [original] };

@@ -147,7 +147,7 @@ export async function openGrillModal(
         } catch (error) {
           if (!closed && !attempt.signal.aborted) {
             modal.setNotice(errorMessage(error), "error");
-            modal.setComposerText(reply);
+            if (!modal.getComposerText().trim()) modal.setComposerText(reply);
           }
         } finally {
           pendingTurn = undefined;
