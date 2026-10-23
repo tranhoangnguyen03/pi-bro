@@ -186,6 +186,8 @@ export async function openGrillModal(
       const clear = () => {
         thread.topic = "";
         thread.turns = [];
+        thread.fullAccess = false; // A new interview must never inherit elevated permissions.
+        refreshHeader();
         delete thread.summary;
         delete thread.context;
         delete thread.draft;
