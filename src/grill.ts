@@ -22,6 +22,7 @@ export async function openGrillModal(
   thread: GrillThread,
   options: { start?: boolean } = {},
 ): Promise<void> {
+  const openingBackend = capabilityBackend(await readSettings(), "btw");
   await openBroOverlay<void>(
     ctx,
     (tui, theme, _keys, done) => {
@@ -104,7 +105,7 @@ export async function openGrillModal(
           if (closed || attempt.signal.aborted) return;
           if (outcome.status !== "success") throw new Error(outcome.message);
           thread.turns[thread.turns.length - 1]!.answer = outcome.text;
-          modal.setNotice(permissionNotice(backend), "info");
+          modal.setNotice(permissionNotice(backend), thread.fullAccess || backend === "agy" ? "warning" : "info");
           delete thread.draft;
         } catch (error) {
           if (!closed && !attempt.signal.aborted) {
@@ -241,6 +242,7 @@ export async function openGrillModal(
       modal.setModel(thread.model ? `${thread.model}${thread.preferences ? " · prefs" : ""}` : "");
       modal.setText(transcript());
       modal.scrollToEnd();
+      modal.setNotice(permissionNotice(openingBackend), thread.fullAccess || openingBackend === "agy" ? "warning" : "info");
       if (options.start && thread.topic && !thread.turns.length) void runTurn(thread.topic);
       return modal;
     },
