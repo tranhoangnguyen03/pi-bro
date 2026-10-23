@@ -407,7 +407,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 ## Grill Me (experimental)
 
-- \`/bro grill-me [topic]\` — private decision interview. Use /depth, /finish, /copy or /insert. Full-access risk: docs/grill-me.md.
+- \`/bro grill-me [topic]\` — private decision interview. Use /consolidate, /insert-last-message or /help. Full-access risk: docs/grill-me.md.
 
 ## Side conversation
 

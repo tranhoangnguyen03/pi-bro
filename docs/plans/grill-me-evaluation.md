@@ -1,5 +1,11 @@
 # Grill Me v0.1 — comparison spike
 
+## Command redesign follow-up
+
+User-approved redesign replaces `/finish` with `/consolidate` (no locked end state), removes copy/all-export commands and entry depth flags, and makes `/insert-last-message` the only explicit editor export. `/new <topic>` and `/access full` require confirmation; `/access inspect`, `/help`, `/retry` and `/depth` round out the controls. Questions now request lettered multiple choices with an open-ended alternative. The shorter footer hides the command catalogue; write risks remain in the header. BTW is unchanged.
+
+The historical procedure and live evidence below predate this redesign. For new runs use `/consolidate`, then `/insert-last-message`, and confirm that another answer continues the interview. Check letter-only and free-text answers, rejected old commands, both confirmation outcomes, retry after failure, and the latest-message export after a brief followed by another exchange. Full offline suite: 482 passing plus RPC smoke. Revised live interview/terminal behavior remains to be verified.
+
 This is a **manual model-evaluation plan**, not a claim that model behavior has been validated. Offline tests in `test/grill.test.ts` exercise prompt construction, three example topics and control routing. They cannot establish interview quality. Run all cases in Pi with the same model and similar context before treating this prototype as ready.
 
 ## Decision cases

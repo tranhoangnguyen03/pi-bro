@@ -1,5 +1,4 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { copyToClipboard } from "@earendil-works/pi-coding-agent";
 import { execute as executeBackend } from "./backend.ts";
 import { BtwModal, BTW_CONTEXT_MAX, BTW_CONTEXT_TURNS, formatBtwTranscript } from "./btw.ts";
 import {
@@ -33,15 +32,17 @@ export async function openGrillModal(
       let pendingSummary: string | undefined;
       let pendingReply: string | undefined;
       let activeBackend = openingBackend;
+      let confirmation: "full" | string | undefined;
+      const help = "## Commands\n\n- /consolidate — draft a decision brief; keep talking afterward\n- /insert-last-message — insert the latest Bro reply into an empty Pi editor, without sending\n- /depth light|balanced|exhaustive — change depth\n- /retry — retry a failed operation or regenerate the latest reply\n- /new <topic> — start over (confirmation required)\n- /access inspect|full — choose access (full requires confirmation)\n- /help — show this list\n\nAnswer with a letter or your own words. Esc closes without discarding completed discussion.";
 
       const transcript = () => {
         const conversation = formatBtwTranscript(pendingTurn ? [...thread.turns, pendingTurn] : thread.turns);
-        const summary = pendingSummary ?? thread.summary;
+        const summary = pendingSummary;
         const ending = summary ? `## Decision brief\n\n${summary}` : "";
         return [conversation, ending].filter(Boolean).join("\n\n---\n\n")
           || "Tell Bro what you want to be grilled on. It can be a proposal or an open question.";
       };
-      const refreshHeader = () => modal.setCustomMode(`${thread.depth} · ${thread.fullAccess ? "FULL (prompt-only no-edits)" : activeBackend === "agy" ? "Agy (writes possible)" : "inspection"}`);
+      const refreshHeader = () => modal.setCustomMode(`${thread.depth} · ${thread.fullAccess ? "FULL (prompt-only no-edits)" : activeBackend === "agy" ? "Agy (writes possible)" : ["claude", "muse", "pi"].includes(activeBackend) ? "File-only tools" : "Read-only sandbox"}`);
       const saveDraft = () => {
         const draft = modal.getComposerText();
         if (draft.trim()) thread.draft = draft;
@@ -61,8 +62,9 @@ export async function openGrillModal(
         controller?.abort();
       }, {
         title: "Bro · grill-me",
-        commands: "Commands: /depth light|balanced|exhaustive · /finish · /access full|read-only · /copy · /insert · /clear",
-        inputLabel: "Your answer / new topic",
+        commands: "",
+        inputLabel: "Your answer (letter or your own words)",
+        idleHint: "Enter answer · Esc close · /help commands",
       });
       modal.onInput = () => { composerTouched = true; };
       if (thread.draft && !options.start) modal.setComposerText(thread.draft);
@@ -72,10 +74,11 @@ export async function openGrillModal(
           ? "FULL PERMISSION: the model can modify your workspace. Bro only instructs it not to."
           : backend === "agy"
             ? "Agy inspection sandbox can still write project files. No-edits is prompt-only on Agy."
-            : "Inspection mode: file reads are allowed where supported; see backend limits in the docs.";
+            : "";
 
       const runTurn = async (reply: string, replaced?: GrillTurn) => {
-        if (controller || closed || thread.summary) return;
+        if (controller || closed) return;
+        thread.retry = { reply, replace: Boolean(replaced) };
         const attempt = new AbortController();
         controller = attempt;
         modal.setRunning(true);
@@ -116,6 +119,7 @@ export async function openGrillModal(
           thread.turns.push({ question: reply, answer: outcome.text });
           modal.setNotice(permissionNotice(backend), thread.fullAccess || backend === "agy" ? "warning" : "info");
           delete thread.draft;
+          delete thread.retry;
         } catch (error) {
           if (!closed && !attempt.signal.aborted) {
             modal.setNotice(errorMessage(error), "error");
@@ -129,10 +133,10 @@ export async function openGrillModal(
         }
       };
 
-      const finish = async () => {
+      const consolidate = async (replace = false) => {
         if (controller || closed) return;
-        if (!thread.turns.length) { modal.setNotice("Answer at least one question before finishing.", "warning"); return; }
-        if (thread.summary) { modal.setNotice("Already finished. /copy or /insert the decision brief.", "info"); return; }
+        if (!thread.turns.length) { modal.setNotice("Start the interview before consolidating.", "warning"); return; }
+        thread.retry = { consolidate: true, replace };
         const attempt = new AbortController();
         controller = attempt;
         modal.setRunning(true);
@@ -148,7 +152,7 @@ export async function openGrillModal(
           modal.setModel(`${thread.model}${thread.preferences ? " · prefs" : ""}`);
           const prompt = buildGrillPrompt({
             topic: thread.topic, depth: thread.depth, context: thread.context,
-            history: thread.turns, preferences, finish: true, fullAccess: thread.fullAccess,
+            history: replace ? thread.turns.slice(0, -1) : thread.turns, preferences, consolidate: true, fullAccess: thread.fullAccess,
           });
           const outcome = await executeBackend({ ...grillExecution(thread.fullAccess), cwd: ctx.cwd, prompt },
             selection, attempt.signal, (event) => {
@@ -160,8 +164,10 @@ export async function openGrillModal(
             });
           if (closed || attempt.signal.aborted) return;
           if (outcome.status !== "success") throw new Error(outcome.message);
-          thread.summary = outcome.text;
-          modal.setNotice("Interview finished. /copy or /insert puts the brief in your hands.", "success");
+          if (replace) thread.turns.pop();
+          thread.turns.push({ question: "/consolidate", answer: outcome.text });
+          delete thread.retry;
+          modal.setNotice("Brief ready. Keep talking or /insert-last-message.", "success");
         } catch (error) {
           if (!closed && !attempt.signal.aborted) modal.setNotice(errorMessage(error), "error");
         } finally {
@@ -171,15 +177,8 @@ export async function openGrillModal(
         }
       };
 
-      const exportText = (all: boolean) => all ? transcript() : (thread.summary || thread.turns.at(-1)?.answer || "");
-      const copyOut = async (all: boolean) => {
-        const text = exportText(all);
-        if (!thread.turns.length || !text.trim()) { modal.setNotice("Nothing to copy yet.", "warning"); return; }
-        try { await copyToClipboard(text); modal.setNotice(all ? "Copied full interview." : "Copied latest answer or decision brief.", "success"); }
-        catch (error) { modal.setNotice(`Copy failed: ${errorMessage(error)}`, "error"); }
-      };
-      const insert = async (all: boolean) => {
-        const text = exportText(all);
+      const insert = async () => {
+        const text = thread.turns.at(-1)?.answer || "";
         if (!thread.turns.length || !text.trim()) { modal.setNotice("Nothing to insert yet.", "warning"); return; }
         if (!canBroInsertIntoEditor(ctx)) {
           const result = await insertBroDesktopText(ctx, text);
@@ -191,21 +190,34 @@ export async function openGrillModal(
         ctx.ui.setEditorText(text);
         modal.setNotice("Inserted into main editor without sending.", "success");
       };
-      const clear = () => {
-        thread.topic = "";
+      const clear = (topic: string) => {
+        thread.topic = topic;
+        thread.depth = "balanced";
         thread.turns = [];
         thread.fullAccess = false; // A new interview must never inherit elevated permissions.
         refreshHeader();
-        delete thread.summary;
+        delete thread.retry;
         delete thread.context;
         delete thread.draft;
         modal.clearComposer();
         modal.setText(transcript());
-        modal.setNotice("Cleared. Enter a new topic to begin.", "info");
+        void runTurn(topic);
       };
 
       function submit(value: string): void {
         if (controller || closed) return;
+        if (confirmation) {
+          const pending = confirmation;
+          confirmation = undefined;
+          modal.clearComposer();
+          if (value.trim().toLowerCase() !== "yes") { modal.setNotice("Cancelled."); return; }
+          if (pending === "full") {
+            thread.fullAccess = true;
+            refreshHeader();
+            modal.setNotice(permissionNotice(activeBackend), "warning");
+          } else clear(pending.slice(4));
+          return;
+        }
         const action = parseGrillCommand(value);
         if (action.kind === "empty") return;
         if (action.kind === "invalid") { modal.setNotice(action.message, "warning"); return; }
@@ -217,28 +229,43 @@ export async function openGrillModal(
           return;
         }
         if (action.kind === "access") {
-          thread.fullAccess = action.value === "full";
-          refreshHeader();
           modal.clearComposer();
-          modal.setNotice(thread.fullAccess
-            ? "FULL permission enabled. The no-edits rule is only a prompt; the backend can write!"
-            : "Read-only inspection requested; enforcement depends on backend.", thread.fullAccess ? "warning" : "info");
+          if (action.value === "full" && !thread.fullAccess) {
+            confirmation = "full";
+            modal.setNotice("Backend can write and execute commands; no-edits is prompt-only. Type yes to allow, anything else to cancel.", "warning");
+          } else {
+            thread.fullAccess = action.value === "full";
+            refreshHeader();
+            modal.setNotice(permissionNotice(activeBackend));
+          }
           return;
         }
-        if (action.kind === "clear") { clear(); return; }
-        if (action.kind === "copy") { modal.clearComposer(); void copyOut(action.all); return; }
-        if (action.kind === "insert") { modal.clearComposer(); void insert(action.all); return; }
-        if (action.kind === "finish") { modal.clearComposer(); void finish(); return; }
+        if (action.kind === "help") { modal.clearComposer(); modal.setText(help); modal.scrollToEnd(); return; }
+        if (action.kind === "new") {
+          modal.clearComposer();
+          if (thread.topic || thread.turns.length) {
+            confirmation = `new:${action.topic}`;
+            modal.setNotice("Discard this interview? Type yes to start over, anything else to cancel.", "warning");
+          } else clear(action.topic);
+          return;
+        }
+        if (action.kind === "insert") { modal.clearComposer(); void insert(); return; }
+        if (action.kind === "consolidate") { modal.clearComposer(); void consolidate(); return; }
         if (action.kind === "retry") {
           modal.clearComposer();
-          if (thread.summary) { modal.setNotice("Already finished. /clear to start over.", "warning"); return; }
+          const retry = thread.retry;
+          if (retry) {
+            if ("consolidate" in retry) void consolidate(retry.replace);
+            else void runTurn(retry.reply, retry.replace ? thread.turns.at(-1) : undefined);
+            return;
+          }
           const last = thread.turns.at(-1);
           if (!last) { modal.setNotice("Nothing to retry yet.", "warning"); return; }
-          void runTurn(last.question, last);
+          if (last.question === "/consolidate") void consolidate(true);
+          else void runTurn(last.question, last);
           return;
         }
         if (action.kind !== "message") return;
-        if (thread.summary) { modal.setNotice("This interview has ended. /clear to start another.", "warning"); return; }
         composerTouched = true;
         delete thread.draft;
         modal.clearComposer();

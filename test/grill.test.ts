@@ -10,10 +10,7 @@ test("depth modes and topic routing are explicit, default balanced", () => {
   assert.equal(DEFAULT_GRILL_DEPTH, "balanced");
   assert.deepEqual(parseGrillArguments("  Should we use a shared queue? "),
     { topic: "Should we use a shared queue?", depth: "balanced" });
-  assert.deepEqual(parseGrillArguments("--light   Critique this plan."),
-    { topic: "Critique this plan.", depth: "light" });
-  assert.deepEqual(parseGrillArguments("--exhaustive What have we missed?"),
-    { topic: "What have we missed?", depth: "exhaustive" });
+  assert.ok(parseGrillArguments("--light Critique this plan.").invalid);
   assert.ok(parseGrillArguments("--unsafe testing").invalid);
 });
 
@@ -22,12 +19,14 @@ test("modal commands are exact and never mistaken for depth changes", () => {
   assert.deepEqual(parseGrillCommand("/depth balanced"), { kind: "depth", value: "balanced" });
   assert.deepEqual(parseGrillCommand("/depth exhaustive"), { kind: "depth", value: "exhaustive" });
   assert.equal(parseGrillCommand("/depth wild").kind, "invalid");
-  assert.deepEqual(parseGrillCommand("/finish"), { kind: "finish" });
+  assert.deepEqual(parseGrillCommand("/consolidate"), { kind: "consolidate" });
+  assert.deepEqual(parseGrillCommand("/help"), { kind: "help" });
+  assert.deepEqual(parseGrillCommand("/new Another topic"), { kind: "new", topic: "Another topic" });
+  for (const removed of ["/finish", "/copy", "/copy-all", "/insert", "/insert-all", "/clear", "/summary", "/consolidate-n-insert"]) assert.equal(parseGrillCommand(removed).kind, "invalid");
   assert.deepEqual(parseGrillCommand("/access full"), { kind: "access", value: "full" });
-  assert.deepEqual(parseGrillCommand("/access read-only"), { kind: "access", value: "read-only" });
+  assert.deepEqual(parseGrillCommand("/access inspect"), { kind: "access", value: "inspect" });
   assert.equal(parseGrillCommand("/access read-write").kind, "invalid");
-  assert.deepEqual(parseGrillCommand("/copy-all"), { kind: "copy", all: true });
-  assert.deepEqual(parseGrillCommand("/insert"), { kind: "insert", all: false });
+  assert.deepEqual(parseGrillCommand("/insert-last-message"), { kind: "insert" });
   assert.deepEqual(parseGrillCommand(""), { kind: "empty" });
   assert.deepEqual(parseGrillCommand("I think /finish is premature."), { kind: "message", text: "I think /finish is premature." });
 });
@@ -73,6 +72,8 @@ for (const scenario of cases) {
     const first = buildGrillPrompt({ topic: scenario.topic, reply: scenario.topic, depth: scenario.depth, history: [] });
     assert.ok(first.includes(JSON.stringify(scenario.topic)));
     assert.match(first, /End your reply with exactly one substantive question/);
+    assert.match(first, /multiple choices labelled A, B, C/);
+    assert.match(first, /Other — explain in your own words/);
     const second = buildGrillPrompt({
       topic: scenario.topic, reply: scenario.reply, depth: scenario.depth,
       history: [{ question: scenario.topic, answer: "What downside could change your mind?" }],
@@ -85,7 +86,7 @@ for (const scenario of cases) {
     assert.match(second, /one substantive question/);
     const last = buildGrillPrompt({
       topic: scenario.topic, depth: scenario.depth,
-      history: [{ question: scenario.reply, answer: "A contested decision" }], finish: true,
+      history: [{ question: scenario.reply, answer: "A contested decision" }], consolidate: true,
     });
     assert.match(last, /Do NOT ask another question/);
     assert.match(last, /Strongest objections and trade-offs/);

@@ -647,24 +647,39 @@ await t.test("Grill cancellation preserves completed turns and submitted input a
 await t.test("Grill depth, finish exports, and reset remain private and explicit", async () => {
 	let editor = "existing draft";
 	const thread = { topic: "Topic", depth: "balanced", fullAccess: true,
-		turns: [{ question: "Topic", answer: "Why?" }], summary: "Decision brief" };
+		turns: [{ question: "Topic", answer: "Decision brief" }] };
 	await bro.openGrillModal({ cwd: process.cwd(), hasUI: true, mode: "tui", ui: {
 		getEditorText: () => editor, setEditorText: text => { editor = text; },
 		custom: factory => new Promise(resolve => {
 			const modal = factory({ mode: "fullscreen", terminal: { rows: 24, columns: 100 }, requestRender() {} }, fakeTheme, {}, resolve);
 			const submit = text => { modal.setComposerText(text); modal.handleInput("\r"); };
+			const view = () => stripVTControlCharacters(modal.render(100).join("\n"));
+			assert.doesNotMatch(view(), /Commands:|Inspection mode:/);
+			assert.match(view(), /\/help commands/);
+			submit("/access inspect");
+			submit("/access full");
+			assert.equal(thread.fullAccess, false);
+			submit("no");
+			assert.equal(thread.fullAccess, false);
+			submit("/access full");
+			submit("yes");
+			assert.equal(thread.fullAccess, true);
+			submit("/help");
+			assert.match(view(), /FULL/);
 			submit("/depth exhaustive");
 			assert.equal(thread.depth, "exhaustive");
 			assert.equal(thread.turns.length, 1);
-			submit("/insert");
+			submit("/insert-last-message");
 			assert.equal(editor, "existing draft");
 			editor = "";
-			submit("/insert");
+			submit("/insert-last-message");
 			assert.equal(editor, "Decision brief");
-			submit("/clear");
+			submit("/new Another topic");
+			assert.equal(thread.topic, "Topic", "reset requires confirmation");
+			submit("yes");
 			assert.equal(thread.fullAccess, false);
-			assert.equal(thread.topic, "");
-			assert.equal(thread.summary, undefined);
+			assert.equal(thread.depth, "balanced");
+			assert.equal(thread.topic, "Another topic");
 			assert.deepEqual(thread.turns, []);
 			modal.handleInput("\x1b");
 		}) },

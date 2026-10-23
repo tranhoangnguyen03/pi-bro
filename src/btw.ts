@@ -213,7 +213,7 @@ export class BtwModal implements Focusable {
 		private readonly onClose: () => void,
 		private readonly onSubmit: (value: string) => void,
 		private readonly onDispose: () => void,
-		private readonly appearance: { title?: string; commands?: string; inputLabel?: string } = {},
+		private readonly appearance: { title?: string; commands?: string; inputLabel?: string; idleHint?: string } = {},
 	) {
 		this.input.onSubmit = (value) => {
 			if (!this.running) this.onSubmit(value);
@@ -319,12 +319,12 @@ export class BtwModal implements Focusable {
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
 			// The frame drops lines from the top when space runs out, so the composer goes last.
 			footer: [
-				...wrapTextWithAnsi(this.appearance.commands ?? "Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner),
+				...(this.appearance.commands === "" ? [] : wrapTextWithAnsi(this.appearance.commands ?? "Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner)),
 				this.theme.fg("accent", this.theme.bold(this.appearance.inputLabel ?? "Your message to Bro")),
 				this.input.render(inner)[0] ?? "",
 			],
 			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
-			hints: this.running ? "Bro is thinking… · Esc close (stops reply)" : "Enter send · Esc close",
+			hints: this.running ? "Bro is thinking… · Esc close (stops reply)" : (this.appearance.idleHint ?? "Enter send · Esc close"),
 		});
 	}
 
