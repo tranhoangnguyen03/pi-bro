@@ -11,6 +11,18 @@
 
 With a topic, start a new interview. Without one, reopen the current interview or enter a topic inside the modal. A proposal prompts scrutiny; an open question prompts discovery. Bro offers reasoned pushback, then one question with lettered choices, including an open-ended alternative. Answer with a letter or your own words. Questions request a horizontal divider, a distinct **Question** heading, and exactly one **(Recommended)** option with a short reason. Recommendations are provisional; model adherence is not guaranteed.
 
+## How Bro works with you
+
+Grill Me is a **context-rich thinking partner**, not a review pipeline. It can help you discover a position from an open question or test a proposal you already have. If you propose a solution before explaining the problem, Bro looks for the goal and constraints that matter; when those are already clear, it uses them rather than repeating an intake checklist.
+
+Bro contributes options and reasons, asks about the most consequential choice still open, and may inspect relevant workspace material when its backend permits it. It should check available facts rather than guessing, ask *you* about preferences and trade-offs, and explain meaningful uncertainty. Good arguments can persuade Bro; it should not invent objections to prolong the interview.
+
+As the discussion develops, Bro treats your **agreed choices and reasons** differently from untested assumptions and Bro's own suggestions. You can correct or change a constraint in normal conversation. Bro should carry that change forward and avoid reopening settled ground without a reason.
+
+`/consolidate` captures the current position for a handoff, at whatever level of detail the topic warrants: goals, key constraints, endorsed decisions and why, material trade-offs, unresolved questions, and a next step. It does not promote Bro's recommendations into decisions you never made. You can consolidate early, then continue and consolidate again.
+
+This takes inspiration from the context-rich **Elephant** in Google's [Elephant–Goldfish Model](https://github.com/google/elephant-goldfish-model). Grill Me does **not** dispatch Goldfish reviewers, require a design document, or impose review/approval stages. It remains one dialogue in Bro's modal.
+
 ## Controls
 
 | Command inside the modal | Effect |
