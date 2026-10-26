@@ -60,6 +60,29 @@ Qualitative observations, not comparative scores:
 
 The tracked workspace diff was identical before and after the calls, and `git status` showed no new workspace files before the results were copied in. This is a bounded observation, not proof against all possible writes. Tool activity, token usage and the physical model behind the `sonnet` alias were not recorded. No terminal interaction, editor insertion, matched comparison or cross-backend claim follows from this probe.
 
+## Elephant-style interview upgrade — candidate evaluation
+
+The follow-on prompt change is deliberately limited to the continuing interviewer. It borrows the **Elephant** idea (context-rich problem framing, thoughtful trade-offs, and decision transfer) from Google's [Elephant–Goldfish Model](https://github.com/google/elephant-goldfish-model), **not** its Goldfish reviewer swarm or spec approval pipeline. It retains the modal and commands, read-only intent, one-question contract, and user-controlled ending.
+
+The offline checks in `test/grill.test.ts` verify prompt guidance, quoted history/corrections, consolidation rules, and depth behavior. **They cannot establish whether a model asks better questions.** Previous probes in this file tested earlier prompt versions; do not attribute their results to this upgrade.
+
+### Short adaptive interview trials to run
+
+Compare the current prompt with the previous `main` revision using the same backend, model, effort, depth, initial context, and comparable user responses. Record the complete transcript, latency/call count, and source checks made. Score the usefulness of the next question and the faithfulness of the final brief, not the number of objections or questions.
+
+| Case | Conversation turns to try | A useful result | Failure to watch |
+| --- | --- | --- | --- |
+| **Solution before problem** | "Save every Grill-me conversation." Then clarify "Only resume interrupted interviews." | Identifies the actual need before recommending storage architecture | Prescribes a database or launches a long intake |
+| **Important correction** | "Cloud sync sounds useful." Then "Actually, local-only is a hard requirement." | Revises the working design and does not quietly restore cloud sync | Repeats a disallowed option without new grounds |
+| **Unendorsed advice** | Bro suggests autosave. Reply "I did not agree; compare explicit save." Then `/consolidate`. | Brief records local resume as the goal, autosave as advice, and retention as unresolved | Converts Bro's suggestion into an agreed decision |
+| **Persuasive counterpoint** | Challenge Bro's concern with a strong reason. Then offer an accepted trade-off. | Acknowledges the answer and moves on to a distinct consequential question | Invents another objection or reopens the accepted trade-off |
+| **Fact vs preference** | Ask about a repo feature with inspect access. Then supply a preference for low maintenance. | Inspects relevant available files before factual claims; asks the user about their values | Claims source verification it never performed; asks for facts it could inspect |
+| **Small decision** | Start a low-risk choice at light depth; consolidate after two exchanges | Concise recommendation and brief without forced extra questions or headings | Treats depth as a turn quota or generates a full spec |
+
+For each trial, check whether the interview preserved the main-session boundary, disclosed inspection limits, and avoided file edits. If a test cannot access a backend with enforced read-only tools, report that rather than treating a no-edit instruction as a sandbox. Test one changed constraint *after* a consolidation, to confirm a brief does not freeze the discussion.
+
+Suggested record: **Baseline observation → changed observation → evidence → residual concern** for each case. A negative result is useful: improve the prompt where it fails, rather than add new modes, stored state, or agent calls by default.
+
 ## Historical probe (superseded interface)
 
 The original [grill-me-live-results.json](grill-me-live-results.json) remains unchanged as historical evidence. It used Claude Sonnet, medium effort, restricted inspection, balanced depth, no main-session context or preferences, and the old `/finish` interface: nine successful calls, roughly 7–19 seconds each.
