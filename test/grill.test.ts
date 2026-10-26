@@ -103,7 +103,7 @@ for (const scenario of cases) {
     assert.match(last, /Do NOT ask another question/);
     assert.match(last, /Strongest objections and trade-offs/);
     assert.match(last, /recommendations separately from decisions the user actually endorsed/);
-    assert.match(last, /Do not add unverified file paths/);
+    assert.match(last, /unverified file paths or implementation targets/);
     assert.doesNotMatch(last, /End your reply with exactly one substantive question/);
   });
 }
@@ -114,4 +114,68 @@ test("light, balanced, exhaustive change the goal without a hard stop count", ()
   assert.match(prompts[1]!, /meaningful trade-offs/);
   assert.match(prompts[2]!, /failure cases/);
   for (const p of prompts) assert.match(p, /not a quota|not a hard question count|not a quota|not a quota/i.test(p) ? /not a quota|not a hard question count/ : /User alone decides/);
+});
+
+test("Elephant-style interviewing improves judgment without adding stages or reviewers", () => {
+  const prompt = buildGrillPrompt({
+    topic: "Save all Grill-me conversations",
+    depth: "balanced",
+    history: [],
+  });
+  assert.match(prompt, /underlying goal and constraints that could change the choice/);
+  assert.match(prompt, /do not conduct a generic intake questionnaire/);
+  assert.match(prompt, /unresolved choice most likely to change the direction/);
+  assert.match(prompt, /offer concrete options with real trade-offs/);
+  assert.match(prompt, /Do not oppose an idea merely to keep grilling/);
+  assert.match(prompt, /Do not reopen settled trade-offs without new information/);
+  assert.match(prompt, /permitted read-only tools, inspect the relevant source when useful/);
+  assert.match(prompt, /ask the user about preferences and acceptable trade-offs, not facts you can inspect/);
+  assert.match(prompt, /propose a bounded experiment only when the uncertainty affects the choice/);
+  assert.doesNotMatch(prompt, /spawn (?:a |any )?reviewer|Goldfish subagent|review pipeline with stages/i);
+});
+
+test("prompts replay corrections and decision reasons without treating Bro advice as approval", () => {
+  const topic = "Should Grill-me support cloud sync?";
+  const history = [
+    { question: topic, answer: "I would start with cloud storage. Does that fit?" },
+    { question: "Actually local-only is a hard constraint.", answer: "That rules out cloud sync. Which local use matters?" },
+    { question: "Resume an interrupted interview. Privacy matters more than convenience.", answer: "I'd recommend an automatic local snapshot; is that acceptable?" },
+    { question: "I haven't agreed to autosave. Compare it with manual save.", answer: "Two options remain; the choice is still open." },
+  ];
+  for (const consolidate of [false, true]) {
+    const prompt = buildGrillPrompt({
+      topic, depth: "balanced", history,
+      reply: consolidate ? undefined : "Keep the local-only constraint.",
+      consolidate,
+    });
+    for (const turn of history) {
+      assert.ok(prompt.includes(JSON.stringify(turn.question)));
+      assert.ok(prompt.includes(JSON.stringify(turn.answer)));
+    }
+    assert.match(prompt, /accepted decisions and their reasons/);
+    assert.match(prompt, /Treat your suggestions as advice until the user endorses them/);
+    assert.match(prompt, /Update this understanding when corrected/);
+    if (consolidate) {
+      assert.match(prompt, /Name only decisions the user actually endorsed/);
+      assert.match(prompt, /preserve why they were chosen/);
+      assert.match(prompt, /not an end to the interview/);
+      assert.doesNotMatch(prompt, /End your reply with exactly one substantive question/);
+    } else {
+      assert.match(prompt, /End your reply with exactly one substantive question/);
+      assert.ok(prompt.lastIndexOf("Latest user input:") > prompt.indexOf("Interview so far"));
+    }
+  }
+});
+
+test("depth changes coverage, not required turn counts or permission boundaries", () => {
+  const prompts = GRILL_DEPTHS.map(depth => buildGrillPrompt({ topic: "Choose an approach", depth, history: [] }));
+  assert.match(prompts[0]!, /decisive uncertainty/);
+  assert.match(prompts[1]!, /key alternatives and consequences/);
+  assert.match(prompts[2]!, /what would change the recommendation/);
+  for (const prompt of prompts) {
+    assert.doesNotMatch(prompt, /(?:2[–-]4|5[–-]9)\s+(?:worthwhile\s+)?exchanges/);
+    assert.match(prompt, /User alone decides when to end/);
+    assert.match(prompt, /Never create, edit, delete or overwrite files/);
+    assert.match(prompt, /one decision to answer/);
+  }
 });
