@@ -130,7 +130,7 @@ test("Elephant-style interviewing improves judgment without adding stages or rev
   assert.match(prompt, /Do not reopen settled trade-offs without new information/);
   assert.match(prompt, /permitted read-only tools, inspect the relevant source when useful/);
   assert.match(prompt, /ask the user about preferences and acceptable trade-offs, not facts you can inspect/);
-  assert.match(prompt, /propose a bounded experiment only when the uncertainty affects the choice/);
+  assert.match(prompt, /suggest a bounded experiment only when the uncertainty affects the choice/);
   assert.doesNotMatch(prompt, /spawn (?:a |any )?reviewer|Goldfish subagent|review pipeline with stages/i);
 });
 
