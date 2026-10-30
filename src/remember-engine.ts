@@ -13,6 +13,8 @@ export type RememberProposal = {
   relatedIds: string[];
   /** Store version when the proposal and its target were reviewed; never change during browsing. */
   reviewedRevision: number;
+  /** A correction or an unanswered clarification keeps the draft but blocks approval. */
+  approvalState: "ready" | "clarifying";
   reviewedTarget?: MemoryEntry;
   /** Only a visible /save conflict review can set this, and /confirm-revision consumes it. */
   staleReview?: { revision: number; previousTarget?: MemoryEntry; currentTarget?: MemoryEntry; related: MemoryEntry[] };
@@ -50,7 +52,17 @@ export function makeReviewedProposal(result: Extract<RememberResult, {kind:"prop
   if (result.action==="update" && !target)
     throw new Error("Bro proposed updating an unknown memory ID. Use /list to inspect the store, then clarify.");
   return { action:result.action, ...(target ? {targetId:target.id,reviewedTarget:target}:{}),
-    draft:result.draft, relatedIds:result.relatedIds, reviewedRevision:revision };
+    draft:result.draft, relatedIds:result.relatedIds, reviewedRevision:revision, approvalState:"ready" };
+}
+
+/** Preserve the exact draft when the user disputes wording; a model failure must not re-enable saving it. */
+export function markProposalClarifying(proposal: RememberProposal | undefined): void {
+  if (proposal) proposal.approvalState = "clarifying";
+}
+
+/** An unanswered correction must never be saved as an approved proposal. */
+export function proposalReadyToSave(proposal: RememberProposal | undefined): boolean {
+  return proposal?.approvalState === "ready";
 }
 
 export function buildRememberPrompt(input: {
