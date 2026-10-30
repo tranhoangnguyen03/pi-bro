@@ -67,7 +67,6 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
     let page = 0;
     let query = "";
     let browserText = "";
-    let notice = "";
     let selectedBackend = openingSelection.backend ?? "agy";
     let selectedModel = selectionLabel(openingSelection);
     const close = () => { if (closed) return; closed = true; controller?.abort(); done(undefined); };
@@ -110,9 +109,11 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
     };
     const show = (message = "") => {
       const conversation = transcript.length
-        ? formatBtwTranscript(transcript.map(t=>({question:t.user,answer:t.bro}))) : "";
+        ? formatBtwTranscript(transcript.map(t=>({question:t.user,
+            answer:t.bro.startsWith('{"kind":"proposal"') ? "Bro proposed memory wording; review the current draft below." : t.bro}))) : "";
       // Put proposal last: scrolling to end exposes the exact text being approved.
-      const content = [header(), message||browserText, conversation, staleText(), proposalText()].filter(Boolean).join("\n\n---\n\n");
+      const questionLinks = relatedQuestionIds.length ? "Related memory IDs: "+relatedQuestionIds.join(", ") : "";
+      const content = [header(), message||browserText, questionLinks, conversation, staleText(), proposalText()].filter(Boolean).join("\n\n---\n\n");
       modal.setText(content);
       modal.scrollToEnd();
     };
