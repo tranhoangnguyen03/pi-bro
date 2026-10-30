@@ -17,7 +17,7 @@ export type MemoryEntry = {
   createdAt: string;
   updatedAt: string;
 };
-export type MemoryDraft = Pick<MemoryEntry, "title" | "summary" | "background">;
+export type MemoryDraft = Pick<MemoryEntry, "title" | "summary" | "background"> & Partial<Pick<MemoryEntry, "scope" | "exceptions" | "sourceContext" | "uncertainty" | "basis">>;
 export type MemoryStore = { version: 1; revision: number; entries: MemoryEntry[] };
 export const MEMORY_FILENAME = "bro-memories.json";
 export const MAX_MEMORY_ENTRIES = 300;
