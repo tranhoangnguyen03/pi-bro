@@ -103,7 +103,7 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
             answer:t.bro.startsWith('{"kind":"proposal"') ? "Bro proposed memory wording; review the current draft below." : t.bro}))) : "";
       // Put proposal last: scrolling to end exposes the exact text being approved.
       const questionLinks = relatedQuestionIds.length ? "Related memory IDs: "+relatedQuestionIds.join(", ") : "";
-      const content = [header(), message||browserText, questionLinks, conversation, staleText(), proposalText()].filter(Boolean).join("\n\n---\n\n");
+      const content = [header(), conversation, proposalText(), questionLinks, staleText(), message||browserText].filter(Boolean).join("\n\n---\n\n");
       modal.setText(content);
       modal.scrollToEnd();
     };
@@ -131,7 +131,7 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
           }
         } else if (latest.revision!==proposal.reviewedRevision) {
           proposal.staleReview=staleProposalReview(proposal,latest);
-          show();
+          browserText=""; show();
           modal.setNotice("Store changed. Review original and current entries before /confirm-revision.", "warning");
           return;
         }
