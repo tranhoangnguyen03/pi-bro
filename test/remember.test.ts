@@ -46,7 +46,7 @@ test("memory parser preserves short/expanded meaning fields and question", () =>
 
 test("writing guidance preserves scope, attribution and unresolved conflict", () => {
   const prompt=buildRememberPrompt({statement:"I like lean testing",memories:[],history:[]});
-  assert.match(prompt,/must NOT become 'dislikes tests'/);
+  assert.match(prompt,/into 'dislikes tests'/);
   assert.match(prompt,/within an approved coordination plan/);
   assert.match(prompt,/short statement/);
   assert.match(prompt,/Surface unresolved conflicts/);
