@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { changeMemory, readMemoryStore, renderUserMemory, checkDraft, memoryPage } from "../src/remember-store.ts";
-import { buildRememberPrompt, parseRememberResult, makeReviewedProposal, staleProposalReview } from "../src/remember-engine.ts";
+import { buildRememberPrompt, parseRememberResult, makeReviewedProposal, staleProposalReview, markProposalClarifying, proposalReadyToSave } from "../src/remember-engine.ts";
 
 test("saved short memory retains condition and unfolds source and exceptions", async () => {
   const dir = await mkdtemp(join(tmpdir(), "bro-memory-test-"));
@@ -102,4 +102,18 @@ test("reviewed proposal retains correction, target and stale target comparison",
  assert.equal(proposal.reviewedRevision,2);
  assert.throws(()=>parseRememberResult(JSON.stringify({kind:"proposal",action:"update",
   draft:{title:"X",summary:"Y",background:"Z"}})),/target ID/);
+});
+
+
+test("disputed draft is retained but cannot be approved until a new proposal", () => {
+ const proposal=makeReviewedProposal({kind:"proposal",action:"create",draft:{
+   title:"Delegation",summary:"Delegate without approval.",background:"Flawed proposal."},relatedIds:[]},0,[]);
+ assert.equal(proposalReadyToSave(proposal),true);
+ markProposalClarifying(proposal);
+ assert.equal(proposalReadyToSave(proposal),false);
+ assert.equal(proposal.draft.summary,"Delegate without approval.","keep old content for discussion");
+ assert.equal(proposal.reviewedRevision,0);
+ const revision=makeReviewedProposal({kind:"proposal",action:"create",draft:{
+   title:"Delegation",summary:"Delegate within an approved plan.",background:"User clarification."},relatedIds:[]},0,[]);
+ assert.equal(proposalReadyToSave(revision),true);
 });
