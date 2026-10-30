@@ -18,7 +18,10 @@ export function parseRememberResult(text: string): RememberResult {
     return { kind: "question", message: obj.message.trim(), relatedIds };
   if (obj.kind === "proposal") {
     const draft = checkDraft(obj.draft);
-    return { kind: "proposal", draft, relatedIds, ...(typeof obj.conflict === "string" && obj.conflict.trim() ? { conflict: obj.conflict.trim() } : {}) };
+    const conflict = typeof obj.conflict === "string" ? obj.conflict.trim() : "";
+    // A conflict shown in the conversation must remain visible in the saved short view unless resolved.
+    if (conflict && !draft.uncertainty) draft.uncertainty = "Potential conflict: " + conflict;
+    return { kind: "proposal", draft, relatedIds, ...(conflict ? { conflict } : {}) };
   }
   throw new Error("Bro did not return a valid memory proposal or question.");
 }
