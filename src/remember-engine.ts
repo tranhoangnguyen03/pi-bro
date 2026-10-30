@@ -1,5 +1,5 @@
 /** Host-free drafting contract for /bro remember-me. No write is allowed from model output. */
-import { checkDraft, findMemories, type MemoryDraft, type MemoryEntry } from "./remember-store.ts";
+import { checkDraft, findMemories, type MemoryDraft, type MemoryEntry, type MemoryStore } from "./remember-store.ts";
 
 export type RememberTurn = { user: string; bro: string };
 export type RememberResult =
@@ -92,4 +92,15 @@ export function buildRememberPrompt(input: {
     "\nLegacy style preferences (quoted, NOT automatically authoritative over approved memories): "+JSON.stringify(input.preferences??"")+
     "\nPrivate conversation history (includes substantive proposed wording): "+JSON.stringify(input.history)+
     "\nLatest user message: "+JSON.stringify(input.statement);
+}
+
+
+/** Pure comparison for stale proposal review; does not advance the saved/reviewed revision. */
+export function staleProposalReview(proposal: RememberProposal, latest: MemoryStore): RememberProposal["staleReview"] {
+  return {
+    revision: latest.revision,
+    previousTarget: proposal.reviewedTarget,
+    currentTarget: proposal.targetId ? latest.entries.find(m=>m.id===proposal.targetId) : undefined,
+    related: findMemories(latest.entries, proposal.draft.title+" "+proposal.draft.summary, 8),
+  };
 }
