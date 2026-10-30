@@ -6,7 +6,7 @@ Use `/bro remember-me` to browse your approved personal memories, or `/bro remem
 
 ## Write through conversation
 
-Bro reviews your statement and existing memories. It may ask one material question, flag a competing entry, or propose a short statement with deeper background. **Nothing saves until you type `/save`.** You can reply normally to refine a proposal.
+Bro reviews your statement and existing memories. It may ask one material question, flag a competing entry, or propose a short statement with deeper background. **Nothing saves until you type `/save`.** You can reply normally to refine a proposal. When you correct it, the old draft remains visible but cannot be approved until Bro returns a revised proposal. Questions and failed model calls never silently re-enable `/save`.
 
 A proposed memory always has:
 - **Subject:** a distinct topic, such as Testing or Delegation
@@ -23,8 +23,8 @@ If the user hasn't resolved a conflict, don't pretend it is settled. Bro shows a
 | --- | --- |
 | Free text | Continue clarifying or refining |
 | `/save` | Approve and persist the current proposal |
-| `/list [page]` | Browse all memories in pages of 20; keep the current proposal |
-| `/search <words>` | Search saved fields without dropping the proposal |
+| `/list [page|all]` | Page through the current search (20 per page), or use `/list all` to return to all memories; preserve the proposal |
+| `/search <words>` | Start a filtered search; `/list 2` continues its second page without dropping the proposal |
 | `/expand <id>` | Show background, source, scope, exceptions and uncertainty |
 | `/edit <id>` | Edit an existing memory while keeping its stable ID |
 | `/delete <id>` | Delete after typing yes |
