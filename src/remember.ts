@@ -6,11 +6,11 @@ import { openBroOverlay } from "./modal-kit.ts";
 import { captureShowTranscript } from "./show.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel, capabilityBackend } from "./settings.ts";
 import {
-  changeMemory, findMemories, readMemoryStore, renderUserMemory,
+  changeMemory, readMemoryStore, renderUserMemory,
   type MemoryEntry, type MemoryStore,
 } from "./remember-store.ts";
 import {
-  buildRememberPrompt, makeReviewedProposal, parseRememberResult,
+  buildRememberPrompt, makeReviewedProposal, parseRememberResult, staleProposalReview,
   type RememberProposal, type RememberTurn,
 } from "./remember-engine.ts";
 import { errorMessage } from "./util.ts";
@@ -38,16 +38,6 @@ function memoryDetail(m?: MemoryEntry): string {
     "\nBackground: "+m.background+
     (m.sourceContext ? "\nSource context: "+m.sourceContext : "")+
     "\nBasis: "+(m.basis??"user-stated");
-}
-
-/** Stale detection always compares the changed target; no revision is silently advanced. */
-export function staleProposalReview(proposal: RememberProposal, latest: MemoryStore): RememberProposal["staleReview"] {
-  return {
-    revision: latest.revision,
-    previousTarget: proposal.reviewedTarget,
-    currentTarget: proposal.targetId ? latest.entries.find(m=>m.id===proposal.targetId) : undefined,
-    related: findMemories(latest.entries, proposal.draft.title+" "+proposal.draft.summary, 8),
-  };
 }
 
 export async function openRememberModal(ctx: ExtensionCommandContext, initial = ""): Promise<void> {
