@@ -105,3 +105,63 @@ test("actual modal blocks /save after disputed proposal and question, then saves
     } finally { await modal.close(); }
   });
 });
+
+
+test("Remember Me honors the default Agy backend in restricted mode without fallback", async () => {
+  const proposal = JSON.stringify({kind:"proposal",action:"create",draft:{
+    title:"Agy compatibility",summary:"Default backend remains Agy.",background:"Controlled backend test."}});
+  const script = [
+    "#!/usr/bin/env node",
+    "const fs=require('node:fs'); const path=require('node:path');",
+    "fs.writeFileSync(path.join(process.env.BIN_DIR,'agy-args.json'),JSON.stringify(process.argv.slice(2)));",
+    "fs.writeFileSync(path.join(process.env.BIN_DIR,'agy-cwd'),process.cwd());",
+    "process.stdout.write(JSON.stringify({event:'result',result:{status:'SUCCESS',response:"+JSON.stringify(proposal)+"}})+'\\n');"
+  ].join("\n");
+  await withFakeExecutable("agy",script,async binDir=>{
+    await settings.writeSettings({backend:"agy",model:"test-agy-model",effort:"default",mode:"balanced",showTurns:1,overrides:{}});
+    const modal=await mountedModal();
+    try {
+      modal.submit("Save an Agy compatibility statement.");
+      await until(()=>modal.component.notice.includes("Review the full proposal"),"Agy proposal",modal);
+      const args=JSON.parse(await readFile(join(binDir,"agy-args.json"),"utf8"));
+      assert.ok(args.includes("--sandbox"),"existing sandbox flag remains on");
+      assert.ok(!args.includes("--dangerously-skip-permissions"));
+      assert.equal(args[args.indexOf("--model")+1],"test-agy-model");
+      assert.ok(args.includes("--print"));
+      assert.notEqual((await readFile(join(binDir,"agy-cwd"),"utf8")).trim(),process.cwd(),"restricted run uses scratch cwd");
+      modal.submit("/save");
+      await until(async()=> (await readMemoryStore()).entries.some(e=>e.title==="Agy compatibility"),"Agy save",modal);
+    } finally { await modal.close(); }
+  });
+});
+
+test("Remember Me honors the selected Codex backend with read-only sandbox", async () => {
+  const proposal=JSON.stringify({kind:"proposal",action:"create",draft:{
+    title:"Codex compatibility",summary:"Codex remains available.",background:"Controlled backend test."}});
+  const script=[
+    "#!/usr/bin/env node",
+    "const fs=require('node:fs'); const path=require('node:path');",
+    "fs.writeFileSync(path.join(process.env.BIN_DIR,'codex-args.json'),JSON.stringify(process.argv.slice(2)));",
+    "fs.writeFileSync(path.join(process.env.BIN_DIR,'codex-cwd'),process.cwd());",
+    "process.stdin.resume(); process.stdin.on('end',()=>{",
+    "  process.stdout.write(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:"+JSON.stringify(proposal)+"}})+'\\n');",
+    "  process.stdout.write(JSON.stringify({type:'turn.completed'})+'\\n');",
+    "});"
+  ].join("\n");
+  await withFakeExecutable("codex",script,async binDir=>{
+    await settings.writeSettings({backend:"codex",model:"test-codex-model",effort:"default",mode:"balanced",showTurns:1,overrides:{}});
+    const modal=await mountedModal();
+    try {
+      modal.submit("Save a Codex compatibility statement.");
+      await until(()=>modal.component.notice.includes("Review the full proposal"),"Codex proposal",modal);
+      const args=JSON.parse(await readFile(join(binDir,"codex-args.json"),"utf8"));
+      assert.deepEqual(args.slice(0,3),["exec","--sandbox","read-only"]);
+      assert.ok(args.includes("read-only"),"sandbox is read-only");
+      assert.ok(args.includes("--ephemeral"));
+      assert.equal(args[args.indexOf("--model")+1],"test-codex-model");
+      assert.notEqual((await readFile(join(binDir,"codex-cwd"),"utf8")).trim(),process.cwd(),"restricted run uses scratch cwd");
+      modal.submit("/save");
+      await until(async()=> (await readMemoryStore()).entries.some(e=>e.title==="Codex compatibility"),"Codex save",modal);
+    } finally { await modal.close(); }
+  });
+});
