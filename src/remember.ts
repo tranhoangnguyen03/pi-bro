@@ -11,6 +11,7 @@ import {
 } from "./remember-store.ts";
 import {
   buildRememberPrompt, makeReviewedProposal, parseRememberResult, staleProposalReview,
+  markProposalClarifying, proposalReadyToSave,
   type RememberProposal, type RememberTurn,
 } from "./remember-engine.ts";
 import { errorMessage } from "./util.ts";
@@ -20,7 +21,7 @@ const HELP = [
   "Talk naturally; Bro may ask a focused question or propose a qualified memory. /save approves **exactly** what is displayed.",
   "/save — approve proposal, or show changes in the store that need new approval",
   "/confirm-revision — after examining stale changes, approve the reviewed proposal against that revision",
-  "/list [page] — browse all memories (20 per page); refresh without losing the proposal",
+  "/list [page|all] — page through current search (or all memories); /list all clears search",
   "/search <words> — search approved memory fields",
   "/expand <id> — unfold a memory; /edit <id> — start an update; /delete <id> — confirm deletion",
   "/context show|on|off — inspect, include or omit captured Pi context from model calls",
@@ -81,7 +82,10 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
         "\n\nBasis: "+(d.basis??"user-stated")+
         (proposal.relatedIds.length ? "\n\nRelated IDs: "+proposal.relatedIds.join(", ") : "")+
         "\n\nReviewed against store revision: "+proposal.reviewedRevision+
-        "\n\n**/save** approves this exact content; reply to correct it.";
+        (proposal.approvalState==="clarifying"
+          ? "\n\n**Awaiting clarification.** This earlier draft is retained for reference, but /save and /confirm-revision are blocked until Bro proposes revised wording. "+
+            (transcript.at(-1)?.bro && !transcript.at(-1)?.bro.startsWith("{") ? "\n\n**Latest question:** "+transcript.at(-1)!.bro : "")
+          : "\n\n**/save** approves this exact content; reply to correct it.");
     };
     const staleText = () => {
       const review = proposal?.staleReview;
@@ -91,19 +95,25 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
         "\n\n**Original target:**\n\n"+memoryDetail(review.previousTarget)+
         "\n\n**Current target:**\n\n"+memoryDetail(review.currentTarget)+
         (review.related.length ? "\n\n**Current related entries:**\n\n"+review.related.map(memoryDetail).join("\n\n") : "")+
-        "\n\nReview the differences and the proposed replacement below. "+
+        "\n\nReview the differences and the proposed replacement above. "+
         (proposal!.action==="update" && !review.currentTarget
           ? "The update target was deleted; this proposal cannot overwrite it. Discuss a new create action."
           : "Type **/confirm-revision** to approve against the current revision, or reply to revise. "+
             "If another write occurs, you must review again.");
     };
-    const show = (message = "") => {
+    const show = (message = "", focusMessage = false) => {
       const conversation = transcript.length
         ? formatBtwTranscript(transcript.map(t=>({question:t.user,
             answer:t.bro.startsWith('{"kind":"proposal"') ? "Bro proposed memory wording; review the current draft below." : t.bro}))) : "";
       // Put proposal last: scrolling to end exposes the exact text being approved.
       const questionLinks = relatedQuestionIds.length ? "Related memory IDs: "+relatedQuestionIds.join(", ") : "";
-      const content = [header(), conversation, proposalText(), questionLinks, staleText(), message||browserText].filter(Boolean).join("\n\n---\n\n");
+      const relevant = message||browserText;
+      const content = (focusMessage
+        ? [header(), conversation, questionLinks, proposalText(), staleText(), relevant]
+        : proposal?.staleReview
+          ? [header(), conversation, questionLinks, relevant, proposalText(), staleText()]
+          : [header(), conversation, questionLinks, relevant, proposalText()]
+      ).filter(Boolean).join("\n\n---\n\n");
       modal.setText(content);
       modal.scrollToEnd();
     };
@@ -112,10 +122,15 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
       store=latest; page=Math.max(0,offset); query=search;
       // No proposal mutation on list/search/refresh. A stale proposal retains its reviewedRevision.
       browserText=renderUserMemory(store,{query,offset:page,limit:20});
-      show();
+      show("", true);
     };
     const save = async (reapproved = false) => {
       if (!proposal || busy) { modal.setNotice("No proposal to save.", "warning"); return; }
+      if (!proposalReadyToSave(proposal)) {
+        show();
+        modal.setNotice("Bro is awaiting clarification. The old draft may be disputed; answer the question and review a revised proposal before saving.", "warning");
+        return;
+      }
       busy = true; modal.setRunning(true);
       try {
         const latest=await readMemoryStore();
@@ -150,6 +165,8 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
     };
     const ask = async (input:string) => {
       if (busy||closed) return;
+      // A correction immediately invalidates approval, even if this model request fails.
+      markProposalClarifying(proposal);
       busy=true;
       const attempt=new AbortController();
       controller=attempt; modal.setRunning(true);
@@ -179,7 +196,7 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
         if(parsed.kind==="question") {
           relatedQuestionIds=parsed.relatedIds;
           pending.bro=parsed.message;
-          // Keep any existing proposal while asking about corrections.
+          // Keep the disputed proposal for reference, but its approvalState remains clarifying.
         } else {
           proposal=makeReviewedProposal(parsed,store.revision,store.entries);
           relatedQuestionIds=[];
@@ -220,9 +237,9 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
       }
       if(value==="/save"){void save();return;}
       if(value==="/confirm-revision"){void save(true);return;}
-      if(value==="/help"){show(HELP);return;}
+      if(value==="/help"){show(HELP, true);return;}
       if(value==="/context show"){
-        show(capturedContext ? "## Captured Pi context (not transmitted by inspection)\n\n"+capturedContext : "No Pi context captured.");
+        show(capturedContext ? "## Captured Pi context (not transmitted by inspection)\n\n"+capturedContext : "No Pi context captured.", true);
         return;
       }
       if(value==="/context off"||value==="/context on"){
@@ -234,16 +251,17 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
       }
       if(value==="/list"||value.startsWith("/list ")){
         const token=value.slice(5).trim();
+        if(token==="all") { void refresh(0,"").catch(e=>modal.setNotice(errorMessage(e),"error"));return; }
         const pageNumber=token?Number(token):1;
-        if(!Number.isSafeInteger(pageNumber)||pageNumber<1){modal.setNotice("Use /list or /list <page number>.", "warning");return;}
-        void refresh((pageNumber-1)*20).catch(e=>modal.setNotice(errorMessage(e),"error"));return;
+        if(!Number.isSafeInteger(pageNumber)||pageNumber<1){modal.setNotice("Use /list [page number] or /list all.", "warning");return;}
+        void refresh((pageNumber-1)*20,query).catch(e=>modal.setNotice(errorMessage(e),"error"));return;
       }
       if(value.startsWith("/search ")){
         void refresh(0,value.slice(8).trim()).catch(e=>modal.setNotice(errorMessage(e),"error"));return;
       }
       if(value.startsWith("/expand ")){
         const id=value.slice(8).trim();
-        show(renderUserMemory(store,{expand:[id]}));return;
+        show(renderUserMemory(store,{expand:[id]}), true);return;
       }
       if(value.startsWith("/edit ")){
         if(proposal){modal.setNotice("Finish or /new the current proposal before starting a different edit.","warning");return;}
@@ -251,7 +269,7 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
         const target=store.entries.find(m=>m.id===id);
         if(!target){modal.setNotice("Unknown memory ID. Use /list.","warning");return;}
         proposal={
-          action:"update",targetId:id,reviewedRevision:store.revision,reviewedTarget:target,
+          action:"update",targetId:id,reviewedRevision:store.revision,approvalState:"ready",reviewedTarget:target,
           draft:{title:target.title,summary:target.summary,background:target.background,
             scope:target.scope,exceptions:target.exceptions,sourceContext:target.sourceContext,
             uncertainty:target.uncertainty,basis:target.basis},relatedIds:[id]
