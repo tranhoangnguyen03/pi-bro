@@ -4,14 +4,14 @@ import { execute as executeBackend } from "./backend.ts";
 import { BtwModal, formatBtwTranscript } from "./btw.ts";
 import { openBroOverlay } from "./modal-kit.ts";
 import { captureShowTranscript } from "./show.ts";
-import { readPreferences, readSettings, selectionForCapability, selectionLabel, capabilityBackend } from "./settings.ts";
+import { readPreferences, readSettings, selectionForCapability, selectionLabel } from "./settings.ts";
 import {
   changeMemory, readMemoryStore, renderUserMemory,
   type MemoryEntry,
 } from "./remember-store.ts";
 import {
   buildRememberPrompt, makeReviewedProposal, parseRememberResult, staleProposalReview,
-  markProposalClarifying, proposalReadyToSave,
+  markProposalClarifying, proposalReadyToSave, rememberBackendNotice,
   type RememberProposal, type RememberTurn,
 } from "./remember-engine.ts";
 import { errorMessage } from "./util.ts";
@@ -68,7 +68,7 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
     const header = () => "## Writing a memory\n\n**Model:** "+selectedModel+" ("+selectedBackend+
       "). **Recent Pi context:** "+(contextEnabled ? "ON ("+capturedContext.length+" characters, at most 8 turns)" : "OFF")+
       ".\n\nDrafting also shares all saved short-memory statements (and relevant expanded entries) plus the legacy Bro preferences with the selected provider."+
-      " /context show displays the captured Pi text; /context off omits it. Current user requests outrank stored guidance.";
+      " /context show displays the captured Pi text; /context off omits it. Current user requests outrank stored guidance.\n\n**Execution boundary:** "+rememberBackendNotice(selectedBackend)+\n      "\n\n/save controls only writes to Bro’s memory store; it cannot prevent every backend-side action.";
     const proposalText = () => {
       if (!proposal) return "";
       const d = proposal.draft;
@@ -173,14 +173,9 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
       try {
         store=await readMemoryStore();
         const [settings,preferences]=await Promise.all([readSettings(),readPreferences()]);
-        const backend=capabilityBackend(settings,"btw");
-        selectedBackend=backend;
         const selection=selectionForCapability(settings,"btw");
+        selectedBackend=selection.backend??"agy";
         selectedModel=selectionLabel(selection);
-        // These backends enforce no model tools for restricted / explain requests.
-        if(backend!=="claude"&&backend!=="pi") throw new Error(
-          "Remember Me requires a tool-free drafting backend (Claude or in-process Pi). "+
-          "Select one for BTW through /bro config; "+backend+" does not guarantee this boundary.");
         const prompt=buildRememberPrompt({
           statement:input, context:contextEnabled?capturedContext:undefined,
           history:transcript, memories:store.entries, proposal, preferences
