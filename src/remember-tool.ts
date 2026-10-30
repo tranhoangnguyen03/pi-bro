@@ -14,7 +14,7 @@ export function registerAboutUserTool(pi: ExtensionAPI): void {
     }),
     async execute(_id, params) {
       const store = await readMemoryStore();
-      return { content: [{ type: "text" as const, text: renderUserMemory(store, params) }] };
+      return { content: [{ type: "text" as const, text: renderUserMemory(store, params) }], details: {} };
     },
   });
 }

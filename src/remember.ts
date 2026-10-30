@@ -4,7 +4,7 @@ import { BtwModal, formatBtwTranscript } from "./btw.ts";
 import { openBroOverlay } from "./modal-kit.ts";
 import { captureShowTranscript } from "./show.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel } from "./settings.ts";
-import { changeMemory, readMemoryStore, renderUserMemory, type MemoryDraft, type MemoryEntry, type MemoryStore } from "./remember-store.ts";
+import { changeMemory, readMemoryStore, renderUserMemory, type MemoryDraft, type MemoryEntry } from "./remember-store.ts";
 import { buildRememberPrompt, parseRememberResult, type RememberTurn } from "./remember-engine.ts";
 import { errorMessage } from "./util.ts";
 
@@ -17,7 +17,6 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
     let closed = false;
     let controller: AbortController | undefined;
     let busy = false;
-    let question = "";
     let proposed: MemoryDraft | undefined;
     let conflict = "";
     let related: string[] = [];
@@ -72,7 +71,6 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
       const attempt = new AbortController();
       controller = attempt;
       modal.setRunning(true);
-      question = input;
       const pending = { user: input, bro: "Thinking about the wording…" };
       try {
         const [settings, preferences] = await Promise.all([readSettings(), readPreferences()]);
