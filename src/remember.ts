@@ -7,7 +7,7 @@ import { captureShowTranscript } from "./show.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel, capabilityBackend } from "./settings.ts";
 import {
   changeMemory, readMemoryStore, renderUserMemory,
-  type MemoryEntry, type MemoryStore,
+  type MemoryEntry,
 } from "./remember-store.ts";
 import {
   buildRememberPrompt, makeReviewedProposal, parseRememberResult, staleProposalReview,
