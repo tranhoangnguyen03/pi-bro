@@ -111,3 +111,7 @@ that is set):
 `bro-prompt.md`, the full prompt template from earlier versions, is no longer
 read. Move what you want to keep into `/bro preferences`, and choose
 `/bro mode brief` for the original ELI-simpleton instruction.
+
+## Remember Me
+
+`/bro remember-me` manages approved personal memories in `bro-memories.json` in the same user agent directory. Each entry has a stable ID, a scan-first short statement, and optional scope, exceptions, uncertainty and source context in an expanded view. The agent-facing `about_user` tool reads them on demand. `/bro preferences` remains a separate legacy file; no automatic migration or duplicate injection occurs. See [Remember Me](../remember-me.md).

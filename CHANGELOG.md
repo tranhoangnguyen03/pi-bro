@@ -2,6 +2,27 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.27.0] - 2026-10-30
+
+### Highlights
+
+- `/bro remember-me` helps you write and explicitly approve personal memory entries with a short, scan-friendly statement and expandable context.
+- `about_user` lets the main Pi agent read an overview, find memories by topic, and unfold selected entries without extra model calls.
+- Memory-writing guidance preserves conditions, scope, source, exceptions, user attribution and unresolved conflicts across short and expanded views.
+
+### Added
+
+- Private Remember Me modal: `/save`, `/list`, `/expand`, `/edit`, `/delete`, `/new`, `/help`.
+- Versioned local store with stable IDs, validated entries, bounded file size, revision checks and atomic writes.
+- Focused tests and `docs/remember-me.md`.
+
+### Limits
+
+- Automatic semantic conflict detection depends on model judgment and is not exhaustive.
+- External CLI agents do not receive the main Pi `about_user` tool automatically.
+- The old `/bro preferences` file remains separate until a reviewed migration; no automatic import occurs.
+
+
 ## [0.26.0] - 2026-10-20
 
 ### Highlights
