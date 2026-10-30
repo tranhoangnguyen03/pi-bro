@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { withFakeExecutable } from "./test-fake-exec.ts";
-import { buildDir, settings } from "./test-build.mjs";
+import { buildDir, settings, backend as sharedBackend } from "./test-build.mjs";
 
 const { openRememberModal } = await import(pathToFileURL(join(buildDir, "remember.js")).href);
 const { readMemoryStore } = await import(pathToFileURL(join(buildDir, "remember-store.js")).href);
@@ -164,4 +164,19 @@ test("Remember Me honors the selected Codex backend with read-only sandbox", asy
       await until(async()=> (await readMemoryStore()).entries.some(e=>e.title==="Codex compatibility"),"Codex save",modal);
     } finally { await modal.close(); }
   });
+});
+
+
+test("Pi selection keeps the configured physical model without an Agy fallback (controlled path)", () => {
+  // A real Astra model must be provided on the running machine for live acceptance.
+  // The default fixture proves only that the configured identifier is passed through unchanged.
+  const physicalModel = process.env.PI_BRO_ASTRA_MODEL?.trim() || "test-provider/test-model";
+  const config = {
+    backend:"agy", model:"ordinary-default-model", effort:"default",
+    mode:"balanced", showTurns:1,
+    overrides:{ btw:{backend:"pi",model:physicalModel,effort:"default"} },
+  };
+  const selection = settings.selectionForCapability(config,"btw");
+  assert.deepEqual(selection,{backend:"pi",model:physicalModel});
+  assert.deepEqual(sharedBackend.piToolAllowlist("explain","restricted"),{tools:[]});
 });
