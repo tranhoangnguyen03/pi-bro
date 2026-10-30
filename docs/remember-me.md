@@ -58,7 +58,20 @@ Stored memories live in `~/.pi/agent/bro-memories.json` (or under `$PI_CODING_AG
 
 **Agent access is currently the registered main Pi tool only.** External CLIs and isolated Bro sessions do not receive it automatically. The existing `/bro preferences` file remains unchanged; no automatic migration or conflict reconciliation is claimed.
 
-Remember Me reuses the configured BTW model but permits only **Claude** or **in-process Pi**, both on a no-tools path. Other backends do not provide the same guaranteed boundary and return an actionable `/bro config` error. The selected provider still receives the text supplied for drafting.
+Remember Me uses **the backend and model selected for BTW**. Every valid BTW backend is supported through Bro's existing restricted **explain** execution path. It never silently changes provider or model. Restricted means different things across backends, not a universal promise of no tools or no side effects:
+
+| Backend | Current restricted drafting behavior |
+| --- | --- |
+| Agy (default) | `--sandbox`, temporary working directory. Sandbox limits shell actions; it is **not** a no-tools or no-write guarantee. |
+| Codex | `--sandbox read-only`, ephemeral execution and temporary working directory; read-only sandbox, **not** no-tools. |
+| Claude | CLI tools disabled with `--tools ""`, strict empty MCP config, temporary working directory, no session persistence. |
+| Pi | Fresh SDK session with no tools, extensions, skills, or project context files, using the **selected configured physical model**. |
+| Muse | Write and shell disabled, approvals disabled, temporary working directory. Do not infer that all other abilities are disabled. |
+| Grok | A restricted **prompt request**, but CLI sandbox off and permissions bypassed; it is **not** a technical tool/write boundary. |
+
+The modal shows a backend-specific notice before sending data. Bro's `/save` gate controls **only writes to its approved memory store**. It does not prevent any action that the selected backend's own permissions might allow. See [execution configuration](reference/settings.md) for backend details.
+
+Live model behavior and the actual backend installation are separate from controlled-response tests.
 
 **Coexistence policy:** `/bro preferences` remains active as a legacy *answer-style* file for older Bro features. `about_user` reads only approved Remember Me memories. Current user instructions take precedence. If an approved memory conflicts with legacy preferences, the approved memory is the source for the personal fact or lasting rule; do not treat two conflicting stores as equally authoritative. Bro should surface the disagreement during drafting. There is no silent migration or overwrite; a reviewed migration remains a separate task.
 
