@@ -67,8 +67,11 @@ test("actual modal blocks /save after disputed proposal and question, then saves
     "fs.writeFileSync(counter,String(n+1));",
     "const responses="+JSON.stringify(responses)+";",
     "const item=responses[n]; if(!item)process.exit(3);",
-    "const event={type:'result',subtype:'success',is_error:false,stop_reason:'end_turn',terminal_reason:'completed',result:JSON.stringify(item)};",
-    "process.stdout.write(JSON.stringify(event)+'\\n');",
+    "process.stdin.resume();",
+    "process.stdin.on('end',()=>{",
+    "  const event={type:'result',subtype:'success',is_error:false,stop_reason:'end_turn',terminal_reason:'completed',result:JSON.stringify(item)};",
+    "  process.stdout.write(JSON.stringify(event)+'\\n');",
+    "});",
   ].join("\n");
 
   await withFakeExecutable("claude",script,async binDir => {
