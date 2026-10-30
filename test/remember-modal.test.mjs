@@ -12,12 +12,18 @@ const { openRememberModal } = await import(pathToFileURL(join(buildDir, "remembe
 const { readMemoryStore } = await import(pathToFileURL(join(buildDir, "remember-store.js")).href);
 initTheme();
 
-async function until(condition, label) {
-  for (let n = 0; n < 150; n++) {
+async function until(condition, label, modal) {
+  // Give process startup and CI contention room, but still fail a stuck transition.
+  const started = Date.now();
+  const budgetMs = 12_000;
+  while (Date.now() - started < budgetMs) {
     if (await condition()) return;
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 25));
   }
-  assert.fail("Timed out: " + label);
+  assert.fail(
+    "Timed out waiting for " + label + " after " + (Date.now() - started) + "ms. " +
+    "Current modal notice: " + JSON.stringify(modal.component.notice),
+  );
 }
 
 async function mountedModal() {
@@ -79,9 +85,9 @@ test("actual modal blocks /save after disputed proposal and question, then saves
     const modal=await mountedModal();
     try {
       modal.submit("Remember how delegation should work.");
-      await until(()=>modal.component.notice.includes("Review the full proposal"),"first proposal");
+      await until(()=>modal.component.notice.includes("Review the full proposal"),"first proposal",modal);
       modal.submit("That is wrong: approval is required.");
-      await until(()=>modal.component.notice.includes("Answer the question"),"clarifying question");
+      await until(()=>modal.component.notice.includes("Answer the question"),"clarifying question",modal);
       modal.submit("/save");
       assert.match(modal.component.notice,/awaiting clarification/i);
       assert.equal((await readMemoryStore()).entries.length,0,"disputed wording must not be persisted");
@@ -89,9 +95,9 @@ test("actual modal blocks /save after disputed proposal and question, then saves
       assert.match(modal.component.notice,/awaiting clarification/i);
       assert.equal((await readMemoryStore()).entries.length,0);
       modal.submit("Approval applies to the coordination plan.");
-      await until(()=>modal.component.notice.includes("Review the full proposal"),"corrected proposal");
+      await until(()=>modal.component.notice.includes("Review the full proposal"),"corrected proposal",modal);
       modal.submit("/save");
-      await until(async()=>(await readMemoryStore()).entries.length===1,"corrected save");
+      await until(async()=>(await readMemoryStore()).entries.length===1,"corrected save",modal);
       const memory=(await readMemoryStore()).entries[0];
       assert.match(memory.summary,/within an approved coordination plan/);
       assert.doesNotMatch(memory.summary,/without approval/);
