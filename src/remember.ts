@@ -66,7 +66,7 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
     });
     const header = () => "## Writing a memory\n\n**Model:** "+selectedModel+" ("+selectedBackend+
       "). **Recent Pi context:** "+(contextEnabled ? "ON ("+capturedContext.length+" characters, at most 8 turns)" : "OFF")+
-      ".\n\nDrafting also shares relevant saved memories and the legacy Bro preference text with the selected provider."+
+      ".\n\nDrafting also shares all saved short-memory statements (and relevant expanded entries) plus the legacy Bro preferences with the selected provider."+
       " /context show displays the captured Pi text; /context off omits it. Current user requests outrank stored guidance.";
     const proposalText = () => {
       if (!proposal) return "";
