@@ -116,3 +116,26 @@ export function staleProposalReview(proposal: RememberProposal, latest: MemorySt
     related: findMemories(latest.entries, proposal.draft.title+" "+proposal.draft.summary, 8),
   };
 }
+
+/**
+ * A disclosure, not an allowlist. Mirror existing shared restricted explain routes.
+ * Do not imply that a UI memory-save gate constrains what a selected backend can do.
+ */
+export function rememberBackendNotice(backend: string): string {
+  switch (backend) {
+    case "agy":
+      return "Agy runs with --sandbox from a temporary working directory. This restricts shell actions, but does not disable all tools or guarantee zero external effects.";
+    case "codex":
+      return "Codex runs with --sandbox read-only from a temporary working directory; this is a read-only sandbox, not a tool-free execution.";
+    case "claude":
+      return "Claude uses the restricted explain path: disabled tools, strict empty MCP config, no session persistence and a temporary working directory.";
+    case "pi":
+      return "Pi uses a fresh isolated SDK session with no tools, extensions, skills or project context files. It runs the configured physical Pi model.";
+    case "muse":
+      return "Muse runs with write and shell actions disabled and approval disabled, from a temporary working directory. Other available capabilities may differ by Muse version.";
+    case "grok":
+      return "Grok's restricted explain path uses an advisory instruction, but its CLI runs with the sandbox off and permissions bypassed. This is not a technical tool or write restriction.";
+    default:
+      return "Uses this backend's existing restricted explain execution path; see /bro doctor and backend-specific permissions. No stronger guarantee is implied.";
+  }
+}
