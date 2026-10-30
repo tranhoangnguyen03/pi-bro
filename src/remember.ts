@@ -125,7 +125,7 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
           if (!pending) { modal.setNotice("No changed revision under review. Use /save.", "warning"); return; }
           if (pending.revision!==latest.revision) {
             proposal.staleReview=staleProposalReview(proposal,latest);
-            show();
+            browserText=""; show();
             modal.setNotice("Store changed again. Compare and type /confirm-revision again.", "warning");
             return;
           }
