@@ -9,6 +9,11 @@ export type MemoryEntry = {
   title: string;
   summary: string;
   background: string;
+  scope?: string;
+  exceptions?: string;
+  sourceContext?: string;
+  uncertainty?: string;
+  basis?: "user-stated" | "user-approved-interpretation";
   createdAt: string;
   updatedAt: string;
 };
@@ -27,7 +32,16 @@ export function checkDraft(input: unknown): MemoryDraft {
       !validText(input.background, 4000)) {
     throw new Error("A memory needs a title (max 120), a useful summary (max 600) and background (max 4000 characters).");
   }
-  return { title: input.title.trim(), summary: input.summary.trim(), background: input.background.trim() };
+  const optional: Record<string, string> = {};
+  for (const field of ["scope", "exceptions", "sourceContext", "uncertainty"] as const) {
+    const value = input[field];
+    if (value !== undefined && (typeof value !== "string" || value.length > 2000)) throw new Error("Invalid " + field);
+    if (typeof value === "string" && value.trim()) optional[field] = value.trim();
+  }
+  if (input.basis !== undefined && input.basis !== "user-stated" && input.basis !== "user-approved-interpretation")
+    throw new Error("Invalid memory basis.");
+  return { title: input.title.trim(), summary: input.summary.trim(), background: input.background.trim(),
+    ...optional, ...(input.basis ? { basis: input.basis } : {}) };
 }
 
 export function validateStore(raw: unknown): MemoryStore {
@@ -119,6 +133,8 @@ export async function changeMemory(change: MemoryChange, expectedRevision: numbe
       }
     }
     const next: MemoryStore = { version: 1, revision: store.revision + 1, entries };
+    if (Buffer.byteLength(JSON.stringify(next, null, 2) + "\n", "utf8") > MAX_FILE_BYTES)
+      throw new Error("Memory file would exceed the 1 MiB limit; no changes were saved.");
     await atomicWrite(dir, next);
     return next;
   });
@@ -142,13 +158,20 @@ export function renderUserMemory(store: MemoryStore, options: { query?: string; 
     const matched = ids.map((id) => store.entries.find((e) => e.id === id));
     return header + "\n\n" + ids.map((id, i) => {
       const m = matched[i];
-      return m ? "[" + m.id + "] " + m.title + "\nSummary: " + m.summary + "\nBackground: " + m.background :
+      return m ? "[" + m.id + "] " + m.title + "\nStatement: " + m.summary +
+        (m.scope ? "\nScope: " + m.scope : "") +
+        (m.exceptions ? "\nExceptions: " + m.exceptions : "") +
+        (m.uncertainty ? "\nUnresolved: " + m.uncertainty : "") +
+        "\nBackground: " + m.background +
+        (m.sourceContext ? "\nSource context: " + m.sourceContext : "") +
+        "\nBasis: " + (m.basis ?? "user-stated") :
         "[" + id + "] Not found (possibly deleted or superseded).";
     }).join("\n\n");
   }
   const entries = options.query?.trim() ? findMemories(store.entries, options.query) : store.entries.slice(0, 20);
   if (!entries.length) return header + "\n\nNo matching personal memories.";
-  const result = entries.map((m) => "[" + m.id + "] " + m.title + ": " + m.summary).join("\n");
+  const result = entries.map((m) => "[" + m.id + "] " + m.title + ": " + m.summary +
+    (m.uncertainty ? " [UNRESOLVED: " + m.uncertainty + "]" : "")).join("\n");
   return header + "\n\n" + result + (store.entries.length > entries.length && !options.query ? "\n\nMore entries exist. Query by topic for a focused view." : "") +
     "\n\nExpand by stable ID when background or exceptions matter.";
 }
