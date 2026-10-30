@@ -4,8 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { changeMemory, readMemoryStore, renderUserMemory, checkDraft, memoryPage } from "../src/remember-store.ts";
-import { buildRememberPrompt, parseRememberResult, makeReviewedProposal } from "../src/remember-engine.ts";
-import { staleProposalReview } from "../src/remember.ts";
+import { buildRememberPrompt, parseRememberResult, makeReviewedProposal, staleProposalReview } from "../src/remember-engine.ts";
 
 test("saved short memory retains condition and unfolds source and exceptions", async () => {
   const dir = await mkdtemp(join(tmpdir(), "bro-memory-test-"));
