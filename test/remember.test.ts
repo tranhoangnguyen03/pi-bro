@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { changeMemory, readMemoryStore, renderUserMemory, checkDraft, memoryPage } from "../src/remember-store.ts";
-import { buildRememberPrompt, parseRememberResult, makeReviewedProposal, staleProposalReview, markProposalClarifying, proposalReadyToSave } from "../src/remember-engine.ts";
+import { buildRememberPrompt, parseRememberResult, makeReviewedProposal, staleProposalReview, markProposalClarifying, proposalReadyToSave, rememberBackendNotice } from "../src/remember-engine.ts";
 
 test("saved short memory retains condition and unfolds source and exceptions", async () => {
   const dir = await mkdtemp(join(tmpdir(), "bro-memory-test-"));
@@ -116,4 +116,20 @@ test("disputed draft is retained but cannot be approved until a new proposal", (
  const revision=makeReviewedProposal({kind:"proposal",action:"create",draft:{
    title:"Delegation",summary:"Delegate within an approved plan.",background:"User clarification."},relatedIds:[]},0,[]);
  assert.equal(proposalReadyToSave(revision),true);
+});
+
+
+test("Remember Me describes every existing restricted backend without an allowlist", () => {
+  const notices = {
+    agy: /sandbox.*shell|shell.*sandbox/,
+    codex: /read-only sandbox/,
+    claude: /disabled tools/,
+    pi: /configured physical Pi model/,
+    muse: /write and shell actions disabled/,
+    grok: /sandbox off and permissions bypassed/,
+  };
+  for (const [backend, match] of Object.entries(notices)) {
+    assert.match(rememberBackendNotice(backend), match, backend);
+  }
+  assert.match(rememberBackendNotice("unknown"), /existing restricted explain execution path/);
 });
