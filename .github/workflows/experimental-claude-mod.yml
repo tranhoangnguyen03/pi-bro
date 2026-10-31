@@ -1,0 +1,25 @@
+name: Experimental Claude Mod
+on:
+  pull_request:
+    paths:
+      - 'experiments/claude-mod/**'
+      - 'src/prompt.ts'
+      - '.claude-plugin/marketplace.json'
+      - '.github/workflows/experimental-claude-mod.yml'
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check Mod hooks
+        run: |
+          node --check experiments/claude-mod/hooks/register.js
+          node --check experiments/claude-mod/hooks/settings.js
+          node --check experiments/claude-mod/runner/execute.mjs
+      - name: Run offline tests
+        run: node --test --test-timeout=30000 experiments/claude-mod/tests/*.test.mjs
