@@ -6,7 +6,7 @@
 
 | Source | Command | What Bro does |
 | --- | --- | --- |
-| Latest assistant reply | `/bro` | Explains the latest completed reply without adding the result to the conversation. |
+| Latest assistant reply | `/bro` | Opens Simplify and explains the latest completed reply without inserting the result into Pi's conversation. |
 | Pasted text | `/bro text <text>` | Explains text supplied directly in the command. |
 | Local document | `/bro file <path>` | Extracts text from a workspace-local Markdown, text, PDF, or DOCX file. |
 | Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
@@ -22,12 +22,13 @@ text directly captures a new source the same way.
 
 | Command | Description |
 | --- | --- |
-| `/bro`, `/bro simplify`, or `/bro text` | Explain the latest completed assistant response. |
+| `/bro` | Open Simplify and explain the latest completed assistant reply. |
+| `/bro simplify` | Reopen the last Simplify screen within this Pi session, without a new model call. |
 | `/bro text <text>` | Explain pasted text. |
 | `/bro <input>` | Explain it directly: a lone URL runs the webpage reader, an existing workspace file with a supported extension runs the document reader, and anything else is pasted text. A quoted path with spaces is routed too when the file exists. |
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
-| `/bro open` | Reopen the latest explanation without calling the simplifier again. |
+| `/bro open` | Legacy compatibility shortcut to the last result. No `/open` command inside Simplify. |
 | `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
 | `/bro doctor` | Check Bro's settings, preferences, and each selected backend, with the effective backend/model/effort per feature. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
@@ -50,3 +51,7 @@ Giving `/bro` the input directly works the same way:
 /bro docs/report.pdf
 /bro any other text is explained as pasted text
 ```
+
+## Simplify modal (single-source explanation)
+
+Once inside Simplify, use `/simplify` for the latest completed reply; `/text <text>`, `/file <path>`, `/url <url>` for a new source; `/copy` to copy the current explanation; `/clear` to return to the empty screen; and `/help` for controls. **M** changes the one-off Brief/Balanced/Faithful mode and re-explains the captured source; **R** retries the same source. This modal is not a conversation and does not persist history across restarts. Legacy `/bro text|file|url` shortcuts keep working. The global menu consolidation is tracked separately.
