@@ -143,7 +143,8 @@ export async function openSimplifyWorkflow(
     };
     display();
     if(state.draft)modal.setComposerText(state.draft);
-    if(initial.kind!=="resume")queueMicrotask(()=>{if(!closed)void run(initial,undefined,undefined,\n      initial.kind==="latest" ? "/simplify" : "/"+initial.kind+" "+initial.input);});
+    if(initial.kind!=="resume")queueMicrotask(()=>{if(!closed)void run(initial,undefined,undefined,
+      initial.kind==="latest" ? "/simplify" : "/"+initial.kind+" "+initial.input);});
     return modal;
   },{mouse:true});
 }
