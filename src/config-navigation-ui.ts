@@ -1,6 +1,6 @@
 /** Compact navigation over existing settings/editors; no separate configuration state. */
 import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
-import { SelectList, matchesKey, truncateToWidth, type SelectItem, type Component } from "@earendil-works/pi-tui";
+import { SelectList, matchesKey, wrapTextWithAnsi, type SelectItem, type Component } from "@earendil-works/pi-tui";
 import { delegateMouse, modalHeight, renderFrame, type Theme, type TuiLike, type Area } from "./modal-kit.ts";
 import type { BroMouseEvent } from "./ui-capabilities.ts";
 import type { BroSettings } from "./settings.ts";
@@ -86,13 +86,13 @@ export function createConfigNavigationModal(
     return {
       render:(width:number)=>{
         const h=modalHeight(tui),w=Math.max(1,width-2),lines=list.render(w);
-        listArea={top:4,left:1,width:w,height:Math.min(lines.length,h-7)};
+        // Derive mouse hit area from the same subtitle lines we render, including long
+        // inherited-backend descriptions and narrow-terminal layouts.
+        const subtitleLines=wrapTextWithAnsi(theme.fg("dim",subtitle()),w).slice(0,Math.max(0,h-5-lines.length));
+        listArea={top:3+subtitleLines.length,left:1,width:w,height:Math.max(0,Math.min(lines.length,h-5-subtitleLines.length))};
         return renderFrame(theme,width,h,{
           header:()=>theme.fg("accent",theme.bold(title())),
-          body:rows=>[
-            ...[...subtitle().match(/.{1,90}(?:\s|$)/g)??[subtitle()]].map(x=>truncateToWidth(theme.fg("dim",x.trim()),w)).slice(0,Math.max(0,rows-lines.length)),
-            ...lines
-          ],
+          body:()=>[...subtitleLines,...lines],
           hints:"↑/↓ select · Enter open · Esc back",
           fill:false,
           minBody:Math.max(1,lines.length),
