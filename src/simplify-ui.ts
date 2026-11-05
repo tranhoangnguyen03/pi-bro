@@ -1,5 +1,6 @@
 /** Source-focused Simplify modal. No chat thread, durable draft or new backend boundary. */
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { stripVTControlCharacters } from "node:util";
 import { copyToClipboard } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 import { BtwModal } from "./btw.ts";
@@ -71,10 +72,10 @@ export async function openSimplifyWorkflow(
       idleHint:"Enter run · M change mode · R retry · /copy · /help · Esc close",
     });
     const display=()=>{
-      modal.setCustomMode(state.result?.mode ? state.result.mode : "one source · one explanation");
+      modal.setCustomMode(state.result?.mode ? state.result.mode+(state.result.preferences ? " · prefs" : "") : "one source · one explanation");
       modal.setModel(state.result?.model ?? "");
       if(state.view==="help")modal.setText(SIMPLIFY_MODAL_HELP);
-      else if(state.view==="result"&&state.result)modal.setText(state.result.text);
+      else if(state.view==="result"&&state.result)modal.setText((state.result.source.label ? "**Source:** "+stripVTControlCharacters(state.result.source.label).replace(/[\r\n]/g," ")+"\n\n---\n\n" : "")+state.result.text);
       else modal.setText("## Simplify\n\nUse /simplify for the latest reply, /text, /file or /url for another source. Type /help for all commands.");
       if(state.error)modal.setNotice(state.error,"error");
       modal.scrollToEnd();
