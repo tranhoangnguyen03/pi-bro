@@ -272,6 +272,10 @@ test("Markdown explanation and answers are separated from numbered captured code
 		end: 10,
 		valid: true,
 	};
+	// An invalid source reference must be shown as unresolved, not as captured evidence.
+	record.guide.topics[0].evidence.push({
+		path: "missing.ts", side: "new", start: 1, end: 2, valid: false,
+	});
 	const modal = make(record);
 	modal.evidence.set("first.ts:new:9:10", "const x = 1;\nconst y = 2;");
 	modal.handleInput(down);
@@ -280,6 +284,7 @@ test("Markdown explanation and answers are separated from numbered captured code
 	assert.match(text, /CAPTURED CODE/);
 	assert.match(text, /9 │ const x/);
 	assert.match(text, /10 │ const y/);
+	assert.match(text, /unresolved reference/);
 	record.snapshot.diff =
 		"diff --git a/first.ts b/first.ts\n--- a/first.ts\n+++ b/first.ts\n@@ -9,2 +9,2 @@\n context\n-old\n+new\n\\ No newline at end of file";
 	record.snapshot.files = [{ path: "first.ts", status: "M" }];

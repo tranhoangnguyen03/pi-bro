@@ -111,7 +111,7 @@ Agy; reads never rewrite the file.
 - **Nothing is approved by default.** Findings start unticked so the user approves only what they read; the highlighted finding's full title, reason, expert action and assessment are reachable in scrollable detail below the pinned list. A rewrite with nothing ticked is refused with an explanation. A failed step retries that step with the same approvals.
 - The original main editor stays unchanged until `[Insert into editor]` (or its Desktop equivalent). Terminal insertion replaces the editor only when Elevate was opened on that draft and the text is still unchanged; with an explicit `/bro elevate <request>`, the editor must be empty first. Desktop/RPC only uses confirmed atomic insert into an empty editor. Neither action submits text.
 - Compose reads the objective with `getExpandedText()`, never `getText()`: the `Editor` stores large pastes as `[paste #1 +N lines]` markers, and the marker must never be sent to the backend. When the `Editor` cannot render whole, the modal refuses to edit and says so rather than hiding the cursor.
-- Automated unit tests: `test/elevate.test.ts` and `test/elevate-docs.test.mjs`; the modal contract in `test/modal-contract.test.mjs` covers every Elevate stage. Manually test real modal use as described in [TESTING.md](TESTING.md).
+- Automated unit tests: `test/elevate.test.ts`; the modal contract in `test/modal-contract.test.mjs` covers every Elevate stage. Manually test real modal use as described in [TESTING.md](TESTING.md).
 
 ## Prompt size and recent context
 
@@ -223,6 +223,8 @@ during a fake in-flight consultation and assert no delayed child activity.
 
 ## Tests
 
+Each retained test should detect a specific failure that a cheaper existing test would miss. Review its risk, distinct coverage, execution cost, and maintenance cost when touching it. Replace redundant render/text assertions with behavior checks; retain tests for trust boundaries, data loss, cancellation, state recovery, and public integration. Do not set test-count targets or build another test-review framework.
+
 ```sh
 npm test                                   # typecheck, node tests, test/smoke-test.sh
 npm pack --dry-run                         # published file list
@@ -230,9 +232,9 @@ node .github/scripts/release-utils.mjs selftest
 npm run benchmark:dry-run                  # manual live benchmark: see benchmark/README.md
 ```
 
-Extension tests and their helpers live in `test/`; benchmark tests stay in `benchmark/`. CI runs `npm test` on Linux with Node 24 and Node 22.19.0 (the `engines` floor), and on macOS with Node 24, all with the pinned Pi (1.3.0). The `pi-floor` job reruns it on the oldest supported Pi, which is also that pin: it catches the floor drifting up unnoticed when the dev pin is next bumped.
+Extension tests and helpers live in `test/`; benchmark tests stay in `benchmark/`. CI runs `npm test` on Node 22.19.0/Linux and Node 24/macOS with the normal locked dependencies, plus Node 24/Linux with Pi pinned to the supported 1.3.0 floor. The Linux floor run also checks release metadata and synthetic benchmark regeneration; there is no second identical Pi-floor job.
 
-Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs` and `review-ux.test.mjs` (rendering/interaction), `review-session.test.mjs` and `review-regeneration.test.mjs` (fake-CLI controller/save/recovery), `review-versions.test.mjs` (single-guide/current validation and rejected prototype schemas), `review-ui.test.mjs` (evidence/save presentation), `review-doctor.test.mjs` (review-only backend selection). Adapter tests keep BTW/native-session behavior separate from stateless review. Add regressions to the existing owner; do not create another generic harness.
+Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs` (rendering, captured/unresolved evidence), `review-ux.test.mjs` (navigation and visible save recovery), `review-session.test.mjs` and `review-regeneration.test.mjs` (fake-CLI controller/save/recovery), `review-versions.test.mjs` (current schema and rejected prototype schemas), and `review-doctor.test.mjs` (review-only backend selection). Adapter tests keep BTW/native-session behavior separate from stateless review. Add regressions to the existing owner; do not create another generic harness.
 
 `npm test` never calls a real model: `backend.test.ts`, `claude.test.ts`,
 `grok.test.ts`, `codex.test.ts`, and `muse.test.ts` run fake CLIs; `settings.test.ts` and `prompt.test.ts` cover
