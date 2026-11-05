@@ -2,7 +2,7 @@
 
 All notable changes to pi-bro are documented here.
 
-## [0.29.0] - 2026-11-05
+## [0.28.0] - 2026-11-05
 
 ### Highlights
 
