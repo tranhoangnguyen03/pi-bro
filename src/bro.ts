@@ -68,7 +68,7 @@ export * from "./remember-engine.ts";
 export * from "./explain-modal.ts";
 
 const COMMANDS = [
-	{ value: "simplify", label: "simplify", description: "Explain the latest completed assistant reply (same as /bro)" },
+	{ value: "simplify", label: "simplify", description: "Open or resume Simplify" },
 	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
 	{ value: "file", label: "file", description: "Explain a local document" },
 	{ value: "url", label: "url", description: "Explain a public webpage" },
@@ -88,6 +88,11 @@ const COMMANDS = [
 	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
 const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
+/** Only capability-level entries are featured; legacy actions remain callable and prefix-searchable. */
+export const FEATURED_BRO_COMMANDS = [
+  "simplify","show","btw","guided-review","elevate","grill-me","remember-me","config",
+] as const;
+const FEATURED_COMMANDS = new Set<string>(FEATURED_BRO_COMMANDS);
 
 export default async function bro(pi: ExtensionAPI) {
 	let lastResult: ModalResult | undefined;
@@ -116,7 +121,8 @@ export default async function bro(pi: ExtensionAPI) {
 		description: "Explain text, documents, and webpages; draw session turns; open a side conversation; configure Bro and the executor's advisor tool",
 		getArgumentCompletions: (prefix) => {
 			const normalized = prefix.trim().toLowerCase();
-			const matches = COMMANDS.filter((command) => command.value.startsWith(normalized));
+			const matches = COMMANDS.filter((command) =>
+        (normalized ? command.value.startsWith(normalized) : FEATURED_COMMANDS.has(command.value)));
 			return matches.length ? matches : null;
 		},
 		handler: async (args, ctx) => {
