@@ -384,12 +384,13 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 ## Explain and show
 
-- \`/bro\` or \`/bro simplify\` — explain the latest completed assistant reply
+- \`/bro\` — open Simplify and explain the latest completed assistant reply
+- \`/bro simplify\` — reopen the current Simplify screen without another model call
 - \`/bro text [text]\` — explain pasted text, or the latest reply when text is omitted
 - \`/bro file <path>\` — explain a workspace \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\` file
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro <input>\` — a lone URL, an existing supported file, or anything else as pasted text
-- \`/bro open\` — reopen the latest explanation without a new request
+- Inside Simplify: \`/simplify\`, \`/text <text>\`, \`/file <path>\`, \`/url <url>\`, \`/copy\`, \`/clear\`, \`/help\`. **M** changes the mode and re-explains; **R** retries. One source at a time, no chat thread.\n- \`/bro open\` — legacy last-result view (retained for compatibility)
 - \`/bro show [n-turns] [query]\` — draw recent turns' conversation text as shapes; an optional query steers the focus
 
 ## Guided Review
