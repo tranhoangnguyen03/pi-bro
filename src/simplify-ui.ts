@@ -77,10 +77,10 @@ export async function openSimplifyWorkflow(
       if(state.view==="help")modal.setText(SIMPLIFY_MODAL_HELP);
       else if(state.view==="result"&&state.result)modal.setText((state.result.source.label ? "**Source:** "+stripVTControlCharacters(state.result.source.label).replace(/[\r\n]/g," ")+"\n\n---\n\n" : "")+state.result.text);
       else modal.setText("## Simplify\n\nUse /simplify for the latest reply, /text, /file or /url for another source. Type /help for all commands.");
-      if(state.error)modal.setNotice(state.error,"error");
+      // Notices describe the currently shown state, not an earlier request.\n      modal.setNotice(state.error ?? "",state.error ? "error" : "info");
       modal.scrollToEnd();
     };
-    const run=async (request:SimplifyStart|SimplifyAction, retained?:BroSource, mode?:BroMode)=>{
+    const run=async (request:SimplifyStart|SimplifyAction, retained?:BroSource, mode?:BroMode, submitted?:string)=>{
       if(running||closed)return;
       const attempt=new AbortController();
       controller=attempt; running=true;
@@ -97,11 +97,13 @@ export async function openSimplifyWorkflow(
         state.result={source,...result};
         state.view="result";state.error=undefined;
         display();
+        if(mode && mode !== currentSettings.mode)modal.setNotice("Mode: "+mode+" (not saved)");
       } catch(error){
         if(closed||attempt.signal.aborted)return;
         state.result=previous;state.view=previousView;
         state.error=errorMessage(error);
         display();
+        // Failed replacement is editable and retryable. Do not overwrite text the user\n        // entered while this request was running. Preserve it on modal close as well.\n        if(submitted && !modal.getComposerText().trim()) {\n          modal.setComposerText(submitted);\n          state.draft=submitted;\n        }
       } finally {
         if(controller===attempt)controller=undefined;
         running=false;
@@ -130,7 +132,7 @@ export async function openSimplifyWorkflow(
       }
       if(action.kind==="help"){state.view="help";state.error=undefined;display();return;}
       if(action.kind==="retry"){retry();return;}
-      void run(action);
+      void run(action,undefined,undefined,raw);
     }
     modal.onKey=(data:string)=>{
       if(running||modal.getComposerText().trim())return false;
@@ -141,7 +143,7 @@ export async function openSimplifyWorkflow(
     };
     display();
     if(state.draft)modal.setComposerText(state.draft);
-    if(initial.kind!=="resume")queueMicrotask(()=>{if(!closed)void run(initial);});
+    if(initial.kind!=="resume")queueMicrotask(()=>{if(!closed)void run(initial,undefined,undefined,\n      initial.kind==="latest" ? "/simplify" : "/"+initial.kind+" "+initial.input);});
     return modal;
   },{mouse:true});
 }
