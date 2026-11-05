@@ -43,8 +43,6 @@ import {
 } from "./show.ts";
 import {
 	type BroSource,
-	extractDocumentText,
-	extractWebPage,
 	isWorkspaceFile,
 	looksLikeWebUrl,
 } from "./sources.ts";
