@@ -2,6 +2,16 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.28.0] - 2026-11-05
+
+### Highlights
+
+- Simplify gains a source-focused modal with internal /simplify, /text, /file, /url, /copy, /clear and /help commands.
+- Bare /bro captures a fresh latest assistant response; /bro simplify reopens the last Simplify view without a new model call.
+- M changes explanation mode for that source without rewriting the saved default; R retries the same source.
+- Existing explicit top-level source forms and backend selection remain compatible.
+
+
 ## [0.27.0] - 2026-10-30
 
 ### Highlights

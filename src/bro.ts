@@ -12,6 +12,7 @@ import { setPiHostContext } from "./backend.ts";
 import { openElevateModal } from "./elevate.ts";
 import { openGrillModal } from "./grill.ts";
 import { openRememberModal } from "./remember.ts";
+import { openSimplifyWorkflow, type SimplifyState } from "./simplify-ui.ts";
 import { registerAboutUserTool } from "./remember-tool.ts";
 import { parseGrillArguments, type GrillThread } from "./grill-engine.ts";
 import {
@@ -42,8 +43,6 @@ import {
 } from "./show.ts";
 import {
 	type BroSource,
-	extractDocumentText,
-	extractWebPage,
 	isWorkspaceFile,
 	looksLikeWebUrl,
 } from "./sources.ts";
@@ -66,9 +65,11 @@ export * from "./grill-engine.ts";
 export * from "./remember-store.ts";
 export * from "./remember-engine.ts";
 export * from "./explain-modal.ts";
+export * from "./simplify-engine.ts";
+export * from "./simplify-ui.ts";
 
 const COMMANDS = [
-	{ value: "simplify", label: "simplify", description: "Explain the latest completed assistant reply (same as /bro)" },
+	{ value: "simplify", label: "simplify", description: "Reopen the last Simplify screen without a new model call" },
 	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
 	{ value: "file", label: "file", description: "Explain a local document" },
 	{ value: "url", label: "url", description: "Explain a public webpage" },
@@ -91,6 +92,7 @@ const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
 
 export default async function bro(pi: ExtensionAPI) {
 	let lastResult: ModalResult | undefined;
+	let simplifyState: SimplifyState = {};
 	let lastShowSteering: string | undefined;
 	let btwThread: BtwThread | undefined;
 	let grillThread: GrillThread | undefined;
@@ -105,6 +107,7 @@ export default async function bro(pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, _ctx) => {
 		lastResult = undefined;
+		simplifyState = {};
 		btwThread = undefined;
 		grillThread = undefined;
 	});
@@ -129,8 +132,10 @@ export default async function bro(pi: ExtensionAPI) {
 			let value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
 
 			if (action === "simplify") {
-				if (value) { ctx.ui.notify("Use /bro simplify for the latest reply, or /bro text <text> for pasted text.", "warning"); return; }
-				action = "";
+				if (value) { ctx.ui.notify("Use /bro simplify to reopen the last Simplify view; use /text, /file or /url inside it.", "warning"); return; }
+				try { await openSimplifyWorkflow(ctx, simplifyState, {kind:"resume"}); if (simplifyState.result) remember(simplifyState.result); }
+				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
+				return;
 			}
 
 			// Removed commands must never fall through to a paid text explanation.
@@ -151,6 +156,23 @@ export default async function bro(pi: ExtensionAPI) {
 							: "text"
 					: "text";
 				value = raw;
+			}
+
+			// Source operations open the same single-purpose Simplify modal, not separate
+			// top-level workflows. Old /bro text|file|url commands remain valid aliases.
+			if (!action || action === "text" || action === "file" || action === "url") {
+				if ((action === "file" || action === "url") && !value) {
+					ctx.ui.notify(`Use /bro ${action} <${action === "file" ? "path" : "url"}>.`, "warning");
+					return;
+				}
+				const initial = !action || (action === "text" && !value)
+					? {kind:"latest" as const}
+					: {kind:action as "text" | "file" | "url", input:value};
+				try {
+					await openSimplifyWorkflow(ctx, simplifyState, initial);
+					if (simplifyState.result) remember(simplifyState.result);
+				} catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
+				return;
 			}
 
 			if (action === "show") {
@@ -187,41 +209,6 @@ export default async function bro(pi: ExtensionAPI) {
 					});
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");
-				}
-				return;
-			}
-
-			if (action === "file" || action === "url") {
-				if (!value) {
-					ctx.ui.notify(`Use /bro ${action} <${action === "file" ? "path" : "url"}>.`, "warning");
-					return;
-				}
-				const runInput = async (
-					signal: AbortSignal,
-					source?: BroSource,
-					onProgress?: (text: string) => void,
-					mode?: BroMode,
-				): Promise<BroResult> => {
-					const target = source ?? (action === "url"
-						? await extractWebPage(value, signal)
-						: { text: await extractDocumentText(value, ctx.cwd, signal), label: unquote(value) });
-					try {
-						return {
-							source: target,
-							...(await simplify(target.text, signal, await readSettings(), onProgress, mode)),
-						};
-					} catch (error) {
-						throw new Error(withDoctor(error));
-					}
-				};
-				try {
-					await showBroModal(ctx, {
-						loadingText: action === "url" ? "Fetching and simplifying webpage…" : "Reading and simplifying document…",
-						run: runInput,
-						onResult: remember,
-					});
-				} catch (error) {
-					ctx.ui.notify(errorMessage(error), "error");
 				}
 				return;
 			}
