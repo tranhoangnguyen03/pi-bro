@@ -32,6 +32,14 @@ and file path.
     └── Remember Me — inherits BTW (informational)
 ```
 
+The BTW page shows what the selected backend can do in conversation-only mode,
+and reminds users that `/mode` **inside BTW** switches to full workspace access.
+Guided Review shows its selected backend's real inspection limits: strict file
+tools on some backends, sandboxed shell on others, and Agy's ability to write
+within the captured checkout. These are explanations of existing behavior,
+not a new permission switch or an extra compatibility restriction. See
+[backend access and retention](data-and-permissions.md#backends-access-and-retention).
+
 Enter drills down. Esc backs out or closes at root; editors use their existing
 save/cancel behavior. Opening Config does **not** run Doctor, touch a model, or
 modify settings. Current selected models and overrides remain visible in the
