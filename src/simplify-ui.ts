@@ -77,7 +77,8 @@ export async function openSimplifyWorkflow(
       if(state.view==="help")modal.setText(SIMPLIFY_MODAL_HELP);
       else if(state.view==="result"&&state.result)modal.setText((state.result.source.label ? "**Source:** "+stripVTControlCharacters(state.result.source.label).replace(/[\r\n]/g," ")+"\n\n---\n\n" : "")+state.result.text);
       else modal.setText("## Simplify\n\nUse /simplify for the latest reply, /text, /file or /url for another source. Type /help for all commands.");
-      // Notices describe the currently shown state, not an earlier request.\n      modal.setNotice(state.error ?? "",state.error ? "error" : "info");
+      // Notices describe the currently shown state, not an earlier request.
+      modal.setNotice(state.error ?? "",state.error ? "error" : "info");
       modal.scrollToEnd();
     };
     const run=async (request:SimplifyStart|SimplifyAction, retained?:BroSource, mode?:BroMode, submitted?:string)=>{
