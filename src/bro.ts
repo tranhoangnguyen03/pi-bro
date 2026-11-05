@@ -133,7 +133,7 @@ export default async function bro(pi: ExtensionAPI) {
 
 			if (action === "simplify") {
 				if (value) { ctx.ui.notify("Use /bro simplify to reopen the last Simplify view; use /text, /file or /url inside it.", "warning"); return; }
-				try { await openSimplifyWorkflow(ctx, simplifyState, {kind:"resume"}); }
+				try { await openSimplifyWorkflow(ctx, simplifyState, {kind:"resume"}); if (simplifyState.result) remember(simplifyState.result); }
 				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
 				return;
 			}
