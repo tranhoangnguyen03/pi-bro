@@ -16,6 +16,7 @@ import {
 // lower-level LLM engine pi-coding-agent is built on. Bro imports it directly, so it is declared as
 // a peer dependency alongside pi-coding-agent and pi-tui rather than relied on transitively.
 import { clampThinkingLevel, type Model as PiAiModel } from "@earendil-works/pi-ai";
+import { errorMessage, withDoctor } from "./util.ts";
 
 // Shared internal execution boundary for explain, show, btw, advisor, and review.
 // This implements docs/plans/2026-09-22-shared-backend-design.md across all supported backends
@@ -81,14 +82,6 @@ export type BackendExecuteOptions = {
 	// setup, cancellation, timeout and terminal-verification paths can be exercised without a model.
 	piCreateSession?: typeof createAgentSession;
 };
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-function withDoctor(message: string): string {
-	return message.includes("/bro doctor") ? message : `${message}\n\nRun \`/bro doctor\` for setup help.`;
-}
 
 export function agyFailureMessage(action: string, result: { code: number; killed: boolean; stderr: string }): string {
 	if (result.killed) return `Agy timed out while trying to ${action}. Run \`/bro doctor\` for setup help.`;
