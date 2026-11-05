@@ -6,7 +6,7 @@ import type { BroMouseEvent } from "./ui-capabilities.ts";
 import type { BroSettings } from "./settings.ts";
 import {
   CONFIG_ROOT, CONFIG_GLOBAL, CONFIG_FEATURES,
-  effectiveConfigLabel, inheritedConfigDescription,
+  inheritedConfigDescription,
   type ConfigNavAction, type ConfigNavState, type ConfigNavScreen,
 } from "./config-navigation.ts";
 
