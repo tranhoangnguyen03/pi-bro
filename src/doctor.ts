@@ -682,6 +682,7 @@ export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: Exten
 			});
 			continue;
 		}
+		if (selected.kind !== "settings") continue;
 		// Catalog discovery is needed only when an editable settings page is opened, not on
 		// every navigation or diagnostic visit. Keep independent Agy/Pi failure handling.
 		let settings:BroSettings;
