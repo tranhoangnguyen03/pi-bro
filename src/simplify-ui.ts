@@ -103,7 +103,9 @@ export async function openSimplifyWorkflow(
         state.result=previous;state.view=previousView;
         state.error=errorMessage(error);
         display();
-        // Failed replacement is editable and retryable. Do not overwrite text the user\n        // entered while this request was running. Preserve it on modal close as well.\n        if(submitted && !modal.getComposerText().trim()) {\n          modal.setComposerText(submitted);\n          state.draft=submitted;\n        }
+        // Failed replacement is editable and retryable. Do not overwrite text the user
+        // entered while this request was running. Preserve it on modal close as well.
+        if(submitted && !modal.getComposerText().trim()) {\n          modal.setComposerText(submitted);\n          state.draft=submitted;\n        }
       } finally {
         if(controller===attempt)controller=undefined;
         running=false;
