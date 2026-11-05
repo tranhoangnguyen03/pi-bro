@@ -2,6 +2,16 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.29.0] - 2026-11-05
+
+### Highlights
+
+- The default Bro completion menu presents eight capability-level suggestions instead of eighteen mixed actions; all existing explicit commands still work.
+- /bro config now opens Global and Features navigation rather than one flat settings list.
+- Global holds shared default model selection, existing Preferences editor, and on-demand Doctor.
+- Feature pages retain existing backend/model/effort pickers and persistence; Elevate, Grill Me and Remember Me expose BTW inheritance without adding settings keys.
+
+
 ## [0.27.0] - 2026-10-30
 
 ### Highlights
