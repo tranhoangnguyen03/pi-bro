@@ -2580,22 +2580,22 @@ await t.test("Simplify modal keeps M/R and restoration without changing default 
   };
   const screen=()=>stripVTControlCharacters(modal.render(112).join("\n"));
   const prompts=async()=>existsSync(join(binDir,"prompts.log"))?(await readFile(join(binDir,"prompts.log"),"utf8")).trim().split("\n").map(JSON.parse):[];
-  const settled=async(count)=>{
+  const settled=async(count,mode)=>{
     for(let i=0;i<700;i++){
-      if((await prompts()).length>=count&&screen().includes("SIMPLIFIED ANSWER"))return;
+      if((await prompts()).length>=count&&screen().includes("SIMPLIFIED ANSWER")&&screen().includes(mode))return;
       await new Promise(resolve=>setTimeout(resolve,10));
     }
     assert.fail("No Simplify result after "+count+" attempts: "+screen().slice(-900));
   };
   try {
     let closed=command.handler("text hello there",ctx);
-    await settled(1);
+    await settled(1,"balanced");
     assert.match(screen(),/balanced/);
     modal.handleInput("m");
-    await settled(2);
+    await settled(2,"faithful");
     assert.match(screen(),/faithful/);
     modal.handleInput("r");
-    await settled(3);
+    await settled(3,"faithful");
     assert.equal((await prompts()).length,3);
     modal.handleInput("\x1b");await closed;
     assert.equal(await readFile(settingsPath,"utf8"),savedSettings,"one-off M does not save settings");
@@ -2607,10 +2607,10 @@ await t.test("Simplify modal keeps M/R and restoration without changing default 
     modal.setComposerText("/help");modal.handleInput("\r");
     assert.match(screen(),/Simplify · Commands/);
     modal.setComposerText("/simplify");modal.handleInput("\r");
-    await settled(4);
+    await settled(4,"balanced");
     modal.handleInput("\x1b");await closed;
     closed=command.handler("",ctx);
-    await settled(5);
+    await settled(5,"balanced");
     modal.handleInput("\x1b");await closed;
   }finally{
     process.env.PATH=previousPath;
