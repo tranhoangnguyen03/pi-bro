@@ -2,14 +2,22 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.29.0] - 2026-11-05
+
+### Highlights
+
+- The default Bro completion menu shows eight capability-level actions while preserving all explicit command routes.
+- `/bro config` now offers Global (default, Preferences and on-demand Doctor) and Features navigation.
+- Feature pages reuse the existing model pickers and save logic; Elevate, Grill Me and Remember Me display inherited BTW settings without new overrides.
+
 ## [0.28.0] - 2026-11-05
 
 ### Highlights
 
-- The default Bro completion menu presents eight capability-level suggestions instead of eighteen mixed actions; all existing explicit commands still work.
-- /bro config now opens Global and Features navigation rather than one flat settings list.
-- Global holds shared default model selection, existing Preferences editor, and on-demand Doctor.
-- Feature pages retain existing backend/model/effort pickers and persistence; Elevate, Grill Me and Remember Me expose BTW inheritance without adding settings keys.
+- Simplify gains a source-focused modal with internal /simplify, /text, /file, /url, /copy, /clear and /help commands.
+- Bare /bro captures a fresh latest assistant response; /bro simplify reopens the last Simplify view without a new model call.
+- M changes explanation mode for that source without rewriting the saved default; R retries the same source.
+- Existing explicit top-level source forms and backend selection remain compatible.
 
 
 ## [0.27.0] - 2026-10-30

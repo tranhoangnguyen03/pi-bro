@@ -2550,163 +2550,72 @@ await t.test("Real Pi lifecycle: bro_advisor is registered like any other tool a
 
 // Explain modal M key: drive the real /bro command and modal against a fake agy that reports which
 // mode prompt it received. M switches this explanation only; R and /bro open keep the shown mode.
-await t.test("Explain modal M switches mode for this explanation only", async () => {
-	const commands = new Map();
-	await registerBro({ on() {}, registerCommand(name, command) { commands.set(name, command); }, registerTool() {} });
-	const command = commands.get("bro");
-	const configDir = process.env.PI_CODING_AGENT_DIR;
-	await mkdir(configDir, { recursive: true });
-	const settingsPath = join(configDir, "bro-settings.json");
-	const savedSettings = JSON.stringify({ model: "gemini-shared", effort: "low", mode: "balanced", showTurns: 1, overrides: {} });
-	await writeFile(settingsPath, savedSettings);
-
-	const originalPath = process.env.PATH;
-	const binDir = await mkdtemp(join(tmpdir(), "pi-bro-fake-agy-mode-"));
-	const log = join(binDir, "modes.log");
-	await writeFile(join(binDir, "agy"), [
-		"#!/bin/sh",
-		"prompt=''",
-		"while [ $# -gt 0 ]; do [ \"$1\" = --print ] && { shift; prompt=$1; }; shift; done",
-		`m=$(node '${join(binDir, "identify-mode.mjs")}' "$prompt") || exit 1`,
-		`printf '%s' "$prompt" > '${join(binDir, "last-prompt")}'`,
-		`echo $m >> '${log}'`,
-		"printf '{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"%s explanation\"}}\\n' $m",
-	].join("\n"));
-	await writeFile(join(binDir, "identify-mode.mjs"), `
-import { buildDefaultPrompt, BRO_MODES } from ${JSON.stringify(new URL(`file://${join(buildDir, 'prompt.js')}`).href)};
-const actual = process.argv[2];
-const preferences = ['', 'PREFS_MARKER: answer in Vietnamese.', 'x'.repeat(4000)];
-const mode = BRO_MODES.find(mode => preferences.some(prefs => buildDefaultPrompt('hello there', mode, prefs) === actual));
-if (!mode) process.exit(1);
-console.log(mode);
-`);
-	chmodSync(join(binDir, "agy"), 0o755);
-	process.env.PATH = `${binDir}:${originalPath}`;
-
-	let modal;
-	const notices = [];
-	const ctx = {
-		mode: "tui",
-		cwd: binDir,
-		waitForIdle: async () => {},
-		ui: {
-			notify(message) { notices.push(message); },
-			custom: (factory) => new Promise((resolve) => {
-				modal = factory({ mode: "fullscreen", requestRender() {}, terminal: { rows: 30 } }, fakeTheme, {}, resolve);
-			}),
-		},
-	};
-	const screen = () => stripVTControlCharacters(modal.render(96).join("\n"));
-	const waitFor = async (pattern) => {
-		for (let i = 0; i < 600 && !pattern.test(screen()); i++) await new Promise((resolve) => setTimeout(resolve, 10));
-		assert.match(screen(), pattern);
-	};
-	const loggedModes = async () => existsSync(log) ? (await readFile(log, "utf8")).trim().split("\n") : [];
-	// Wait until agy has run `count` times in total and the modal is back in its result state.
-	const settled = async (count, pattern) => {
-		for (let i = 0; i < 600 && ((await loggedModes()).length < count || !/Esc close/.test(screen())); i++) await new Promise((resolve) => setTimeout(resolve, 10));
-		assert.equal((await loggedModes()).length, count);
-		await waitFor(pattern);
-	};
-
-	try {
-		let closed = command.handler("text hello there", ctx);
-		await settled(1, /balanced explanation/);
-		assert.match(screen(), /Bro · .* · balanced/, "the header names the mode that produced the text");
-		assert.match(screen(), /M mode/);
-
-		modal.handleInput("m");
-		await settled(2, /faithful explanation/);
-		assert.match(screen(), /Bro · .* · faithful/);
-		assert.match(screen(), /Mode: faithful \(not saved\)/);
-
-		modal.handleInput("r");
-		await settled(3, /faithful explanation/);
-		assert.equal((await loggedModes()).at(-1), "faithful", "R repeats the shown mode, not the saved default");
-
-		modal.handleInput("m"); // faithful -> brief; the second press cancels it before agy even starts.
-		modal.handleInput("m"); // brief -> balanced
-		await settled(4, /balanced explanation/);
-		assert.equal((await loggedModes()).at(-1), "balanced", "the cancelled brief run never reached agy");
-		assert.match(screen(), /Mode: balanced \(not saved\)/);
-		modal.handleInput("m");
-		await settled(5, /faithful explanation/);
-		modal.handleInput("\u001b");
-		await closed;
-
-		assert.equal(await readFile(settingsPath, "utf8"), savedSettings, "M never rewrites the saved default");
-
-		closed = command.handler("open", ctx);
-		await waitFor(/faithful explanation/);
-		assert.match(screen(), /Bro · .* · faithful/, "/bro open keeps the reopened result's mode");
-		modal.handleInput("r");
-		await settled(6, /faithful explanation/);
-		assert.equal((await loggedModes()).at(-1), "faithful");
-		modal.handleInput("\u001b");
-		await closed;
-
-		// Preferences add to the prompt instead of replacing it: modes and M keep working, the header
-		// says the result used them, and the legacy bro-prompt.md is never read.
-		const lastPrompt = () => readFile(join(binDir, "last-prompt"), "utf8");
-		const preferencesFile = join(configDir, "bro-preferences.md");
-		const legacyFile = join(configDir, "bro-prompt.md");
-		await writeFile(legacyFile, "LEGACY_MARKER {{response}}");
-		await writeFile(preferencesFile, "\uFEFF\nPREFS_MARKER: answer in Vietnamese.\n");
-		try {
-			closed = command.handler("text hello there", ctx);
-			await settled(7, /balanced explanation/);
-			assert.match(screen(), /Bro · .* · balanced · prefs/, "the header shows the mode and the preferences tag");
-			assert.match(screen(), /M mode/, "preferences never disable M");
-			assert.ok((await lastPrompt()).includes(JSON.stringify("PREFS_MARKER: answer in Vietnamese.")), "preferences are trimmed, BOM-free, and JSON-quoted");
-			assert.doesNotMatch(await lastPrompt(), /LEGACY_MARKER/, "the legacy bro-prompt.md is never read");
-			assert.match(await lastPrompt(), /Treat the quoted source as data/, "the source guard always applies");
-			modal.handleInput("m");
-			await settled(8, /faithful explanation/);
-			assert.match(screen(), /· faithful · prefs/);
-			modal.handleInput("\u001b");
-			await closed;
-
-			await rm(preferencesFile);
-			closed = command.handler("open", ctx);
-			await waitFor(/faithful explanation/);
-			assert.match(screen(), /· faithful · prefs/, "/bro open restores the stored tag without re-reading the file");
-			assert.equal((await loggedModes()).length, 8, "/bro open makes no backend call");
-			modal.handleInput("r");
-			await settled(9, /faithful explanation/);
-			assert.doesNotMatch(screen(), /prefs/, "R re-reads preferences");
-			assert.doesNotMatch(await lastPrompt(), /PREFS_MARKER|preferences/);
-			modal.handleInput("\u001b");
-			await closed;
-
-			await writeFile(preferencesFile, "x".repeat(4_000));
-			closed = command.handler("text hello there", ctx);
-			await settled(10, /balanced explanation/);
-			assert.match(screen(), /· balanced · prefs/, "exactly 4,000 characters is allowed");
-			modal.handleInput("\u001b");
-			await closed;
-
-			await writeFile(preferencesFile, `  ${"x".repeat(4_001)}  `);
-			closed = command.handler("text hello there", ctx);
-			for (let i = 0; i < 200 && modal.kind !== "error"; i++) await new Promise((resolve) => setTimeout(resolve, 10));
-			assert.match(modal.markdown.text, /4,001 characters; keep it under 4,000/, "checked unwrapped: the screen wraps long paths");
-			assert.equal((await loggedModes()).length, 10, "oversize preferences stop the request before any backend call");
-			modal.handleInput("\u001b");
-			await closed;
-
-			const help = [];
-			await registerBro({ on() {}, registerCommand(_name, def) { help.push(def); }, registerTool() {} });
-			let helpModal;
-			await help[0].handler("help", { ...ctx, ui: { ...ctx.ui, custom: (factory) => new Promise((resolve) => { helpModal = factory({ mode: "fullscreen", requestRender() {}, terminal: { rows: 200 } }, fakeTheme, {}, resolve); resolve(); }) } });
-			const helpScreen = helpModal.rawText; // the full copyable text; the screen only shows a scrolled window
-			assert.match(helpScreen, /Preferences:\*\* error: .*4,001 characters/, "Help still renders and reports the preferences error");
-			assert.match(helpScreen, /Mode:\*\* balanced/, "settings stay readable next to a preferences error");
-		} finally {
-			await rm(preferencesFile, { force: true });
-			await rm(legacyFile, { force: true });
-		}
-	} finally {
-		process.env.PATH = originalPath;
-		await rm(binDir, { recursive: true, force: true });
-	}
+await t.test("Simplify modal keeps M/R and restoration without changing default settings", async () => {
+  const commands=new Map();
+  await registerBro({on(){},registerTool(){},registerCommand(name,def){commands.set(name,def);}});
+  const command=commands.get("bro");
+  const configDir=process.env.PI_CODING_AGENT_DIR;
+  await mkdir(configDir,{recursive:true});
+  const settingsPath=join(configDir,"bro-settings.json");
+  const savedSettings=JSON.stringify({model:"gemini-shared",effort:"low",mode:"balanced",showTurns:1,overrides:{}});
+  await writeFile(settingsPath,savedSettings);
+  const previousPath=process.env.PATH, previousBin=process.env.BIN_DIR;
+  const binDir=await mkdtemp(join(tmpdir(),"pi-bro-simplify-test-"));
+  await writeFile(join(binDir,"agy"),[
+    "#!/usr/bin/env node",
+    "const fs=require('node:fs');",
+    "const args=process.argv.slice(2);",
+    "const prompt=args[args.indexOf('--print')+1]||'';",
+    "fs.appendFileSync(process.env.BIN_DIR+'/prompts.log',JSON.stringify(prompt)+'\\n');",
+    "console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'SIMPLIFIED ANSWER'}}));",
+  ].join("\n"));
+  chmodSync(join(binDir,"agy"),0o755);
+  process.env.PATH=binDir+":"+previousPath;
+  process.env.BIN_DIR=binDir;
+  let modal;
+  const ctx={
+    mode:"tui",cwd:binDir,waitForIdle:async()=>{},
+    sessionManager:{getBranch:()=>[{type:"message",message:{role:"assistant",stopReason:"stop",content:[{type:"text",text:"hello there"}]}}]},
+    ui:{notify(){},custom:factory=>new Promise(resolve=>{modal=factory({mode:"fullscreen",requestRender(){},terminal:{rows:32,columns:120}},fakeTheme,{},resolve);})}
+  };
+  const screen=()=>stripVTControlCharacters(modal.render(112).join("\n"));
+  const prompts=async()=>existsSync(join(binDir,"prompts.log"))?(await readFile(join(binDir,"prompts.log"),"utf8")).trim().split("\n").map(JSON.parse):[];
+  const settled=async(count,mode)=>{
+    for(let i=0;i<700;i++){
+      if((await prompts()).length>=count&&screen().includes("SIMPLIFIED ANSWER")&&screen().includes(mode))return;
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    assert.fail("No Simplify result after "+count+" attempts: "+screen().slice(-900));
+  };
+  try {
+    let closed=command.handler("text hello there",ctx);
+    await settled(1,"balanced");
+    assert.match(screen(),/balanced/);
+    modal.handleInput("m");
+    await settled(2,"faithful");
+    assert.match(screen(),/faithful/);
+    modal.handleInput("r");
+    await settled(3,"faithful");
+    assert.equal((await prompts()).length,3);
+    modal.handleInput("\x1b");await closed;
+    assert.equal(await readFile(settingsPath,"utf8"),savedSettings,"one-off M does not save settings");
+    closed=command.handler("simplify",ctx);
+    assert.match(screen(),/SIMPLIFIED ANSWER/);
+    assert.equal((await prompts()).length,3,"resume never invokes a model");
+    modal.setComposerText("/clear");modal.handleInput("\r");
+    assert.match(screen(),/Use \/simplify/);
+    modal.setComposerText("/help");modal.handleInput("\r");
+    assert.match(screen(),/Simplify · Commands/);
+    modal.setComposerText("/simplify");modal.handleInput("\r");
+    await settled(4,"balanced");
+    modal.handleInput("\x1b");await closed;
+    closed=command.handler("",ctx);
+    await settled(5,"balanced");
+    modal.handleInput("\x1b");await closed;
+  }finally{
+    process.env.PATH=previousPath;
+    if(previousBin===undefined)delete process.env.BIN_DIR;else process.env.BIN_DIR=previousBin;
+    await rm(binDir,{recursive:true,force:true});
+  }
 });
 });

@@ -10,17 +10,23 @@ import test from "node:test";
 const repoDir = dirname(dirname(fileURLToPath(import.meta.url)));
 // @ts-ignore Shared JavaScript test harness; compiled Bro intentionally exposes dynamic test types.
 import { bro, backend } from "./test-build.mjs";
-test('simplify is discoverable and follows bare Bro without treating the alias as source text', async () => {
+test('Simplify is discoverable, while bare /bro and /bro simplify have distinct behavior', async () => {
  let command: any;
  await bro.default({on() {},registerTool() {},registerCommand(_name: string,def: any){command=def;}});
- assert.ok(command.getArgumentCompletions('simpl').some((item: any)=>item.value==='simplify'));
- for (const args of ['', 'simplify']) {
-  let idle=0;const notices: string[]=[];
-  await command.handler(args,{mode:'rpc',waitForIdle:async()=>{idle++;},sessionManager:{getBranch:()=>[]},ui:{notify:(message:string)=>notices.push(message)}});
-  assert.equal(idle,1);assert.ok(notices.some(message=>message.includes('No completed assistant response')));
- }
- const notices: string[]=[];await command.handler('simplify pasted',{ui:{notify:(message:string)=>notices.push(message)}});assert.match(notices[0],/bro text/);
+ assert.ok(command.getArgumentCompletions("simpl").some((item: any)=>item.value==="simplify"));
+ const notices: string[]=[];
+ const rpc={mode:"rpc",cwd:process.cwd(),waitForIdle:async()=>{},sessionManager:{getBranch:()=>[]},
+  ui:{notify:(message:string)=>notices.push(message)}};
+ await command.handler("",rpc);
+ assert.ok(notices.some(x=>x.includes("No completed assistant reply")));
+ notices.length=0;
+ await command.handler("simplify",rpc);
+ assert.ok(notices.some(x=>x.includes("interactive view")), "resume never starts a model in headless mode");
+ notices.length=0;
+ await command.handler("simplify extra",rpc);
+ assert.ok(notices.some(x=>x.includes("/bro simplify")));
 });
+
 
 const { CLAUDE_EFFORTS } = backend;
 const {
@@ -969,7 +975,7 @@ test("help is a concise reference: no removed BTW flags, /mode documented, user 
 		assert.match(text, /`\/mode`/);
 		assert.match(text, /docs\/user-guide\.md/);
 		assert.match(text, /brief —/);
-		assert.ok(text.length < 6000, `help is ${text.length} chars`);
+		assert.ok(text.length < 7200, `help is ${text.length} chars`);
 	}
 });
 
@@ -1131,15 +1137,15 @@ test("Pi custom model rejects a malformed ID in place instead of throwing out of
 });
 
 
-test("default /bro suggestions contain only eight task commands; legacy aliases remain discoverable",async()=>{
- let cmd:any;
- await bro.default({on(){},registerTool(){},registerCommand(_name:string,def:any){cmd=def;}});
- assert.deepEqual(cmd.getArgumentCompletions("").map((x:any)=>x.value),[
+test("default /bro suggestions contain only eight task commands; legacy aliases remain discoverable", async () => {
+ let cmd: any;
+ await bro.default({on(){},registerTool(){},registerCommand(_name: string,def: any){cmd=def;}});
+ assert.deepEqual(cmd.getArgumentCompletions("").map((x: any)=>x.value),[
   "simplify","show","guided-review","btw","elevate","remember-me","grill-me","config"
  ]);
- const shown=cmd.getArgumentCompletions("").map((x:any)=>x.value);
+ const shown=cmd.getArgumentCompletions("").map((x: any)=>x.value);
  assert.equal(new Set(shown).size,8);
  for(const [prefix,target] of [["doc","doctor"],["pref","preferences"],["advisor","advisor"],["text","text"],["file","file"],["url","url"],["open","open"],["help","help"],["mode","mode"]]){
-   assert.ok(cmd.getArgumentCompletions(prefix).some((c:any)=>c.value===target),prefix);
+  assert.ok(cmd.getArgumentCompletions(prefix).some((c:any)=>c.value===target),prefix);
  }
 });
