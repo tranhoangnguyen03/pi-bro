@@ -69,7 +69,7 @@ export * from "./simplify-engine.ts";
 export * from "./simplify-ui.ts";
 
 const COMMANDS = [
-	{ value: "simplify", label: "simplify", description: "Explain the latest completed assistant reply (same as /bro)" },
+	{ value: "simplify", label: "simplify", description: "Reopen the last Simplify screen without a new model call" },
 	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
 	{ value: "file", label: "file", description: "Explain a local document" },
 	{ value: "url", label: "url", description: "Explain a public webpage" },
