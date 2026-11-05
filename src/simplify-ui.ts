@@ -61,7 +61,6 @@ export async function openSimplifyWorkflow(
     let closed=false;
     let controller:AbortController|undefined;
     let running=false;
-    let pending: SimplifyStart | SimplifyAction | undefined;
     const close=()=>{if(closed)return; closed=true;state.draft=modal.getComposerText();controller?.abort();done(undefined);};
     const modal=new BtwModal(tui,theme,close,submit,()=>{
       closed=true;state.draft=modal.getComposerText();controller?.abort();
@@ -83,7 +82,7 @@ export async function openSimplifyWorkflow(
     const run=async (request:SimplifyStart|SimplifyAction, retained?:BroSource, mode?:BroMode)=>{
       if(running||closed)return;
       const attempt=new AbortController();
-      controller=attempt; running=true;pending=request;
+      controller=attempt; running=true;
       modal.setRunning(true);modal.setNotice("Simplifying…");
       const previous=state.result,previousView=state.view;
       try {
@@ -104,7 +103,7 @@ export async function openSimplifyWorkflow(
         display();
       } finally {
         if(controller===attempt)controller=undefined;
-        pending=undefined;running=false;
+        running=false;
         if(!closed)modal.setRunning(false);
       }
     };
