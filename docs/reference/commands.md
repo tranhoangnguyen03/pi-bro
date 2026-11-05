@@ -18,6 +18,10 @@ Pressing **R** simplifies the captured source again in the mode shown, and
 new source: `/bro text`, `/bro file`, `/bro url`, and `/bro show`. Giving `/bro` a URL, path, or
 text directly captures a new source the same way.
 
+## Default command suggestions
+
+Typing `/bro ` displays eight task-level suggestions: `simplify`, `show`, `btw`, `guided-review`, `elevate`, `grill-me`, `remember-me`, and `config`. Every other documented command remains callable and discoverable by typing its prefix (e.g., `/bro doc`).
+
 ## Commands
 
 | Command | Description |
@@ -33,7 +37,7 @@ text directly captures a new source the same way.
 | `/bro doctor` | Check Bro's settings, preferences, and each selected backend, with the effective backend/model/effort per feature. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro preferences` | View or edit what Bro knows about you and how you like answers; see [Preferences](settings.md#preferences). |
-| `/bro config` | Open settings for the shared backend/model/effort, explain mode, show turns, and per-capability (explain/show/btw/advisor/review) overrides. |
+| `/bro config` | Open Global (defaults, preferences and Doctor) or Features (per-feature overrides, BTW inheritance and Advisor steering). |
 | `/bro guided-review <PR number or URL>` | Automatically explain and assess a captured PR in local Pi, with source evidence and optional private questions. Opening the same PR restores its saved review. |
 | `/bro guided-review` | List saved reviews; `resume` is an alias. |
 | `/bro remember-me [thought]` | Start a private memory-writing conversation, browse and expand memories, and approve saves explicitly. [Guide](../remember-me.md). |

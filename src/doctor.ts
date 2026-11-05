@@ -18,6 +18,9 @@ import {
 } from "./advisor.ts";
 import { agyFailureMessage, bridgePiRuntimeForCatalog, piEffectiveEffort, reviewBackendNotice, splitPiModel } from "./backend.ts";
 import { createConfigModal } from "./config-ui.ts";
+import { createConfigNavigationModal } from "./config-navigation-ui.ts";
+import { type ConfigNavAction, type ConfigNavState } from "./config-navigation.ts";
+import { showBroModal, showPreferencesModal, showAdvisorSteerModal } from "./explain-modal.ts";
 import { openBroOverlay } from "./modal-kit.ts";
 import {
 	type AgyEffort,
@@ -642,36 +645,60 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 	}`;
 }
 
+/** Global/Features navigation over the existing settings modal and editor contracts. */
 export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
 	if (!hasBroCustomUi(ctx)) {
 		ctx.ui.notify("Use /bro config in Pi's interactive UI.", "warning");
 		return;
 	}
-	let settings: BroSettings;
-	try {
-		settings = await readSettings();
-	} catch (error) {
-		ctx.ui.notify(withDoctor(error), "error");
-		return;
+	const navigation: ConfigNavState = {screen:"root"};
+	for (;;) {
+		// Even invalid settings must not prevent access to Doctor. The placeholder is navigation-only:
+		// every editable page re-reads the actual settings and refuses to edit on failure.
+		let current: BroSettings;
+		try { current = await readSettings(); }
+		catch (error) {
+			ctx.ui.notify("Settings unavailable: "+errorMessage(error)+". Global > Doctor can diagnose.", "warning");
+			current = { backend:"agy",model:"(unavailable)",effort:"default",mode:"balanced",showTurns:1,overrides:{} };
+		}
+		const selected = await openBroOverlay<ConfigNavAction>(
+			ctx, createConfigNavigationModal(navigation,current), {mouse:true}
+		);
+		if (!selected || selected.kind === "close") return;
+		if (selected.kind === "preferences") {
+			await showPreferencesModal(ctx);
+			continue;
+		}
+		if (selected.kind === "advisor-steer") {
+			await showAdvisorSteerModal(ctx,pi);
+			continue;
+		}
+		if (selected.kind === "doctor") {
+			await showBroModal(ctx,{
+				loadingText:"Checking Bro setup…",
+				retryable:true,
+				retryLabel:"check again",
+				run:async(signal)=>({text:await doctorReport(pi,ctx,signal)}),
+			});
+			continue;
+		}
+		if (selected.kind !== "settings") continue;
+		// Catalog discovery is needed only when an editable settings page is opened, not on
+		// every navigation or diagnostic visit. Keep independent Agy/Pi failure handling.
+		let settings:BroSettings;
+		try { settings = await readSettings(); }
+		catch (error) { ctx.ui.notify(withDoctor(error),"error"); continue; }
+		let families:AgyModelFamily[]=[];
+		try { families=await listAgyModels(pi); }
+		catch { ctx.ui.notify("Agy catalog unavailable — other backends remain configurable.","warning"); }
+		let piModels:PiModelChoice[]=[];
+		try {
+			const catalog=await listPiModels(ctx);
+			piModels=catalog.models;
+			for(const diagnostic of catalog.diagnostics) ctx.ui.notify("Pi scoped models: "+diagnostic,"warning");
+		} catch(error) { ctx.ui.notify("Pi catalog unavailable: "+errorMessage(error),"warning"); }
+		await openBroOverlay<void>(
+			ctx,createConfigModal(settings,families,writeSettings,piModels,selected.page),{mouse:true}
+		);
 	}
-	// Keep configuration repair accessible even when the Agy catalog is unavailable.
-	let families: AgyModelFamily[];
-	try {
-		families = await listAgyModels(pi);
-	} catch {
-		families = [];
-		ctx.ui.notify("Agy model catalog unavailable — showing other backend settings without Agy choices.", "warning");
-	}
-	// The Pi catalog is loaded independently so /bro config still works when Agy is offline.
-	let piModels: PiModelChoice[] = [];
-	try {
-		const catalog = await listPiModels(ctx);
-		piModels = catalog.models;
-		// A configured scope that resolves to nothing leaves the Pi model list empty; say why instead of
-		// showing a silently empty picker.
-		for (const diagnostic of catalog.diagnostics) ctx.ui.notify(`Pi scoped models: ${diagnostic}`, "warning");
-	} catch (error) {
-		ctx.ui.notify(`Pi model catalog unavailable — Pi choices will be empty. ${errorMessage(error)}`, "warning");
-	}
-	await openBroOverlay<void>(ctx, createConfigModal(settings, families, writeSettings, piModels));
 }

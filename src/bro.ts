@@ -83,12 +83,17 @@ const COMMANDS = [
 	{ value: "elevate", label: "elevate", description: "Discover missing expert considerations, then improve a request" },
 	{ value: "remember-me", label: "remember-me", description: "Help write and review personal memories; agents can unfold them on demand" },
 	{ value: "grill-me", label: "grill-me", description: "A private, one-question-at-a-time decision interview" },
-	{ value: "config", label: "config", description: "Configure shared defaults and per-capability model/effort overrides" },
+	{ value: "config", label: "config", description: "Global defaults, diagnostics and feature settings" },
 	{ value: "advisor", label: "advisor", description: "Check whether the executor's advisor tool is available right now" },
 	{ value: "advisor-steer", label: "advisor-steer", description: "View, edit, save, or clear the advisor's persistent steering brief" },
 	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
 const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
+/** Only capability-level commands appear by default; all existing commands remain discoverable by prefix. */
+export const FEATURED_BRO_COMMANDS = [
+  "simplify","show","btw","guided-review","elevate","grill-me","remember-me","config",
+] as const;
+const FEATURED_COMMANDS = new Set<string>(FEATURED_BRO_COMMANDS);
 
 export default async function bro(pi: ExtensionAPI) {
 	let lastResult: ModalResult | undefined;
@@ -119,7 +124,8 @@ export default async function bro(pi: ExtensionAPI) {
 		description: "Explain text, documents, and webpages; draw session turns; open a side conversation; configure Bro and the executor's advisor tool",
 		getArgumentCompletions: (prefix) => {
 			const normalized = prefix.trim().toLowerCase();
-			const matches = COMMANDS.filter((command) => command.value.startsWith(normalized));
+			const matches = COMMANDS.filter((command) =>
+        normalized ? command.value.startsWith(normalized) : FEATURED_COMMANDS.has(command.value));
 			return matches.length ? matches : null;
 		},
 		handler: async (args, ctx) => {

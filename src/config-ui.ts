@@ -6,6 +6,7 @@ import {
 	SelectList,
 	SettingsList,
 	matchesKey,
+	wrapTextWithAnsi,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { getSelectListTheme, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
@@ -31,6 +32,7 @@ import {
 	withCapabilityOverride,
 } from "./settings.ts";
 import { BRO_MODES, parseBroMode } from "./prompt.ts";
+import { type ConfigSettingsPage, effectiveConfigLabel, configFeatureAccessNote } from "./config-navigation.ts";
 import { delegateMouse, formatNotice, modalHeight, renderFrame, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
 import type { BroMouseEvent } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
@@ -64,6 +66,7 @@ export function createConfigModal(
 	families: AgyModelFamily[],
 	persistSettings: (settings: BroSettings) => Promise<void>,
 	piModels: PiModelChoice[] = [],
+	page: ConfigSettingsPage | "all" = "all",
 ): (tui: TuiLike, theme: Theme, keybindings: unknown, done: (value?: void) => void) => Component & { dispose?(): void } {
 	return (tui, theme, _keybindings, done) => {
 		// Size the host list once, then stop interaction if a later resize cannot show the whole
@@ -294,13 +297,15 @@ export function createConfigModal(
 		}
 		refresh();
 
-		const items: SettingItem[] = [
-			modelItem,
-			effortItem,
-			modeItem,
-			showTurnsItem,
-			...CAPABILITIES.flatMap((capability) => [capabilityItems[capability].model, capabilityItems[capability].effort]),
-		];
+		// The existing pickers and save queue remain unchanged. Pages differ only in rows.
+		const items: SettingItem[] = page === "all"
+			? [modelItem, effortItem, modeItem, showTurnsItem, ...CAPABILITIES.flatMap((capability) => [capabilityItems[capability].model, capabilityItems[capability].effort])]
+			: page === "defaults"
+				? [modelItem, effortItem]
+				: [capabilityItems[page].model, capabilityItems[page].effort,
+					...(page === "explain" ? [modeItem] : []),
+					...(page === "show" ? [showTurnsItem] : []),
+				];
 
 		let notice = "";
 		let interactive = true;
@@ -414,27 +419,32 @@ export function createConfigModal(
 				const height = modalHeight(tui);
 				const innerWidth = Math.max(1, width - 2);
 				const list = settingsList.render(innerWidth);
+				// An access boundary must be visible whenever BTW/Review permissions are editable.
+				// If the terminal cannot show it alongside the controls, refuse blind edits.
+				const accessNote = page === "btw" || page === "review"
+					? wrapTextWithAnsi(theme.fg("warning", configFeatureAccessNote(settings, page)), innerWidth)
+					: [];
 				// renderFrame shrinks a notice to one line before taking minBody rows.
-				interactive = list.length <= Math.max(0, height - 5 - (notice ? 1 : 0));
+				interactive = list.length + accessNote.length <= Math.max(0, height - 5 - (notice ? 1 : 0));
 				return renderFrame(theme, width, height, {
 					header: () => theme.fg(
 						interactive ? "accent" : "warning",
-						theme.bold(interactive ? "Bro · config" : "Bro · config · enlarge terminal"),
+						theme.bold(interactive ? "Bro · config · " + (page === "all" ? "All" : page === "defaults" ? "Global defaults" : CAPABILITY_LABELS[page]) : "Bro · config · enlarge terminal"),
 					),
 					body: (rows) => {
 						if (!interactive) return [theme.fg("warning", "Enlarge the terminal to configure settings safely.")];
 						// The subtitle gives way before SettingsList's selection, scroll state and key hints.
-						const subtitle = rows > list.length
-							? [truncateToWidth(theme.fg("dim", "Shared defaults, with optional overrides per capability"), innerWidth)]
+						const subtitle = rows > list.length + accessNote.length
+							? [truncateToWidth(theme.fg("dim", page === "all" ? "Shared defaults, with optional overrides per capability" : page === "defaults" ? "Shared default selection" : "Effective: " + effectiveConfigLabel(settings, page)), innerWidth)]
 							: [];
-						// Clicks only reach list rows that were actually drawn.
-						listArea = { top: 3 + subtitle.length, left: 1, width: innerWidth, height: Math.min(list.length, rows - subtitle.length) };
-						return [...subtitle, ...list];
+						// Access notes always remain above the editable list, including after backend changes.
+						listArea = { top: 3 + subtitle.length + accessNote.length, left: 1, width: innerWidth, height: Math.min(list.length, rows - subtitle.length - accessNote.length) };
+						return [...subtitle, ...accessNote, ...list];
 					},
 					notice,
 					hints: interactive ? undefined : "Esc close",
 					fill: false,
-					minBody: interactive ? list.length : 1,
+					minBody: interactive ? list.length + accessNote.length : 1,
 				});
 			},
 			invalidate: () => settingsList.invalidate(),

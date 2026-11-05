@@ -1135,3 +1135,17 @@ test("Pi custom model rejects a malformed ID in place instead of throwing out of
 	assert.equal(saved.length, 1);
 	assert.equal(saved[0].model, "acme/fixed");
 });
+
+
+test("default /bro suggestions contain only eight task commands; legacy aliases remain discoverable", async () => {
+ let cmd: any;
+ await bro.default({on(){},registerTool(){},registerCommand(_name: string,def: any){cmd=def;}});
+ assert.deepEqual(cmd.getArgumentCompletions("").map((x: any)=>x.value),[
+  "simplify","show","guided-review","btw","elevate","remember-me","grill-me","config"
+ ]);
+ const shown=cmd.getArgumentCompletions("").map((x: any)=>x.value);
+ assert.equal(new Set(shown).size,8);
+ for(const [prefix,target] of [["doc","doctor"],["pref","preferences"],["advisor","advisor"],["text","text"],["file","file"],["url","url"],["open","open"],["help","help"],["mode","mode"]]){
+  assert.ok(cmd.getArgumentCompletions(prefix).some((c:any)=>c.value===target),prefix);
+ }
+});
