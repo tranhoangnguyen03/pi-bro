@@ -163,3 +163,7 @@ See [Privacy and safety](reference/data-and-permissions.md#privacy-and-safety).
 ## Troubleshooting and current limits
 
 See [Troubleshooting and current limits](reference/troubleshooting.md#troubleshooting-and-current-limits).
+
+## Bro command discovery and Config navigation
+
+The default `/bro ` completion menu highlights eight tasks: `simplify`, `show`, `btw`, `guided-review`, `elevate`, `grill-me`, `remember-me`, `config`. Older explicit names such as `/bro doctor`, `/bro preferences`, `/bro advisor-steer`, `/bro file`, `/bro url`, `/bro text` and `/bro help` remain valid and can be found by typing their prefix. `/bro config` starts with **Global** (shared defaults, Preferences editor, Doctor) and **Features** (five configurable capabilities and three BTW-inheriting workflows). Doctor runs only when selected; inherited feature rows do not create overrides. Enter opens a layer, Esc backs out. Existing settings-save behavior is unchanged.
