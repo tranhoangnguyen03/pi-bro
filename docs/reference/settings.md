@@ -4,9 +4,7 @@
 
 ## Settings
 
-Use `/bro config` to review or change the shared default backend/model/effort
-and any per-capability (explain/show/btw/advisor/review) overrides, the explanation
-mode, and the default show turn count. Changes save immediately. Esc inside a
+Use `/bro config` for the layered Global and Features menu. Its editable pages retain the existing backend/model/effort pickers, save checks and per-capability overrides. Changes save immediately. Esc inside a
 picker cancels that pick; Esc on the settings screen closes it, keeping
 whatever was already saved. If the terminal becomes too small, config blocks
 hidden actions; Esc closes config even if a picker was open, after pending saves
@@ -14,6 +12,31 @@ finish. A failed save cancels that close and shows its error inline; if the erro
 alone makes config too small, any other key clears it so you can try again. `/bro mode` changes the mode directly (**M** in an explanation
 tries another mode without saving it), and `/bro help` shows the active settings
 and file path.
+
+### Config navigation
+
+```text
+/bro config
+├── Global
+│   ├── Default backend, model and effort
+│   ├── Preferences (opens the existing shared editor)
+│   └── Doctor (runs only when selected)
+└── Features
+    ├── Simplify — Explain override and default brief/balanced/faithful mode
+    ├── Show — Show override and default turn count
+    ├── BTW — backend/model/effort override
+    ├── Guided Review — Review override
+    ├── Advisor — override and persistent steering editor
+    ├── Elevate — inherits BTW (informational)
+    ├── Grill Me — inherits BTW (informational)
+    └── Remember Me — inherits BTW (informational)
+```
+
+Enter drills down. Esc backs out or closes at root; editors use their existing
+save/cancel behavior. Opening Config does **not** run Doctor, touch a model, or
+modify settings. Current selected models and overrides remain visible in the
+existing editing pages. The old `/bro doctor`, `/bro preferences` and
+`/bro advisor-steer` shortcuts remain callable.
 
 Elevate inherits the **BTW** backend/model/effort selection. There is no separate Elevate setting in this release. See the [Elevate guide](../elevate.md).
 
