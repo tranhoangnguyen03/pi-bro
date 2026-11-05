@@ -1135,8 +1135,8 @@ test("default /bro suggestions contain only eight task commands; legacy aliases 
  let cmd:any;
  await bro.default({on(){},registerTool(){},registerCommand(_name:string,def:any){cmd=def;}});
  assert.deepEqual(cmd.getArgumentCompletions("").map((x:any)=>x.value),[
-  "show","guided-review","btw","elevate","remember-me","grill-me","config","simplify"
- ].sort((a,b)=>["simplify","show","guided-review","btw","elevate","remember-me","grill-me","config"].indexOf(a)-["simplify","show","guided-review","btw","elevate","remember-me","grill-me","config"].indexOf(b)));
+  "simplify","show","guided-review","btw","elevate","remember-me","grill-me","config"
+ ]);
  const shown=cmd.getArgumentCompletions("").map((x:any)=>x.value);
  assert.equal(new Set(shown).size,8);
  for(const [prefix,target] of [["doc","doctor"],["pref","preferences"],["advisor","advisor"],["text","text"],["file","file"],["url","url"],["open","open"],["help","help"],["mode","mode"]]){
