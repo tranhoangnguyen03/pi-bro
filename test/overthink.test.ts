@@ -170,11 +170,14 @@ test("Overthink viewer opens without a call; ? help, Ctrl+R retry, Ctrl+E editor
   )(tui as any, theme as any, {}, (value) => { action = value; });
   assert.match(component.render(90).join("\n"), /Check recovery/);
   assert.equal(calls, 0, "viewing latest notes must not run a model");
-  component.handleInput?.("?"); // contextual help
+  component.handleInput?.("?"); // normal ? opens help
   assert.match(component.render(90).join("\n"), /Toggle help/);
-  component.handleInput?.("\x1b[63u"); // extended keyboard-protocol "?" must also open help
+  component.handleInput?.("?"); // normal ? closes help
+  assert.match(component.render(90).join("\n"), /Check recovery/);
+  component.handleInput?.("\x1b[63u"); // extended keyboard protocol opens help
   assert.match(component.render(90).join("\n"), /Toggle help/);
-  component.handleInput?.("\x1b[63u"); // close help
+  component.handleInput?.("\x1b[63u"); // extended keyboard protocol closes help
+  assert.match(component.render(90).join("\n"), /Check recovery/);
   component.handleInput?.("\x12"); // Ctrl+R
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(calls, 1);
