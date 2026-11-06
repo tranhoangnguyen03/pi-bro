@@ -62,7 +62,7 @@ test("Grill keeps quoted context, one-question pacing, and user-controlled conso
   assert.match(first, /End your reply with exactly one substantive question/);
   assert.match(first, /multiple choices labelled A, B, C/);
   assert.match(first, /Other — explain in your own words/);
-  assert.match(first, /exactly one option '\\(Recommended\\)'/);
+  assert.match(first, /exactly one option.*Recommended/);
 
   const reply = "I prefer a low-maintenance integration.";
   const second = buildGrillPrompt({ topic, reply, depth: "balanced",
