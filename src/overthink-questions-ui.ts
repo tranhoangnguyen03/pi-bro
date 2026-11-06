@@ -1,9 +1,8 @@
 /** One question list editor for global defaults and session snapshots. */
-import { copyToClipboard } from "@earendil-works/pi-coding-agent";
 import { Input, matchesKey, truncateToWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import { modalHeight, openBroOverlay, renderFrame, Scroller, formatNotice, type Theme } from "./modal-kit.ts";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { checkQuestions, type OverthinkSession } from "./overthink-state.ts";
+import { checkQuestions } from "./overthink-state.ts";
 import { errorMessage } from "./util.ts";
 
 type EditorOptions = {

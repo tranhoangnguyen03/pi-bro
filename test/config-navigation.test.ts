@@ -12,11 +12,11 @@ const settings:BroSettings={
     show:{backend:"codex",model:"gpt-example",effort:"medium"} },
 };
 
-test("Config root has Global and Features, with the eight actual feature names",()=>{
+test("Config root has Global and Features, with the nine actual feature names",()=>{
  assert.deepEqual(CONFIG_ROOT.map(x=>x.value),["global","features"]);
  assert.deepEqual(CONFIG_GLOBAL.map(x=>x.value),["defaults","preferences","doctor"]);
  assert.deepEqual(CONFIG_FEATURES.map(x=>x.value),[
-  "explain","show","btw","review","advisor","elevate","grill-me","remember-me",
+  "explain","show","btw","review","advisor","elevate","grill-me","remember-me","overthink",
  ]);
 });
 
