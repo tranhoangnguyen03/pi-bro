@@ -8,9 +8,10 @@ import {
   FACTORY_QUESTIONS, OVERTHINK_ENTRY, checkQuestions,
   readAutomaticChecks, readGlobalQuestions, writeGlobalQuestions, writeAutomaticChecks,
   resolveOverthinkSession, overthinkPrompt,
+  overthinkContextPosition, overthinkIsStale,
   questionKey, parseOverthinkAnswer, readOverthinkUsage,
 } from "../src/overthink-state.ts";
-import { createOverthinkViewer, overthinkReady, registerOverthink, usageStatus } from "../src/overthink.ts";
+import { createOverthinkViewer, overthinkReady, accumulateOverthinkEvidence, registerOverthink, usageStatus, questionStatus } from "../src/overthink.ts";
 import { createOverthinkQuestionEditor } from "../src/overthink-questions-ui.ts";
 
 // getAgentDir() reads the environment each time. No test should depend on the
@@ -86,21 +87,48 @@ test("session entries: branch-local latest questions and note; no model messages
   assert.equal(resolveOverthinkSession([entry("questions", { questions: [""] })]).initialized, false);
 });
 
-test("automatic gate: requires real completed tool work and an idle queue", () => {
-  const event = { messages: [
+test("automatic checks keep tool evidence through retry/compaction but require settled idle state", () => {
+  const candidate = accumulateOverthinkEvidence(undefined, { messages: [
     { role: "toolResult" }, { role: "toolResult" }, { role: "toolResult" },
     { role: "assistant", stopReason: "stop" },
-  ] };
-  assert.equal(overthinkReady(event, false), true);
-  assert.equal(overthinkReady(event, true), false);
-  assert.equal(overthinkReady({ messages: [{ role: "assistant", stopReason: "stop" }] }, false), false);
-  assert.equal(overthinkReady({ messages: [...event.messages.slice(0, -1), { role: "assistant", stopReason: "aborted" }] }, false), false);
+  ] });
+  assert.equal(overthinkReady(candidate, false, false), true);
+  assert.equal(overthinkReady(candidate, true, false), false);
+  assert.equal(overthinkReady(candidate, false, true), false);
+  assert.equal(overthinkReady(undefined, false, false), false);
+  // A retry/compaction may finish with a subsequent short agent_end; preserve
+  // the substantive work from the earlier portion but require a normal final stop.
+  const afterRetry = accumulateOverthinkEvidence(candidate, { messages: [
+    { role: "assistant", stopReason: "error" },
+  ] });
+  assert.equal(overthinkReady(afterRetry, false, false), false);
+  const settled = accumulateOverthinkEvidence(afterRetry, { messages: [
+    { role: "assistant", stopReason: "stop" },
+  ] });
+  assert.equal(settled.toolResults, 3);
+  assert.equal(overthinkReady(settled, false, false), true);
+});
+
+test("note provenance ignores private entries and becomes stale after trivial work or branch change", () => {
+  const message = (id: string) => ({ type: "message", id, message: { role: "assistant", content: [] } }) as SessionEntry;
+  const privateEntry = ({ type: "custom", customType: OVERTHINK_ENTRY, data: { version: 1, kind: "questions", questions: ["One?"] } }) as SessionEntry;
+  const initial = [message("m1")];
+  assert.equal(overthinkContextPosition(initial), "m1");
+  const note = { text: "Check recovery", checkedAt: "2026-11-06", model: "test/model",
+    questionKey: questionKey(["One?"]), sourcePosition: "m1" };
+  assert.equal(overthinkIsStale(note, overthinkContextPosition([...initial, privateEntry])), false);
+  assert.match(questionStatus(note, ["One?"], "m1"), /current/);
+  const laterTurn = [...initial, privateEntry, message("m2")];
+  assert.equal(overthinkIsStale(note, overthinkContextPosition(laterTurn)), true);
+  assert.match(questionStatus(note, ["One?"], "m2"), /OUTDATED/);
+  assert.equal(overthinkIsStale(note, overthinkContextPosition([message("sibling")])), true);
+  assert.equal(overthinkContextPosition([...initial, {type: "compaction", id:"c1"} as SessionEntry]), "c1");
 });
 
 test("same Pi model is called once, report is stored privately, and a new turn clears its widget", async () => {
   await withIsolatedAgentHome(async () => {
   const callbacks: Record<string, (...args: any[]) => any> = {};
-  const entries: SessionEntry[] = [];
+  const entries: SessionEntry[] = [{ type:"message", id:"main-reply", message:{ role:"assistant", content:[] } } as SessionEntry];
   const requests: any[][] = [];
   const widgets: unknown[] = [];
   const pi = {
@@ -141,6 +169,11 @@ test("same Pi model is called once, report is stored privately, and a new turn c
     { role: "toolResult" }, { role: "toolResult" }, { role: "toolResult" },
     { role: "assistant", stopReason: "stop" },
   ] }, ctx);
+  assert.equal(requests.length, 0, "agent_end is not yet safe to review");
+  // Pi can compact or continue after agent_end. Only the final settled event
+  // starts a check; the projection should already reflect that work.
+  entries.push({ type:"compaction", id:"post-compaction" } as SessionEntry);
+  await callbacks.agent_settled({ aborted: false }, ctx);
   for (let i = 0; i < 20 && !resolveOverthinkSession(entries).note; i++) {
     await new Promise(resolve => setTimeout(resolve, 10));
   }
@@ -150,12 +183,59 @@ test("same Pi model is called once, report is stored privately, and a new turn c
   assert.equal(requests[0][2].sessionId, "test-session");
   assert.equal(resolveOverthinkSession(entries).note?.text, "Check one unexpected edge case.");
   assert.equal(resolveOverthinkSession(entries).note?.usage?.cacheRead, 135);
+  assert.equal(resolveOverthinkSession(entries).note?.sourcePosition, "post-compaction");
   assert.equal(widgets.length > 0, true);
   await callbacks.agent_start({}, ctx);
   assert.equal(widgets.at(-1), undefined);
   });
 });
 
+
+test("a delayed automatic-settings read cannot schedule work after a new agent starts", async () => {
+  await withIsolatedAgentHome(async () => {
+    const callbacks: Record<string, (...args: any[]) => any> = {};
+    const branch: SessionEntry[] = [
+      { type: "message", id: "old-reply", message: { role: "assistant", content: [] } } as SessionEntry,
+    ];
+    let requests = 0;
+    let release: ((value: boolean) => void) | undefined;
+    const delayedSettings = () => new Promise<boolean>(resolve => { release = resolve; });
+    const pi = {
+      on(name: string, fn: (...args: any[]) => unknown) { callbacks[name] = fn; },
+      appendEntry(customType: string, data: unknown) {
+        branch.push({ type: "custom", customType, data } as SessionEntry);
+      },
+      getThinkingLevel: () => "off",
+    } as unknown as ExtensionAPI;
+    const ctx = {
+      mode: "tui", model: { provider: "test", id: "active", reasoning: false },
+      modelRegistry: { streamSimple() {
+        requests++;
+        return { result: async () => ({ stopReason: "stop", content: [{type:"text",text:"NONE"}] }) };
+      } },
+      sessionManager: {
+        getBranch: () => branch,
+        getSessionId: () => "session-1",
+        buildSessionProjection: () => ({messages:[{role:"user",content:[{type:"text",text:"work"}],timestamp:1}]}),
+      },
+      hasPendingMessages: () => false,
+      ui: {setWidget() {},notify() {}},
+    } as unknown as ExtensionCommandContext;
+    registerOverthink(pi, delayedSettings);
+    await callbacks.session_start({}, ctx);
+    await callbacks.agent_end({ messages: [
+      {role:"toolResult"},{role:"toolResult"},{role:"toolResult"},
+      {role:"assistant",stopReason:"stop"},
+    ] }, ctx);
+    await callbacks.agent_settled({ aborted: false }, ctx);
+    assert.ok(release, "settlement should await automatic setting");
+    await callbacks.agent_start({}, ctx);
+    branch.push({type:"message",id:"new-work",message:{role:"user",content:[]}} as SessionEntry);
+    release!(true);
+    await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(requests, 0, "old settlement must not review the new in-progress task");
+  });
+});
 
 test("Overthink viewer opens without a call; ? help, Ctrl+R retry, Ctrl+E editor", async () => {
   let calls = 0;

@@ -23,6 +23,8 @@ const MAX_NOTE_CHARS = 8000;
 export type OverthinkUsage = { cacheRead?: number; cacheWrite?: number; input?: number; output?: number; reasoning?: number; costTotal?: number };
 export type OverthinkNote = {
   text: string; checkedAt: string; model: string; questionKey: string;
+  /** Last model-relevant session entry at the time of the assessment. */
+  sourcePosition?: string;
   usage?: OverthinkUsage;
 };
 export type OverthinkSession = { questions?: string[]; note?: OverthinkNote; initialized: boolean };
@@ -42,6 +44,27 @@ export function checkQuestions(value: unknown): string[] {
 
 export function questionKey(questions: readonly string[]): string { return JSON.stringify(questions); }
 
+/**
+ * Session location represented by an assessment. Ignore Bro's custom entries
+ * so recording a note or editing questions does not itself make the note stale.
+ * Content edits and compaction count: they can change what the model sees.
+ */
+export function overthinkContextPosition(branch: readonly SessionEntry[]): string | undefined {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const entry = branch[i]!;
+    if (entry.type === "message" || entry.type === "custom_message" ||
+        entry.type === "context_edit" || entry.type === "compaction" || entry.type === "branch_summary") {
+      return entry.id;
+    }
+  }
+  return undefined;
+}
+
+export function overthinkIsStale(note: OverthinkNote | undefined, position: string | undefined): boolean {
+  return Boolean(note && (!note.sourcePosition || note.sourcePosition !== position));
+}
+
+
 export function resolveOverthinkSession(branch: readonly SessionEntry[]): OverthinkSession {
   const state: OverthinkSession = { initialized: false };
   for (const entry of branch) {
@@ -56,6 +79,7 @@ export function resolveOverthinkSession(branch: readonly SessionEntry[]): Overth
           typeof data.questionKey === "string") {
         const note: OverthinkNote = {
           text: data.text, checkedAt: data.checkedAt, model: data.model, questionKey: data.questionKey,
+          ...(typeof data.sourcePosition === "string" && data.sourcePosition ? { sourcePosition: data.sourcePosition } : {}),
         };
         if (isRecord(data.usage)) {
           const usage: OverthinkUsage = {};

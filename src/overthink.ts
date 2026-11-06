@@ -8,6 +8,7 @@ import { hasBroCustomUi } from "./ui-capabilities.ts";
 import {
   FACTORY_QUESTIONS, ensureOverthinkSession, overthinkPrompt, parseOverthinkAnswer,
   questionKey, readAutomaticChecks, readGlobalQuestions, readOverthinkUsage, resolveOverthinkSession,
+  overthinkContextPosition, overthinkIsStale,
   saveOverthinkNote, saveSessionQuestions, writeGlobalQuestions,
   type OverthinkNote,
 } from "./overthink-state.ts";
@@ -22,11 +23,23 @@ type ViewerAction = "close" | "edit";
 type CheckResult = OverthinkNote;
 type CheckContext = ExtensionContext | ExtensionCommandContext;
 
-export function overthinkReady(event: { messages: readonly { role: string; stopReason?: string }[] }, pending: boolean): boolean {
+export type OverthinkRunEvidence = { toolResults: number; normalFinish: boolean };
+/** Collect evidence at each agent_end, but never start a check until agent_settled. */
+export function accumulateOverthinkEvidence(
+  prior: OverthinkRunEvidence | undefined,
+  event: { messages: readonly { role: string; stopReason?: string }[] },
+): OverthinkRunEvidence {
   const last = event.messages.at(-1);
-  return !pending && last?.role === "assistant" && last.stopReason === "stop" &&
-    event.messages.filter(m => m.role === "toolResult").length >= MIN_TOOL_RESULTS;
+  return {
+    toolResults: (prior?.toolResults ?? 0) + event.messages.filter(m => m.role === "toolResult").length,
+    normalFinish: last?.role === "assistant" && last.stopReason === "stop",
+  };
 }
+
+export function overthinkReady(evidence: OverthinkRunEvidence | undefined, aborted: boolean, pending: boolean): boolean {
+  return !aborted && !pending && Boolean(evidence?.normalFinish && evidence.toolResults >= MIN_TOOL_RESULTS);
+}
+
 
 function noteWidget(ctx: CheckContext, note?: string): void {
   if (ctx.mode !== "tui") return;
@@ -44,10 +57,13 @@ function noteWidget(ctx: CheckContext, note?: string): void {
     : undefined);
 }
 
-function questionStatus(note: OverthinkNote | undefined, questions: string[]): string {
+export function questionStatus(note: OverthinkNote | undefined, questions: string[], position?: string): string {
   if (!note) return "No assessment yet.";
   const changed = note.questionKey !== questionKey(questions) ? " · questions changed since check" : "";
-  return "Checked: " + note.checkedAt + " · " + note.model + changed;
+  const freshness = overthinkIsStale(note, position)
+    ? (note.sourcePosition ? " · OUTDATED: conversation has changed since this check" : " · source position not recorded")
+    : " · current for this session position";
+  return "Checked: " + note.checkedAt + " · " + note.model + freshness + changed;
 }
 
 /** A reported zero may mean a miss OR a provider that does not support cache accounting. */
@@ -69,7 +85,7 @@ export function usageStatus(note: OverthinkNote | undefined): string[] {
 }
 
 export function createOverthinkViewer(
-  read: () => { questions: string[]; note?: OverthinkNote },
+  read: () => { questions: string[]; note?: OverthinkNote; position?: string },
   retry: () => Promise<CheckResult>,
 ) {
   return (tui: TUI, theme: Theme, _keys: unknown, done: (action: ViewerAction) => void): Component => {
@@ -97,7 +113,7 @@ export function createOverthinkViewer(
     };
     return {
       render(width: number) {
-        const { questions, note } = read();
+        const { questions, note, position } = read();
         const inner = Math.max(1, width - 2);
         const body = help
           ? [
@@ -113,7 +129,7 @@ export function createOverthinkViewer(
               "No separate backend or model picker. Cached input is measured when the provider reports it.",
             ]
           : [
-              questionStatus(note, questions),
+              questionStatus(note, questions, position),
               "Questions: " + questions.length + (questions.length ? "" : " (checks disabled)"),
               ...usageStatus(note),
               "",
@@ -156,13 +172,15 @@ export async function openOverthinkDefaults(ctx: ExtensionCommandContext): Promi
   });
 }
 
-export function registerOverthink(pi: ExtensionAPI): {
+export function registerOverthink(pi: ExtensionAPI, loadAutomaticChecks = readAutomaticChecks): {
   open(ctx: ExtensionCommandContext): Promise<void>;
 } {
   let active: AbortController | undefined;
   let generation = 0;
+  let evidence: OverthinkRunEvidence | undefined;
   const invalidate = (_event: unknown, ctx: ExtensionContext) => {
     generation++;
+    evidence = undefined;
     active?.abort(); active = undefined;
     noteWidget(ctx);
   };
@@ -178,14 +196,20 @@ export function registerOverthink(pi: ExtensionAPI): {
   pi.on("agent_start", invalidate);
   pi.on("session_shutdown", async (_event, ctx) => { invalidate(_event, ctx); });
 
-  const run = async (ctx: CheckContext, forced: boolean): Promise<CheckResult> => {
+  type Trigger = { generation: number; sessionId: string; position?: string };
+  const run = async (ctx: CheckContext, forced: boolean, trigger?: Trigger): Promise<CheckResult> => {
     if (!ctx.model) throw new Error("No active Pi model; Overthink cannot choose a different one.");
-    const marker = generation;
-    const sessionId = ctx.sessionManager.getSessionId();
+    const marker = trigger?.generation ?? generation;
+    const sessionId = trigger?.sessionId ?? ctx.sessionManager.getSessionId();
+    const position = trigger?.position ?? overthinkContextPosition(ctx.sessionManager.getBranch());
+    const stillCurrent = () => marker === generation &&
+      sessionId === ctx.sessionManager.getSessionId() &&
+      position === overthinkContextPosition(ctx.sessionManager.getBranch());
+    if (!stillCurrent()) throw new Error("Session moved before assessment could start.");
     const state = await ensureOverthinkSession(pi, ctx.sessionManager.getBranch());
     const questions = state.questions ?? [];
     if (!questions.length) throw new Error("No Overthink questions. Edit session questions to enable checks.");
-    if (marker !== generation || sessionId !== ctx.sessionManager.getSessionId()) throw new Error("Session changed; assessment cancelled.");
+    if (!stillCurrent()) throw new Error("Session changed; assessment cancelled.");
 
     const projected = ctx.sessionManager.buildSessionProjection().messages;
     if (!projected.length && forced) throw new Error("Nothing in the current conversation to assess.");
@@ -213,7 +237,7 @@ export function registerOverthink(pi: ExtensionAPI): {
         },
       ).result();
       if (controller.signal.aborted) throw new Error("Assessment cancelled or timed out.");
-      if (marker !== generation || sessionId !== ctx.sessionManager.getSessionId() ||
+      if (!stillCurrent() ||
           ctx.model?.provider !== model.provider || ctx.model?.id !== model.id ||
           active !== controller) throw new Error("Session or model changed; stale result discarded.");
       if (answer.stopReason !== "stop") throw new Error("Model did not finish its assessment (" + answer.stopReason + ").");
@@ -223,6 +247,7 @@ export function registerOverthink(pi: ExtensionAPI): {
       const usage = readOverthinkUsage(answer.usage);
       const note: OverthinkNote = {
         text, checkedAt: new Date().toISOString(), model: name, questionKey: questionKey(questions),
+        ...(position ? { sourcePosition: position } : {}),
         ...(usage ? { usage } : {}),
       };
       saveOverthinkNote(pi, note);
@@ -234,12 +259,32 @@ export function registerOverthink(pi: ExtensionAPI): {
     }
   };
 
-  pi.on("agent_end", async (event, ctx) => {
-    if (ctx.mode !== "tui" || !ctx.model || !overthinkReady(event, ctx.hasPendingMessages())) return;
-    // Don't await this optional second look: the original Pi reply must finish unhindered.
+  pi.on("agent_end", (event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    evidence = accumulateOverthinkEvidence(evidence, event);
+  });
+
+  // agent_end is not guaranteed to mean Pi has finished continuation, retry or
+  // compaction. agent_settled is available in Pi >=1.3, our supported floor.
+  pi.on("agent_settled", (event, ctx) => {
+    const completed = evidence;
+    evidence = undefined;
+    if (ctx.mode !== "tui" || !ctx.model ||
+        !overthinkReady(completed, event.aborted, ctx.hasPendingMessages())) return;
+    // Capture BEFORE the asynchronous settings read. A new run, fork or
+    // compaction must not turn an older settlement into a request for new work.
+    const trigger = {
+      generation, sessionId: ctx.sessionManager.getSessionId(),
+      position: overthinkContextPosition(ctx.sessionManager.getBranch()),
+    };
     void (async () => {
-      if (await readAutomaticChecks()) await run(ctx, false);
-    })().catch(() => undefined);
+      if (!(await loadAutomaticChecks())) return;
+      if (trigger.generation !== generation ||
+          trigger.sessionId !== ctx.sessionManager.getSessionId() ||
+          trigger.position !== overthinkContextPosition(ctx.sessionManager.getBranch()) ||
+          ctx.hasPendingMessages()) return;
+      await run(ctx, false, trigger);
+    })().catch(() => undefined); // Optional review must never fail the main task.
   });
 
   const open = async (ctx: ExtensionCommandContext): Promise<void> => {
@@ -252,7 +297,8 @@ export function registerOverthink(pi: ExtensionAPI): {
       const action = await openBroOverlay<ViewerAction>(ctx, createOverthinkViewer(
         () => {
           const state = resolveOverthinkSession(ctx.sessionManager.getBranch());
-          return { questions: state.questions ?? [], note: state.note };
+          return { questions: state.questions ?? [], note: state.note,
+            position: overthinkContextPosition(ctx.sessionManager.getBranch()) };
         },
         () => run(ctx, true),
       ));
