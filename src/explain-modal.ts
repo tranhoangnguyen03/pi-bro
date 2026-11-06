@@ -387,7 +387,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 - **Understand what already exists:** Simplify and Show; Architecture when released.
 - **Explore what could exist:** BTW for side questions; Grill Me for decisions.
 - **Get advice on existing work:** Guided Review and agent-facing Advisor; Overthink when released (#180).
-- **Guide the agent:** Elevate for assignments; Remember Me for approved context (`about_user`); Advisor Steering for priorities.
+- **Guide the agent:** Elevate for assignments; Remember Me for approved context (about_user); Advisor Steering for priorities.
 
 These are needs, not modes. Copied text does not enter Pi until you paste and submit it.
 
@@ -466,7 +466,7 @@ The mode decides how much of the source to keep; your preferences decide who it'
 
 ## Privacy
 
-Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, and Guided Review request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you paste and send it, except advisor answers and approved memories read through `about_user`, which return to the agent as tool results. Access controls differ by backend; see the user guide.`;
+Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, and Guided Review request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you paste and send it, except advisor answers and approved memories read through about_user, which return to the agent as tool results. Access controls differ by backend; see the user guide.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.
