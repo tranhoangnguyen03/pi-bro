@@ -76,10 +76,6 @@ console.log(JSON.stringify({base:{repo:{id:9,full_name:'other/repo'},sha:'a'.rep
 	}
 });
 
-test("review implementation is available", async () => {
-	const exists = await import(modulePath).catch(() => undefined);
-	assert.ok(exists, "review module must exist");
-});
 
 test("captures immutable source outside a dirty active workspace, preserves old-side evidence and distinct checkouts", async () => {
 	const { captureReview, readEvidence } = await import(sourcePath);

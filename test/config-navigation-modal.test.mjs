@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import {join} from "node:path";
 import {pathToFileURL} from "node:url";
 import {initTheme} from "@earendil-works/pi-coding-agent";
-import {buildDir} from "./test-build.mjs";
+import {buildDir, sourceDir } from "./test-build.mjs";
 
-const {createConfigNavigationModal}=await import(pathToFileURL(join(buildDir,"config-navigation-ui.js")).href);
-const {createConfigModal}=await import(pathToFileURL(join(buildDir,"config-ui.js")).href);
+const {createConfigNavigationModal}=await import(pathToFileURL(join(sourceDir, "config-navigation-ui.ts")).href);
+const {createConfigModal}=await import(pathToFileURL(join(sourceDir, "config-ui.ts")).href);
 initTheme();
 const settings={backend:"agy",model:"default-model",effort:"low",mode:"balanced",showTurns:1,
  overrides:{btw:{backend:"pi",model:"anthropic/picked",effort:"high"}}};

@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -149,6 +149,24 @@ type Attempt = {
 
 const DEFAULT_KILL_ESCALATION_MS = 5_000;
 
+// CLI adapters own their protocols; this shared runner owns process setup, diagnostics, and lifecycle.
+function startCliAttempt(
+	command: string,
+	args: string[],
+	options: SpawnOptions,
+	signal: AbortSignal,
+	deadlineMs: number,
+	killEscalationMs: number,
+) {
+	const child = spawn(command, args, { ...options, windowsHide: true, detached: process.platform !== "win32" });
+	const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
+	const diagnostics: { stderr: string; processError?: Error } = { stderr: "" };
+	child.stderr?.setEncoding("utf8");
+	child.stderr?.on("data", (chunk: string) => { diagnostics.stderr += chunk; });
+	child.once("error", (error) => { diagnostics.processError = error; });
+	return { child, attempt, diagnostics };
+}
+
 // Begins bounded lifecycle management for one already-spawned child: on cancellation, deadline, or
 // protocol failure it signals the whole POSIX process group (SIGTERM, then SIGKILL after
 // `killEscalationMs` if the child or a misbehaving grandchild ignores it). Windows only ever
@@ -277,8 +295,7 @@ async function executeArgvPrint(
 	}
 
 	try {
-		const child = spawn(
-			"agy",
+		const { child, attempt, diagnostics } = startCliAttempt("agy",
 			[
 				...(full ? ["--dangerously-skip-permissions"] : ["--sandbox"]),
 				"--disable-slash-commands",
@@ -294,26 +311,11 @@ async function executeArgvPrint(
 			],
 			{
 				cwd: full || inspect ? request.cwd : runDirectory,
-				stdio: [stdinPrompt ? "pipe" : "ignore", "pipe", "pipe"],
-				windowsHide: true,
-				detached: process.platform !== "win32",
-			},
-		);
+				stdio: [stdinPrompt ? "pipe" : "ignore", "pipe", "pipe"] }, signal, deadlineMs, killEscalationMs);
 
-		const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
-		let processError: Error | undefined;
-		let stderr = "";
 		let partial = "";
 		let final = "";
 		let conversationId = request.continuation?.id;
-
-		child.stderr?.setEncoding("utf8");
-		child.stderr?.on("data", (chunk: string) => {
-			stderr += chunk;
-		});
-		child.once("error", (error) => {
-			processError = error;
-		});
 
 		if (stdinPrompt) {
 			child.stdin?.on("error", () => { /* Report early exits through the close/error path. */ });
@@ -353,16 +355,16 @@ async function executeArgvPrint(
 			return { status: "timeout", message: `Agy timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, partialText: partial || undefined };
 		}
 		if (parseError) return { status: "failure", message: withDoctor(parseError), partialText: partial || undefined };
-		if (processError) return { status: "failure", message: processStartMessage(processError as NodeJS.ErrnoException) };
+		if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException) };
 		if (exitSignal || code === null) {
 			return { status: "failure", message: unexpectedSignalMessage(exitSignal), partialText: partial || undefined };
 		}
-		if (code !== 0) return { status: "failure", message: stdinPrompt && advisorFlagErrorHint(stderr)
-			? withDoctor("Large prompts require Agy 1.1.15+ with stdin support. Run `agy update`. " + stderr.trim())
-			: agyFailureMessage(action, { code, killed: false, stderr }) };
+		if (code !== 0) return { status: "failure", message: stdinPrompt && advisorFlagErrorHint(diagnostics.stderr)
+			? withDoctor("Large prompts require Agy 1.1.15+ with stdin support. Run `agy update`. " + diagnostics.stderr.trim())
+			: agyFailureMessage(action, { code, killed: false, stderr: diagnostics.stderr }) };
 
 		const text = final.trim();
-		if (!text) return { status: "failure", message: withDoctor(stderr.trim() || emptyTextMessage) };
+		if (!text) return { status: "failure", message: withDoctor(diagnostics.stderr.trim() || emptyTextMessage) };
 		return { status: "success", text, continuation: isBtw && conversationId ? { id: conversationId } : undefined };
 	} finally {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
@@ -476,8 +478,7 @@ async function executeAdvisorStdin(
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 
 	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
-	const child = spawn(
-		"agy",
+	const { child, attempt, diagnostics } = startCliAttempt("agy",
 		[
 			"--dangerously-skip-permissions",
 			"--disable-slash-commands",
@@ -491,24 +492,12 @@ async function executeAdvisorStdin(
 			"--print-timeout",
 			"10m",
 		],
-		{ cwd: request.cwd, stdio: ["pipe", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" },
-	);
+		{ cwd: request.cwd, stdio: ["pipe", "pipe", "pipe"] }, signal, deadlineMs, killEscalationMs);
 
-	const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
-
-	let processError: Error | undefined;
-	let stderr = "";
 	let final: string | undefined;
 	let terminalError: string | undefined;
 	let sawTerminal = false;
 
-	child.stderr?.setEncoding("utf8");
-	child.stderr?.on("data", (chunk: string) => {
-		stderr += chunk;
-	});
-	child.once("error", (error) => {
-		processError = error;
-	});
 	child.stdin?.on("error", () => {
 		// agy exiting before it reads stdin is reported through the close/error path below.
 	});
@@ -548,23 +537,22 @@ async function executeAdvisorStdin(
 		return { status: "timeout", message: "Agy timed out during the advisor consultation. Run `/bro doctor` for setup help." };
 	}
 	if (protocolError) return { status: "failure", message: withDoctor(protocolError) };
-	if (processError) return { status: "failure", message: processStartMessage(processError as NodeJS.ErrnoException) };
+	if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException) };
 	if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal) };
 	if (!sawTerminal) {
-		const hint = advisorFlagErrorHint(stderr);
+		const hint = advisorFlagErrorHint(diagnostics.stderr);
 		return {
 			status: "failure",
-			message: withDoctor(hint ?? (stderr.trim() ? `Agy exited without a terminal result event: ${stderr.trim()}` : "Agy exited without a terminal result event.")),
+			message: withDoctor(hint ?? (diagnostics.stderr.trim() ? `Agy exited without a terminal result event: ${diagnostics.stderr.trim()}` : "Agy exited without a terminal result event.")),
 		};
 	}
 	if (terminalError) return { status: "failure", message: withDoctor(terminalError) };
-	if (code !== 0) return { status: "failure", message: agyFailureMessage("complete the advisor consultation", { code, killed: false, stderr }) };
+	if (code !== 0) return { status: "failure", message: agyFailureMessage("complete the advisor consultation", { code, killed: false, stderr: diagnostics.stderr }) };
 
 	const text = final?.trim();
-	if (!text) return { status: "failure", message: withDoctor(stderr.trim() || "Agy returned no advice.") };
+	if (!text) return { status: "failure", message: withDoctor(diagnostics.stderr.trim() || "Agy returned no advice.") };
 	return { status: "success", text };
 }
-
 
 type ClaudeEvent = {
 	type?: unknown;
@@ -610,8 +598,7 @@ async function executeClaude(
 	}
 
 	try {
-		const child = spawn(
-			"claude",
+		const { child, attempt, diagnostics } = startCliAttempt("claude",
 			[
 				"-p",
 				"--safe-mode",
@@ -633,28 +620,14 @@ async function executeClaude(
 			],
 			{
 				cwd: runDirectory ?? request.cwd,
-				stdio: ["pipe", "pipe", "pipe"],
-				windowsHide: true,
-				detached: process.platform !== "win32",
-			},
-		);
+				stdio: ["pipe", "pipe", "pipe"] }, signal, deadlineMs, killEscalationMs);
 
-		const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
-		let processError: Error | undefined;
-		let stderr = "";
 		let partial = "";
 		let final: string | undefined;
 		let terminalError: string | undefined;
 		let initSessionId: string | undefined;
 		let resultSessionId: string | undefined;
 
-		child.stderr?.setEncoding("utf8");
-		child.stderr?.on("data", (chunk: string) => {
-			stderr += chunk;
-		});
-		child.once("error", (error) => {
-			processError = error;
-		});
 		child.stdin?.on("error", () => {
 			// claude exiting before it reads stdin is reported through the close/error path below.
 		});
@@ -724,11 +697,11 @@ async function executeClaude(
 			return { status: "timeout", message: `Claude timed out ${during}. Run \`/bro doctor\` for setup help.`, partialText };
 		}
 		if (protocolError) return { status: "failure", message: withDoctor(protocolError), partialText };
-		if (processError) return { status: "failure", message: processStartMessage(processError as NodeJS.ErrnoException, "Claude") };
+		if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException, "Claude") };
 		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Claude"), partialText };
 		if (terminalError) return { status: "failure", message: withDoctor(terminalError), partialText };
 		if (code !== 0) {
-			const detail = stderr.trim();
+			const detail = diagnostics.stderr.trim();
 			return {
 				status: "failure",
 				message: detail
@@ -738,7 +711,7 @@ async function executeClaude(
 			};
 		}
 		if (final === undefined) {
-			return { status: "failure", message: withDoctor(`Claude exited without a result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`), partialText };
+			return { status: "failure", message: withDoctor(`Claude exited without a result event${diagnostics.stderr.trim() ? `: ${diagnostics.stderr.trim()}` : "."}`), partialText };
 		}
 		const text = final.trim();
 		if (!text) return { status: "failure", message: withDoctor(request.feature === "review" ? "Claude returned no response for Guided Review." : isBtw ? "Claude returned no answer for the side question." : "Claude returned no final answer."), partialText };
@@ -823,8 +796,7 @@ async function executeGrok(
 		if (request.access !== "workspace-full" && !isBtw && !inspect) runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 
-		const child = spawn(
-			"grok",
+		const { child, attempt, diagnostics } = startCliAttempt("grok",
 			[
 				// Review never auto-approves: dontAsk denies unpromptable asks instead of bypassing them. Unverified against a local grok CLI; an unsupported flag fails visibly rather than falling back to --sandbox off.
 				...(inspect ? ["--sandbox", "read-only", "--permission-mode", "dontAsk"] : ["--sandbox", "off", "--permission-mode", "bypassPermissions"]),
@@ -837,26 +809,14 @@ async function executeGrok(
 				"--prompt-file",
 				promptFile,
 			],
-			{ cwd: runDirectory ?? request.cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" },
-		);
+			{ cwd: runDirectory ?? request.cwd, stdio: ["ignore", "pipe", "pipe"] }, signal, deadlineMs, killEscalationMs);
 
-		const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
-		let processError: Error | undefined;
-		let stderr = "";
 		let partial = "";
 		let streamedSinceAssistant = false;
 		let initSessionId: string | undefined;
 		let resultSessionId: string | undefined;
 		let final: string | undefined;
 		let terminalError: string | undefined;
-
-		child.stderr?.setEncoding("utf8");
-		child.stderr?.on("data", (chunk: string) => {
-			stderr += chunk;
-		});
-		child.once("error", (error) => {
-			processError = error;
-		});
 
 		const handleLine = (line: string) => {
 			if (!line.trim() || attempt.causeOf()) return;
@@ -954,11 +914,11 @@ async function executeGrok(
 		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", ...partialText };
 		if (cause === "timeout") return { status: "timeout", message: `Grok timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, ...partialText };
 		if (protocolError) return { status: "failure", message: withDoctor(protocolError), ...partialText };
-		if (processError) return { status: "failure", message: processStartMessage(processError as NodeJS.ErrnoException, "Grok") };
+		if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException, "Grok") };
 		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Grok"), ...partialText };
 		if (terminalError) return { status: "failure", message: withDoctor(terminalError), ...partialText };
 		if (code !== 0) {
-			const detail = stderr.trim();
+			const detail = diagnostics.stderr.trim();
 			return {
 				status: "failure",
 				message: detail
@@ -968,7 +928,7 @@ async function executeGrok(
 			};
 		}
 		if (final === undefined) {
-			return { status: "failure", message: withDoctor(`Grok exited without a terminal result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`), ...partialText };
+			return { status: "failure", message: withDoctor(`Grok exited without a terminal result event${diagnostics.stderr.trim() ? `: ${diagnostics.stderr.trim()}` : "."}`), ...partialText };
 		}
 		const text = final.trim();
 		if (!text) return { status: "failure", message: withDoctor(emptyTextMessage), ...partialText };
@@ -1075,29 +1035,16 @@ async function executeCodex(
 			...(resume ? [request.continuation!.id, "-"] : ["--", "-"]),
 		];
 
-		const child = spawn("codex", args, {
+		const { child, attempt, diagnostics } = startCliAttempt("codex", args, {
 			cwd: runDirectory ?? request.cwd,
-			stdio: ["pipe", "pipe", "pipe"],
-			windowsHide: true,
-			detached: process.platform !== "win32",
-		});
+			stdio: ["pipe", "pipe", "pipe"] }, signal, deadlineMs, killEscalationMs);
 
-		const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
-		let processError: Error | undefined;
-		let stderr = "";
 		let partial = "";
 		let threadId: string | undefined;
 		let final: string | undefined;
 		let sawTerminal = false;
 		let terminalError: string | undefined;
 
-		child.stderr?.setEncoding("utf8");
-		child.stderr?.on("data", (chunk: string) => {
-			stderr += chunk;
-		});
-		child.once("error", (error) => {
-			processError = error;
-		});
 		child.stdin?.on("error", () => {
 			// codex exiting before reading stdin is reported through the close/error path.
 		});
@@ -1156,11 +1103,11 @@ async function executeCodex(
 		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", ...partialText };
 		if (cause === "timeout") return { status: "timeout", message: `Codex timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, ...partialText };
 		if (protocolError) return { status: "failure", message: withDoctor(protocolError), ...partialText };
-		if (processError) return { status: "failure", message: processStartMessage(processError as NodeJS.ErrnoException, "Codex") };
+		if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException, "Codex") };
 		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Codex"), ...partialText };
 		if (terminalError) return { status: "failure", message: withDoctor(terminalError), ...partialText };
 		if (code !== 0) {
-			const detail = stderr.trim();
+			const detail = diagnostics.stderr.trim();
 			return {
 				status: "failure",
 				message: detail
@@ -1170,7 +1117,7 @@ async function executeCodex(
 			};
 		}
 		if (!sawTerminal) {
-			return { status: "failure", message: withDoctor(`Codex exited without a terminal result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`), ...partialText };
+			return { status: "failure", message: withDoctor(`Codex exited without a terminal result event${diagnostics.stderr.trim() ? `: ${diagnostics.stderr.trim()}` : "."}`), ...partialText };
 		}
 		const text = final?.trim();
 		if (!text) return { status: "failure", message: withDoctor(emptyTextMessage), ...partialText };
@@ -1250,16 +1197,10 @@ async function executeMuse(
 			"--prompt-file", promptFile,
 		];
 
-		const child = spawn("muse", args, {
+		const { child, attempt, diagnostics } = startCliAttempt("muse", args, {
 			cwd: workspace,
-			stdio: ["ignore", "pipe", "pipe"],
-			windowsHide: true,
-			detached: process.platform !== "win32",
-		});
+			stdio: ["ignore", "pipe", "pipe"] }, signal, deadlineMs, killEscalationMs);
 
-		const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
-		let processError: Error | undefined;
-		let stderr = "";
 		let partial = "";
 		let rootCommandId: string | undefined;
 		let rootRunId: string | undefined;
@@ -1267,14 +1208,6 @@ async function executeMuse(
 		let final: string | undefined;
 		let sawTerminal = false;
 		let terminalError: string | undefined;
-
-		child.stderr?.setEncoding("utf8");
-		child.stderr?.on("data", (chunk: string) => {
-			stderr += chunk;
-		});
-		child.once("error", (error) => {
-			processError = error;
-		});
 
 		const handleLine = (line: string) => {
 			if (!line.trim() || attempt.causeOf()) return;
@@ -1355,11 +1288,11 @@ async function executeMuse(
 		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", ...partialText };
 		if (cause === "timeout") return { status: "timeout", message: `Muse timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, ...partialText };
 		if (protocolError) return { status: "failure", message: withDoctor(protocolError), ...partialText };
-		if (processError) return { status: "failure", message: processStartMessage(processError as NodeJS.ErrnoException, "Muse") };
+		if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException, "Muse") };
 		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Muse"), ...partialText };
 		if (terminalError) return { status: "failure", message: withDoctor(terminalError), ...partialText };
 		if (code !== 0) {
-			const detail = stderr.trim();
+			const detail = diagnostics.stderr.trim();
 			return {
 				status: "failure",
 				message: detail
@@ -1369,7 +1302,7 @@ async function executeMuse(
 			};
 		}
 		if (!sawTerminal) {
-			return { status: "failure", message: withDoctor(`Muse exited without a terminal result event${stderr.trim() ? `: ${stderr.trim()}` : "."}`), ...partialText };
+			return { status: "failure", message: withDoctor(`Muse exited without a terminal result event${diagnostics.stderr.trim() ? `: ${diagnostics.stderr.trim()}` : "."}`), ...partialText };
 		}
 		const text = final?.trim();
 		if (!text) return { status: "failure", message: withDoctor(emptyTextMessage), ...partialText };

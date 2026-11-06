@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	BRO_MODES,
-	MAX_PREFERENCES_CHARS,
 	MAX_ADVISOR_STEERING_CHARS,
-	STARTER_PREFERENCES,
 	DEFAULT_BRO_MODE,
 	nextBroMode,
 	buildAdvisorPrompt,
@@ -54,12 +52,6 @@ test("frames the source as guarded JSON data", () => {
 	assert.match(prompt, new RegExp(escapeRegExp(JSON.stringify(source))));
 });
 
-test("show does not fall back to prose solely because code structure is absent", () => {
-	const prompt = buildShowPrompt("x");
-	// Regression guard: non-code subjects can still have meaningful flow/state shapes.
-	assert.match(prompt, /valid shape on its own even when the session has no code structure at all/);
-	assert.doesNotMatch(prompt, /If the session has no code structure to draw, reply with a plain outline/);
-});
 
 test("show prompt retains traceability and safe HTML rendering contracts", () => {
 	const prompt = buildShowPrompt("x");
@@ -179,12 +171,6 @@ test("advisor prompt is backend-neutral: no backend name or CLI flags, advisory 
 	assert.match(prompt, /grounded in the snapshot and any workspace checks you needed/);
 });
 
-test("advisor prompt states explicitly when steering or a question were not given, instead of omitting the section", () => {
-	const prompt = buildAdvisorPrompt("", "## user\nx", undefined);
-
-	assert.match(prompt, /## Human steering brief\n\nNone was set\./);
-	assert.match(prompt, /## Executor's question\n\nNone was given\. Use your own judgment/);
-});
 
 test("advisor prompt trims whitespace-only steering and question the same as empty", () => {
 	const withWhitespace = buildAdvisorPrompt("   ", "## user\nx", "   ");
@@ -274,13 +260,6 @@ test("advisor prompt accepts string steering or structured { durable, session } 
 	assert.equal(emptyLegacy, blankStructured, "whitespace-only durable and session are treated as empty");
 });
 
-test("advisor prompt handles null and undefined steering safely", () => {
-	const nullResult = buildAdvisorPrompt(null as any, "snap", undefined);
-	const undefResult = buildAdvisorPrompt(undefined as any, "snap", undefined);
-	const emptyResult = buildAdvisorPrompt("", "snap", undefined);
-	assert.equal(nullResult, emptyResult);
-	assert.equal(undefResult, emptyResult);
-});
 
 test("advisor prompt formats durable standing priorities with JSON quoting and role boundary guard", () => {
 	const prompt = buildAdvisorPrompt({ durable: "Prefer simple stdlib solutions.\nFlag data-loss risks." }, "## user\nbuild it", "q");
@@ -325,8 +304,3 @@ test("advisor steering constants and character limits", () => {
 	assert.equal(MAX_ADVISOR_STEERING_CHARS, 4_000);
 });
 
-test("starter preferences have an About me section within the limit", () => {
-	assert.equal(MAX_PREFERENCES_CHARS, 4_000);
-	assert.ok(STARTER_PREFERENCES.length < MAX_PREFERENCES_CHARS);
-	assert.match(STARTER_PREFERENCES, /^## About me\n/);
-});

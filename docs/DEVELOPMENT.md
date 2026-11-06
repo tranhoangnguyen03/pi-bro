@@ -239,8 +239,7 @@ Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs`
 `npm test` never calls a real model: `backend.test.ts`, `claude.test.ts`,
 `grok.test.ts`, `codex.test.ts`, and `muse.test.ts` run fake CLIs; `settings.test.ts` and `prompt.test.ts` cover
 pure helpers; `helpers.test.mjs` contains sequential modal/advisor checks and Pi SDK
-integration checks formerly embedded in the shell suite. `test-build.mjs` provides
-isolated compilation for these tests, settings, and Show HTML tests.
+integration checks formerly embedded in the shell suite. `test-build.mjs` isolates test files' scratch data, while Node loads the shipped TypeScript source directly with `--experimental-transform-types`. No test-file-specific compilation is needed.
 `test/smoke-test.sh` drives Pi offline over RPC with a fake `agy`.
 See [test-consolidation.md](test-consolidation.md) for the #74 coverage ledger,
 throttle mutation check, and before/after timings.

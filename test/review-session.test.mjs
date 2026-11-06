@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDir } from "./test-build.mjs";
+import { buildDir, sourceDir } from "./test-build.mjs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { mkdir, writeFile, chmod, readFile, rename, rm } from "node:fs/promises";
 import { initTheme, getAgentDir } from "@earendil-works/pi-coding-agent";
-const { openGuidedReview } = await import(pathToFileURL(join(buildDir, "review-ui.js")).href);
-const { newReviewView } = await import(pathToFileURL(join(buildDir, "review-modal.js")).href);
-const { saveReview, loadReview } = await import(pathToFileURL(join(buildDir, "review.js")).href);
+const { openGuidedReview } = await import(pathToFileURL(join(sourceDir, "review-ui.ts")).href);
+const { newReviewView } = await import(pathToFileURL(join(sourceDir, "review-modal.ts")).href);
+const { saveReview, loadReview } = await import(pathToFileURL(join(sourceDir, "review.ts")).href);
 initTheme();
 test("saved review opens and closes without a backend call and preserves its composer", async () => {
 	const id = "a".repeat(64);

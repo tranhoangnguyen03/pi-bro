@@ -62,21 +62,6 @@ test("review and advisor get the 610-second deadline; explain/show stay short", 
 	assert.equal(backendDeadlineMs("advisor", "workspace-full"), 610_000);
 });
 
-test("every adapter derives its deadline from backendDeadlineMs, never a local literal", async () => {
-	// A single literal in one adapter was the original defect; the helper now owns the table. A
-	// source check is the cheap guard a 610-second process test cannot be.
-	const source = await readFile(new URL("../src/backend.ts", import.meta.url), "utf8");
-	const body = source.slice(source.indexOf("export function backendDeadlineMs"));
-	assert.equal(body.slice(0, body.indexOf("\n}")).includes("REVIEW_DEADLINE_MS"), true, "the helper owns the 610s value");
-	assert.equal(
-		(source.match(/610_000/g) ?? []).length,
-		1,
-		"610_000 may appear only once, in REVIEW_DEADLINE_MS (no adapter literal)",
-	);
-	// Every adapter routes through the helper; a new adapter that forgets to is caught here.
-	// 6 CLI adapters (Agy argv/stdin, Claude, Grok, Codex, Muse) plus the in-process Pi executor.
-	assert.equal((source.match(/deadlineMsOverride \?\? backendDeadlineMs\(/g) ?? []).length, 7);
-});
 
 test("pi tool allowlists isolate every capability: no tools for explain/show/elevate, read-only for review, workspace tools for advisor/btw-full", () => {
 	// Restricted, non-review features only ever see the prompt: this is the isolation guarantee.

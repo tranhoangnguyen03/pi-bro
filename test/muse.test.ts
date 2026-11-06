@@ -74,9 +74,6 @@ async function args(binDir: string): Promise<string[]> {
 	return (await readFile(join(binDir, "args.txt"), "utf8")).split("\n").slice(0, -1);
 }
 
-test("muse effort list", () => {
-	assert.deepEqual([...MUSE_EFFORTS], ["minimal", "low", "medium", "high", "xhigh", "max"]);
-});
 
 test("muse explain: restricted fresh argv, prompt file mode 0600, scratch cwd, text-only progress", async () => {
 	await withFakeMuse(

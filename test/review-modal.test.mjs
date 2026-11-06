@@ -4,13 +4,13 @@ import { stripVTControlCharacters } from "node:util";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 initTheme();
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { buildDir } from "./test-build.mjs";
+import { buildDir, sourceDir } from "./test-build.mjs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { mkdir, writeFile, symlink, rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 const { ReviewModal, newReviewView } = await import(
-	pathToFileURL(join(buildDir, "review-modal.js")).href
+	pathToFileURL(join(sourceDir, "review-modal.ts")).href
 );
 const makeRecord = () => ({
 	version: 1,
@@ -348,7 +348,7 @@ test("only the active answer is working; failed regeneration retains the current
 });
 
 test("type-change diff sections stay with their file and the index is reused", async () => {
-	const { captureReview } = await import(pathToFileURL(join(buildDir, "review-source.js")).href);
+	const { captureReview } = await import(pathToFileURL(join(sourceDir, "review-source.ts")).href);
 	const repo = join(buildDir, "type-change");
 	await mkdir(repo);
 	execFileSync("git", ["init", "-q", repo]);

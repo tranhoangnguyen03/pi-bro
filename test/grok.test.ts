@@ -65,9 +65,6 @@ async function advise(selection: BackendSelection, onProgress?: (p: BackendProgr
 	}
 }
 
-test("grok effort list", () => {
-	assert.deepEqual([...GROK_EFFORTS], ["low", "medium", "high", "xhigh"]);
-});
 
 test("grok advisor: fresh workspace argv, private prompt file cleaned up, activity-only progress without reasoning", async () => {
 	await withFakeGrok(

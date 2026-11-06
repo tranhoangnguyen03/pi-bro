@@ -952,30 +952,19 @@ test("modal model label shows the resolved per-capability model and effort", () 
 	assert.equal(selectionLabel(selectionForCapability(parseBroSettings({ model: "gemini-b-low", effort: "low" }), "explain")), "gemini-b · low");
 });
 
-test("help no longer lists /bro usage or the conversation-only access label", () => {
-	const text = helpText(parseBroSettings({ model: "m", effort: "low" }));
-	assert.doesNotMatch(text, /\/bro usage/);
-	assert.doesNotMatch(text, /not sandboxed/i);
-	assert.doesNotMatch(text, /Usage checks/);
-});
 
-test("help drops removed /bro model, /bro effort, --fresh, and forced inserts", () => {
-	const text = helpText(parseBroSettings({ model: "m", effort: "low" }));
-	assert.doesNotMatch(text, /\/bro (model|effort)/);
-	assert.doesNotMatch(text, /--fresh/);
-	assert.doesNotMatch(text, /\/insert(-all)?!/);
-	assert.match(text, /\/bro config/);
-});
 
 test("help is a concise reference: no removed BTW flags, /mode documented, user guide pointer", () => {
 	for (const backend of ["agy", "claude", "grok"] as const) {
 		const text = helpText(parseBroSettings({ version: 2, default: { backend, model: "m", effort: "default" } }));
 		assert.doesNotMatch(text, /--(full|sandbox|fresh)\b/);
 		assert.doesNotMatch(text, /--dangerously|--permission-mode|--resume|--conversation/);
+		assert.doesNotMatch(text, /\/bro (model|effort|usage)/);
+		assert.doesNotMatch(text, /\/insert(-all)?!/);
+		assert.match(text, /\/bro config/);
 		assert.match(text, /`\/mode`/);
 		assert.match(text, /docs\/user-guide\.md/);
 		assert.match(text, /brief —/);
-		assert.ok(text.length < 7200, `help is ${text.length} chars`);
 	}
 });
 

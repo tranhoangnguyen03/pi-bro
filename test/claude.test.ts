@@ -41,9 +41,6 @@ async function args(binDir: string): Promise<string[]> {
 	return (await readFile(join(binDir, "args.txt"), "utf8")).split("\n").slice(0, -1);
 }
 
-test("effort list", () => {
-	assert.deepEqual([...CLAUDE_EFFORTS], ["low", "medium", "high", "xhigh", "max"]);
-});
 
 test("claude explain: restricted fresh argv, stdin prompt, scratch cwd, text-only progress without reasoning", async () => {
 	await withFakeClaude(

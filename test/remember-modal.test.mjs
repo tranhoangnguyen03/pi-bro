@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { withFakeExecutable } from "./test-fake-exec.ts";
-import { buildDir, settings, backend as sharedBackend } from "./test-build.mjs";
+import { buildDir, settings, backend as sharedBackend, sourceDir } from "./test-build.mjs";
 
-const { openRememberModal } = await import(pathToFileURL(join(buildDir, "remember.js")).href);
-const { readMemoryStore } = await import(pathToFileURL(join(buildDir, "remember-store.js")).href);
+const { openRememberModal } = await import(pathToFileURL(join(sourceDir, "remember.ts")).href);
+const { readMemoryStore } = await import(pathToFileURL(join(sourceDir, "remember-store.ts")).href);
 initTheme();
 
 async function until(condition, label, modal) {

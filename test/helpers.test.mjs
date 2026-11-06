@@ -9,7 +9,7 @@ import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 import mammoth from "mammoth";
 import * as piTui from "@earendil-works/pi-tui";
-import { bro, backend, sources, buildDir, btw, explainModal } from "./test-build.mjs";
+import { bro, backend, sources, buildDir, btw, explainModal, sourceDir } from "./test-build.mjs";
 
 test("Bro helpers, modals, advisor lifecycle and SDK restrictions", async (t) => {
 const documentFixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "documents");
@@ -2495,7 +2495,7 @@ await t.test("Real Pi lifecycle: bro_advisor is registered like any other tool a
 	const loader = new DefaultResourceLoader({
 		cwd: workspace,
 		agentDir,
-		additionalExtensionPaths: [join(buildDir, "bro.js")],
+		additionalExtensionPaths: [join(sourceDir, "bro.ts")],
 		noSkills: true,
 		noPromptTemplates: true,
 		noThemes: true,

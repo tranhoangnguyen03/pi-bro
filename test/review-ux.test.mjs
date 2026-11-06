@@ -5,12 +5,12 @@ import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters as strip } from "node:util";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { buildDir } from "./test-build.mjs";
+import { buildDir, sourceDir } from "./test-build.mjs";
 initTheme();
 const { ReviewModal, newReviewView } = await import(
-	pathToFileURL(join(buildDir, "review-modal.js"))
+	pathToFileURL(join(sourceDir, "review-modal.ts"))
 );
-const { replaceGuide } = await import(pathToFileURL(join(buildDir, "review.js")));
+const { replaceGuide } = await import(pathToFileURL(join(sourceDir, "review.ts")));
 const enter = "\r",
 	esc = "\x1b",
 	down = "\x1b[B",
