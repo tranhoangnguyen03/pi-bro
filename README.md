@@ -50,6 +50,7 @@ For a first success, type this in Pi after setting up a backend:
 | `/bro btw What is a race condition?` | Asks a private side question |
 | `/bro show` | Draws the current session's recent conversation, if any |
 | `/bro grill-me Should agents talk freely to each other?` | Questions your assumptions privately, one at a time |
+| `/bro overthink` | Views private automatic second-look notes; Ctrl+R forces a new check |
 | `/bro elevate Improve how we search company documents` | Find expert gaps before giving Pi a task |
 
 File and webpage examples need your own real path or URL; see [how to explain them](docs/features/explain.md#explain-a-document). For a step-by-step first run, see [Getting started](docs/getting-started.md).
@@ -62,6 +63,7 @@ File and webpage examples need your own real path or URL; see [how to explain th
 | `/bro show` | **[Show](docs/features/show.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
 | `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
 | `/bro remember-me [thought]` | **[Remember Me](docs/remember-me.md).** Privately clarify and approve short personal memories with unfoldable background. Agents can call `about_user` to read summaries and expand IDs. |
+| `/bro overthink` | **[Overthink](docs/overthink.md).** Quietly checks meaningful work with the active Pi model, using editable global/session questions and a private notes modal. No separate backend. |
 | `/bro grill-me` | **[Grill Me](docs/grill-me.md) (experimental).** A private, opinionated decision interview: light, balanced or exhaustive; one question per round; `/consolidate` drafts a brief without ending the interview; `/insert-last-message` explicitly returns the latest reply to the editor. Uses BTW model settings; read-only restrictions vary by backend. |
 | `/bro btw` | **[Side questions](docs/features/btw.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
 | `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Claude, Muse, or Pi is recommended for untrusted PRs. |
@@ -75,7 +77,7 @@ Guided Review has its own [guide](docs/guided-review.md).
 
 ## Requirements
 
-- Pi `>=1.3.0` and Node.js `>=22.19.0`.
+- Pi `>=1.3.0` and Node.js `>=22.19.0`. Overthink always uses the host Pi model, independently of Bro's backend configuration.
 - macOS or Linux. Windows is untested; there, cancelling stops only the
   backend's direct process, not anything it started.
 - At least one backend on your `PATH`, signed in once from your terminal, **or the built-in Pi backend**. You only need the one you use:
@@ -105,6 +107,7 @@ which may keep it under their own policies. Paths below are under
 | Show | User and assistant text from recent turns (no tool calls, tool results, reasoning or images), plus your preferences | Diagram pages in `pi-bro-<uid>/` in your system temp folder |
 | Side questions | Your questions and up to the last 8 turns of conversation text, plus your preferences | Nothing; the thread stays in memory |
 | Grill Me | Topic, interview turns, up to the last 8 main-session text turns and preferences; any workspace files the selected inspector reads | Nothing; interview and brief are in memory |
+| Overthink | Current session projection, including tool evidence, plus private user-editable questions, to the active Pi provider | Global questions in `bro-overthink-defaults.json`; per-session questions and latest private note in Pi session custom entries |
 | Elevate | Your objective, selected findings, all current-branch user/assistant text; Full also includes tool-call arguments and text results, and preferences | Nothing; the workflow stays in memory |
 | Guided Review | The PR description and diff, the files the backend reads, your questions, plus your preferences | Reviews and captured source in `bro-reviews/`, with no automatic cleanup |
 | Advisor | The agent's system instructions, tool list and whole conversation, including tool calls and results (reasoning and images omitted), plus your steering | Steering in `bro-advisor.md` and the session file |

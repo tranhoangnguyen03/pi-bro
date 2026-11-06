@@ -410,6 +410,11 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 - \`/bro grill-me [topic]\` — private decision interview. Use /consolidate, /insert-last-message or /help. Full-access risk: docs/grill-me.md.
 
+## Overthink
+
+- \`/bro overthink\` — view private automatic second-look notes without running a model. Ctrl+R forces retry; Ctrl+E edits this session\x27s questions; Ctrl+K shows help; Ctrl+C copies. Uses the active Pi model and thinking level only. No separate backend settings.
+- \`/bro config\` → Features → Overthink edits the global starting questions; session edits stay with their Pi session. See docs/overthink.md.
+
 ## Side conversation
 
 - \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
@@ -425,7 +430,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 ## Configure and check
 
 - \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
-- \`/bro config\` — Global (shared defaults, preferences, Doctor) and Features (Simplify, Show, BTW, Review, Advisor and BTW-inherited workflows). The same model pickers, safe saves and error handling remain; Esc backs out.
+- \`/bro config\` — Global (shared defaults, preferences, Doctor) and Features (Simplify, Show, BTW, Review, Advisor, Overthink defaults and BTW-inherited workflows). The same model pickers, safe saves and error handling remain; Esc backs out.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
 

@@ -8,7 +8,7 @@ export type ConfigNavScreen = "root" | "global" | "features" | "advisor" | "inhe
 export type ConfigNavState = { screen: ConfigNavScreen; inherited?: "elevate"|"grill-me"|"remember-me" };
 export type ConfigNavAction =
   | {kind:"settings";page:ConfigSettingsPage}
-  | {kind:"preferences"|"doctor"|"advisor-steer"|"close"};
+  | {kind:"preferences"|"doctor"|"advisor-steer"|"overthink-defaults"|"close"};
 
 export const CONFIG_ROOT = [
   {value:"global",label:"Global — shared defaults, preferences and Doctor"},
@@ -28,6 +28,7 @@ export const CONFIG_FEATURES = [
   {value:"elevate",label:"Elevate — inherits BTW"},
   {value:"grill-me",label:"Grill Me — inherits BTW"},
   {value:"remember-me",label:"Remember Me — inherits BTW"},
+  {value:"overthink",label:"Overthink — edit global default questions (active Pi model)"},
 ] as const;
 
 export function effectiveConfigLabel(settings:BroSettings, capability:Capability):string {

@@ -53,6 +53,7 @@ export function createConfigNavigationModal(
       }
       if(state.screen==="features"){
         if(value==="advisor"){go("advisor");return;}
+        if(value==="overthink") return finish({kind:"overthink-defaults"});
         if(value==="elevate"||value==="grill-me"||value==="remember-me"){
           state.inherited=value;go("inherited");return;
         }

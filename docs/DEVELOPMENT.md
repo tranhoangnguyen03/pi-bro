@@ -12,6 +12,7 @@ those are historical records.
 Production code lives in `src/` and is published as TypeScript source (no build step):
 
 - **`bro.ts`** — the Pi extension entry point, `/bro` command routing and completion, session lifecycle wiring, and barrel re-exports.
+- **`overthink.ts`, `overthink-state.ts`, `overthink-questions-ui.ts`** — automatic same-model review of settled Pi work; private session custom entries plus global defaults; shared question editor and latest-notes viewer. Never use Bro's separate SDK/CLI backend for this cache-sensitive feature.
 - **`doctor.ts`** — `/bro doctor` diagnostics, CLI version/auth probes, Agy model catalog/usage parsing, and `/bro config` modal launch wiring.
 - **`show.ts`** — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.
 - **`advisor.ts`** — the `bro_advisor` tool registration, context snapshot builder, session/durable steering state, and progress orchestration.

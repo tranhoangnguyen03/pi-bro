@@ -1,0 +1,248 @@
+/** Automatic same-model second look. No separate CLI, agent or model override. */
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { convertToLlm, copyToClipboard } from "@earendil-works/pi-coding-agent";
+import { normalizeContext } from "@earendil-works/pi-ai";
+import { matchesKey, wrapTextWithAnsi, type Component, type TUI } from "@earendil-works/pi-tui";
+import { modalHeight, openBroOverlay, renderFrame, Scroller, formatNotice, type Theme } from "./modal-kit.ts";
+import { hasBroCustomUi } from "./ui-capabilities.ts";
+import {
+  FACTORY_QUESTIONS, ensureOverthinkSession, overthinkPrompt, parseOverthinkAnswer,
+  questionKey, readGlobalQuestions, readOverthinkUsage, resolveOverthinkSession,
+  saveOverthinkNote, saveSessionQuestions, writeGlobalQuestions,
+  type OverthinkNote,
+} from "./overthink-state.ts";
+import { openOverthinkQuestionEditor } from "./overthink-questions-ui.ts";
+import { errorMessage } from "./util.ts";
+
+const MIN_TOOL_RESULTS = 3;
+const WIDGET = "bro-overthink";
+const NOTE_TIMEOUT_MS = 90_000;
+
+type ViewerAction = "close" | "edit";
+type CheckResult = OverthinkNote;
+type CheckContext = ExtensionContext | ExtensionCommandContext;
+
+export function overthinkReady(event: { messages: readonly { role: string; stopReason?: string }[] }, pending: boolean): boolean {
+  const last = event.messages.at(-1);
+  return !pending && last?.role === "assistant" && last.stopReason === "stop" &&
+    event.messages.filter(m => m.role === "toolResult").length >= MIN_TOOL_RESULTS;
+}
+
+function noteWidget(ctx: CheckContext, note?: string): void {
+  if (ctx.mode !== "tui") return;
+  ctx.ui.setWidget(WIDGET, note
+    ? (_tui, theme) => ({
+        invalidate() {},
+        render(width: number) {
+          const label = "◇ Overthink: ";
+          const lines = wrapTextWithAnsi(note.replace(/\s+/g, " "), Math.max(12, width - label.length - 2)).slice(0, 3);
+          return ["", ...lines.map((line, index) =>
+            (index === 0 ? theme.fg("warning", label) : " ".repeat(label.length)) + theme.fg("muted", line)
+          ), theme.fg("dim", "  /bro overthink to view the private assessment")];
+        },
+      })
+    : undefined);
+}
+
+function questionStatus(note: OverthinkNote | undefined, questions: string[]): string {
+  if (!note) return "No assessment yet.";
+  const changed = note.questionKey !== questionKey(questions) ? " · questions changed since check" : "";
+  const usage = note.usage;
+  const cost = usage?.cacheRead !== undefined ? " · cached input: " + usage.cacheRead.toLocaleString("en-US") + " tokens" : "";
+  return "Checked: " + note.checkedAt + " · " + note.model + cost + changed;
+}
+
+export function createOverthinkViewer(
+  read: () => { questions: string[]; note?: OverthinkNote },
+  retry: () => Promise<CheckResult>,
+) {
+  return (tui: TUI, theme: Theme, _keys: unknown, done: (action: ViewerAction) => void): Component => {
+    let help = false;
+    let busy = false;
+    let closed = false;
+    let notice = "";
+    const scroller = new Scroller(() => tui.requestRender());
+    const copy = async () => {
+      const note = read().note;
+      if (!note?.text) { notice = formatNotice(theme, "Nothing to copy yet.", "warning"); tui.requestRender(); return; }
+      try { await copyToClipboard(note.text); notice = formatNotice(theme, "Assessment copied.", "success"); }
+      catch (error) { notice = formatNotice(theme, "Copy failed: " + errorMessage(error), "error"); }
+      tui.requestRender();
+    };
+    const rerun = async () => {
+      if (busy || closed) return;
+      busy = true; notice = ""; tui.requestRender();
+      try {
+        const result = await retry();
+        if (!closed) { scroller.toStart(); notice = formatNotice(theme, result.text ? "Assessment refreshed." : "No material concerns found.", "success"); }
+      } catch (error) {
+        if (!closed) notice = formatNotice(theme, "Retry failed: " + errorMessage(error), "error");
+      } finally { busy = false; if (!closed) tui.requestRender(); }
+    };
+    return {
+      render(width: number) {
+        const { questions, note } = read();
+        const inner = Math.max(1, width - 2);
+        const body = help
+          ? [
+              "Overthink checks substantive Pi tasks automatically with the active session model.",
+              "Results are private and never enter the main conversation.",
+              "",
+              "Ctrl+R  Force a fresh check (even after a small task)",
+              "Ctrl+E  Edit this session's questions",
+              "Ctrl+K  Toggle help",
+              "Ctrl+C  Copy latest findings",
+              "Esc     Close / back from help",
+              "",
+              "No separate backend or model picker. Cached input is measured when the provider reports it.",
+            ]
+          : [
+              questionStatus(note, questions),
+              "Questions: " + questions.length + (questions.length ? "" : " (checks disabled)"),
+              "",
+              busy ? "Checking the current Pi session…" : note
+                ? note.text || "No material concerns found in the last check."
+                : "No assessment yet. Bro checks automatically after meaningful work. Ctrl+R forces one now.",
+            ];
+        const lines = body.flatMap(line => wrapTextWithAnsi(line, inner));
+        return renderFrame(theme, width, modalHeight(tui), {
+          header: () => theme.fg("accent", theme.bold("Bro · Overthink")) + (busy ? " · running" : ""),
+          body: (rows) => scroller.view(lines, rows),
+          notice,
+          hints: "↑/↓ scroll · Ctrl+R retry · Ctrl+E session questions · Ctrl+K help · Ctrl+C copy · Esc close",
+        });
+      },
+      invalidate() {},
+      handleInput(data: string) {
+        if (matchesKey(data, "escape")) {
+          if (help) { help = false; scroller.toStart(); tui.requestRender(); }
+          else { closed = true; done("close"); }
+          return;
+        }
+        if (matchesKey(data, "ctrl+k")) { help = !help; scroller.toStart(); tui.requestRender(); return; }
+        if (matchesKey(data, "ctrl+r")) { void rerun(); return; }
+        if (matchesKey(data, "ctrl+c")) { void copy(); return; }
+        if (matchesKey(data, "ctrl+e") && !busy) { closed = true; done("edit"); return; }
+        scroller.handleKey(data);
+      },
+    };
+  };
+}
+
+export async function openOverthinkDefaults(ctx: ExtensionCommandContext): Promise<void> {
+  const current = await readGlobalQuestions();
+  await openOverthinkQuestionEditor(ctx, {
+    title: "Bro · Overthink / Default questions",
+    questions: current,
+    reset: async () => [...FACTORY_QUESTIONS],
+    save: writeGlobalQuestions,
+  });
+}
+
+export function registerOverthink(pi: ExtensionAPI): {
+  open(ctx: ExtensionCommandContext): Promise<void>;
+} {
+  let active: AbortController | undefined;
+  let generation = 0;
+  const invalidate = (_event: unknown, ctx: ExtensionContext) => {
+    generation++;
+    active?.abort(); active = undefined;
+    noteWidget(ctx);
+  };
+
+  // The first session event locks its question defaults; subsequent branch/fork views
+  // inherit the nearest private custom entry rather than sharing a project setting.
+  pi.on("session_start", async (_event, ctx) => {
+    invalidate(_event, ctx);
+    try { await ensureOverthinkSession(pi, ctx.sessionManager.getBranch()); }
+    catch (error) { if (ctx.mode === "tui") ctx.ui.notify("Overthink settings: " + errorMessage(error), "warning"); }
+  });
+  pi.on("session_tree", invalidate);
+  pi.on("agent_start", invalidate);
+  pi.on("session_shutdown", async (_event, ctx) => { invalidate(_event, ctx); });
+
+  const run = async (ctx: CheckContext, forced: boolean): Promise<CheckResult> => {
+    if (!ctx.model) throw new Error("No active Pi model; Overthink cannot choose a different one.");
+    const marker = generation;
+    const sessionId = ctx.sessionManager.getSessionId();
+    const state = await ensureOverthinkSession(pi, ctx.sessionManager.getBranch());
+    const questions = state.questions ?? [];
+    if (!questions.length) throw new Error("No Overthink questions. Edit session questions to enable checks.");
+    if (marker !== generation || sessionId !== ctx.sessionManager.getSessionId()) throw new Error("Session changed; assessment cancelled.");
+
+    const projected = ctx.sessionManager.buildSessionProjection().messages;
+    if (!projected.length && forced) throw new Error("Nothing in the current conversation to assess.");
+    if (!projected.length) throw new Error("No conversation to assess.");
+
+    active?.abort();
+    const controller = new AbortController();
+    active = controller;
+    const model = ctx.model;
+    const name = model.provider + "/" + model.id;
+    const effort = pi.getThinkingLevel();
+    const ask = { role: "user" as const, content: [{ type: "text" as const, text: overthinkPrompt(questions) }], timestamp: Date.now() };
+    const timer = setTimeout(() => controller.abort(), NOTE_TIMEOUT_MS);
+    try {
+      // The exact projected message prefix is the basis of provider cache reuse.
+      // No second agent session, generated summary, extra tools or backend override.
+      const answer = await ctx.modelRegistry.streamSimple(
+        model,
+        normalizeContext({ messages: convertToLlm([...projected, ask]) }),
+        {
+          reasoning: model.reasoning && effort !== "off" ? effort : undefined,
+          maxTokens: 2200,
+          sessionId: sessionId ?? undefined,
+          signal: controller.signal,
+        },
+      ).result();
+      if (controller.signal.aborted) throw new Error("Assessment cancelled or timed out.");
+      if (marker !== generation || sessionId !== ctx.sessionManager.getSessionId() ||
+          ctx.model?.provider !== model.provider || ctx.model?.id !== model.id ||
+          active !== controller) throw new Error("Session or model changed; stale result discarded.");
+      if (answer.stopReason !== "stop") throw new Error("Model did not finish its assessment (" + answer.stopReason + ").");
+      const text = parseOverthinkAnswer(answer.content.filter(part => part.type === "text").map(part => part.text).join(""));
+      const note: OverthinkNote = {
+        text, checkedAt: new Date().toISOString(), model: name, questionKey: questionKey(questions),
+        ...(readOverthinkUsage(answer.usage) ? { usage: readOverthinkUsage(answer.usage) } : {}),
+      };
+      saveOverthinkNote(pi, note);
+      noteWidget(ctx, text);
+      return note;
+    } finally {
+      clearTimeout(timer);
+      if (active === controller) active = undefined;
+    }
+  };
+
+  pi.on("agent_end", async (event, ctx) => {
+    if (ctx.mode !== "tui" || !ctx.model || !overthinkReady(event, ctx.hasPendingMessages())) return;
+    // Don't await this optional second look: the original Pi reply must finish unhindered.
+    void run(ctx, false).catch(() => undefined);
+  });
+
+  const open = async (ctx: ExtensionCommandContext): Promise<void> => {
+    if (!hasBroCustomUi(ctx)) {
+      ctx.ui.notify("Use /bro overthink in Pi's interactive UI.", "warning");
+      return;
+    }
+    await ensureOverthinkSession(pi, ctx.sessionManager.getBranch());
+    for (;;) {
+      const action = await openBroOverlay<ViewerAction>(ctx, createOverthinkViewer(
+        () => {
+          const state = resolveOverthinkSession(ctx.sessionManager.getBranch());
+          return { questions: state.questions ?? [], note: state.note };
+        },
+        () => run(ctx, true),
+      ));
+      if (action !== "edit") return;
+      const state = resolveOverthinkSession(ctx.sessionManager.getBranch());
+      await openOverthinkQuestionEditor(ctx, {
+        title: "Bro · Overthink / Session questions",
+        questions: state.questions ?? [],
+        reset: readGlobalQuestions,
+        save: (questions) => saveSessionQuestions(pi, questions),
+      });
+    }
+  };
+  return { open };
+}

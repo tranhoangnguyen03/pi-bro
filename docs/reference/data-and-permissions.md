@@ -84,6 +84,8 @@ When shaping an answer, each part has one owner:
 
 ## Privacy and safety
 
+- **Overthink requests:** after a substantive Pi turn, Bro makes one additional provider call using Pi's active model and current session conversation projection (including exposed tool evidence), appending the current session's questions. The extra call is read-only and does not grant the model tools. The provider may retain input under its policy. Results and questions are stored in private Pi session custom entries, not LLM turns; global questions use `bro-overthink-defaults.json` in the agent home. This cannot promise a cache hit or fixed incremental cost. The viewer shows provider-reported cache-read tokens where available. See [Overthink](../overthink.md).
+
 - **External requests**: Bro sends the latest completed assistant response,
   pasted text, extracted document text, extracted webpage text, or recent
   session conversation text (tool calls, tool results, reasoning, and images
