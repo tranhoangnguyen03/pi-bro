@@ -24,7 +24,7 @@ export function parseGrillArguments(raw: string): { topic: string; depth: GrillD
 }
 
 export const GRILL_COMMANDS = [
-  "/consolidate", "/insert-last-message", "/depth light", "/depth balanced",
+  "/consolidate", "/copy", "/depth light", "/depth balanced",
   "/depth exhaustive", "/retry", "/new ", "/access inspect", "/access full", "/help",
 ] as const;
 
@@ -36,7 +36,7 @@ export type GrillAction =
   | { kind: "message"; text: string }
   | { kind: "depth"; value: GrillDepth }
   | { kind: "access"; value: "inspect" | "full" }
-  | { kind: "consolidate" | "insert" | "help" | "retry" | "empty" }
+  | { kind: "consolidate" | "copy" | "help" | "retry" | "empty" }
   | { kind: "new"; topic: string }
   | { kind: "invalid"; message: string };
 
@@ -47,7 +47,8 @@ export function parseGrillCommand(value: string): GrillAction {
   if (text === "/help") return { kind: "help" };
   if (text.startsWith("/new ") && text.slice(5).trim()) return { kind: "new", topic: text.slice(5).trim() };
   if (text === "/retry") return { kind: "retry" };
-  if (text === "/insert-last-message") return { kind: "insert" };
+  if (text === "/copy") return { kind: "copy" };
+  if (text === "/insert-last-message") return { kind: "invalid", message: "/insert-last-message was removed. Use /copy, then paste the result where you want it." };
   if (text.startsWith("/depth")) {
     const tokens = text.split(/\s+/);
     return tokens.length === 2 && GRILL_DEPTHS.some((v) => v === tokens[1])
