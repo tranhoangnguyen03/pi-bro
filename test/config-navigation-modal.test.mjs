@@ -70,3 +70,12 @@ test("BTW and Review editing pages visibly disclose selected backend permissions
   assert.match(reviewScreen,/read-only sandbox/);
   assert.match(reviewScreen,/Captured|Guide|Review/);
 });
+
+
+test("Features > Overthink opens global question editor, not a model picker", () => {
+  const state = { screen: "root" }, m = mount(state);
+  m.component.handleInput(down); m.component.handleInput(enter);
+  for (let i = 0; i < 8; i++) m.component.handleInput(down);
+  m.component.handleInput(enter);
+  assert.deepEqual(m.result(), { kind: "overthink-defaults" });
+});

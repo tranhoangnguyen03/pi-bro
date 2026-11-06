@@ -9,7 +9,8 @@ import {
   readGlobalQuestions, writeGlobalQuestions, resolveOverthinkSession,
   questionKey, parseOverthinkAnswer, readOverthinkUsage,
 } from "../src/overthink-state.ts";
-import { overthinkReady, registerOverthink } from "../src/overthink.ts";
+import { createOverthinkViewer, overthinkReady, registerOverthink } from "../src/overthink.ts";
+import { createOverthinkQuestionEditor } from "../src/overthink-questions-ui.ts";
 
 test("questions: validate ordered editable lines and keep empty list intentional", () => {
   assert.deepEqual(questionsFromText("One?\n\nTwo?  \n"), ["One?", "Two?"]);
@@ -121,4 +122,48 @@ test("same Pi model is called once, report is stored privately, and a new turn c
   assert.equal(widgets.length > 0, true);
   await callbacks.agent_start({}, ctx);
   assert.equal(widgets.at(-1), undefined);
+});
+
+
+test("Overthink viewer opens without a call; Ctrl+K help, Ctrl+R retry, Ctrl+E editor", async () => {
+  let calls = 0;
+  let action = "";
+  const tui = { mode: "regular", terminal: { rows: 35, columns: 90 }, requestRender() {} };
+  const theme = { fg: (_color: string, value: string) => value, bold: (value: string) => value };
+  const note = { text: "Check recovery.", checkedAt: "2026-11-06T00:00:00Z", model: "test/model",
+    questionKey: questionKey(["One?"]) };
+  const component = createOverthinkViewer(
+    () => ({ questions: ["One?"], note }),
+    async () => { calls++; return note; },
+  )(tui as any, theme as any, {}, (value) => { action = value; });
+  assert.match(component.render(90).join("\n"), /Check recovery/);
+  assert.equal(calls, 0, "viewing latest notes must not run a model");
+  component.handleInput?.("\x0b"); // Ctrl+K
+  assert.match(component.render(90).join("\n"), /Toggle help/);
+  component.handleInput?.("\x0b");
+  component.handleInput?.("\x12"); // Ctrl+R
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(calls, 1);
+  component.handleInput?.("\x05"); // Ctrl+E
+  assert.equal(action, "edit");
+});
+
+test("question editor reset is a draft until explicitly saved", async () => {
+  const saves: string[][] = [];
+  const tui = { mode: "regular", terminal: { rows: 35, columns: 90 }, requestRender() {} };
+  const theme = { fg: (_color: string, value: string) => value, bold: (value: string) => value };
+  const component = createOverthinkQuestionEditor({
+    title: "Test questions", questions: ["My question?"],
+    reset: async () => ["Reset source?"],
+    save: async (questions: string[]) => { saves.push(questions); },
+  })(tui as any, theme as any, {}, () => undefined);
+  component.handleInput?.("\x04"); // Ctrl+D confirms only on second press
+  assert.deepEqual(saves, []);
+  component.handleInput?.("\x04");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(saves, [], "reset must never write without Ctrl+S");
+  assert.match(component.render(90).join("\n"), /Reset source/);
+  component.handleInput?.("\x13"); // Ctrl+S
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(saves, [["Reset source?"]]);
 });
