@@ -2,7 +2,7 @@
 import { Input, matchesKey, truncateToWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import { modalHeight, openBroOverlay, renderFrame, Scroller, formatNotice, type Theme } from "./modal-kit.ts";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { checkQuestions } from "./overthink-state.ts";
+import { checkQuestions, MAX_OVERTHINK_QUESTIONS, MAX_OVERTHINK_QUESTION_CHARS } from "./overthink-state.ts";
 import { errorMessage } from "./util.ts";
 
 type EditorOptions = {
@@ -34,8 +34,8 @@ export function createOverthinkQuestionEditor(options: EditorOptions) {
       input.setValue(questions[index] ?? "");
       input.onSubmit = (value: string) => {
         const trimmed = value.trim();
-        if (!trimmed || trimmed.length > 500 || /[\r\n]/.test(trimmed)) {
-          warn("Enter one nonempty question (max 500 characters).", "warning"); return;
+        if (!trimmed || trimmed.length > MAX_OVERTHINK_QUESTION_CHARS || /[\r\n]/.test(trimmed)) {
+          warn("Enter one nonempty question (max " + MAX_OVERTHINK_QUESTION_CHARS + " characters).", "warning"); return;
         }
         if (editingIndex === questions.length) questions.push(trimmed);
         else questions[editingIndex] = trimmed;
@@ -96,7 +96,7 @@ export function createOverthinkQuestionEditor(options: EditorOptions) {
         discardArmed = false;
         if (matchesKey(data, "ctrl+s")) { void save(); return; }
         if (matchesKey(data, "ctrl+n")) {
-          if (questions.length >= 32) { warn("Maximum 32 questions.", "warning"); return; }
+          if (questions.length >= MAX_OVERTHINK_QUESTIONS) { warn("Maximum " + MAX_OVERTHINK_QUESTIONS + " questions.", "warning"); return; }
           beginEdit(questions.length); return;
         }
         if (matchesKey(data, "ctrl+d")) {

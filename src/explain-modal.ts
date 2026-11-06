@@ -412,8 +412,8 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 ## Overthink
 
-- \`/bro overthink\` — view private automatic second-look notes without running a model. Ctrl+R forces retry; Ctrl+E edits this session\x27s questions; Ctrl+K shows help; Ctrl+C copies. Uses the active Pi model and thinking level only. No separate backend settings.
-- \`/bro config\` → Features → Overthink edits the global starting questions; session edits stay with their Pi session. See docs/overthink.md.
+- \`/bro overthink\` — view private automatic second-look notes without running a model. Ctrl+R forces retry; Ctrl+E edits this session's questions; ? shows help; Ctrl+C copies. Uses the active Pi model and thinking level only. No separate backend settings.
+- \`/bro config\` → Features → Overthink provides automatic on/off and editable global starting questions; session edits stay with their Pi session. See docs/overthink.md.
 
 ## Side conversation
 

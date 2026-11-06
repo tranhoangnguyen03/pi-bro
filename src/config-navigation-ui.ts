@@ -11,10 +11,14 @@ import {
 } from "./config-navigation.ts";
 
 type MenuItem = {value:string;label:string};
-const rowsFor=(screen:ConfigNavScreen):readonly MenuItem[]=>{
+const rowsFor=(screen:ConfigNavScreen, automatic:boolean):readonly MenuItem[]=>{
   if(screen==="root")return CONFIG_ROOT;
   if(screen==="global")return CONFIG_GLOBAL;
   if(screen==="features")return CONFIG_FEATURES;
+  if(screen==="overthink")return [
+    {value:"overthink-defaults",label:"Default questions — edit starting set"},
+    {value:"overthink-toggle",label:"Automatic checks — "+(automatic?"On":"Off")+" (Enter to toggle)"},
+  ];
   if(screen==="advisor")return [
     {value:"advisor-settings",label:"Backend, model and effort"},
     {value:"advisor-steer",label:"Persistent advisor steering brief"},
@@ -25,6 +29,7 @@ const rowsFor=(screen:ConfigNavScreen):readonly MenuItem[]=>{
 export function createConfigNavigationModal(
   state:ConfigNavState,
   settings:BroSettings,
+  automatic = true,
 ): (tui:TuiLike,theme:Theme,keys:unknown,done:(result:ConfigNavAction)=>void)=>Component {
   return (tui,theme,_keys,done)=>{
     let closed=false;
@@ -33,7 +38,7 @@ export function createConfigNavigationModal(
     const finish=(result:ConfigNavAction)=>{if(closed)return;closed=true;done(result);};
     const go=(screen:ConfigNavScreen)=>{
       state.screen=screen;
-      const items=rowsFor(screen) as SelectItem[];
+      const items=rowsFor(screen, automatic) as SelectItem[];
       list=new SelectList(items,Math.min(items.length,Math.max(1,modalHeight(tui)-10)),getSelectListTheme());
       list.onSelect=item=>choose(item.value);
       list.onCancel=back;
@@ -53,11 +58,15 @@ export function createConfigNavigationModal(
       }
       if(state.screen==="features"){
         if(value==="advisor"){go("advisor");return;}
-        if(value==="overthink") return finish({kind:"overthink-defaults"});
+        if(value==="overthink"){go("overthink");return;}
         if(value==="elevate"||value==="grill-me"||value==="remember-me"){
           state.inherited=value;go("inherited");return;
         }
         if(value==="explain"||value==="show"||value==="btw"||value==="review")return finish({kind:"settings",page:value});
+      }
+      if(state.screen==="overthink"){
+        if(value==="overthink-defaults")return finish({kind:"overthink-defaults"});
+        if(value==="overthink-toggle")return finish({kind:"overthink-toggle"});
       }
       if(state.screen==="advisor"){
         if(value==="advisor-steer")return finish({kind:"advisor-steer"});
@@ -74,6 +83,7 @@ export function createConfigNavigationModal(
         s==="global"?"Bro · config / Global":
         s==="features"?"Bro · config / Features":
         s==="advisor"?"Bro · config / Features / Advisor":
+        s==="overthink"?"Bro · config / Features / Overthink":
         "Bro · config / Features / "+(state.inherited??"Inherited");
     };
     const subtitle=()=>{
@@ -81,6 +91,7 @@ export function createConfigNavigationModal(
       if(state.screen==="global")return "Defaults are shared. Doctor runs only when selected.";
       if(state.screen==="features")return "Feature model overrides are optional; inherited features use BTW.";
       if(state.screen==="advisor")return "Steering keeps its own file; changing models does not change steering.";
+      if(state.screen==="overthink")return "Automatic checks use the active Pi model. No backend override.";
       if(state.inherited)return inheritedConfigDescription(settings,state.inherited);
       return "Inherits BTW";
     };

@@ -23,6 +23,7 @@ import { type ConfigNavAction, type ConfigNavState } from "./config-navigation.t
 import { showBroModal, showPreferencesModal, showAdvisorSteerModal } from "./explain-modal.ts";
 import { openBroOverlay } from "./modal-kit.ts";
 import { openOverthinkDefaults } from "./overthink.ts";
+import { readAutomaticChecks, writeAutomaticChecks } from "./overthink-state.ts";
 import {
 	type AgyEffort,
 	type AgyModelFamily,
@@ -662,8 +663,11 @@ export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: Exten
 			ctx.ui.notify("Settings unavailable: "+errorMessage(error)+". Global > Doctor can diagnose.", "warning");
 			current = { backend:"agy",model:"(unavailable)",effort:"default",mode:"balanced",showTurns:1,overrides:{} };
 		}
+		let automatic = true;
+		try { automatic = await readAutomaticChecks(); }
+		catch (error) { ctx.ui.notify("Overthink automatic setting: " + errorMessage(error), "warning"); }
 		const selected = await openBroOverlay<ConfigNavAction>(
-			ctx, createConfigNavigationModal(navigation,current), {mouse:true}
+			ctx, createConfigNavigationModal(navigation,current,automatic), {mouse:true}
 		);
 		if (!selected || selected.kind === "close") return;
 		if (selected.kind === "preferences") {
@@ -672,6 +676,14 @@ export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: Exten
 		}
 		if (selected.kind === "advisor-steer") {
 			await showAdvisorSteerModal(ctx,pi);
+			continue;
+		}
+		if (selected.kind === "overthink-toggle") {
+			try {
+				const next = !(await readAutomaticChecks());
+				await writeAutomaticChecks(next);
+				ctx.ui.notify("Overthink automatic checks: " + (next ? "On" : "Off"), "info");
+			} catch (error) { ctx.ui.notify("Overthink automatic checks: " + errorMessage(error), "error"); }
 			continue;
 		}
 		if (selected.kind === "overthink-defaults") {

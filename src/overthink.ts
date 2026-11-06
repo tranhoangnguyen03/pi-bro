@@ -7,7 +7,7 @@ import { modalHeight, openBroOverlay, renderFrame, Scroller, formatNotice, type 
 import { hasBroCustomUi } from "./ui-capabilities.ts";
 import {
   FACTORY_QUESTIONS, ensureOverthinkSession, overthinkPrompt, parseOverthinkAnswer,
-  questionKey, readGlobalQuestions, readOverthinkUsage, resolveOverthinkSession,
+  questionKey, readAutomaticChecks, readGlobalQuestions, readOverthinkUsage, resolveOverthinkSession,
   saveOverthinkNote, saveSessionQuestions, writeGlobalQuestions,
   type OverthinkNote,
 } from "./overthink-state.ts";
@@ -47,9 +47,25 @@ function noteWidget(ctx: CheckContext, note?: string): void {
 function questionStatus(note: OverthinkNote | undefined, questions: string[]): string {
   if (!note) return "No assessment yet.";
   const changed = note.questionKey !== questionKey(questions) ? " · questions changed since check" : "";
-  const usage = note.usage;
-  const cost = usage?.cacheRead !== undefined ? " · cached input: " + usage.cacheRead.toLocaleString("en-US") + " tokens" : "";
-  return "Checked: " + note.checkedAt + " · " + note.model + cost + changed;
+  return "Checked: " + note.checkedAt + " · " + note.model + changed;
+}
+
+/** A reported zero may mean a miss OR a provider that does not support cache accounting. */
+export function usageStatus(note: OverthinkNote | undefined): string[] {
+  const u = note?.usage;
+  if (!u) return ["Cost/usage: not reported by provider."];
+  const totals = [
+    u.input !== undefined ? "input " + u.input.toLocaleString("en-US") : undefined,
+    u.cacheRead !== undefined ? "cache read " + u.cacheRead.toLocaleString("en-US") : undefined,
+    u.cacheWrite !== undefined ? "cache write " + u.cacheWrite.toLocaleString("en-US") : undefined,
+    u.output !== undefined ? "output " + u.output.toLocaleString("en-US") : undefined,
+    u.reasoning !== undefined ? "reasoning " + u.reasoning.toLocaleString("en-US") : undefined,
+  ].filter((value): value is string => value !== undefined);
+  const cost = u.costTotal !== undefined ? " · cost $" + u.costTotal.toFixed(6) : "";
+  return [
+    "Provider-reported usage: " + (totals.length ? totals.join(" · ") : "token counts unavailable") + cost,
+    ...(u.cacheRead === 0 ? ["Cache read 0 can mean no hit or caching unsupported."] : []),
+  ];
 }
 
 export function createOverthinkViewer(
@@ -90,7 +106,7 @@ export function createOverthinkViewer(
               "",
               "Ctrl+R  Force a fresh check (even after a small task)",
               "Ctrl+E  Edit this session's questions",
-              "Ctrl+K  Toggle help",
+              "?       Toggle help",
               "Ctrl+C  Copy latest findings",
               "Esc     Close / back from help",
               "",
@@ -99,6 +115,7 @@ export function createOverthinkViewer(
           : [
               questionStatus(note, questions),
               "Questions: " + questions.length + (questions.length ? "" : " (checks disabled)"),
+              ...usageStatus(note),
               "",
               busy ? "Checking the current Pi session…" : note
                 ? note.text || "No material concerns found in the last check."
@@ -109,7 +126,7 @@ export function createOverthinkViewer(
           header: () => theme.fg("accent", theme.bold("Bro · Overthink")) + (busy ? " · running" : ""),
           body: (rows) => scroller.view(lines, rows),
           notice,
-          hints: "↑/↓ scroll · Ctrl+R retry · Ctrl+E session questions · Ctrl+K help · Ctrl+C copy · Esc close",
+          hints: "↑/↓ scroll · Ctrl+R retry · Ctrl+E session questions · ? help · Ctrl+C copy · Esc close",
         });
       },
       invalidate() {},
@@ -119,7 +136,7 @@ export function createOverthinkViewer(
           else { closed = true; done("close"); }
           return;
         }
-        if (matchesKey(data, "ctrl+k")) { help = !help; scroller.toStart(); tui.requestRender(); return; }
+        if (data === "?") { help = !help; scroller.toStart(); tui.requestRender(); return; }
         if (matchesKey(data, "ctrl+r")) { void rerun(); return; }
         if (matchesKey(data, "ctrl+c")) { void copy(); return; }
         if (matchesKey(data, "ctrl+e") && !busy) { closed = true; done("edit"); return; }
@@ -200,10 +217,13 @@ export function registerOverthink(pi: ExtensionAPI): {
           ctx.model?.provider !== model.provider || ctx.model?.id !== model.id ||
           active !== controller) throw new Error("Session or model changed; stale result discarded.");
       if (answer.stopReason !== "stop") throw new Error("Model did not finish its assessment (" + answer.stopReason + ").");
+      const currentQuestions = resolveOverthinkSession(ctx.sessionManager.getBranch()).questions ?? [];
+      if (questionKey(currentQuestions) !== questionKey(questions)) throw new Error("Questions changed during check; stale result discarded.");
       const text = parseOverthinkAnswer(answer.content.filter(part => part.type === "text").map(part => part.text).join(""));
+      const usage = readOverthinkUsage(answer.usage);
       const note: OverthinkNote = {
         text, checkedAt: new Date().toISOString(), model: name, questionKey: questionKey(questions),
-        ...(readOverthinkUsage(answer.usage) ? { usage: readOverthinkUsage(answer.usage) } : {}),
+        ...(usage ? { usage } : {}),
       };
       saveOverthinkNote(pi, note);
       noteWidget(ctx, text);
@@ -217,7 +237,9 @@ export function registerOverthink(pi: ExtensionAPI): {
   pi.on("agent_end", async (event, ctx) => {
     if (ctx.mode !== "tui" || !ctx.model || !overthinkReady(event, ctx.hasPendingMessages())) return;
     // Don't await this optional second look: the original Pi reply must finish unhindered.
-    void run(ctx, false).catch(() => undefined);
+    void (async () => {
+      if (await readAutomaticChecks()) await run(ctx, false);
+    })().catch(() => undefined);
   });
 
   const open = async (ctx: ExtensionCommandContext): Promise<void> => {

@@ -37,11 +37,11 @@ Typing `/bro ` displays nine task-level suggestions: `simplify`, `show`, `btw`, 
 | `/bro doctor` | Check Bro's settings, preferences, and each selected backend, with the effective backend/model/effort per feature. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro preferences` | View or edit what Bro knows about you and how you like answers; see [Preferences](settings.md#preferences). |
-| `/bro config` | Open Global (defaults, preferences and Doctor) or Features (per-feature overrides, BTW inheritance, Overthink default questions and Advisor steering). |
+| `/bro config` | Open Global (defaults, preferences and Doctor) or Features (per-feature overrides, BTW inheritance, Overthink automatic checks/default questions and Advisor steering). |
 | `/bro guided-review <PR number or URL>` | Automatically explain and assess a captured PR in local Pi, with source evidence and optional private questions. Opening the same PR restores its saved review. |
 | `/bro guided-review` | List saved reviews; `resume` is an alias. |
 | `/bro remember-me [thought]` | Start a private memory-writing conversation, browse and expand memories, and approve saves explicitly. [Guide](../remember-me.md). |
-| `/bro overthink` | View the latest private automatic second-look notes, without a model call. Ctrl+R retry, Ctrl+E edit session questions, Ctrl+K help, Ctrl+C copy. [Guide](../overthink.md). |
+| `/bro overthink` | View the latest private automatic second-look notes, without a model call. Ctrl+R retry, Ctrl+E edit session questions, ? help, Ctrl+C copy. [Guide](../overthink.md). |
 | `/bro grill-me [topic]` | Private one-question-at-a-time decision interview. Supply a topic to start fresh; omit it to resume. `/consolidate` drafts a brief; `/insert-last-message` inserts explicitly without sending. `/help` lists modal controls. [Guide](../grill-me.md). |
 | `/bro elevate [request]` | Improve an assignment before execution. Discover up to five gaps, choose useful findings, and insert a revised request without submitting it. **Ctrl+Shift+E** can use your unsent draft. See [Elevate](../elevate.md). |
 | `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; type `/mode` inside to toggle full permission (read and edit the workspace) without losing the thread. |

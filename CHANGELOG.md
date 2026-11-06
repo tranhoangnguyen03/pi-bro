@@ -12,7 +12,7 @@ All notable changes to pi-bro are documented here.
 
 ### Limits
 
-- Same-model criticism is not an independent review. Cache-read tokens are shown only when reported by the provider; actual billable savings require live verification. Full TUI and PiG qualification still require real sessions.
+- Same-model criticism is not an independent review. Automatic checks start on; Features → Overthink can turn them off while keeping manual retry. Usage and cost are shown only when reported by the provider; high-effort reasoning can still be expensive. The second request retains Pi's context, which may include tool descriptions, but does not execute tools. Actual cache reuse and billable savings require live verification. Full TUI and PiG qualification still require real sessions.
 
 ## [0.29.0] - 2026-11-05
 

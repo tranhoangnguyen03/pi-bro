@@ -5,15 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
-  FACTORY_QUESTIONS, OVERTHINK_ENTRY, checkQuestions, questionsFromText,
-  readGlobalQuestions, writeGlobalQuestions, resolveOverthinkSession,
+  FACTORY_QUESTIONS, OVERTHINK_ENTRY, checkQuestions,
+  readAutomaticChecks, readGlobalQuestions, writeGlobalQuestions, writeAutomaticChecks,
+  resolveOverthinkSession, overthinkPrompt,
   questionKey, parseOverthinkAnswer, readOverthinkUsage,
 } from "../src/overthink-state.ts";
-import { createOverthinkViewer, overthinkReady, registerOverthink } from "../src/overthink.ts";
+import { createOverthinkViewer, overthinkReady, registerOverthink, usageStatus } from "../src/overthink.ts";
 import { createOverthinkQuestionEditor } from "../src/overthink-questions-ui.ts";
 
 test("questions: validate ordered editable lines and keep empty list intentional", () => {
-  assert.deepEqual(questionsFromText("One?\n\nTwo?  \n"), ["One?", "Two?"]);
+  assert.deepEqual(checkQuestions(["One?", "Two?  "]), ["One?", "Two?"]);
   assert.deepEqual(checkQuestions([]), []);
   assert.throws(() => checkQuestions([" "]), /nonempty/);
   assert.throws(() => checkQuestions(["x".repeat(501)]), /500/);
@@ -23,18 +24,32 @@ test("questions: validate ordered editable lines and keep empty list intentional
   assert.deepEqual(readOverthinkUsage({ cacheReadTokens: 200, cacheWriteTokens: 13, outputTokens: 42 }),
     { cacheRead: 200, cacheWrite: 13, output: 42 });
   assert.equal(readOverthinkUsage(undefined), undefined);
+  assert.deepEqual(readOverthinkUsage({ cacheRead: 0, cacheWrite: 4, reasoning: 321, cost: { total: 0.00234 } }),
+    { cacheRead: 0, cacheWrite: 4, reasoning: 321, costTotal: 0.00234 });
+  assert.match(usageStatus({ text: "", checkedAt: "", model: "", questionKey: "",
+    usage: { cacheRead: 0, cacheWrite: 4, reasoning: 321, costTotal: 0.00234 } }).join(" "), /caching unsupported/);
+  assert.match(usageStatus({ text: "", checkedAt: "", model: "", questionKey: "",
+    usage: { cacheRead: 0, cacheWrite: 4, reasoning: 321, costTotal: 0.00234 } }).join(" "), /\$0\.002340/);
+  assert.match(overthinkPrompt(["Why?"]), /do not call tools or take actions/);
 });
 
 test("global defaults: persisted list and reset source remain independent", async () => {
   const dir = await mkdtemp(join(tmpdir(), "bro-overthink-"));
   try {
     assert.deepEqual(await readGlobalQuestions(dir), FACTORY_QUESTIONS);
+    assert.equal(await readAutomaticChecks(dir), true);
+    await writeAutomaticChecks(false, dir);
+    assert.equal(await readAutomaticChecks(dir), false);
     await writeGlobalQuestions(["Changed direction?", "Risk?"], dir);
     assert.deepEqual(await readGlobalQuestions(dir), ["Changed direction?", "Risk?"]);
+    assert.equal(await readAutomaticChecks(dir), false, "editing questions must preserve enabled state");
     const disk = JSON.parse(await readFile(join(dir, "bro-overthink-defaults.json"), "utf8"));
     assert.equal(disk.version, 1);
     await writeGlobalQuestions([], dir);
     assert.deepEqual(await readGlobalQuestions(dir), []);
+    await writeAutomaticChecks(true, dir);
+    assert.equal(await readAutomaticChecks(dir), true);
+    assert.deepEqual(await readGlobalQuestions(dir), [], "toggling automatic checks must preserve questions");
     assert.equal(FACTORY_QUESTIONS.length, 7);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
@@ -125,7 +140,7 @@ test("same Pi model is called once, report is stored privately, and a new turn c
 });
 
 
-test("Overthink viewer opens without a call; Ctrl+K help, Ctrl+R retry, Ctrl+E editor", async () => {
+test("Overthink viewer opens without a call; ? help, Ctrl+R retry, Ctrl+E editor", async () => {
   let calls = 0;
   let action = "";
   const tui = { mode: "regular", terminal: { rows: 35, columns: 90 }, requestRender() {} };
@@ -138,9 +153,9 @@ test("Overthink viewer opens without a call; Ctrl+K help, Ctrl+R retry, Ctrl+E e
   )(tui as any, theme as any, {}, (value) => { action = value; });
   assert.match(component.render(90).join("\n"), /Check recovery/);
   assert.equal(calls, 0, "viewing latest notes must not run a model");
-  component.handleInput?.("\x0b"); // Ctrl+K
+  component.handleInput?.("?"); // contextual help
   assert.match(component.render(90).join("\n"), /Toggle help/);
-  component.handleInput?.("\x0b");
+  component.handleInput?.("?");
   component.handleInput?.("\x12"); // Ctrl+R
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(calls, 1);
