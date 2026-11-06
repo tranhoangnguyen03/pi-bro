@@ -125,8 +125,7 @@ marked explicitly when messages or message text are removed within a turn.
 
 ## BTW continuation
 
-BTW keeps one in-memory thread bound to a backend and an access mode
-(conversation-only / full permission, toggled by `/mode`).
+BTW's active thread is bound to a backend and an access mode (conversation-only / full permission, toggled by `/mode`). Completed state is written to private Pi session entries and restored per branch; native backend continuation itself may need reseeding after restart.
 
 - Claude, Grok, Codex, and Muse resume the same native session across
   `/mode` switches (all run in the workspace).
