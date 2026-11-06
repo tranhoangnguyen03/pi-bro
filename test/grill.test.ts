@@ -27,7 +27,7 @@ test("modal commands are exact and never mistaken for depth changes", () => {
   assert.deepEqual(parseGrillCommand("/access inspect"), { kind: "access", value: "inspect" });
   assert.equal(parseGrillCommand("/access read-write").kind, "invalid");
   assert.deepEqual(parseGrillCommand("/copy"), { kind: "copy" });
-  assert.match(parseGrillCommand("/insert-last-message").message ?? "", /removed.*\/copy/);
+  assert.deepEqual(parseGrillCommand("/insert-last-message"), { kind: "invalid", message: "/insert-last-message was removed. Use /copy, then paste the result where you want it." });
   assert.deepEqual(parseGrillCommand(""), { kind: "empty" });
   assert.deepEqual(parseGrillCommand("I think /finish is premature."), { kind: "message", text: "I think /finish is premature." });
 });
