@@ -88,7 +88,7 @@ When shaping an answer, each part has one owner:
   pasted text, extracted document text, extracted webpage text, or recent
   session conversation text (tool calls, tool results, reasoning, and images
   omitted) to the selected backend and its configured model provider.
-- **Elevate requests**: `/bro elevate` sends your objective, preferences, and all user/assistant text on the current branch by default, without a fixed history cap. Its visible Context switch can include tool-call arguments and text results (Full), potentially including sensitive file contents or command output. Both modes exclude hidden reasoning and image binaries. Only explicit Retry after a context-overload error trims older history; the UI discloses reduced context. Its optional rewrite call includes only approved findings. It makes fresh restricted calls through the BTW model setting, but a backend's restricted mode is not a universal file/network sandbox (Grok restrictions are prompt-only). It does not insert or submit anything to Pi unless you approve insertion. In the terminal, insertion can replace the draft Elevate was opened on, if it is unchanged; an explicit `/bro elevate <request>` requires an empty editor. See the [Elevate guide](../elevate.md).
+- **Elevate requests**: `/bro elevate` sends your objective, preferences, and all user/assistant text on the current branch by default, without a fixed history cap. Its visible Context switch can include tool-call arguments and text results (Full), potentially including sensitive file contents or command output. Both modes exclude hidden reasoning and image binaries. Only explicit Retry after a context-overload error trims older history; the UI discloses reduced context. Its optional rewrite call includes only approved findings. It makes fresh restricted calls through the BTW model setting, but a backend's restricted mode is not a universal file/network sandbox (Grok restrictions are prompt-only). Elevate never edits or submits Pi's main draft. The user may copy the revision and paste it manually. See the [Elevate guide](../elevate.md).
 - **Side conversation requests**: `/bro btw` sends your side questions and the
   seeded main-session conversation text (plus earlier turns when a native
   session is reseeded) to the selected backend. In full permission mode the
@@ -111,7 +111,7 @@ When shaping an answer, each part has one owner:
   instructions are not access enforcement.
 - **Context isolation**: Bro does not add explanations, BTW answers, or the
   steering brief to Pi's conversation history or main-agent context. BTW text
-  reaches the main editor only through `/insert` or `/insert-all`, and advisor
+  reaches the main conversation only after the user copies, pastes, and submits it, and advisor
   results appear as normal tool results in the executor's transcript.
 - **Saved reviews**: Guided Review records, questions, drafts and captured Git source persist under the host's `getAgentDir()/bro-reviews/`. No automatic cleanup or sync is provided; see [storage and removal](../guided-review.md#access-privacy-and-storage).
 - **Memory**: the latest explanation (for `/bro open`) and the BTW thread live

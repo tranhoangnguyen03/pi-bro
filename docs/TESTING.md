@@ -55,10 +55,10 @@ in `/bro config` as the shared default or as the capability under test.
       language. Answers lead with the point in plain words, their length
       follows the question, and they reply in the language asked. In full
       permission, answers say what was checked in the workspace.
-6. **BTW composer**: with a draft in the main editor, `/insert` and
-   `/insert-all` leave it untouched with an edit/clear notice; after clearing
-   it they insert without submitting. `/copy` and `/copy-all` reach the
-   system clipboard. Other text such as `/send` is sent as a question.
+6. **BTW composer**: with an existing main draft, `/copy` and `/copy-all` copy
+   the latest reply or full thread without touching it. Retired `/insert` and
+   `/insert-all` explain how to copy instead; `/help` lists controls. Text
+   such as `/send` remains a question.
 7. **BTW backend switch**: change the BTW backend mid-thread — notice
    `Backend changed — started a fresh side thread.`
 8. **Advisor**: `/bro advisor-steer`, save `Begin with STEER_7391. Do not
@@ -95,7 +95,7 @@ in `/bro config` as the shared default or as the capability under test.
 
 Run `npm run docs:check` whenever commands, feature guides, links or data access change. It checks local Markdown links and heading anchors, registered /bro subcommands and the README's first-use example. It never calls a model or uses the network.
 
-Before release, manually follow the [getting-started guide](getting-started.md) in a clean Pi session. For UI changes, compare visible controls, cancellation, error states, editor insertion and screen sizes against the feature guide. For backend changes, verify that the [permissions reference](reference/data-and-permissions.md) matches actual CLI settings. Confirm external URLs and images render on GitHub and npm; the offline checker cannot establish that.
+Before release, manually follow the [getting-started guide](getting-started.md) in a clean Pi session. For UI changes, compare visible controls, cancellation, error states, clipboard handoffs and screen sizes against the feature guide. For backend changes, verify that the [permissions reference](reference/data-and-permissions.md) matches actual CLI settings. Confirm external URLs and images render on GitHub and npm; the offline checker cannot establish that.
 
 ## Elevate
 
@@ -104,13 +104,13 @@ Use interactive Pi with a configured BTW backend and a non-sensitive sample task
 1. `/bro elevate Design a document search system` should pre-fill Compose without a model call or main-agent message. Toggle Context: Messages/Full, then start discovery explicitly. Check 0–5 findings with reasons and expert actions, and that **nothing starts ticked**. Stage 1 should accept a pasted **multi-line** objective and keep its line breaks. At 80×24, type more than five lines and confirm the editor scrolls without locking; Backspace must still work. On a very short terminal it must ask for a bigger one rather than let you edit blind, then restore editing when enlarged.
 2. Press `Space` or `Enter` to tick the highlighted finding and `↑`/`↓` to move between them; `Tab` moves focus to the buttons. `[Rewrite with 0 selected]` must explain itself instead of rewriting. With a long explanation, Page Down and the wheel must reach its end while the highlighted finding stays visible; repeated renders must not change the scroll position. Tick at least one, choose `[Rewrite with N selected]`, and check that the output is an improved **request**, not a completed design.
 3. Choose `[Back]`, adjust the ticks, regenerate and choose `[Copy]` to copy the revised request.
-4. Type a multi-line task in the main editor, then use Ctrl+Shift+E where supported. Esc must leave the original draft unchanged. In terminal mode `[Insert into editor]` may **replace** that draft, but only the draft Elevate opened on, and only if it has not changed. With `/bro elevate <request>` the editor must be empty. Nothing is submitted.
-5. **The regression that must not return:** put an unrelated unsent draft in the editor, run `/bro elevate some task`, then choose `[Insert into editor]`. The unrelated draft must survive, with a notice to copy instead. Repeat with an *empty* editor and explicit request: insertion is allowed. Then open Elevate on the draft itself and confirm insertion still replaces it while unchanged.
-6. If the editor changes while the modal is open, insertion must refuse to overwrite it. For Desktop/RPC, only confirmed atomic insertion into an empty editor is permitted.
+4. Open Elevate on a multi-line unsent main-editor draft with Ctrl+Shift+E; copy the revision, close, and verify the original draft is unchanged. Paste or submit manually if wanted.
+5. Open `/bro elevate some task` with an unrelated main-editor draft, then copy the revision. Nothing in Pi's editor changes, including when the editor was empty at opening.
+6. Repeat copy in Desktop/RPC where available. This must not depend on an editor-insertion API.
 7. Simulate malformed JSON and backend failure; `[Retry]` repeats the failed step and Esc cancels. A failed **rewrite** must retry the rewrite with the same approved findings, not silently re-run discovery. Also test zero suggestions, small terminals, scrolling, and abort during both stages. A reply containing prose around the JSON, capitalised dimensions, or a wrapping code fence must still work; a reply with two JSON payloads must fail closed and offer a retry rather than pick one. Close the window from the host (not via Esc) and confirm the backend call stops.
 8. Verify Messages excludes tool calls/results; Full includes tool-call arguments and text results; both exclude hidden reasoning and image binaries; confirm only approved findings are passed to rewrite and the BTW-selected backend/model/effort is used.
 
-Local verification for PR #152: the full suite and isolated Pi fullscreen terminal checks use an offline fake Agy backend. Terminal checks cover 30-line compose scrolling, discovery, long-detail paging with a pinned finding, rewrite and insertion without submission. These checks do not qualify physical terminal shortcuts, Desktop RPC, clipboard integration or live-model quality. Regression tests also cover intermediate-height list navigation, hidden Select all/Rewrite actions, returning to Compose and retrying a failed rewrite with unchanged approvals.
+Local verification for PR #152: the full suite and isolated Pi fullscreen terminal checks use an offline fake Agy backend. Terminal checks cover 30-line compose scrolling, discovery, long-detail paging with a pinned finding, rewrite and copy without submission. These checks do not qualify physical terminal shortcuts, Desktop RPC, clipboard integration or live-model quality. Regression tests also cover intermediate-height list navigation, hidden Select all/Rewrite actions, returning to Compose and retrying a failed rewrite with unchanged approvals.
 
 Verify Messages excludes tool activity and Full includes text tool activity while excluding reasoning/images. Test an explicit context-overload failure: no automatic call, Retry reduces older history and preserves approvals; ordinary errors must retain history. Switching mode resets findings without a call.
 

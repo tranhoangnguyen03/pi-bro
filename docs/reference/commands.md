@@ -41,9 +41,9 @@ Typing `/bro ` displays eight task-level suggestions: `simplify`, `show`, `btw`,
 | `/bro guided-review <PR number or URL>` | Automatically explain and assess a captured PR in local Pi, with source evidence and optional private questions. Opening the same PR restores its saved review. |
 | `/bro guided-review` | List saved reviews; `resume` is an alias. |
 | `/bro remember-me [thought]` | Start a private memory-writing conversation, browse and expand memories, and approve saves explicitly. [Guide](../remember-me.md). |
-| `/bro grill-me [topic]` | Private one-question-at-a-time decision interview. Supply a topic to start fresh; omit it to resume. `/consolidate` drafts a brief; `/insert-last-message` inserts explicitly without sending. `/help` lists modal controls. [Guide](../grill-me.md). |
+| `/bro grill-me [topic]` | Private one-question-at-a-time decision interview. Supply a topic to start fresh; omit it to resume. `/consolidate` drafts a brief; `/copy` copies the latest reply or brief; Pi's editor stays untouched. `/help` lists modal controls. [Guide](../grill-me.md). |
 | `/bro elevate [request]` | Improve an assignment before execution. Discover up to five gaps, choose useful findings, and insert a revised request without submitting it. **Ctrl+Shift+E** can use your unsent draft. See [Elevate](../elevate.md). |
-| `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; type `/mode` inside to toggle full permission (read and edit the workspace) without losing the thread. |
+| `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; `/mode` toggles full workspace access; `/copy` and `/copy-all` copy the latest answer or full thread. |
 | `/bro advisor` | Quick notice of whether the executor's `bro_advisor` tool is available right now, pointing at `/bro config`, `/bro advisor-steer`, and `/bro doctor`. |
 | `/bro advisor-steer` | View, edit, save, or clear the one persistent steering brief the advisor always sees. |
 | `/bro help` | Open the built-in quick reference. |
