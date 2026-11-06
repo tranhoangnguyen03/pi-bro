@@ -62,14 +62,14 @@ File and webpage examples need your own real path or URL; see [how to explain th
 | `/bro show` | **[Show](docs/features/show.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
 | `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
 | `/bro remember-me [thought]` | **[Remember Me](docs/remember-me.md).** Privately clarify and approve short personal memories with unfoldable background. Agents can call `about_user` to read summaries and expand IDs. |
-| `/bro grill-me` | **[Grill Me](docs/grill-me.md) (experimental).** A private, opinionated decision interview: light, balanced or exhaustive; one question per round; `/consolidate` drafts a brief without ending the interview; `/insert-last-message` explicitly returns the latest reply to the editor. Uses BTW model settings; read-only restrictions vary by backend. |
+| `/bro grill-me` | **[Grill Me](docs/grill-me.md) (experimental).** A private, opinionated decision interview: light, balanced or exhaustive; one question per round; `/consolidate` drafts a brief without ending the interview; `/copy` returns the latest reply or decision brief to the clipboard. Uses BTW model settings; read-only restrictions vary by backend. |
 | `/bro btw` | **[Side questions](docs/features/btw.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
 | `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Claude, Muse, or Pi is recommended for untrusted PRs. |
 | `bro_advisor` tool | **[Second opinion](docs/features/advisor.md#bro-advisor).** A tool your agent can call mid-task; a fresh backend process reviews the session snapshot, can inspect the workspace when needed, and returns advice to the agent. ⚠️ [Runs with permissions bypassed](#what-leaves-your-machine). |
 | `/bro config`, `/bro preferences` | **[Settings](docs/reference/settings.md#settings) and [preferences](docs/user-guide.md#preferences).** Pick the backend, model and effort per feature, and tell Bro how you like answers. |
 
-For help by task, start at the **[docs home](docs/README.md)**; see the [command reference](docs/reference/commands.md) for syntax.
-**Elevate, in practice:** Bro points out expert questions or tests you may have missed before you ask Pi to do the work. Review the suggestions, approve only what matters, then edit or submit the resulting request yourself. See the [walkthrough](docs/elevate.md) for limits, privacy, and editor replacement.
+For help by task, start with the **[four human-intent states](docs/feature-map.md)** or the **[docs home](docs/README.md)**; see the [command reference](docs/reference/commands.md) for syntax.
+**Elevate, in practice:** Bro points out expert questions or tests you may have missed before you ask Pi to do the work. Review the suggestions, approve only what matters, then edit or submit the resulting request yourself. See the [walkthrough](docs/elevate.md) for limits, privacy, and copy-only handoff.
 
 Guided Review has its own [guide](docs/guided-review.md).
 
@@ -115,7 +115,7 @@ external CLI's provider credentials, but a CLI signs in its own way, which can
 include API keys set in your environment. The built-in **Pi** backend is the
 exception: it runs in-process, so it reads your Pi `auth.json` and reuses your
 Pi provider credentials for the model you select. Nothing Bro produces enters
-Pi's conversation unless you insert it, except advisor answers, which return to
+Pi's conversation unless you paste and submit it, except advisor answers, which return to
 the agent as tool results.
 
 > [!WARNING]

@@ -32,14 +32,13 @@ asked in.
   - `/mode`: toggles conversation-only / full permission, keeping the thread
   - `/copy`: copies the latest answer to the system clipboard
   - `/copy-all`: copies the full thread to the system clipboard
-  - `/insert`: inserts the latest answer into the main editor without submitting
-  - `/insert-all`: inserts the full thread into the main editor without submitting
   - `/retry`: re-asks the last question (empty Enter does the same)
+  - `/help`: shows available controls
   - `/clear`: resets the thread
 
-  `/insert` and `/insert-all` never replace an existing main-editor draft:
-  edit or clear it first. Any other text, including other slash-prefixed input
-  such as `/send`, is sent as a question. Esc closes the modal and stops a
+  `/insert` and `/insert-all` are retired: Bro points you to `/copy` or `/copy-all`
+  instead. Any other text, including other slash-prefixed input such as `/send`,
+  is sent as a question. Esc closes the modal and stops a
   running turn; the thread is kept. The view follows the newest text while you
   are at the bottom; scroll up to read earlier turns. The header shows the model and reasoning effort the latest
   turn used (`default` when the model's own effort applies) and the current
