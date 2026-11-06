@@ -11,6 +11,7 @@ those are historical records.
 
 Production code lives in `src/` and is published as TypeScript source (no build step):
 
+- **`session-state.ts`** — restores private per-branch BTW, Grill, Simplify and last-result state from Pi custom session entries, excluded from the main model context.
 - **`bro.ts`** — the Pi extension entry point, `/bro` command routing and completion, session lifecycle wiring, and barrel re-exports.
 - **`doctor.ts`** — `/bro doctor` diagnostics, CLI version/auth probes, Agy model catalog/usage parsing, and `/bro config` modal launch wiring.
 - **`show.ts`** — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.

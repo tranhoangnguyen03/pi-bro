@@ -53,7 +53,7 @@ Grill Me uses the **BTW model/backend/effort** selection from `/bro config`, but
 - Full access can read, edit and execute commands. Bro instructs the model not to make changes, but cannot enforce that instruction. There is no automatic escalation.
 - Each turn makes a fresh backend call replaying the complete interview. Long interviews cost more and may exceed context limits; there is no hidden truncation or fallback.
 - The provider receives your topic, interview history, Bro preferences and up to eight recent main-session user/assistant text turns (40,000 characters). Captured context excludes tool calls/results, hidden reasoning and images. Backend tools can inspect additional workspace content.
-- Bro keeps the interview in memory, lost on reload, session change or exit. Backend/provider retention is separate; see [backend retention](reference/data-and-permissions.md#backends-access-and-retention).
+- Bro stores completed interview turns, depth, access choice and drafts in private Pi session entries. The current Pi session restores them after reload or resume; a new session starts fresh, and forks diverge after inheriting earlier choices. Backend/provider retention is separate; see [backend retention](reference/data-and-permissions.md#backends-access-and-retention).
 - Closing discards partial output, preserves completed replies, and restores cancelled input unless a newer draft exists. Retry preserves the previous reply until replacement succeeds. Cancellation cannot undo backend changes; descendant cleanup on Windows and abrupt host shutdown are not guaranteed.
 
 ## Comparison

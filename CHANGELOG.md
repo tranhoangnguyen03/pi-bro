@@ -2,6 +2,15 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.30.0] - 2026-11-06
+
+### Highlights
+
+- BTW and Grill Me preserve completed private discussions, access choices and drafts across ordinary Pi reload/restart/resume through non-model-facing custom session entries.
+- Simplify restores its most recent source and explanation; Show restores the last rendered result and focus. Cleared state stays cleared.
+- Session branches inherit their prior private state but later edits remain separate. No global user memory database or automatic context injection.
+- Added session restore validation and test coverage. Recovery still depends on Pi saving its session entries; abrupt host crashes during an active call are not guaranteed.
+
 ## [0.29.0] - 2026-11-05
 
 ### Highlights
