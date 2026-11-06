@@ -12,7 +12,7 @@ const repoDir = dirname(dirname(fileURLToPath(import.meta.url)));
 import { bro, backend } from "./test-build.mjs";
 test('Simplify is discoverable, while bare /bro and /bro simplify have distinct behavior', async () => {
  let command: any;
- await bro.default({on() {},registerTool() {},registerCommand(_name: string,def: any){command=def;}});
+ await bro.default({on() {},appendEntry() {}, registerTool() {},registerCommand(_name: string,def: any){command=def;}});
  assert.ok(command.getArgumentCompletions("simpl").some((item: any)=>item.value==="simplify"));
  const notices: string[]=[];
  const rpc={mode:"rpc",cwd:process.cwd(),waitForIdle:async()=>{},sessionManager:{getBranch:()=>[]},
@@ -983,7 +983,7 @@ test("help is a concise reference: no removed BTW flags, /mode documented, user 
 test("modals use live host terminal rows, not extension stdout", async () => {
  const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
  let command: any;
- await bro.default({on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command=def; }});
+ await bro.default({on() {}, appendEntry() {}, registerTool() {}, registerCommand(_name: string, def: any) { command=def; }});
  const tui = {mode: "regular", terminal: {rows: 20}, requestRender() {}};
  const theme = {fg: (_color: string, text: string) => text, bold: (text: string) => text};
  for (const action of ["help", "btw"]) {
@@ -1026,7 +1026,7 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'AN
  };
  try {
   writeFileSync(preferences, "BTW_PREFS_A");
-  await bro.default({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
+  await bro.default({ on() {}, appendEntry() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
   const ctx = { mode: "tui", hasUI: true, cwd: bin, sessionManager: { getBranch: () => [] }, ui: { notify() {}, custom: async (factory: any) => { modal = factory({ mode: "fullscreen", terminal: { rows: 40 }, requestRender() {} }, { fg: (_c: string, t: string) => t, bold: (t: string) => t }, {}, () => {}); } } };
   await command.handler("btw", ctx);
   const header = () => modal.render(120)[1] as string;
@@ -1101,7 +1101,7 @@ test("/bro still registers when the optional Elevate shortcut cannot", async () 
 // Registering a key must not be required for Elevate itself; the command is the supported path.
 test("a host without registerShortcut still loads Bro", async () => {
 	let command: any;
-	await bro.default({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } } as any);
+	await bro.default({ on() {}, appendEntry() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } } as any);
 	assert.ok(command, "/bro was not registered on a host without registerShortcut");
 });
 
@@ -1139,7 +1139,7 @@ test("Pi custom model rejects a malformed ID in place instead of throwing out of
 
 test("default /bro suggestions contain only eight task commands; legacy aliases remain discoverable", async () => {
  let cmd: any;
- await bro.default({on(){},registerTool(){},registerCommand(_name: string,def: any){cmd=def;}});
+ await bro.default({on(){},appendEntry() {}, registerTool() {},registerCommand(_name: string,def: any){cmd=def;}});
  assert.deepEqual(cmd.getArgumentCompletions("").map((x: any)=>x.value),[
   "simplify","show","guided-review","btw","elevate","remember-me","grill-me","config"
  ]);
