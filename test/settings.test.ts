@@ -598,206 +598,66 @@ test("pure model/effort transitions preserve resolved variant effort and pin fam
 });
 
 
-test("Grok all-feature support: selection, efforts, models", () => {
-	assert.deepEqual([...GROK_EFFORTS], ["low", "medium", "high", "xhigh"]);
-	assert.deepEqual(
-		GROK_MODELS.map((model: { id: string }) => model.id).sort(),
-		["grok-4.7", "grok-4.7-build-fast"],
-	);
-	assert.equal(resolveGrokModel("grok-4.7"), "grok-4.7");
-	assert.equal(resolveGrokModel("  custom-grok-id  "), "custom-grok-id");
-	assert.throws(() => resolveGrokModel("   "), /Grok model/);
+// These backends differ in metadata, but share the same saved-selection contract.
+const externalSettingsCases = [
+  { backend: "grok", primary: "grok-4.7", secondary: "grok-4.7-build-fast", efforts: GROK_EFFORTS,
+    models: GROK_MODELS, resolve: resolveGrokModel, selected: "xhigh", override: "medium", invalid: "max",
+    expectedModels: ["grok-4.7", "grok-4.7-build-fast"] },
+  { backend: "codex", primary: "gpt-5.5", secondary: "gpt-5.4", efforts: CODEX_EFFORTS,
+    models: CODEX_MODELS, resolve: resolveCodexModel, selected: "xhigh", override: "medium", invalid: "max",
+    expectedModels: ["gpt-5.4", "gpt-5.5"] },
+  { backend: "muse", primary: "muse-spark-1.3", secondary: "muse-spark-1.3-contributor", efforts: MUSE_EFFORTS,
+    models: MUSE_MODELS, resolve: resolveMuseModel, selected: "minimal", override: "max", invalid: "none",
+    expectedModels: ["muse-spark-1.3", "muse-spark-1.3-contributor"] },
+] as const;
 
+for (const c of externalSettingsCases) {
+  test(`${c.backend} model catalog, aliases and effort metadata`, () => {
+    assert.deepEqual([...c.efforts], c.backend === "muse"
+      ? ["minimal", "low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high", "xhigh"]);
+    assert.deepEqual(c.models.map((model: { id: string }) => model.id).sort(), [...c.expectedModels]);
+    assert.equal(c.resolve(c.primary), c.primary);
+    assert.equal(c.resolve(`  custom-${c.backend}-id  `), `custom-${c.backend}-id`);
+    assert.throws(() => c.resolve("  "), /model/);
+  });
 
+  test(`${c.backend} settings round-trip and whole capability override`, () => {
+    const settings = parseBroSettings({ version: 2,
+      default: { backend: c.backend, model: c.primary, effort: c.selected },
+      mode: "balanced", showTurns: 1,
+      overrides: { advisor: { backend: c.backend, model: c.secondary, effort: c.override } },
+    });
+    assert.equal(capabilityBackend(settings, "advisor"), c.backend);
+    assert.equal(capabilityBackend(settings, "explain"), c.backend);
+    assert.deepEqual(selectionForCapability(settings, "advisor"), {
+      backend: c.backend, model: c.secondary, effort: c.override,
+    });
+    assert.deepEqual(resolveModelEffort({ backend: c.backend, model: c.primary, effort: c.override }, []), {
+      pair: { backend: c.backend, model: c.primary, effort: c.override },
+    });
+    const payload = settingsPayload(settings);
+    assert.deepEqual(payload.default, { backend: c.backend, model: c.primary, effort: c.selected });
+    assert.deepEqual(parseBroSettings(payload), settings);
+  });
 
-
-});
-
-test("Grok pairs parse, round-trip, and resolve with no Agy family", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "grok", model: "grok-4.7", effort: "xhigh" },
-		mode: "balanced",
-		showTurns: 1,
-		overrides: { advisor: { backend: "grok", model: "grok-4.7-build-fast", effort: "medium" } },
-	});
-	assert.equal(capabilityBackend(settings, "advisor"), "grok");
-	assert.equal(capabilityBackend(settings, "explain"), "grok");
-	assert.deepEqual(selectionForCapability(settings, "advisor"), {
-		backend: "grok",
-		model: "grok-4.7-build-fast",
-		effort: "medium",
-	});
-	assert.deepEqual(resolveModelEffort({ backend: "grok", model: "grok-4.7", effort: "medium" }, []), {
-		pair: { backend: "grok", model: "grok-4.7", effort: "medium" },
-	});
-	const payload = settingsPayload(settings);
-	assert.deepEqual(payload.default, { backend: "grok", model: "grok-4.7", effort: "xhigh" });
-	assert.deepEqual(parseBroSettings(payload), settings);
-});
-
-test("Grok default effort omits effort; max rejected, backend-less override stays Agy", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "grok", model: "grok-4.7", effort: "default" },
-	});
-	assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: "grok", model: "grok-4.7" });
-	assert.throws(
-		() =>
-			parseBroSettings({
-				version: 2,
-				default: { backend: "grok", model: "grok-4.7", effort: "max" },
-			}),
-		/must contain a model and effort/,
-	);
-	const mixed = parseBroSettings({
-		version: 2,
-		default: { backend: "grok", model: "grok-4.7", effort: "low" },
-		overrides: { show: { model: "gemini-a", effort: "low" } },
-	});
-	assert.equal(capabilityBackend(mixed, "show"), "agy");
-	assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
-	const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
-		backend: "grok",
-		model: "grok-4.7",
-		effort: "high",
-	});
-	assert.deepEqual(pinned.overrides.advisor, { backend: "grok", model: "grok-4.7", effort: "high" });
-});
-
-test("Codex all-feature support: selection, efforts, models", () => {
-	assert.deepEqual([...CODEX_EFFORTS], ["low", "medium", "high", "xhigh"]);
-	assert.deepEqual(
-		CODEX_MODELS.map((model: { id: string }) => model.id).sort(),
-		["gpt-5.4", "gpt-5.5"],
-	);
-	assert.equal(resolveCodexModel("gpt-5.5"), "gpt-5.5");
-	assert.equal(resolveCodexModel("  custom-codex-id  "), "custom-codex-id");
-	assert.throws(() => resolveCodexModel("   "), /Codex model/);
-
-
-
-
-});
-
-test("Codex pairs parse, round-trip, and resolve with no Agy family", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "codex", model: "gpt-5.5", effort: "xhigh" },
-		mode: "balanced",
-		showTurns: 1,
-		overrides: { advisor: { backend: "codex", model: "gpt-5.4", effort: "medium" } },
-	});
-	assert.equal(capabilityBackend(settings, "advisor"), "codex");
-	assert.equal(capabilityBackend(settings, "explain"), "codex");
-	assert.deepEqual(selectionForCapability(settings, "advisor"), {
-		backend: "codex",
-		model: "gpt-5.4",
-		effort: "medium",
-	});
-	assert.deepEqual(resolveModelEffort({ backend: "codex", model: "gpt-5.5", effort: "medium" }, []), {
-		pair: { backend: "codex", model: "gpt-5.5", effort: "medium" },
-	});
-	const payload = settingsPayload(settings);
-	assert.deepEqual(payload.default, { backend: "codex", model: "gpt-5.5", effort: "xhigh" });
-	assert.deepEqual(parseBroSettings(payload), settings);
-});
-
-test("Codex default effort omits effort; max rejected, backend-less override stays Agy", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "codex", model: "gpt-5.5", effort: "default" },
-	});
-	assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: "codex", model: "gpt-5.5" });
-	assert.throws(
-		() =>
-			parseBroSettings({
-				version: 2,
-				default: { backend: "codex", model: "gpt-5.5", effort: "max" },
-			}),
-		/must contain a model and effort/,
-	);
-	const mixed = parseBroSettings({
-		version: 2,
-		default: { backend: "codex", model: "gpt-5.5", effort: "low" },
-		overrides: { show: { model: "gemini-a", effort: "low" } },
-	});
-	assert.equal(capabilityBackend(mixed, "show"), "agy");
-	assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
-	const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
-		backend: "codex",
-		model: "gpt-5.5",
-		effort: "high",
-	});
-	assert.deepEqual(pinned.overrides.advisor, { backend: "codex", model: "gpt-5.5", effort: "high" });
-});
-
-test("Muse all-feature support: selection, efforts, models", () => {
-	assert.deepEqual([...MUSE_EFFORTS], ["minimal", "low", "medium", "high", "xhigh", "max"]);
-	assert.deepEqual(
-		MUSE_MODELS.map((model: { id: string }) => model.id).sort(),
-		["muse-spark-1.3", "muse-spark-1.3-contributor"],
-	);
-	assert.equal(resolveMuseModel("muse-spark-1.3"), "muse-spark-1.3");
-	assert.equal(resolveMuseModel("  custom-muse-id  "), "custom-muse-id");
-	assert.throws(() => resolveMuseModel("   "), /Muse model/);
-
-
-
-
-});
-
-test("Muse pairs parse, round-trip, and resolve with no Agy family", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "muse", model: "muse-spark-1.3", effort: "minimal" },
-		mode: "balanced",
-		showTurns: 1,
-		overrides: { advisor: { backend: "muse", model: "muse-spark-1.3-contributor", effort: "max" } },
-	});
-	assert.equal(capabilityBackend(settings, "advisor"), "muse");
-	assert.equal(capabilityBackend(settings, "explain"), "muse");
-	assert.deepEqual(selectionForCapability(settings, "advisor"), {
-		backend: "muse",
-		model: "muse-spark-1.3-contributor",
-		effort: "max",
-	});
-	assert.deepEqual(resolveModelEffort({ backend: "muse", model: "muse-spark-1.3", effort: "minimal" }, []), {
-		pair: { backend: "muse", model: "muse-spark-1.3", effort: "minimal" },
-	});
-	const payload = settingsPayload(settings);
-	assert.deepEqual(payload.default, { backend: "muse", model: "muse-spark-1.3", effort: "minimal" });
-	assert.deepEqual(parseBroSettings(payload), settings);
-});
-
-test("Muse default effort omits effort; none/off rejected, backend-less override stays Agy", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "muse", model: "muse-spark-1.3", effort: "default" },
-	});
-	assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: "muse", model: "muse-spark-1.3" });
-	assert.throws(
-		() =>
-			parseBroSettings({
-				version: 2,
-				default: { backend: "muse", model: "muse-spark-1.3", effort: "none" },
-			}),
-		/must contain a model and effort/,
-	);
-	const mixed = parseBroSettings({
-		version: 2,
-		default: { backend: "muse", model: "muse-spark-1.3", effort: "low" },
-		overrides: { show: { model: "gemini-a", effort: "low" } },
-	});
-	assert.equal(capabilityBackend(mixed, "show"), "agy");
-	assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
-	const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
-		backend: "muse",
-		model: "muse-spark-1.3",
-		effort: "high",
-	});
-	assert.deepEqual(pinned.overrides.advisor, { backend: "muse", model: "muse-spark-1.3", effort: "high" });
-});
+  test(`${c.backend} omits default effort, rejects unsupported effort and keeps Agy fallback explicit`, () => {
+    const settings = parseBroSettings({ version: 2, default: { backend: c.backend, model: c.primary, effort: "default" } });
+    assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: c.backend, model: c.primary });
+    assert.throws(() => parseBroSettings({ version: 2,
+      default: { backend: c.backend, model: c.primary, effort: c.invalid },
+    }), /must contain a model and effort/);
+    const mixed = parseBroSettings({ version: 2,
+      default: { backend: c.backend, model: c.primary, effort: "low" },
+      overrides: { show: { model: "gemini-a", effort: "low" } },
+    });
+    assert.equal(capabilityBackend(mixed, "show"), "agy");
+    assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
+    const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
+      backend: c.backend, model: c.primary, effort: "high",
+    });
+    assert.deepEqual(pinned.overrides.advisor, { backend: c.backend, model: c.primary, effort: "high" });
+  });
+}
 
 for (const backend of ["claude", "grok", "codex", "muse", "pi"] as const) {
 	test(`${EXTERNAL_BACKENDS[backend].label} custom picker cancels atomically and resets cross-backend effort`, async () => {

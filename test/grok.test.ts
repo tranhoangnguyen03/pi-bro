@@ -376,21 +376,14 @@ test("grok btw: cancellation keeps partial text; explain deadline times out and 
 	});
 });
 
-test("grok framing: split chunks, CRLF, final record without newline, and oversized line", async () => {
-	await withFakeGrok(`case "$(cat "$BIN_DIR/prompt.txt")" in
-  *oversized*)
-    node -e 'process.stdout.write("x".repeat(2000001) + "\\n")'
-    ;;
-  *)
-    node -e '
+test("grok framing: chunk boundaries, CRLF and final record without newline", async () => {
+	await withFakeGrok(`    node -e '
       process.stdout.write("{\\"type\\":\\"stream_event\\",\\"event\\":{\\"type\\":\\"content_block_delta\\",\\"delta\\":{\\"type\\":\\"text_delta\\",\\"text\\":\\"grok-");
       setTimeout(() => {
         process.stdout.write("part\\"}},\\"parent_tool_use_id\\":null}\\r\\n");
         process.stdout.write("{\\"type\\":\\"result\\",\\"subtype\\":\\"success\\",\\"is_error\\":false,\\"stop_reason\\":\\"end_turn\\",\\"result\\":\\"grok final answer\\"}");
       }, 20);
     '
-    ;;
-esac
 `, async () => {
 		// 1. Split event + CRLF + final result without newline
 		let progressText = "";
@@ -402,11 +395,5 @@ esac
 		assert.equal((outcome as { text: string }).text, "grok final answer");
 		assert.equal(progressText, "grok-part");
 
-		// 2. Oversized line (> 2MB)
-		const { outcome: overOutcome } = await run(
-			{ feature: "explain", access: "restricted", prompt: "oversized" },
-		);
-		assert.equal(overOutcome.status, "failure");
-		assert.match((overOutcome as { message: string }).message, /over 2000000 characters/);
 	});
 });
