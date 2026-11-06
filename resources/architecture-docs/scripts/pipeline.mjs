@@ -27,6 +27,11 @@ async function projectRoot(cwd){
   }catch{}
   return current;
 }
+async function describeRevision(root){
+  try{const {stdout}=await exec('git',['-C',root,'rev-parse','--short=12','HEAD'],{timeout:5000});
+  return 'Commit '+stdout.trim()+' (with working files when present)';}
+  catch{return 'Local project snapshot';}
+}
 async function safeParents(root,relative){
   let cursor=root;
   for(const part of relative.split('/')){
@@ -65,7 +70,7 @@ async function stage(cwd){
     const support=path.join(workspace,'.bro-architecture-support');
     await fs.mkdir(support,{recursive:true});
     await fs.cp(path.join(RESOURCES,'references'),path.join(support,'references'),{recursive:true});
-    const information={root,dir,workspace,files,omitted,inventory:inventory(root,files.map(f=>f.path))};
+    const information={root,dir,workspace,files,omitted,revision:await describeRevision(root),inventory:inventory(root,files.map(f=>f.path))};
     await fs.writeFile(path.join(dir,'state.json'),JSON.stringify(information),{mode:0o600});
     return {root,dir,workspace,inventory:information.inventory,omitted:omitted.slice(0,40),included:files.length};
   }catch(e){await fs.rm(dir,{recursive:true,force:true});throw e;}
@@ -110,7 +115,7 @@ async function prepareChanges(state,proposal){
   const docs=path.join(state.workspace,'docs','architecture');
   await fs.mkdir(docs,{recursive:true});
   const files={...proposal.files};
-  const graph={...proposal.graph,project:{...proposal.graph.project,revision:'Snapshot of '+state.root}};
+  const graph={...proposal.graph,project:{...proposal.graph.project,revision:state.revision||'Local project snapshot'}};
   files['architecture.graph.json']=JSON.stringify(graph,null,2)+'\n';
   for(const [relative,text] of Object.entries(files)){
     const target=path.join(docs,relative);
