@@ -106,7 +106,7 @@ const elevateStage = (stage) => (ctx) =>
 	kit.openBroOverlay(
 		ctx,
 		(tui, theme, _keybindings, done) => {
-			const modal = new elevate.ElevateModal(tui, theme, () => done(), () => {}, () => {}, () => {}, () => {}, () => done());
+			const modal = new elevate.ElevateModal(tui, theme, () => done(), () => {}, () => {}, () => {}, () => done());
 			if (stage === "review") modal.setDiscovery({ assessment: "The request is workable but misses concrete evidence.", findings: elevateFindings });
 			else if (stage === "ready") modal.setReady(Array.from({ length: 60 }, (_, index) => `Requirement ${index}: do the thing carefully.`).join("\n\n"));
 			else modal.setFailed("Bro did not return valid discovery JSON. Retry discovery.");
@@ -700,7 +700,7 @@ test("modal kit: elevate keeps the target visible and the reader's place", async
 // Compose is a real multi-line editor: a pasted objective must keep its structure, and the modal
 // must refuse to edit rather than draw the Editor cut short.
 test("modal kit: elevate compose accepts a multi-line objective and guards a tiny terminal", async () => {
-	const mounted = await mount((ctx) => kit.openBroOverlay(ctx, (tui, theme, _kb, done) => new elevate.ElevateModal(tui, theme, () => done(), () => {}, () => {}, () => {}, () => {}, () => done()), { mouse: true }), "fullscreen", 80, 24);
+	const mounted = await mount((ctx) => kit.openBroOverlay(ctx, (tui, theme, _kb, done) => new elevate.ElevateModal(tui, theme, () => done(), () => {}, () => {}, () => {}, () => done()), { mouse: true }), "fullscreen", 80, 24);
 	const { component, tui } = mounted;
 	const view = () => stripVTControlCharacters(component.render(78).join("\n"));
 	assert.match(view(), /Your objective/);

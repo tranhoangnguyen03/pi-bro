@@ -22,11 +22,12 @@ test("modal commands are exact and never mistaken for depth changes", () => {
   assert.deepEqual(parseGrillCommand("/consolidate"), { kind: "consolidate" });
   assert.deepEqual(parseGrillCommand("/help"), { kind: "help" });
   assert.deepEqual(parseGrillCommand("/new Another topic"), { kind: "new", topic: "Another topic" });
-  for (const removed of ["/finish", "/copy", "/copy-all", "/insert", "/insert-all", "/clear", "/summary", "/consolidate-n-insert"]) assert.equal(parseGrillCommand(removed).kind, "invalid");
+  for (const removed of ["/finish", "/copy-all", "/insert", "/insert-all", "/clear", "/summary", "/consolidate-n-insert"]) assert.equal(parseGrillCommand(removed).kind, "invalid");
   assert.deepEqual(parseGrillCommand("/access full"), { kind: "access", value: "full" });
   assert.deepEqual(parseGrillCommand("/access inspect"), { kind: "access", value: "inspect" });
   assert.equal(parseGrillCommand("/access read-write").kind, "invalid");
-  assert.deepEqual(parseGrillCommand("/insert-last-message"), { kind: "insert" });
+  assert.deepEqual(parseGrillCommand("/copy"), { kind: "copy" });
+  assert.match(parseGrillCommand("/insert-last-message").message ?? "", /removed.*\/copy/);
   assert.deepEqual(parseGrillCommand(""), { kind: "empty" });
   assert.deepEqual(parseGrillCommand("I think /finish is premature."), { kind: "message", text: "I think /finish is premature." });
 });
@@ -37,7 +38,7 @@ test("slash suggestions filter by prefix and never suggest ordinary answers", ()
   assert.deepEqual(grillCommandSuggestions("/unknown"), []);
   assert.deepEqual(grillCommandSuggestions("A"), []);
   assert.deepEqual(grillCommandSuggestions("/consolidate"), []);
-  assert.ok(grillCommandSuggestions("/").includes("/insert-last-message"));
+  assert.ok(grillCommandSuggestions("/").includes("/copy"));
 });
 
 test("the default uses inspection; full permission is an explicit user decision", () => {
