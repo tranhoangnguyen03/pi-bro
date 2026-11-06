@@ -349,7 +349,7 @@ export class BtwModal implements Focusable {
 
 export async function openBtwModal(
 	ctx: ExtensionCommandContext,
-	options: { thread: BtwThread; initialQuestion?: string },
+	options: { thread: BtwThread; initialQuestion?: string; onChange?: () => void },
 ): Promise<void> {
 	const thread = options.thread;
 
@@ -375,6 +375,7 @@ export async function openBtwModal(
 				if (closed) return;
 				closed = true;
 				saveDraft();
+				if (!controller) options.onChange?.();
 				controller?.abort();
 				done(undefined);
 			};
@@ -382,6 +383,7 @@ export async function openBtwModal(
 			const modal = new BtwModal(tui, theme, close, submit, () => {
 				closed = true;
 				saveDraft();
+				if (!controller) options.onChange?.();
 				controller?.abort();
 			});
 			modal.onInput = () => {
@@ -483,6 +485,7 @@ export async function openBtwModal(
 					if (!closed) {
 						modal.setRunning(false);
 						modal.setText(transcript());
+						options.onChange?.();
 					}
 				}
 			};
@@ -491,6 +494,7 @@ export async function openBtwModal(
 				toggleBtwMode(thread);
 				modal.setFull(thread.full);
 				modal.setNotice(`Mode: ${btwModeLabel(thread.full)}`, "info");
+				options.onChange?.();
 			};
 
 			const clear = () => {
@@ -503,6 +507,7 @@ export async function openBtwModal(
 				modal.clearComposer();
 				modal.setNotice("");
 				modal.setText("");
+				options.onChange?.();
 			};
 
 			const retry = () => {
