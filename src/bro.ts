@@ -48,6 +48,7 @@ import {
 } from "./sources.ts";
 import { hasBroCustomUi } from "./ui-capabilities.ts";
 import { errorMessage, unquote, withDoctor } from "./util.ts";
+import { BTW_SESSION_ENTRY, GRILL_SESSION_ENTRY, SIMPLIFY_SESSION_ENTRY, LAST_RESULT_SESSION_ENTRY, restorePrivateBroState } from "./session-state.ts";
 
 export * from "./util.ts";
 export * from "./ui-capabilities.ts";
@@ -67,6 +68,7 @@ export * from "./remember-engine.ts";
 export * from "./explain-modal.ts";
 export * from "./simplify-engine.ts";
 export * from "./simplify-ui.ts";
+export * from "./session-state.ts";
 
 const COMMANDS = [
 	{ value: "simplify", label: "simplify", description: "Reopen the last Simplify screen without a new model call" },
@@ -105,16 +107,22 @@ export default async function bro(pi: ExtensionAPI) {
 		if (result.source) {
 			lastResult = result;
 			lastShowSteering = showSteering;
+			pi.appendEntry(LAST_RESULT_SESSION_ENTRY, { result: structuredClone(result), steering: showSteering });
 		}
 	};
+	const saveSimplify = () => pi.appendEntry(SIMPLIFY_SESSION_ENTRY, { state: structuredClone(simplifyState) });
+	const saveBtw = () => { if (btwThread) pi.appendEntry(BTW_SESSION_ENTRY, { thread: structuredClone(btwThread) }); };
+	const saveGrill = () => { if (grillThread) pi.appendEntry(GRILL_SESSION_ENTRY, { thread: structuredClone(grillThread) }); };
 
 	pi.on("session_shutdown", async () => { stopGuidedReviews(); });
 
-	pi.on("session_start", async (_event, _ctx) => {
-		lastResult = undefined;
-		simplifyState = {};
-		btwThread = undefined;
-		grillThread = undefined;
+	pi.on("session_start", async (_event, ctx) => {
+		const restored = restorePrivateBroState(ctx.sessionManager.getBranch());
+		lastResult = restored.lastResult;
+		lastShowSteering = restored.lastShowSteering;
+		simplifyState = restored.simplify;
+		btwThread = restored.btw;
+		grillThread = restored.grill;
 	});
 
 	registerAdvisorTool(pi);
@@ -139,7 +147,7 @@ export default async function bro(pi: ExtensionAPI) {
 
 			if (action === "simplify") {
 				if (value) { ctx.ui.notify("Use /bro simplify to reopen the last Simplify view; use /text, /file or /url inside it.", "warning"); return; }
-				try { await openSimplifyWorkflow(ctx, simplifyState, {kind:"resume"}); if (simplifyState.result) remember(simplifyState.result); }
+				try { await openSimplifyWorkflow(ctx, simplifyState, {kind:"resume"}); saveSimplify(); if (simplifyState.result) remember(simplifyState.result); }
 				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
 				return;
 			}
@@ -176,6 +184,7 @@ export default async function bro(pi: ExtensionAPI) {
 					: {kind:action as "text" | "file" | "url", input:value};
 				try {
 					await openSimplifyWorkflow(ctx, simplifyState, initial);
+					saveSimplify();
 					if (simplifyState.result) remember(simplifyState.result);
 				} catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
 				return;
@@ -287,7 +296,8 @@ export default async function bro(pi: ExtensionAPI) {
 					const thread = resolveBtwThread(btwThread);
 					if (bindBtwBackend(thread, btwBackend)) ctx.ui.notify("Backend changed — started a fresh side thread.", "info");
 					btwThread = thread;
-					await openBtwModal(ctx, { thread, initialQuestion: parsed.question });
+					saveBtw();
+					await openBtwModal(ctx, { thread, initialQuestion: parsed.question, onChange: saveBtw });
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");
 				}
@@ -308,7 +318,8 @@ export default async function bro(pi: ExtensionAPI) {
 				const start = Boolean(parsed.topic);
 				if (start) grillThread = { topic: parsed.topic, depth: parsed.depth, turns: [], fullAccess: false };
 				else grillThread ??= { topic: "", depth: parsed.depth, turns: [], fullAccess: false };
-				try { await openGrillModal(ctx, grillThread, { start }); }
+				saveGrill();
+				try { await openGrillModal(ctx, grillThread, { start, onChange: saveGrill }); }
 				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
 				return;
 			}
