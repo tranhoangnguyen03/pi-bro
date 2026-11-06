@@ -90,5 +90,5 @@ test('rejects output traversal, unsafe links and malformed graph references',()=
   const hostile={...graph,project:{name:'</script><script>alert(1)</script>',summary:'Safe'}};
   const html=renderGraph('{}',hostile);
   assert.ok(!html.includes('</script><script>alert(1)</script>'));
-  assert.ok(html.includes('\\\\u003c/script'));
+  assert.ok(html.includes(String.raw`\u003c/script`));
 });

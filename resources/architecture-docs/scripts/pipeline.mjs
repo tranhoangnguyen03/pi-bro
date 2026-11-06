@@ -19,10 +19,10 @@ const inside=(root,name)=>name===root||name.startsWith(root+path.sep);
 const skip=/((^|\/)\.env($|\.)|(^|\/)auth\.json$|(^|\/)credentials(?:\.[^/]*)?$|\.pem$|\.key$|id_rsa$|id_ed25519$)/i;
 
 async function projectRoot(cwd){
-  const current=path.resolve(cwd);
+  const current=await fs.realpath(path.resolve(cwd));
   try{
     const {stdout}=await exec('git',['-C',current,'rev-parse','--show-toplevel'],{timeout:5000});
-    const resolved=path.resolve(stdout.trim());
+    const resolved=await fs.realpath(path.resolve(stdout.trim()));
     if(inside(resolved,current))return resolved;
   }catch{}
   return current;
@@ -91,6 +91,13 @@ function parseProposal(text){
   }
   if(!value.files['README.md'].includes('architecture.html'))value.files['README.md']+='\n\n[Explore the architecture map](architecture.html)\n';
   return value;
+}
+async function stagedInputsAgree(state){
+  for(const original of state.files){
+    const file=path.join(state.workspace,original.path);
+    let bytes;try{bytes=await fs.readFile(file);}catch{throw new Error('Staged source was removed: '+original.path);}
+    if(digest(bytes)!==original.sha)throw new Error('Staged source was modified during inspection: '+original.path);
+  }
 }
 async function originalsAgree(state){
   for(const original of state.files){
@@ -180,6 +187,7 @@ async function apply(dir,proposalPath){
   if(state.dir!==path.resolve(dir))throw new Error('Snapshot identity mismatch');
   const output=await fs.readFile(proposalPath,'utf8');
   const proposal=parseProposal(output);
+  await stagedInputsAgree(state);
   const files=await prepareChanges(state,proposal);
   const updated=await install(state,files);
   return {root:state.root,updated,summary:proposal.summary,unknowns:proposal.unknowns,nodes:proposal.graph.nodes.length};

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { lstatSync, readdirSync } from 'node:fs';
+import { lstatSync, readdirSync, existsSync as fssExists } from 'node:fs';
 import path from 'node:path';
 
 const EXCLUDE = new Set(['.git', 'node_modules', '.venv', 'venv', '.next', 'dist', 'build', 'coverage', '.cache', '__pycache__', '.turbo']);
@@ -22,7 +22,19 @@ export function listProjectFiles(root) {
     };
     visit(root);
   }
-  const unique = [...new Set(candidates)].sort();
+  // Architecture docs may be intentionally ignored by Git. Still read and preserve them.
+  const architecture = path.join(root, 'docs', 'architecture');
+  const docs = [];
+  const visitDocs = (dir, prefix) => {
+    if (!fssExists(dir)) return;
+    for (const item of readdirSync(dir, { withFileTypes: true })) {
+      const rel = prefix + '/' + item.name;
+      if (item.isDirectory()) visitDocs(path.join(dir, item.name), rel);
+      else if (item.isFile()) docs.push(rel);
+    }
+  };
+  visitDocs(architecture, 'docs/architecture');
+  const unique = [...new Set([...candidates, ...docs])].sort();
   return unique.filter(p => {
     const rel = p.replaceAll('\\', '/');
     if (path.isAbsolute(rel) || rel.split('/').includes('..') || rel.split('/').some(x => EXCLUDE.has(x)) || SECRET.test(rel)) return false;
