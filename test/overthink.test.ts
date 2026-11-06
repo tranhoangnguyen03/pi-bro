@@ -170,8 +170,11 @@ test("same Pi model is called once, report is stored privately, and a new turn c
     { role: "assistant", stopReason: "stop" },
   ] }, ctx);
   assert.equal(requests.length, 0, "agent_end is not yet safe to review");
-  // Pi can compact or continue after agent_end. Only the final settled event
-  // starts a check; the projection should already reflect that work.
+  // Pi may open another agent loop as part of a queued continuation. The next
+  // agent_start must invalidate an older check without losing work evidence.
+  await callbacks.agent_start({}, ctx);
+  await callbacks.agent_end({ messages: [{ role:"assistant", stopReason:"stop" }] }, ctx);
+  // The settled context should include compaction performed between loops.
   entries.push({ type:"compaction", id:"post-compaction" } as SessionEntry);
   await callbacks.agent_settled({ aborted: false }, ctx);
   for (let i = 0; i < 20 && !resolveOverthinkSession(entries).note; i++) {

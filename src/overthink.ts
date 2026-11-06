@@ -193,7 +193,14 @@ export function registerOverthink(pi: ExtensionAPI, loadAutomaticChecks = readAu
     catch (error) { if (ctx.mode === "tui") ctx.ui.notify("Overthink settings: " + errorMessage(error), "warning"); }
   });
   pi.on("session_tree", invalidate);
-  pi.on("agent_start", invalidate);
+  pi.on("agent_start", (_event, ctx) => {
+    // A continuation or retry can begin a new agent loop before the overall
+    // run settles. Cancel in-flight checks and stale scheduling, but keep the
+    // tool evidence until agent_settled decides whether the full run qualifies.
+    generation++;
+    active?.abort(); active = undefined;
+    noteWidget(ctx);
+  });
   pi.on("session_shutdown", async (_event, ctx) => { invalidate(_event, ctx); });
 
   type Trigger = { generation: number; sessionId: string; position?: string };
