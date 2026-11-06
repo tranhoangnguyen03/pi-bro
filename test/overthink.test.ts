@@ -110,7 +110,7 @@ test("automatic checks keep tool evidence through retry/compaction but require s
 });
 
 test("note provenance ignores private entries and becomes stale after trivial work or branch change", () => {
-  const message = (id: string) => ({ type: "message", id, message: { role: "assistant", content: [] } }) as SessionEntry;
+  const message = (id: string) => ({ type: "message", id, message: { role: "assistant", content: [] } }) as unknown as SessionEntry;
   const privateEntry = ({ type: "custom", customType: OVERTHINK_ENTRY, data: { version: 1, kind: "questions", questions: ["One?"] } }) as SessionEntry;
   const initial = [message("m1")];
   assert.equal(overthinkContextPosition(initial), "m1");
@@ -128,7 +128,7 @@ test("note provenance ignores private entries and becomes stale after trivial wo
 test("same Pi model is called once, report is stored privately, and a new turn clears its widget", async () => {
   await withIsolatedAgentHome(async () => {
   const callbacks: Record<string, (...args: any[]) => any> = {};
-  const entries: SessionEntry[] = [{ type:"message", id:"main-reply", message:{ role:"assistant", content:[] } } as SessionEntry];
+  const entries: SessionEntry[] = [{ type:"message", id:"main-reply", message:{ role:"assistant", content:[] } } as unknown as SessionEntry];
   const requests: any[][] = [];
   const widgets: unknown[] = [];
   const pi = {
@@ -195,7 +195,7 @@ test("a delayed automatic-settings read cannot schedule work after a new agent s
   await withIsolatedAgentHome(async () => {
     const callbacks: Record<string, (...args: any[]) => any> = {};
     const branch: SessionEntry[] = [
-      { type: "message", id: "old-reply", message: { role: "assistant", content: [] } } as SessionEntry,
+      { type: "message", id: "old-reply", message: { role: "assistant", content: [] } } as unknown as SessionEntry,
     ];
     let requests = 0;
     let release: ((value: boolean) => void) | undefined;
@@ -230,7 +230,7 @@ test("a delayed automatic-settings read cannot schedule work after a new agent s
     await callbacks.agent_settled({ aborted: false }, ctx);
     assert.ok(release, "settlement should await automatic setting");
     await callbacks.agent_start({}, ctx);
-    branch.push({type:"message",id:"new-work",message:{role:"user",content:[]}} as SessionEntry);
+    branch.push({type:"message",id:"new-work",message:{role:"user",content:[]}} as unknown as SessionEntry);
     release!(true);
     await new Promise(resolve=>setTimeout(resolve,20));
     assert.equal(requests, 0, "old settlement must not review the new in-progress task");
