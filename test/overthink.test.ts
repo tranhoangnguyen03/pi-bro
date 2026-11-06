@@ -13,6 +13,20 @@ import {
 import { createOverthinkViewer, overthinkReady, registerOverthink, usageStatus } from "../src/overthink.ts";
 import { createOverthinkQuestionEditor } from "../src/overthink-questions-ui.ts";
 
+// getAgentDir() reads the environment each time. No test should depend on the
+// developer's real Overthink preferences or write into their real agent home.
+async function withIsolatedAgentHome<T>(run: () => Promise<T>): Promise<T> {
+  const dir = await mkdtemp(join(tmpdir(), "bro-overthink-home-"));
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  try { return await run(); }
+  finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 test("questions: validate ordered editable lines and keep empty list intentional", () => {
   assert.deepEqual(checkQuestions(["One?", "Two?  "]), ["One?", "Two?"]);
   assert.deepEqual(checkQuestions([]), []);
@@ -29,7 +43,7 @@ test("questions: validate ordered editable lines and keep empty list intentional
   assert.match(usageStatus({ text: "", checkedAt: "", model: "", questionKey: "",
     usage: { cacheRead: 0, cacheWrite: 4, reasoning: 321, costTotal: 0.00234 } }).join(" "), /caching unsupported/);
   assert.match(usageStatus({ text: "", checkedAt: "", model: "", questionKey: "",
-    usage: { cacheRead: 0, cacheWrite: 4, reasoning: 321, costTotal: 0.00234 } }).join(" "), /\$0\.002340/);
+    usage: { cacheRead: 0, cacheWrite: 4, reasoning: 321, costTotal: 0.00234 } }).join(" "), /est\. cost \$0\.002340 \(Pi price table; not billed amount\)/);
   assert.match(overthinkPrompt(["Why?"]), /do not call tools or take actions/);
 });
 
@@ -84,6 +98,7 @@ test("automatic gate: requires real completed tool work and an idle queue", () =
 });
 
 test("same Pi model is called once, report is stored privately, and a new turn clears its widget", async () => {
+  await withIsolatedAgentHome(async () => {
   const callbacks: Record<string, (...args: any[]) => any> = {};
   const entries: SessionEntry[] = [];
   const requests: any[][] = [];
@@ -121,6 +136,7 @@ test("same Pi model is called once, report is stored privately, and a new turn c
   registerOverthink(pi);
   await callbacks.session_start({}, ctx);
   assert.equal(resolveOverthinkSession(entries).questions?.length, FACTORY_QUESTIONS.length);
+  assert.equal(await readAutomaticChecks(), true, "clean fixture must start with automatic checks on");
   await callbacks.agent_end({ messages: [
     { role: "toolResult" }, { role: "toolResult" }, { role: "toolResult" },
     { role: "assistant", stopReason: "stop" },
@@ -137,6 +153,7 @@ test("same Pi model is called once, report is stored privately, and a new turn c
   assert.equal(widgets.length > 0, true);
   await callbacks.agent_start({}, ctx);
   assert.equal(widgets.at(-1), undefined);
+  });
 });
 
 
@@ -155,7 +172,9 @@ test("Overthink viewer opens without a call; ? help, Ctrl+R retry, Ctrl+E editor
   assert.equal(calls, 0, "viewing latest notes must not run a model");
   component.handleInput?.("?"); // contextual help
   assert.match(component.render(90).join("\n"), /Toggle help/);
-  component.handleInput?.("?");
+  component.handleInput?.("\x1b[63u"); // extended keyboard-protocol "?" must also open help
+  assert.match(component.render(90).join("\n"), /Toggle help/);
+  component.handleInput?.("\x1b[63u"); // close help
   component.handleInput?.("\x12"); // Ctrl+R
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(calls, 1);

@@ -61,9 +61,9 @@ export function usageStatus(note: OverthinkNote | undefined): string[] {
     u.output !== undefined ? "output " + u.output.toLocaleString("en-US") : undefined,
     u.reasoning !== undefined ? "reasoning " + u.reasoning.toLocaleString("en-US") : undefined,
   ].filter((value): value is string => value !== undefined);
-  const cost = u.costTotal !== undefined ? " · cost $" + u.costTotal.toFixed(6) : "";
+  const cost = u.costTotal !== undefined ? " · est. cost $" + u.costTotal.toFixed(6) + " (Pi price table; not billed amount)" : "";
   return [
-    "Provider-reported usage: " + (totals.length ? totals.join(" · ") : "token counts unavailable") + cost,
+    "Provider-reported tokens: " + (totals.length ? totals.join(" · ") : "token counts unavailable") + cost,
     ...(u.cacheRead === 0 ? ["Cache read 0 can mean no hit or caching unsupported."] : []),
   ];
 }
@@ -136,7 +136,7 @@ export function createOverthinkViewer(
           else { closed = true; done("close"); }
           return;
         }
-        if (data === "?") { help = !help; scroller.toStart(); tui.requestRender(); return; }
+        if (matchesKey(data, "?")) { help = !help; scroller.toStart(); tui.requestRender(); return; }
         if (matchesKey(data, "ctrl+r")) { void rerun(); return; }
         if (matchesKey(data, "ctrl+c")) { void copy(); return; }
         if (matchesKey(data, "ctrl+e") && !busy) { closed = true; done("edit"); return; }
