@@ -176,7 +176,7 @@ const SURFACES = [
 		scrolls: true,
 		mouse: true,
 		shows: [/Esc/],
-		fullShows: [/[\[›]Insert/],
+		fullShows: [/[\[›]Copy/],
 		open: elevateStage("ready"),
 	},
 	{ name: "elevate failed", mouse: true, open: elevateStage("failed") },
@@ -806,7 +806,7 @@ test("modal kit: context switch is visible, clears findings and never starts a c
   const modes = [];
   let calls = 0;
   const modal = new elevate.ElevateModal({ mode: "fullscreen", terminal: { rows: 40, columns: 120 }, requestRender() {} }, theme,
-    () => {}, () => calls++, () => calls++, () => {}, () => calls++, () => {}, (mode) => modes.push(mode));
+    () => {}, () => calls++, () => calls++, () => calls++, () => {}, (mode) => modes.push(mode));
   modal.setCompose("Preserve this objective");
   assert.match(modal.render(94).join("\n"), /Context: Messages/);
   modal.handleInput("\t"); modal.handleInput("\x1b[D"); modal.handleInput("\r");
