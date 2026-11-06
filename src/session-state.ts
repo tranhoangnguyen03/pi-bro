@@ -26,20 +26,20 @@ const textTurns = (value: unknown): boolean =>
 function btwThread(value: unknown): BtwThread | undefined {
   if (!isRecord(value) || !textTurns(value.turns) || typeof value.full !== "boolean") return undefined;
   if (value.backend !== undefined && typeof value.backend !== "string") return undefined;
-  return value as BtwThread;
+  return value as unknown as BtwThread;
 }
 
 function grillThread(value: unknown): GrillThread | undefined {
   if (!isRecord(value) || typeof value.topic !== "string" || !textTurns(value.turns) ||
       !["light", "balanced", "exhaustive"].includes(String(value.depth)) ||
       typeof value.fullAccess !== "boolean") return undefined;
-  return value as GrillThread;
+  return value as unknown as GrillThread;
 }
 
 function modalResult(value: unknown): ModalResult | undefined {
   if (!isRecord(value) || typeof value.text !== "string") return undefined;
   if (value.source !== undefined && (!isRecord(value.source) || typeof value.source.text !== "string")) return undefined;
-  return value as ModalResult;
+  return value as unknown as ModalResult;
 }
 
 function simplifyState(value: unknown): SimplifyState {
