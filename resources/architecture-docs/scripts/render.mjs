@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { layoutGraph } from './layout.mjs';
 
 const HERE=path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE=path.resolve(HERE,'../assets/architecture-viewer.html');
@@ -37,7 +38,7 @@ export function renderGraph(raw,graph){
   validateGraph(graph);
   const template=fs.readFileSync(TEMPLATE,'utf8');
   const fallback='<ul>'+graph.nodes.map(n=>'<li><strong>'+escapeHTML(n.label)+'</strong> — '+escapeHTML(n.description)+'</li>').join('')+'</ul>';
-  const json=JSON.stringify(graph).replaceAll('<','\\u003c').replaceAll('>','\\u003e').replaceAll('&','\\u0026');
+  const json=JSON.stringify({ ...graph, layout: layoutGraph(graph.nodes, graph.edges) }).replaceAll('<','\\u003c').replaceAll('>','\\u003e').replaceAll('&','\\u0026');
   const values={
     '__TITLE__':escapeHTML(graph.project.name),
     '__SUMMARY__':escapeHTML(graph.project.summary),

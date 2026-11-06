@@ -1,12 +1,12 @@
 import fs from 'node:fs/promises';
-import fss from 'node:fs';
+import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { listProjectFiles, inventory } from './inventory.mjs';
+import { listProjectFiles, inventory, localPath } from './inventory.mjs';
 import { validateGraph, safeRelative, render } from './render.mjs';
 import { check } from './check.mjs';
 
@@ -32,48 +32,52 @@ async function describeRevision(root){
   return 'Commit '+stdout.trim()+' (with working files when present)';}
   catch{return 'Local project snapshot';}
 }
-async function safeParents(root,relative){
-  let cursor=root;
-  for(const part of relative.split('/')){
-    cursor=path.join(cursor,part);
-    try{const st=await fs.lstat(cursor);if(st.isSymbolicLink())throw new Error('Refusing symlink: '+cursor);}
-    catch(e){if(e.code!=='ENOENT')throw e;}
-  }
+function cancelled(signal) { signal?.throwIfAborted(); }
+async function hashFile(file, signal) {
+  const hash = crypto.createHash('sha256');
+  for await (const bytes of createReadStream(file)) { cancelled(signal); hash.update(bytes); }
+  return hash.digest('hex');
 }
-async function stage(cwd){
-  const root=await projectRoot(cwd),paths=listProjectFiles(root);
-  if(!paths.length)throw new Error('No non-ignored project files were found in '+root);
-  if(paths.length>MAX_FILES)throw new Error('Too many input files ('+paths.length+'); narrow the workspace first');
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'pi-bro-architecture-'));
-  const workspace=path.join(dir,'project');
-  const files=[],omitted=[];
-  let used=0;
-  try{
-    await fs.mkdir(workspace,{recursive:true});
-    for(const relative of paths){
-      if(skip.test(relative)||relative.startsWith('.bro-architecture-support/'))continue;
-      const source=path.join(root,relative);
-      let stat;
-      try{stat=await fs.lstat(source);}catch{continue;}
-      if(!stat.isFile()||stat.size>MAX_FILE){omitted.push(relative+' (not a readable small file)');continue;}
-      const physical=await fs.realpath(source);
-      if(!inside(root,physical)){omitted.push(relative+' (outside root)');continue;}
-      const bytes=await fs.readFile(source);
-      if(bytes.includes(0)||used+bytes.length>MAX_TOTAL){omitted.push(relative+' (binary or budget)');continue;}
-      used+=bytes.length;
-      const dest=path.join(workspace,relative);
-      await fs.mkdir(path.dirname(dest),{recursive:true});
-      await fs.writeFile(dest,bytes,{mode:0o600});
-      files.push({path:relative,sha:digest(bytes)});
+async function stage(cwd, { signal, maxFileBytes = MAX_FILE, maxTotalBytes = MAX_TOTAL } = {}) {
+  cancelled(signal);
+  const root = await projectRoot(cwd), paths = listProjectFiles(root);
+  if (!paths.length) throw new Error('No non-ignored project files were found in ' + root);
+  if (paths.length > MAX_FILES) throw new Error('Too many input files (' + paths.length + '); narrow the workspace first');
+  // Existing docs get first use of the model budget. Their baseline is independent
+  // of that budget, including large generated HTML and binary assets left in place.
+  paths.sort((a, b) => Number(b.startsWith('docs/architecture/')) - Number(a.startsWith('docs/architecture/')) || a.localeCompare(b));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-bro-architecture-'));
+  const workspace = path.join(dir, 'project'), files = [], omitted = [], documents = [];
+  let used = 0;
+  try {
+    await fs.mkdir(workspace, { recursive: true });
+    for (const relative of paths) {
+      cancelled(signal);
+      if (skip.test(relative) || relative.startsWith('.bro-architecture-support/')) continue;
+      const source = localPath(root, relative);
+      const stat = await fs.lstat(source);
+      if (!stat.isFile()) continue;
+      const isDoc = relative.startsWith('docs/architecture/');
+      if (isDoc) documents.push({ path: relative, sha: await hashFile(source, signal), mode: stat.mode & 0o777 });
+      if (stat.size > maxFileBytes || used + stat.size > maxTotalBytes) { omitted.push(relative + ' (size or snapshot budget)'); continue; }
+      const bytes = await fs.readFile(source);
+      if (bytes.includes(0)) { omitted.push(relative + ' (binary)'); continue; }
+      used += bytes.length;
+      const dest = path.join(workspace, relative);
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.writeFile(dest, bytes, { mode: 0o600 });
+      files.push({ path: relative, sha: digest(bytes) });
     }
-    if(!files.length)throw new Error('No readable source files were found');
-    const support=path.join(workspace,'.bro-architecture-support');
-    await fs.mkdir(support,{recursive:true});
-    await fs.cp(path.join(RESOURCES,'references'),path.join(support,'references'),{recursive:true});
-    const information={root,dir,workspace,files,omitted,revision:await describeRevision(root),inventory:inventory(root,files.map(f=>f.path))};
-    await fs.writeFile(path.join(dir,'state.json'),JSON.stringify(information),{mode:0o600});
-    return {root,dir,workspace,inventory:information.inventory,omitted:omitted.slice(0,40),included:files.length};
-  }catch(e){await fs.rm(dir,{recursive:true,force:true});throw e;}
+    if (!files.length) throw new Error('No readable source files were found');
+    const support = path.join(workspace, '.bro-architecture-support');
+    await fs.mkdir(support, { recursive: true });
+    await fs.cp(path.join(RESOURCES, 'references'), path.join(support, 'references'), { recursive: true });
+    const information = { root, dir, workspace, files, documents, knownFiles: paths, omitted, revision: await describeRevision(root), inventory: inventory(root, files.map(f => f.path)) };
+    cancelled(signal);
+    await fs.writeFile(path.join(dir, 'state.json'), JSON.stringify(information), { mode: 0o600 });
+    cancelled(signal);
+    return { root, dir, workspace, inventory: information.inventory, omitted: omitted.slice(0, 40), included: files.length };
+  } catch (error) { await fs.rm(dir, { recursive: true, force: true }); throw error; }
 }
 function parseProposal(text){
   if(typeof text!=='string'||Buffer.byteLength(text,'utf8')>2*1024*1024)throw new Error('Model output is missing or too large');
@@ -97,105 +101,121 @@ function parseProposal(text){
   if(!value.files['README.md'].includes('architecture.html'))value.files['README.md']+='\n\n[Explore the architecture map](architecture.html)\n';
   return value;
 }
-async function stagedInputsAgree(state){
-  for(const original of state.files){
-    const file=path.join(state.workspace,original.path);
-    let bytes;try{bytes=await fs.readFile(file);}catch{throw new Error('Staged source was removed: '+original.path);}
-    if(digest(bytes)!==original.sha)throw new Error('Staged source was modified during inspection: '+original.path);
+async function stagedInputsAgree(state, signal) {
+  for (const original of state.files) {
+    cancelled(signal);
+    const file = localPath(state.workspace, original.path);
+    let hash; try { hash = await hashFile(file, signal); } catch (error) { cancelled(signal); throw new Error('Staged source was removed: ' + original.path); }
+    if (hash !== original.sha) throw new Error('Staged source was modified during inspection: ' + original.path);
   }
 }
-async function originalsAgree(state){
-  for(const original of state.files){
-    const live=path.join(state.root,original.path);
-    let current;try{current=await fs.readFile(live);}catch{throw new Error('Source changed during documentation: '+original.path);}
-    if(digest(current)!==original.sha)throw new Error('Source changed during documentation: '+original.path+'. Re-run to document the new revision.');
+async function originalsAgree(state, signal) {
+  const originals = new Map([...state.files, ...(state.documents || [])].map(f => [f.path, f]));
+  for (const original of originals.values()) {
+    cancelled(signal);
+    const file = localPath(state.root, original.path);
+    let hash; try { hash = await hashFile(file, signal); } catch (error) { cancelled(signal); throw new Error('Source changed during documentation: ' + original.path); }
+    if (hash !== original.sha) throw new Error('Source changed during documentation: ' + original.path + '. Re-run to document the new revision.');
   }
 }
-async function prepareChanges(state,proposal){
-  const docs=path.join(state.workspace,'docs','architecture');
-  await fs.mkdir(docs,{recursive:true});
-  const files={...proposal.files};
-  const graph={...proposal.graph,project:{...proposal.graph.project,revision:state.revision||'Local project snapshot'}};
-  files['architecture.graph.json']=JSON.stringify(graph,null,2)+'\n';
-  for(const [relative,text] of Object.entries(files)){
-    const target=path.join(docs,relative);
-    await fs.mkdir(path.dirname(target),{recursive:true});
-    await safeParents(docs,relative);
-    await fs.writeFile(target,text,{mode:0o600});
+async function prepareChanges(state, proposal, signal) {
+  const docs = localPath(state.workspace, 'docs/architecture');
+  await fs.mkdir(docs, { recursive: true });
+  const files = { ...proposal.files };
+  const graph = { ...proposal.graph, project: { ...proposal.graph.project, revision: state.revision || 'Local project snapshot' } };
+  files['architecture.graph.json'] = JSON.stringify(graph, null, 2) + '\n';
+  for (const [relative, text] of Object.entries(files)) {
+    cancelled(signal);
+    const target = localPath(state.workspace, 'docs/architecture/' + relative);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, text, { mode: 0o600 });
   }
+  localPath(state.workspace, 'docs/architecture/architecture.html');
   render(state.workspace);
-  files['architecture.html']=await fs.readFile(path.join(docs,'architecture.html'),'utf8');
-  check(state.workspace);
+  files['architecture.html'] = await fs.readFile(path.join(docs, 'architecture.html'), 'utf8');
+  check(state.workspace, { repositoryRoot: state.root, knownFiles: state.knownFiles });
+  cancelled(signal);
   return files;
 }
-async function install(state,files){
-  const root=state.root,docs=path.join(root,'docs','architecture');
-  // Verify every original before making any change; refuse symlinked ancestors and targets.
-  await safeParents(root,'docs/architecture');
-  await originalsAgree(state);
-  const previous=new Map(),pending=[];
-  for(const [relative,text] of Object.entries(files)){
-    safeRelative(relative,'output');
-    await safeParents(root,'docs/architecture/'+relative);
-    const target=path.join(docs,relative);
-    let old=null;
-    try{old=await fs.readFile(target);}catch(e){if(e.code!=='ENOENT')throw e;}
-    const snapshotPath=path.join(state.workspace,'docs','architecture',relative);
-    let copied=null;
-    try{copied=await fs.readFile(snapshotPath);}catch(e){if(e.code!=='ENOENT')throw e;}
-    // The stage contains the target as it was when the model started.
-    // For newly generated files, the stage may now have generated content: consult the
-    // original hashes from state, not the stage's current contents.
-    const original=state.files.find(f=>f.path==='docs/architecture/'+relative);
-    if(original){
-      if(!old||digest(old)!==original.sha)throw new Error('Architecture document changed during generation: '+relative);
-    }else if(old)throw new Error('New architecture document appeared during generation: '+relative);
-    previous.set(relative,old);
-    if(!old||old.toString('utf8')!==text)pending.push({relative,text,target});
+async function install(state, files, signal) {
+  const root = state.root, docs = localPath(root, 'docs/architecture');
+  await originalsAgree(state, signal);
+  const originals = new Map((state.documents || state.files).map(f => [f.path, f]));
+  const previous = new Map(), pending = [];
+  for (const [relative, text] of Object.entries(files)) {
+    cancelled(signal);
+    safeRelative(relative, 'output');
+    const target = localPath(root, 'docs/architecture/' + relative);
+    let old = null, mode;
+    try { old = await fs.readFile(target); mode = (await fs.stat(target)).mode & 0o777; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const original = originals.get('docs/architecture/' + relative);
+    if (original) {
+      if (!old || digest(old) !== original.sha) throw new Error('Architecture document changed during generation: ' + relative);
+    } else if (old) throw new Error('New architecture document appeared during generation: ' + relative);
+    previous.set(relative, { bytes: old, mode });
+    if (!old || old.toString('utf8') !== text) pending.push({ relative, text, target });
   }
-  if(!pending.length)return [];
-  const completed=[],temporaries=[];
-  try{
-    for(const item of pending){
-      await fs.mkdir(path.dirname(item.target),{recursive:true});
-      const tmp=item.target+'.bro-'+crypto.randomUUID()+'.tmp';
+  const completed = [], temporaries = [];
+  try {
+    for (const item of pending) {
+      cancelled(signal);
+      localPath(root, 'docs/architecture/' + item.relative);
+      await fs.mkdir(path.dirname(item.target), { recursive: true });
+      const tmp = item.target + '.bro-' + crypto.randomUUID() + '.tmp';
       temporaries.push(tmp);
-      await fs.writeFile(tmp,item.text,{mode:0o600});
+      // New public docs use the normal umask; refresh keeps the existing mode.
+      await fs.writeFile(tmp, item.text, { flag: 'wx' });
+      const before = previous.get(item.relative);
+      if (before.mode !== undefined) await fs.chmod(tmp, before.mode);
     }
-    // All proposed contents now exist in temporary files. Recheck target state
-    // immediately before each rename. Never replay a stale proposal.
-    for(let i=0;i<pending.length;i++){
-      const item=pending[i],before=previous.get(item.relative);
-      let live=null;try{live=await fs.readFile(item.target);}catch(e){if(e.code!=='ENOENT')throw e;}
-      if((before===null)!==(live===null)||(before&&live&&!before.equals(live)))throw new Error('Architecture docs changed during import: '+item.relative);
-      await fs.rename(temporaries[i],item.target);
+    for (let i = 0; i < pending.length; i++) {
+      cancelled(signal);
+      const item = pending[i], before = previous.get(item.relative).bytes;
+      localPath(root, 'docs/architecture/' + item.relative);
+      let live = null; try { live = await fs.readFile(item.target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if ((before === null) !== (live === null) || (before && live && !before.equals(live))) throw new Error('Architecture docs changed during import: ' + item.relative);
+      await fs.rename(temporaries[i], item.target);
       completed.push(item);
+      // In-process cancellation throws here, then waits for rollback. It never
+      // kills the importer between a rename and recording what must be restored.
+      cancelled(signal);
     }
-    return completed.map(item=>'docs/architecture/'+item.relative);
-  }catch(e){
-    const failures=[];
-    for(const item of completed.reverse()){
-      try{
-        const before=previous.get(item.relative);
-        if(before===null)await fs.rm(item.target,{force:true});
-        else await fs.writeFile(item.target,before);
-      }catch(err){failures.push(item.relative);}
+    cancelled(signal);
+    return completed.map(item => 'docs/architecture/' + item.relative);
+  } catch (error) {
+    const failures = [];
+    for (const item of completed.reverse()) {
+      try {
+        localPath(root, 'docs/architecture/' + item.relative);
+        const live = await fs.readFile(item.target);
+        if (!live.equals(Buffer.from(item.text))) throw new Error('Another writer changed this document');
+        const before = previous.get(item.relative);
+        if (before.bytes === null) await fs.rm(item.target);
+        else {
+          const tmp = item.target + '.bro-' + crypto.randomUUID() + '.tmp';
+          temporaries.push(tmp);
+          await fs.writeFile(tmp, before.bytes, { flag: 'wx' });
+          await fs.chmod(tmp, before.mode);
+          await fs.rename(tmp, item.target);
+        }
+      } catch { failures.push(item.relative); }
     }
-    if(failures.length)throw new Error(e.message+'; rollback was incomplete for '+failures.join(', '));
-    throw e;
-  }finally{
-    for(const tmp of temporaries)await fs.rm(tmp,{force:true}).catch(()=>{});
+    if (failures.length) throw new Error(error.message + '; rollback was incomplete for ' + failures.join(', '));
+    throw error;
+  } finally {
+    for (const tmp of temporaries) await fs.rm(tmp, { force: true }).catch(() => {});
   }
 }
-async function apply(dir,proposalPath){
-  const state=JSON.parse(await fs.readFile(path.join(dir,'state.json'),'utf8'));
-  if(state.dir!==path.resolve(dir))throw new Error('Snapshot identity mismatch');
-  const output=await fs.readFile(proposalPath,'utf8');
-  const proposal=parseProposal(output);
-  await stagedInputsAgree(state);
-  const files=await prepareChanges(state,proposal);
-  const updated=await install(state,files);
-  return {root:state.root,updated,summary:proposal.summary,unknowns:proposal.unknowns,nodes:proposal.graph.nodes.length};
+async function apply(dir, proposalPath, { signal } = {}) {
+  cancelled(signal);
+  const state = JSON.parse(await fs.readFile(path.join(dir, 'state.json'), 'utf8'));
+  if (state.dir !== path.resolve(dir)) throw new Error('Snapshot identity mismatch');
+  const proposal = parseProposal(await fs.readFile(proposalPath, 'utf8'));
+  await stagedInputsAgree(state, signal);
+  const files = await prepareChanges(state, proposal, signal);
+  const updated = await install(state, files, signal);
+  return { root: state.root, updated, summary: proposal.summary, unknowns: proposal.unknowns, nodes: proposal.graph.nodes.length };
 }
 export {stage,parseProposal,apply};
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){

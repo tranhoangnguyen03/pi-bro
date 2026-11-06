@@ -40,24 +40,18 @@ const search=document.getElementById('search'),flowPicker=document.getElementByI
 function svgEl(tag,attributes){const el=document.createElementNS(NS,tag);for(const [k,v] of Object.entries(attributes||{}))el.setAttribute(k,String(v));return el;}
 function el(tag,parent,text){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;parent.appendChild(node);return node;}
 function anchor(parent,label,href){const a=el('a',parent,label);a.href=href;return a;}
-const successors=new Map(nodes.map(n=>[n.id,[]])),degree=new Map(nodes.map(n=>[n.id,0]));
-for(const e of edges){successors.get(e.from).push(e.to);degree.set(e.to,degree.get(e.to)+1);}
-const rank=new Map(nodes.map(n=>[n.id,0])),queue=nodes.filter(n=>degree.get(n.id)===0).map(n=>n.id).sort();
-for(let i=0;i<queue.length;i++){const id=queue[i];for(const next of successors.get(id)){rank.set(next,Math.max(rank.get(next),Math.min(8,rank.get(id)+1)));degree.set(next,degree.get(next)-1);if(degree.get(next)===0)queue.push(next);}}
-const seen=new Set(queue),last=Math.max(0,...rank.values());for(const n of nodes)if(!seen.has(n.id))rank.set(n.id,Math.min(8,last+1));
-const columns=new Map();for(const n of nodes){const k=rank.get(n.id);if(!columns.has(k))columns.set(k,[]);columns.get(k).push(n);}for(const list of columns.values())list.sort((a,b)=>a.label.localeCompare(b.label));
-const W=224,H=80,DX=296,DY=124,P=52,pos=new Map();
-for(const [column,list] of columns)list.forEach((n,index)=>pos.set(n.id,{x:P+column*DX,y:P+index*DY}));
-const width=P*2+Math.max(...columns.keys(),0)*DX+W;
-const height=P*2+Math.max(1,...[...columns.values()].map(x=>x.length))*DY;
+const {nodeWidth:W,nodeHeight:H,width,height,routes}=graph.layout;
+const pos=new Map(Object.entries(graph.layout.positions));
 let zoom=1;svg.setAttribute('viewBox','0 0 '+width+' '+height);
 function setZoom(z){zoom=Math.max(.2,Math.min(2.5,z));svg.setAttribute('width',Math.round(width*zoom));svg.setAttribute('height',Math.round(height*zoom));}
 setZoom(1);
 const nodeViews=new Map(),edgeViews=[];
-for(const e of edges){
-const a=pos.get(e.from),b=pos.get(e.to),x=a.x+W,y=a.y+H/2,x2=b.x,y2=b.y+H/2,mid=Math.max(25,Math.abs(x2-x)*.4);
-const path=svgEl('path',{d:'M'+x+' '+y+' C'+(x+mid)+' '+y+','+(x2-mid)+' '+y2+','+x2+' '+y2,class:'edge','marker-end':'url(#arrow)'});
-edgeLayer.appendChild(path);const label=svgEl('text',{x:(x+x2)/2,y:(y+y2)/2-8,'text-anchor':'middle','font-size':11,fill:'var(--dim)'});
+for(const [index,e] of edges.entries()){
+const route=routes[index];
+const path=svgEl('path',{d:route.d,class:'edge','marker-end':'url(#arrow)'});
+edgeLayer.appendChild(path);const title=svgEl('title');title.textContent=e.label;path.appendChild(title);
+const label=svgEl('text',{x:route.labelX,y:route.labelY,'text-anchor':'middle','font-size':11,fill:'var(--dim)'});
+if(route.rotation)label.setAttribute('transform','rotate('+route.rotation+' '+route.labelX+' '+route.labelY+')');
 label.textContent=e.label.length>36?e.label.slice(0,34)+'…':e.label;edgeLayer.appendChild(label);edgeViews.push({edge:e,path,label});
 }
 for(const n of nodes){
