@@ -49,6 +49,7 @@ For a first success, type this in Pi after setting up a backend:
 | `/bro` | Explains the agent's latest completed reply (requires one) |
 | `/bro btw What is a race condition?` | Asks a private side question |
 | `/bro show` | Draws the current session's recent conversation, if any |
+| `/bro architecture` | Creates or refreshes `docs/architecture/` for this project |
 | `/bro grill-me Should agents talk freely to each other?` | Questions your assumptions privately, one at a time |
 | `/bro elevate Improve how we search company documents` | Find expert gaps before giving Pi a task |
 
@@ -60,6 +61,7 @@ File and webpage examples need your own real path or URL; see [how to explain th
 | --- | --- |
 | `/bro`, `/bro text`, `/bro file`, `/bro url` | **[Explain](docs/features/explain.md).** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
 | `/bro show` | **[Show](docs/features/show.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
+| `/bro architecture [focus]` | **[Architecture Docs](docs/features/architecture.md).** Inspects the project and writes Markdown, diagrams and an offline interactive `architecture.html` under `docs/architecture/`. Uses BTW model settings. |
 | `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
 | `/bro remember-me [thought]` | **[Remember Me](docs/remember-me.md).** Privately clarify and approve short personal memories with unfoldable background. Agents can call `about_user` to read summaries and expand IDs. |
 | `/bro grill-me` | **[Grill Me](docs/grill-me.md) (experimental).** A private, opinionated decision interview: light, balanced or exhaustive; one question per round; `/consolidate` drafts a brief without ending the interview; `/insert-last-message` explicitly returns the latest reply to the editor. Uses BTW model settings; read-only restrictions vary by backend. |
@@ -102,6 +104,7 @@ which may keep it under their own policies. Paths below are under
 | Feature | What is sent | What Bro keeps on disk |
 | --- | --- | --- |
 | Explain | The agent's last reply, your pasted text, or text extracted from your file or webpage, plus your preferences | Nothing; the last result stays in memory |
+| Architecture Docs | Repository source, existing architecture docs, focus and preferences; only selected backend can see snapshot files | Generated Markdown, JSON graph and offline HTML in `docs/architecture/`; temporary inspection copy is removed |
 | Show | User and assistant text from recent turns (no tool calls, tool results, reasoning or images), plus your preferences | Diagram pages in `pi-bro-<uid>/` in your system temp folder |
 | Side questions | Your questions and up to the last 8 turns of conversation text, plus your preferences | Nothing; the thread stays in memory |
 | Grill Me | Topic, interview turns, up to the last 8 main-session text turns and preferences; any workspace files the selected inspector reads | Nothing; interview and brief are in memory |

@@ -13,7 +13,9 @@ Production code lives in `src/` and is published as TypeScript source (no build 
 
 - **`bro.ts`** — the Pi extension entry point, `/bro` command routing and completion, session lifecycle wiring, and barrel re-exports.
 - **`doctor.ts`** — `/bro doctor` diagnostics, CLI version/auth probes, Agy model catalog/usage parsing, and `/bro config` modal launch wiring.
-- **`show.ts`** — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.
+- **`architecture.ts`** — `/bro architecture` orchestration: staged project, explicit bundled skill, restricted source inspection using the existing review execution contract, guarded import and progress.
+- **`resources/architecture-docs/`** — architecture-writing references, read-only inventory, offline graph renderer and output checker; packaged with Bro. The pipeline validates source/target hashes and restricts imported files to `docs/architecture/`. No persistent repo memory or new backend selection.
+- **`show.ts` — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.
 - **`advisor.ts`** — the `bro_advisor` tool registration, context snapshot builder, session/durable steering state, and progress orchestration.
 - **`btw.ts`** — the `/bro btw` side conversation thread state, native continuation/reseed policy, composer command parsing, and `BtwModal`.
 - **`elevate-engine.ts`** — independent discovery and rewrite prompts, strict discovery JSON parser, user selection and scope guards.
