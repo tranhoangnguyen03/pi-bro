@@ -94,6 +94,8 @@ See [feature guide](../features/architecture.md).
 
 ## Privacy and safety
 
+- **Copy Markdown:** `/bro copy` reads the last completed assistant reply from the current Pi session and edits it in a temporary TUI modal. Preview renders it locally and Ctrl+C writes the edited Markdown to the **system clipboard**. It sends no request to an AI backend, does not change Pi messages, and never writes a file or session record. Clipboard contents are available to other apps with clipboard access.
+
 - **Overthink requests:** after a substantive Pi turn, Bro makes one additional provider call using Pi's active model and current session conversation projection (including exposed tool evidence), appending the current session's questions. Overthink never executes tool calls. It may still send tool descriptions copied from Pi's existing context to support cache reuse; a tool-use response is rejected without executing the tool. The provider may retain input under its policy. Results and questions are stored in private Pi session custom entries, not LLM turns; global questions use `bro-overthink-defaults.json` in the agent home. This cannot promise a cache hit or fixed incremental cost. Features → Overthink has an on/off switch (on by default). The viewer displays provider-reported input/cache-read/cache-write/output/reasoning tokens and USD cost when available; a reported cache-read value of zero may mean either a cache miss or unsupported caching. See [Overthink](../overthink.md).
 
 - **External requests**: Bro sends the latest completed assistant response,

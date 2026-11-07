@@ -9,6 +9,7 @@ Start with what you want to do. The [README](../README.md) explains the product,
 
 ## I want to do something
 
+- [Edit, preview and copy Markdown](features/copy.md) — a model-free scratch editor for the last reply.
 - [Explain an agent answer or text](features/explain.md#explanation-modes) — plain-language explanations.
 - [Explain a local file](features/explain.md#explain-a-document) or [webpage](features/explain.md#explain-a-webpage).
 - [Visualize a conversation](features/show.md#bro-show) — Show diagrams.

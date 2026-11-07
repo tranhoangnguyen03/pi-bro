@@ -397,6 +397,10 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 - \`/bro architecture [focus]\` — inspect this project and create or refresh \`docs/architecture/\` (Markdown, diagrams and a self-contained HTML map). Inherits the BTW model selection. See docs/features/architecture.md.
 
+## Copy Markdown
+
+- \`/bro copy\` — open the latest completed assistant reply as editable raw Markdown. **Ctrl+D** switches Edit/Preview without changing the draft; **Ctrl+C** copies the edited raw text; **Ctrl+G** opens help (and **?** in Preview); **Esc** closes with a discard warning if edited. Purely local; no backend call or saved draft. Native Pi \`/copy\` still copies immediately.
+
 ## Guided Review
 
 - \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).

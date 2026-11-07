@@ -47,6 +47,7 @@ For a first success, type this in Pi after setting up a backend:
 | After that | What happens |
 | --- | --- |
 | `/bro` | Explains the agent's latest completed reply (requires one) |
+| `/bro copy` | Edit and preview the raw Markdown of the last assistant reply before copying |
 | `/bro btw What is a race condition?` | Asks a private side question |
 | `/bro show` | Draws the current session's recent conversation, if any |
 | `/bro architecture` | Creates or refreshes `docs/architecture/` for this project |
@@ -60,6 +61,7 @@ File and webpage examples need your own real path or URL; see [how to explain th
 
 | Command | What you get |
 | --- | --- |
+| `/bro copy` | **[Copy Markdown](docs/features/copy.md).** A private scratch editor for the last assistant reply. Ctrl+D previews, Ctrl+C copies the edited Markdown; no model call or saved file. |
 | `/bro`, `/bro text`, `/bro file`, `/bro url` | **[Explain](docs/features/explain.md).** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
 | `/bro show` | **[Show](docs/features/show.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
 | `/bro architecture [focus]` | **[Architecture Docs](docs/features/architecture.md).** Inspects the project and writes Markdown, diagrams and an offline interactive `architecture.html` under `docs/architecture/`. Uses BTW model settings. |
@@ -105,6 +107,7 @@ which may keep it under their own policies. Paths below are under
 
 | Feature | What is sent | What Bro keeps on disk |
 | --- | --- | --- |
+| Copy Markdown | Nothing; it reads the last completed assistant reply already in Pi's session | Nothing; only a temporary editor draft while the modal is open |
 | Explain | The agent's last reply, your pasted text, or text extracted from your file or webpage, plus your preferences | Nothing; the last result stays in memory |
 | Architecture Docs | Repository source, existing architecture docs, focus and preferences; only selected backend can see snapshot files | Generated Markdown, JSON graph and offline HTML in `docs/architecture/`; temporary inspection copy is removed |
 | Show | User and assistant text from recent turns (no tool calls, tool results, reasoning or images), plus your preferences | Diagram pages in `pi-bro-<uid>/` in your system temp folder |

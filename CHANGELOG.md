@@ -2,6 +2,13 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.32.0] - 2026-11-07
+
+### Added
+
+- `/bro copy`: edit the last completed Pi reply as raw Markdown, toggle a rendered preview with Ctrl+D, and copy the current draft with Ctrl+C. No model call, saved draft, or conversation mutation. Reuses Bro's modal and Pi's Editor/Markdown components.
+
+
 ## [0.31.0] - 2026-11-07
 
 ### Added

@@ -20,6 +20,15 @@ pi --no-extensions -e "$BRO/src/bro.ts" --no-skills --no-prompt-templates --no-c
 Run the shared steps once per backend (Agy, Claude Code, Grok, Codex, Muse, Pi), selecting it
 in `/bro config` as the shared default or as the capability under test.
 
+## Copy Markdown (no backend required)
+
+1. In a disposable Pi session, generate a Markdown table with links and a fenced code block. Compare native `/copy` to `/bro copy`: opening Bro Copy must not make a model call. The raw editor must show Markdown syntax rather than the terminal-rendered table.
+2. Change one row, delete a section, type `?` in Edit, and add a newline with Enter. Ctrl+D previews the edited document; Ctrl+D returns to the **same** editor and draft. Ctrl+C from either view copies the edited **raw Markdown**, never colored/ANSI terminal output. Esc twice discards edits without changing Pi's saved reply.
+3. With a long reply, test preview scrolling via keys and mouse, and resize to 60×14 and 40×8. The editor must refuse blind typing when too small; copy and close still work.
+4. Check Ctrl+G Help in Edit, `?` Help in Preview, and both Ctrl+D and Ctrl+C across supported terminal key encodings. Verify failed clipboard access shows an error and successful copy gives a notice only after clipboard success.
+5. Check a reply containing Markdown tables, Unicode, tabs, blank lines and fenced code. Unedited copies must preserve raw source; editing through Pi Editor may normalize tabs and line endings. Verify a large paste is copied fully rather than as a shortened on-screen paste marker.
+6. Start a session with no completed assistant reply. Bro Copy must show a warning and make no model request; it must leave the editor and conversation unchanged. Check normal Pi `/copy` behavior is unaffected.
+
 ## Overthink live qualification (active Pi model only)
 
 1. Start a fresh disposable Pi session with a model that exposes usage/cache counts. Check `/bro overthink` shows an empty or prior saved note **without making a call**; `?` toggles help using both ordinary and extended keyboard-protocol encoding.
