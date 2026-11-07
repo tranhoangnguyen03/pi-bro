@@ -242,78 +242,33 @@ test("writeSettings persists valid settings atomically with mode 0o600 and no le
 	}
 });
 
-test("writeSettings failure during rename preserves original file and cleans up temp files", async (t) => {
-	const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-rename-fail-"));
-	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = tempDir;
-	try {
-		const target = join(tempDir, "bro-settings.json");
-		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "initial-model", effort: "low" } });
-		await bro.writeSettings(initial);
-		const initialRaw = readFileSync(target, "utf8");
-
-		t.mock.method(fsp, "rename", async () => {
-			throw Object.assign(new Error("Injected rename failure"), { code: "EIO" });
-		});
-		syncBuiltinESMExports();
-
-		const mutated = parseBroSettings({ version: 2, default: { backend: "agy", model: "mutated-model", effort: "high" } });
-		await assert.rejects(bro.writeSettings(mutated), /Injected rename failure/);
-
-		// Original file remains completely unchanged
-		const currentRaw = readFileSync(target, "utf8");
-		assert.equal(currentRaw, initialRaw);
-		const preserved = await bro.readSettings();
-		assert.equal(preserved.model, "initial-model");
-
-		// Temporary sibling files cleaned up
-		const files = readdirSync(tempDir);
-		assert.deepEqual(files, ["bro-settings.json"]);
-	} finally {
-		t.mock.restoreAll();
-		syncBuiltinESMExports();
-		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
-		rmSync(tempDir, { recursive: true, force: true });
-	}
-});
-
-test("writeSettings failure during write preserves original file and cleans up temp files", async (t) => {
-	const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-write-fail-"));
-	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = tempDir;
-	try {
-		const target = join(tempDir, "bro-settings.json");
-		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "initial-model", effort: "low" } });
-		await bro.writeSettings(initial);
-		const initialRaw = readFileSync(target, "utf8");
-
-		t.mock.method(fsp, "writeFile", async () => {
-			throw Object.assign(new Error("Injected write failure (ENOSPC)"), { code: "ENOSPC" });
-		});
-		syncBuiltinESMExports();
-
-		const mutated = parseBroSettings({ version: 2, default: { backend: "agy", model: "mutated-model", effort: "high" } });
-		await assert.rejects(bro.writeSettings(mutated), /Injected write failure/);
-
-		t.mock.restoreAll();
-		syncBuiltinESMExports();
-
-		// Original file remains completely unchanged
-		const currentRaw = readFileSync(target, "utf8");
-		assert.equal(currentRaw, initialRaw);
-		const preserved = await bro.readSettings();
-		assert.equal(preserved.model, "initial-model");
-
-		// Temporary sibling files cleaned up
-		const files = readdirSync(tempDir);
-		assert.deepEqual(files, ["bro-settings.json"]);
-	} finally {
-		t.mock.restoreAll();
-		syncBuiltinESMExports();
-		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
-		rmSync(tempDir, { recursive: true, force: true });
+test("writeSettings failures during write or rename preserve the original and clean scratch files", async (t) => {
+	// Both filesystem failure points guard the same durable-data contract.
+	for (const operation of ["writeFile", "rename"] as const) {
+		const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-failure-"));
+		const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = tempDir;
+		try {
+			const target = join(tempDir, "bro-settings.json");
+			await bro.writeSettings(parseBroSettings({ version: 2,
+				default: { backend: "agy", model: "initial-model", effort: "low" } }));
+			const initialRaw = readFileSync(target, "utf8");
+			t.mock.method(fsp, operation, async () => {
+				throw Object.assign(new Error(`Injected ${operation} failure`), { code: operation === "writeFile" ? "ENOSPC" : "EIO" });
+			});
+			syncBuiltinESMExports();
+			const mutated = parseBroSettings({ version: 2,
+				default: { backend: "agy", model: "mutated-model", effort: "high" } });
+			await assert.rejects(bro.writeSettings(mutated), new RegExp(`Injected ${operation} failure`));
+			assert.equal(readFileSync(target, "utf8"), initialRaw, `${operation}: original bytes preserved`);
+			assert.deepEqual(readdirSync(tempDir), ["bro-settings.json"], `${operation}: no temp file survives`);
+		} finally {
+			t.mock.restoreAll();
+			syncBuiltinESMExports();
+			if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+			rmSync(tempDir, { recursive: true, force: true });
+		}
 	}
 });
 
