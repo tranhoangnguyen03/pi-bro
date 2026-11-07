@@ -266,7 +266,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 	let agyVersion: string | undefined;
 	let piRuntime: Awaited<ReturnType<typeof bridgePiRuntimeForCatalog>> | undefined;
 	const findPiModel = (provider: string, id: string) => {
-		const model = ctx.modelRegistry.find(provider, id) ?? piRuntime?.getModel(provider, id);
+		const model = ctx.modelRegistry.find(provider, id);
 		return model?.api === "pi-virtual" ? undefined : model;
 	};
 	const hasPiAuth = (model: NonNullable<ReturnType<typeof findPiModel>>) =>
