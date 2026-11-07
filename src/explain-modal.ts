@@ -409,7 +409,7 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 ## Guided Review
 
 - \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).
-- Reviews save automatically. Reopen the same PR without a model call; bare \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Captured code stays unchanged.
+- Reviews save automatically. Reopen the same PR without a model call; bare \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Captured code stays unchanged.\n- \`/bro guided-review delete [PR number or URL]\` — select and confirm permanent removal of a saved review and its captured source; the active review must be closed.
 - Enter opens items or activates focused actions. Tab changes focus; Esc goes back, then closes from Contents. Close saves; Stop and close cancels active work first.
 - Copy finding uses the clipboard, not GitHub. Regenerate requires confirmation and reviews the same capture. For untrusted PRs, prefer Claude/Muse/Pi: file-only tools, no shell/writes/web. Codex/Grok allow shell in a read-only sandbox; Agy's sandbox permits project writes. All three show an advisory. Choose a review override in /bro config. Repository text can mislead; citations are not proof.
 

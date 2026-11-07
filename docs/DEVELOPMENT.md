@@ -208,7 +208,7 @@ Normal journey: open PR → read/investigate → close. Automatic persistence su
 - Shell-free means the backend has no shell tool (Claude, Muse, and Pi review); it is not a claim about Codex/Grok/Agy. Never add a bypass flag to review. Captured text remains a prompt-injection/model-quality risk. Source ranges are validated, but inspected paths, conclusions, reported access errors and execution remain model-reported. Preserve the non-fatal advisory in doctor (no `✗`).
 - Fresh guide calls omit prior guide/discussion; question calls include current guide, original target context and latest 12 relevant nonfailed turns. First 100,000 diff characters are seeded with disclosure. Preferences are included; main-session context is not.
 - Copy delegates to Pi's clipboard helper and reports errors. It does not insert into the editor, mutate code or publish; clipboard retention is outside Bro.
-- One active writer per target in-process; no cross-process locking/sync guarantee. Do not delete user review/source data as part of a simplification.
+- One active writer per target in-process; no cross-process locking/sync guarantee. Explicit delete is user-triggered, confirmed, and protected by `activeReviews`. `deleteReview` validates the 64-hex ID and removes only the matching JSON and source folder. Do not silently delete review/source data as part of a simplification.
 
 ## Lifecycle limits
 
