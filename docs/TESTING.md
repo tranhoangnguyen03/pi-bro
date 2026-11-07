@@ -180,6 +180,24 @@ pi --tui-mode fullscreen --no-extensions -e "$BRO/src/bro.ts"
    Repeat the wheel check with `--tui-mode regular`: the hovered pane scrolls, a wheel outside the overlay does not move it, and terminal scrollback and mouse selection return after Close (also after Regenerate's confirm is answered).
 8. Close shows a saved/reopen message. No new backend process should be started by reading/navigation/resume.
 
+### Delete journey (no model calls)
+
+1. Save two reviews in a disposable Pi profile, with separate captured source.
+2. Run `/bro guided-review delete`, choose one, and decline. Both must remain.
+3. Reopen the first review in another modal; deletion must be refused while it is active.
+4. Close it, delete through the picker and confirm. Only its record, drafts and
+   capture disappear. The second review and the main working tree stay unchanged.
+   Check that the picker label preserves every letter of the saved title.
+5. Repeat direct `/bro guided-review delete <PR number or URL>` while offline or
+   logged out of gh. It must match the saved local record, without a network
+   request. When two repos share a PR number, bare-number deletion must be
+   refused and the full URL must work.
+6. Open a saved review and use Overview → Delete review. Decline once (the
+   record remains), then accept. Close/dispose must not save the deleted record
+   back to disk. The active review remains locked until teardown.
+7. An invalid or missing target must not delete anything. No model call or
+   GitHub mutation occurs.
+
 ### Bounded live checks (not part of npm test)
 
 Current security/capture tests are offline: enforce review sandbox flags/no dangerous bypass, run every review backend in the captured cwd, pin the 610-second review deadline, reconstruct questions, reject prototype formats unchanged, and prove shallow captures omit intermediate commits while old/new evidence remains available. These test adapter contracts, not independently certified CLI enforcement. No additional live calls were authorized for this revision. A manual run with a Codex/Grok/Agy review override must confirm the sandbox flags, no bypass flag in the spawned argv, the advisory visible in acquisition and after reopening a saved review, and findings that cite real captured files. Grok's `--permission-mode dontAsk` in particular is unverified against an installed CLI; treat a Grok review failure as a flag-support question, not a fallback prompt.
