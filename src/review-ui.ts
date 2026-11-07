@@ -50,7 +50,7 @@ export function savedReviewLabel(item: ReviewRecord): string {
 
 async function savedReviews(ctx: ExtensionCommandContext, root: string): Promise<ReviewRecord[]> {
 	const records = await listReviews(root, (file, error) =>
-		ctx.ui.notify(`Cannot load ${file}: ${String(error)}. Original file left unchanged.`, "warning"));
+		ctx.ui.notify(`Cannot load ${file}: ${String(error)}. Original file left untouched.`, "warning"));
 	return records.sort((a, b) =>
 		a.snapshot.target.repository.localeCompare(b.snapshot.target.repository) ||
 		b.snapshot.target.number - a.snapshot.target.number);
