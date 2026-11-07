@@ -150,16 +150,18 @@ const SURFACES = [
     minRows: 22,
     fullShows: [/Ctrl\+D preview/, /Ctrl\+C copy/],
     smallShows: [/Enlarge the terminal/],
-    open: factoryRow(() => (tui, theme, _kb, done) =>
-      new CopyModal(tui, theme, long, () => done(), async () => {})),
+    open: ctx => kit.openBroOverlay(ctx,
+      (tui, theme, _kb, done) => new CopyModal(tui, theme, long, () => done(), async () => {}),
+      { mouse: true }),
   },
   {
     name: "Copy Markdown preview",
     mouse: true,
     scrolls: true,
     fullShows: [/Ctrl\+D edit/, /Ctrl\+C copy/],
-    open: factoryRow(() => (tui, theme, _kb, done) =>
-      new CopyModal(tui, theme, long, () => done(), async () => {})),
+    open: ctx => kit.openBroOverlay(ctx,
+      (tui, theme, _kb, done) => new CopyModal(tui, theme, long, () => done(), async () => {}),
+      { mouse: true }),
     after: component => component.handleInput("\x04"), // Ctrl+D into Preview
   },
   // SettingsList prints config's full hints inside the list; the safe tiny state still keeps Esc visible.
