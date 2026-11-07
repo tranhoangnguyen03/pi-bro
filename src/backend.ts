@@ -281,6 +281,52 @@ async function finishCliAttempt(
 	}
 }
 
+/** Common stop/error precedence. Backend adapters only decide terminal protocol and success. */
+function stoppedCliOutcome(
+	name: string,
+	attempt: Attempt,
+	finished: { code: number | null; exitSignal: NodeJS.Signals | null; protocolError?: string },
+	diagnostics: { stderr: string; processError?: Error },
+	timeoutMessage: string,
+	partial?: string,
+): BackendOutcome | undefined {
+	const partialText = partial ? { partialText: partial } : {};
+	if (attempt.causeOf() === "cancelled") return { status: "cancelled", message: "Canceled.", ...partialText };
+	if (attempt.causeOf() === "timeout") return { status: "timeout", message: timeoutMessage, ...partialText };
+	if (finished.protocolError) return { status: "failure", message: withDoctor(finished.protocolError), ...partialText };
+	if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException, name) };
+	if (finished.exitSignal || finished.code === null) {
+		return { status: "failure", message: unexpectedSignalMessage(finished.exitSignal, name), ...partialText };
+	}
+	return undefined;
+}
+
+/** Session continuity is a shared BTW promise, even though CLIs report IDs differently. */
+function checkedBtwContinuation(
+	name: "Claude" | "Grok" | "Codex" | "Muse",
+	requested: BackendContinuation | undefined,
+	observed: { id?: string; init?: string; result?: string },
+): BackendContinuation | { error: string } {
+	const id = observed.id ?? observed.result ?? observed.init;
+	if (id && (!observed.init || observed.init === id) && (!requested || requested.id === id)) return { id };
+	const details = "id" in observed ? `got ${observed.id ?? "none"}`
+		: `init ${observed.init ?? "none"}, result ${observed.result ?? "none"}`;
+	return { error: `${name} reported an inconsistent session id (expected ${requested?.id ?? "one id"}, ${details}).` };
+}
+
+/** Exit diagnostics share framing, while each backend still owns its prompt and protocol. */
+function cliExitFailure(name: "Claude" | "Grok" | "Codex" | "Muse", action: string, stderr: string): string {
+	const detail = stderr.trim();
+	if (detail) return `${name} could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`;
+	const installation = {
+		Claude: "Claude Code",
+		Grok: "`grok`",
+		Codex: "`codex`",
+		Muse: "`muse`",
+	}[name];
+	return `${name} could not ${action}. Make sure ${installation} is installed and signed in, then run \`/bro doctor\`.`;
+}
+
 // Explain/show and BTW use argv for small prompts and stdin NDJSON for large
 // prompts; sandbox, cwd, timeout, and continuation semantics stay unchanged.
 async function executeArgvPrint(
@@ -360,18 +406,11 @@ async function executeArgvPrint(
 			}
 		};
 
-		const { code, exitSignal, protocolError: parseError } = await finishCliAttempt(child, attempt, "Agy", handleLine);
-		const cause = attempt.causeOf();
-
-		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", partialText: partial || undefined };
-		if (cause === "timeout") {
-			return { status: "timeout", message: `Agy timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, partialText: partial || undefined };
-		}
-		if (parseError) return { status: "failure", message: withDoctor(parseError), partialText: partial || undefined };
-		if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException) };
-		if (exitSignal || code === null) {
-			return { status: "failure", message: unexpectedSignalMessage(exitSignal), partialText: partial || undefined };
-		}
+		const finished = await finishCliAttempt(child, attempt, "Agy", handleLine);
+		const code = finished.code!;
+		const stopped = stoppedCliOutcome("Agy", attempt, finished, diagnostics,
+			`Agy timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, partial);
+		if (stopped) return stopped;
 		if (code !== 0) return { status: "failure", message: stdinPrompt && advisorFlagErrorHint(diagnostics.stderr)
 			? withDoctor("Large prompts require Agy 1.1.15+ with stdin support. Run `agy update`. " + diagnostics.stderr.trim())
 			: agyFailureMessage(action, { code, killed: false, stderr: diagnostics.stderr }) };
@@ -538,16 +577,11 @@ async function executeAdvisorStdin(
 		}
 	};
 
-	const { code, exitSignal, protocolError: protocolError } = await finishCliAttempt(child, attempt, "Agy", handleLine);
-
-	const cause = attempt.causeOf();
-	if (cause === "cancelled") return { status: "cancelled", message: "Canceled." };
-	if (cause === "timeout") {
-		return { status: "timeout", message: "Agy timed out during the advisor consultation. Run `/bro doctor` for setup help." };
-	}
-	if (protocolError) return { status: "failure", message: withDoctor(protocolError) };
-	if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException) };
-	if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal) };
+	const finished = await finishCliAttempt(child, attempt, "Agy", handleLine);
+	const code = finished.code!;
+	const stopped = stoppedCliOutcome("Agy", attempt, finished, diagnostics,
+		"Agy timed out during the advisor consultation. Run `/bro doctor` for setup help.");
+	if (stopped) return stopped;
 	if (!sawTerminal) {
 		const hint = advisorFlagErrorHint(diagnostics.stderr);
 		return {
@@ -692,45 +726,25 @@ async function executeClaude(
 			}
 		};
 
-		const { code, exitSignal, protocolError: protocolError } = await finishCliAttempt(child, attempt, "Claude", handleLine);
-
+		const finished = await finishCliAttempt(child, attempt, "Claude", handleLine);
+		const code = finished.code!;
+		const stopped = stoppedCliOutcome("Claude", attempt, finished, diagnostics,
+			`Claude timed out ${request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response"}. Run \`/bro doctor\` for setup help.`, partial);
+		if (stopped) return stopped;
 		const partialText = partial || undefined;
-		const cause = attempt.causeOf();
-		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", partialText };
-		if (cause === "timeout") {
-			const during = request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
-			return { status: "timeout", message: `Claude timed out ${during}. Run \`/bro doctor\` for setup help.`, partialText };
-		}
-		if (protocolError) return { status: "failure", message: withDoctor(protocolError), partialText };
-		if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException, "Claude") };
-		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Claude"), partialText };
 		if (terminalError) return { status: "failure", message: withDoctor(terminalError), partialText };
-		if (code !== 0) {
-			const detail = diagnostics.stderr.trim();
-			return {
-				status: "failure",
-				message: detail
-					? `Claude could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`
-					: `Claude could not ${action}. Make sure Claude Code is installed and signed in, then run \`/bro doctor\`.`,
-				partialText,
-			};
-		}
+		if (code !== 0) return { status: "failure", message: cliExitFailure("Claude", action, diagnostics.stderr), partialText };
 		if (final === undefined) {
 			return { status: "failure", message: withDoctor(`Claude exited without a result event${diagnostics.stderr.trim() ? `: ${diagnostics.stderr.trim()}` : "."}`), partialText };
 		}
 		const text = final.trim();
 		if (!text) return { status: "failure", message: withDoctor(request.feature === "review" ? "Claude returned no response for Guided Review." : isBtw ? "Claude returned no answer for the side question." : "Claude returned no final answer."), partialText };
 		if (!isBtw) return { status: "success", text };
-		// btw continuation: the session id must be reported, consistent, and (on resume) unchanged.
-		const sessionId = resultSessionId ?? initSessionId;
-		if (!sessionId || (initSessionId !== undefined && initSessionId !== sessionId) || (request.continuation && sessionId !== request.continuation.id)) {
-			return {
-				status: "failure",
-				message: withDoctor(`Claude reported an inconsistent session id (expected ${request.continuation?.id ?? "one id"}, init ${initSessionId ?? "none"}, result ${resultSessionId ?? "none"}).`),
-				partialText,
-			};
-		}
-		return { status: "success", text, continuation: { id: sessionId } };
+		const continuation = checkedBtwContinuation("Claude", request.continuation,
+			{ init: initSessionId, result: resultSessionId });
+		if ("error" in continuation)
+			return { status: "failure", message: withDoctor(continuation.error), partialText };
+		return { status: "success", text, continuation };
 	} finally {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 	}
@@ -908,42 +922,25 @@ async function executeGrok(
 			terminalError ??= `Grok failed: ${detail}`;
 		};
 
-		const { code, exitSignal, protocolError: protocolError } = await finishCliAttempt(child, attempt, "Grok", handleLine);
-
+		const finished = await finishCliAttempt(child, attempt, "Grok", handleLine);
+		const code = finished.code!;
+		const stopped = stoppedCliOutcome("Grok", attempt, finished, diagnostics,
+			`Grok timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, partial);
+		if (stopped) return stopped;
 		const partialText = partial ? { partialText: partial } : {};
-		const cause = attempt.causeOf();
-		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", ...partialText };
-		if (cause === "timeout") return { status: "timeout", message: `Grok timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, ...partialText };
-		if (protocolError) return { status: "failure", message: withDoctor(protocolError), ...partialText };
-		if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException, "Grok") };
-		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Grok"), ...partialText };
 		if (terminalError) return { status: "failure", message: withDoctor(terminalError), ...partialText };
-		if (code !== 0) {
-			const detail = diagnostics.stderr.trim();
-			return {
-				status: "failure",
-				message: detail
-					? `Grok could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`
-					: `Grok could not ${action}. Make sure \`grok\` is installed and signed in, then run \`/bro doctor\`.`,
-				...partialText,
-			};
-		}
+		if (code !== 0) return { status: "failure", message: cliExitFailure("Grok", action, diagnostics.stderr), ...partialText };
 		if (final === undefined) {
 			return { status: "failure", message: withDoctor(`Grok exited without a terminal result event${diagnostics.stderr.trim() ? `: ${diagnostics.stderr.trim()}` : "."}`), ...partialText };
 		}
 		const text = final.trim();
 		if (!text) return { status: "failure", message: withDoctor(emptyTextMessage), ...partialText };
 		if (!isBtw) return { status: "success", text };
-		// btw continuation: the session id must be reported, consistent, and (on resume) unchanged.
-		const sessionId = resultSessionId ?? initSessionId;
-		if (!sessionId || (initSessionId !== undefined && initSessionId !== sessionId) || (request.continuation && sessionId !== request.continuation.id)) {
-			return {
-				status: "failure",
-				message: withDoctor(`Grok reported an inconsistent session id (expected ${request.continuation?.id ?? "one id"}, init ${initSessionId ?? "none"}, result ${resultSessionId ?? "none"}).`),
-				...partialText,
-			};
-		}
-		return { status: "success", text, continuation: { id: sessionId } };
+		const continuation = checkedBtwContinuation("Grok", request.continuation,
+			{ init: initSessionId, result: resultSessionId });
+		if ("error" in continuation)
+			return { status: "failure", message: withDoctor(continuation.error), ...partialText };
+		return { status: "success", text, continuation };
 	} finally {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 		await rm(promptDirectory, { recursive: true, force: true });
@@ -1093,40 +1090,24 @@ async function executeCodex(
 			}
 		};
 
-		const { code, exitSignal, protocolError: protocolError } = await finishCliAttempt(child, attempt, "Codex", handleLine);
-
+		const finished = await finishCliAttempt(child, attempt, "Codex", handleLine);
+		const code = finished.code!;
+		const stopped = stoppedCliOutcome("Codex", attempt, finished, diagnostics,
+			`Codex timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, partial);
+		if (stopped) return stopped;
 		const partialText = partial ? { partialText: partial } : {};
-		const cause = attempt.causeOf();
-		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", ...partialText };
-		if (cause === "timeout") return { status: "timeout", message: `Codex timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, ...partialText };
-		if (protocolError) return { status: "failure", message: withDoctor(protocolError), ...partialText };
-		if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException, "Codex") };
-		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Codex"), ...partialText };
 		if (terminalError) return { status: "failure", message: withDoctor(terminalError), ...partialText };
-		if (code !== 0) {
-			const detail = diagnostics.stderr.trim();
-			return {
-				status: "failure",
-				message: detail
-					? `Codex could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`
-					: `Codex could not ${action}. Make sure \`codex\` is installed and signed in, then run \`/bro doctor\`.`,
-				...partialText,
-			};
-		}
+		if (code !== 0) return { status: "failure", message: cliExitFailure("Codex", action, diagnostics.stderr), ...partialText };
 		if (!sawTerminal) {
 			return { status: "failure", message: withDoctor(`Codex exited without a terminal result event${diagnostics.stderr.trim() ? `: ${diagnostics.stderr.trim()}` : "."}`), ...partialText };
 		}
 		const text = final?.trim();
 		if (!text) return { status: "failure", message: withDoctor(emptyTextMessage), ...partialText };
 		if (!isBtw) return { status: "success", text };
-		if (!threadId || (request.continuation && threadId !== request.continuation.id)) {
-			return {
-				status: "failure",
-				message: withDoctor(`Codex reported an inconsistent session id (expected ${request.continuation?.id ?? "one id"}, got ${threadId ?? "none"}).`),
-				...partialText,
-			};
-		}
-		return { status: "success", text, continuation: { id: threadId } };
+		const continuation = checkedBtwContinuation("Codex", request.continuation, { id: threadId });
+		if ("error" in continuation)
+			return { status: "failure", message: withDoctor(continuation.error), ...partialText };
+		return { status: "success", text, continuation };
 	} finally {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 	}
@@ -1274,40 +1255,24 @@ async function executeMuse(
 			}
 		};
 
-		const { code, exitSignal, protocolError: protocolError } = await finishCliAttempt(child, attempt, "Muse", handleLine);
-
+		const finished = await finishCliAttempt(child, attempt, "Muse", handleLine);
+		const code = finished.code!;
+		const stopped = stoppedCliOutcome("Muse", attempt, finished, diagnostics,
+			`Muse timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, partial);
+		if (stopped) return stopped;
 		const partialText = partial ? { partialText: partial } : {};
-		const cause = attempt.causeOf();
-		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", ...partialText };
-		if (cause === "timeout") return { status: "timeout", message: `Muse timed out ${timeoutVerb}. Run \`/bro doctor\` for setup help.`, ...partialText };
-		if (protocolError) return { status: "failure", message: withDoctor(protocolError), ...partialText };
-		if (diagnostics.processError) return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException, "Muse") };
-		if (exitSignal || code === null) return { status: "failure", message: unexpectedSignalMessage(exitSignal, "Muse"), ...partialText };
 		if (terminalError) return { status: "failure", message: withDoctor(terminalError), ...partialText };
-		if (code !== 0) {
-			const detail = diagnostics.stderr.trim();
-			return {
-				status: "failure",
-				message: detail
-					? `Muse could not ${action}: ${detail}\n\nRun \`/bro doctor\` for setup help.`
-					: `Muse could not ${action}. Make sure \`muse\` is installed and signed in, then run \`/bro doctor\`.`,
-				...partialText,
-			};
-		}
+		if (code !== 0) return { status: "failure", message: cliExitFailure("Muse", action, diagnostics.stderr), ...partialText };
 		if (!sawTerminal) {
 			return { status: "failure", message: withDoctor(`Muse exited without a terminal result event${diagnostics.stderr.trim() ? `: ${diagnostics.stderr.trim()}` : "."}`), ...partialText };
 		}
 		const text = final?.trim();
 		if (!text) return { status: "failure", message: withDoctor(emptyTextMessage), ...partialText };
 		if (!isBtw) return { status: "success", text };
-		if (!sessionId || (request.continuation && sessionId !== request.continuation.id)) {
-			return {
-				status: "failure",
-				message: withDoctor(`Muse reported an inconsistent session id (expected ${request.continuation?.id ?? "one id"}, got ${sessionId ?? "none"}).`),
-				...partialText,
-			};
-		}
-		return { status: "success", text, continuation: { id: sessionId } };
+		const continuation = checkedBtwContinuation("Muse", request.continuation, { id: sessionId });
+		if ("error" in continuation)
+			return { status: "failure", message: withDoctor(continuation.error), ...partialText };
+		return { status: "success", text, continuation };
 	} finally {
 		if (runDirectory) await rm(runDirectory, { recursive: true, force: true });
 		await rm(promptDirectory, { recursive: true, force: true });
