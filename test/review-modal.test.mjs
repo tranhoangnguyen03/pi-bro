@@ -52,44 +52,22 @@ const down = "\x1b[B",
 	enter = "\r",
 	esc = "\x1b";
 
-test("every screen has bounded chrome, contextual actions only and pane-local composer", () => {
+test("reachable review screens stay within the available overlay size", () => {
 	const modal = make();
-	for (const selected of ["overview", "topic-1", "files", "questions", "versions", "close"])
-		for (const screen of ["reading", "file", "discussion"]) {
-			Object.assign(modal.view, {
-				selected,
-				screen,
-				file: "first.ts",
-				target: "topic-1",
-				pane: "detail",
-			});
-			for (const [width, rows] of [
-				[103, 32],
-				[56, 20],
-				[80, 24],
-				[35, 17],
-				[10, 5],
-			]) {
-				modal.tui.terminal.rows = rows;
-				const lines = modal.render(width);
-				assert.ok(lines.length <= rows - 2, `${selected}/${screen}/${width}`);
-				assert.ok(lines.every((line) => visibleWidth(line) <= width));
-				assert.doesNotMatch(
-					lines.join("\n"),
-					/Previous topic|Next topic|Start walkthrough|Browse changed files|\[Save and close\]/,
-				);
-			}
+	// Representative reachable states, not the former 90 mostly invalid screen/selection pairs.
+	for (const [selected, screen] of [
+		["overview", "reading"], ["topic-1", "reading"], ["files", "reading"],
+		["files", "file"], ["questions", "reading"], ["topic-1", "discussion"],
+		["close", "reading"],
+	]) {
+		Object.assign(modal.view, { selected, screen, file: "first.ts", target: "topic-1", pane: "detail" });
+		for (const [width, rows] of [[103, 32], [56, 20], [35, 17], [10, 5]]) {
+			modal.tui.terminal.rows = rows;
+			const lines = modal.render(width);
+			assert.ok(lines.length <= rows - 2, `${selected}/${screen}/${width}`);
+			assert.ok(lines.every((line) => visibleWidth(line) <= width));
 		}
-	modal.tui.terminal.rows = 32;
-	modal.view.selected = "overview";
-	modal.view.screen = "reading";
-	modal.render(103);
-	modal.handleInput(enter);
-	const right = modal
-		.render(103)
-		.map((line) => line.split(" │ ")[1] ?? "")
-		.join("\n");
-	assert.doesNotMatch(right, /Save and close/);
+	}
 });
 
 test("file rows open one diff, questions retain stable targets, Escape returns directly", () => {

@@ -264,6 +264,23 @@ export function parseBtwAgyLine(line: string): { delta?: string; result?: string
 	return { conversationId };
 }
 
+// Every CLI adapter frames stdout immediately, awaits the process, then releases stop timers.
+// Keep this lifecycle in one place: adapter-specific parsing and exit rules stay in each adapter.
+async function finishCliAttempt(
+	child: ChildProcess,
+	attempt: Attempt,
+	name: string,
+	handleLine: (line: string) => void,
+): Promise<{ code: number | null; exitSignal: NodeJS.Signals | null; protocolError?: string }> {
+	const finishFraming = frameStdoutLines(child, attempt, name, handleLine);
+	try {
+		const { code, exitSignal } = await attempt.closed;
+		return { code, exitSignal, protocolError: finishFraming() };
+	} finally {
+		attempt.dispose();
+	}
+}
+
 // Explain/show and BTW use argv for small prompts and stdin NDJSON for large
 // prompts; sandbox, cwd, timeout, and continuation semantics stay unchanged.
 async function executeArgvPrint(
@@ -343,11 +360,7 @@ async function executeArgvPrint(
 			}
 		};
 
-		const finishFraming = frameStdoutLines(child, attempt, "Agy", handleLine);
-
-		const { code, exitSignal } = await attempt.closed;
-		const parseError = finishFraming();
-		attempt.dispose();
+		const { code, exitSignal, protocolError: parseError } = await finishCliAttempt(child, attempt, "Agy", handleLine);
 		const cause = attempt.causeOf();
 
 		if (cause === "cancelled") return { status: "cancelled", message: "Canceled.", partialText: partial || undefined };
@@ -525,11 +538,7 @@ async function executeAdvisorStdin(
 		}
 	};
 
-	const finishFraming = frameStdoutLines(child, attempt, "Agy", handleLine);
-
-	const { code, exitSignal } = await attempt.closed;
-	const protocolError = finishFraming();
-	attempt.dispose();
+	const { code, exitSignal, protocolError: protocolError } = await finishCliAttempt(child, attempt, "Agy", handleLine);
 
 	const cause = attempt.causeOf();
 	if (cause === "cancelled") return { status: "cancelled", message: "Canceled." };
@@ -683,11 +692,7 @@ async function executeClaude(
 			}
 		};
 
-		const finishFraming = frameStdoutLines(child, attempt, "Claude", handleLine);
-
-		const { code, exitSignal } = await attempt.closed;
-		const protocolError = finishFraming();
-		attempt.dispose();
+		const { code, exitSignal, protocolError: protocolError } = await finishCliAttempt(child, attempt, "Claude", handleLine);
 
 		const partialText = partial || undefined;
 		const cause = attempt.causeOf();
@@ -903,11 +908,7 @@ async function executeGrok(
 			terminalError ??= `Grok failed: ${detail}`;
 		};
 
-		const finishFraming = frameStdoutLines(child, attempt, "Grok", handleLine);
-
-		const { code, exitSignal } = await attempt.closed;
-		const protocolError = finishFraming();
-		attempt.dispose();
+		const { code, exitSignal, protocolError: protocolError } = await finishCliAttempt(child, attempt, "Grok", handleLine);
 
 		const partialText = partial ? { partialText: partial } : {};
 		const cause = attempt.causeOf();
@@ -1092,11 +1093,7 @@ async function executeCodex(
 			}
 		};
 
-		const finishFraming = frameStdoutLines(child, attempt, "Codex", handleLine);
-
-		const { code, exitSignal } = await attempt.closed;
-		const protocolError = finishFraming();
-		attempt.dispose();
+		const { code, exitSignal, protocolError: protocolError } = await finishCliAttempt(child, attempt, "Codex", handleLine);
 
 		const partialText = partial ? { partialText: partial } : {};
 		const cause = attempt.causeOf();
@@ -1277,11 +1274,7 @@ async function executeMuse(
 			}
 		};
 
-		const finishFraming = frameStdoutLines(child, attempt, "Muse", handleLine);
-
-		const { code, exitSignal } = await attempt.closed;
-		const protocolError = finishFraming();
-		attempt.dispose();
+		const { code, exitSignal, protocolError: protocolError } = await finishCliAttempt(child, attempt, "Muse", handleLine);
 
 		const partialText = partial ? { partialText: partial } : {};
 		const cause = attempt.causeOf();

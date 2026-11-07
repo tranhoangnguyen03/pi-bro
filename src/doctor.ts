@@ -31,14 +31,11 @@ import {
 	CAPABILITIES,
 	CAPABILITY_LABELS,
 	EFFORTS,
+	EXTERNAL_BACKENDS,
+	isExternalBackend,
 	capabilityBackend,
 	capabilityOverride,
 	capabilityPair,
-	isClaudeEffort,
-	isCodexEffort,
-	isGrokEffort,
-	isMuseEffort,
-	isPiEffort,
 	readPreferences,
 	readSettings,
 	resolveCapabilitySettings,
@@ -153,18 +150,26 @@ function piEffortDetail(model: Parameters<typeof piEffectiveEffort>[0], effort: 
 	return `${effort} → ${effective} (clamped)`;
 }
 
-async function checkAgyVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+// Every diagnostic CLI probe runs away from the user's project and cleans up on all outcomes.
+async function probeCli(
+	pi: ExtensionAPI, binary: string, args: string[], signal: AbortSignal, timeout: number,
+): Promise<Awaited<ReturnType<ExtensionAPI["exec"]>>> {
 	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 	try {
-		const result = await pi.exec("agy", ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
+		const result = await pi.exec(binary, args, { cwd: runDirectory, signal, timeout });
 		if (signal.aborted) throw new Error("Canceled.");
-		if (result.killed || result.code !== 0) throw new Error(agyFailureMessage("start", result));
-		const version = result.stdout.trim() || result.stderr.trim();
-		if (!version) throw new Error("Agy returned no version information. Update Agy, then run `/bro doctor` again.");
-		return version;
+		return result;
 	} finally {
 		await rm(runDirectory, { recursive: true, force: true });
 	}
+}
+
+async function checkAgyVersion(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+	const result = await probeCli(pi, "agy", ["--version"], signal, 10_000);
+	if (result.killed || result.code !== 0) throw new Error(agyFailureMessage("start", result));
+	const version = result.stdout.trim() || result.stderr.trim();
+	if (!version) throw new Error("Agy returned no version information. Update Agy, then run `/bro doctor` again.");
+	return version;
 }
 
 function resolveCatalogSettings(
@@ -177,82 +182,54 @@ function resolveCatalogSettings(
 }
 
 async function checkCliVersion(pi: ExtensionAPI, binary: string, displayName: string, signal: AbortSignal): Promise<string> {
-	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
-	try {
-		const result = await pi.exec(binary, ["--version"], { cwd: runDirectory, signal, timeout: 10_000 });
-		if (signal.aborted) throw new Error("Canceled.");
-		if (result.killed || result.code !== 0) {
-			const detail = result.stderr.trim() || result.stdout.trim();
-			throw new Error(
-				detail
-					? `${displayName} could not start: ${detail}\n\nRun \`/bro doctor\` for setup help.`
-					: `${displayName} could not start. Make sure ${displayName} is installed and on PATH, then run \`/bro doctor\`.`,
-			);
-		}
-		const version = result.stdout.trim() || result.stderr.trim();
-		if (!version) throw new Error(`${displayName} returned no version information. Update ${displayName}, then run \`/bro doctor\` again.`);
-		return version;
-	} finally {
-		await rm(runDirectory, { recursive: true, force: true });
+	const result = await probeCli(pi, binary, ["--version"], signal, 10_000);
+	if (result.killed || result.code !== 0) {
+		const detail = result.stderr.trim() || result.stdout.trim();
+		throw new Error(
+			detail
+				? `${displayName} could not start: ${detail}\n\nRun \`/bro doctor\` for setup help.`
+				: `${displayName} could not start. Make sure ${displayName} is installed and on PATH, then run \`/bro doctor\`.`,
+		);
 	}
+	const version = result.stdout.trim() || result.stderr.trim();
+	if (!version) throw new Error(`${displayName} returned no version information. Update ${displayName}, then run \`/bro doctor\` again.`);
+	return version;
 }
 
 // Auth status only: a version/auth answer without a model request. A passing answer here
 // says the CLI starts and reports signed-in state -- it does not imply connectivity.
 async function checkClaudeAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
-	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
-	try {
-		const result = await pi.exec("claude", ["auth", "status"], { cwd: runDirectory, signal, timeout: 15_000 });
-		if (signal.aborted) throw new Error("Canceled.");
-		if (result.killed || result.code !== 0) {
-			const detail = result.stderr.trim() || result.stdout.trim();
-			throw new Error(detail ? `Claude auth status: ${detail}` : "Claude auth status is unknown. Sign in, then run `/bro doctor`.");
-		}
-		let status: unknown;
-		try { status = JSON.parse(result.stdout); } catch { throw new Error("Claude returned unreadable auth status; sign in and retry /bro doctor."); }
-		if (!isRecord(status) || status.loggedIn !== true) throw new Error("Claude is not signed in. Run `claude auth login`.");
-		return "authentication configured (not a connectivity test)";
-	} finally {
-		await rm(runDirectory, { recursive: true, force: true });
+	const result = await probeCli(pi, "claude", ["auth", "status"], signal, 15_000);
+	if (result.killed || result.code !== 0) {
+		const detail = result.stderr.trim() || result.stdout.trim();
+		throw new Error(detail ? `Claude auth status: ${detail}` : "Claude auth status is unknown. Sign in, then run `/bro doctor`.");
 	}
+	let status: unknown;
+	try { status = JSON.parse(result.stdout); } catch { throw new Error("Claude returned unreadable auth status; sign in and retry /bro doctor."); }
+	if (!isRecord(status) || status.loggedIn !== true) throw new Error("Claude is not signed in. Run `claude auth login`.");
+	return "authentication configured (not a connectivity test)";
 }
 
 // Auth status only: a version/auth answer without a model request. A passing answer here
 // says the CLI starts and reports signed-in state -- it does not imply connectivity.
 async function checkCodexAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
-	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
-	try {
-		const result = await pi.exec("codex", ["login", "status"], { cwd: runDirectory, signal, timeout: 15_000 });
-		if (signal.aborted) throw new Error("Canceled.");
-		if (result.killed || result.code !== 0) {
-			const detail = result.stderr.trim() || result.stdout.trim();
-			throw new Error(detail ? `Codex auth status: ${detail}` : "Codex is not logged in. Run `codex login`.");
-		}
-		const status = result.stdout.trim() || result.stderr.trim();
-		if (!status || !/logged in/i.test(status)) throw new Error("Codex is not logged in. Run `codex login`.");
-		return "authentication configured (not a connectivity test)";
-	} finally {
-		await rm(runDirectory, { recursive: true, force: true });
+	const result = await probeCli(pi, "codex", ["login", "status"], signal, 15_000);
+	if (result.killed || result.code !== 0) {
+		const detail = result.stderr.trim() || result.stdout.trim();
+		throw new Error(detail ? `Codex auth status: ${detail}` : "Codex is not logged in. Run `codex login`.");
 	}
+	const status = result.stdout.trim() || result.stderr.trim();
+	if (!status || !/logged in/i.test(status)) throw new Error("Codex is not logged in. Run `codex login`.");
+	return "authentication configured (not a connectivity test)";
 }
 
 async function checkAgyUsage(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
-	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+	const result = await probeCli(pi, "agy", ["-p", "/usage", "--output-format", "json", "--print-timeout", "30s", "--sandbox"], signal, 35_000);
+	if (result.killed || result.code !== 0) throw new Error(agyFailureMessage("check account usage", result));
 	try {
-		const result = await pi.exec(
-			"agy",
-			["-p", "/usage", "--output-format", "json", "--print-timeout", "30s", "--sandbox"],
-			{ cwd: runDirectory, signal, timeout: 35_000 },
-		);
-		if (signal.aborted) throw new Error("Canceled.");
-		if (result.killed || result.code !== 0) throw new Error(agyFailureMessage("check account usage", result));
-		try {
-			return formatAgyUsage(JSON.parse(result.stdout));
-		} catch (error) {
-			throw new Error(withDoctor(error instanceof SyntaxError ? "Agy returned invalid usage data." : error));
-		}
-	} finally {
-		await rm(runDirectory, { recursive: true, force: true });
+		return formatAgyUsage(JSON.parse(result.stdout));
+	} catch (error) {
+		throw new Error(withDoctor(error instanceof SyntaxError ? "Agy returned invalid usage data." : error));
 	}
 }
 
@@ -295,10 +272,6 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 		? CAPABILITIES.some(capability => capabilityBackend(settings, capability) === backend)
 		: backend === "agy";
 	const agyInUse = backendInUse("agy");
-	const claudeInUse = backendInUse("claude");
-	const grokInUse = backendInUse("grok");
-	const codexInUse = backendInUse("codex");
-	const museInUse = backendInUse("muse");
 	const piInUse = backendInUse("pi");
 
 	let agyStarted = false;
@@ -333,69 +306,30 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 		pass("Agy", "not probed — no feature selects the Agy backend");
 	}
 
-	// Version and auth status only, never a model request. A passing answer says the CLI
-	// starts and reports signed-in state -- it does not imply connectivity.
-	if (claudeInUse) {
-		try {
-			pass("Claude", await checkCliVersion(pi, "claude", "Claude", signal));
-		} catch (error) {
-			if (signal.aborted) throw error;
-			fail("Claude", error);
+	// These CLIs share a version probe; only Claude and Codex have a supported auth probe.
+	// Grok and Muse must still say "unverified" rather than implying login or connectivity.
+	for (const backend of ["claude", "grok", "codex", "muse"] as const) {
+		const label = EXTERNAL_BACKENDS[backend].label;
+		if (!backendInUse(backend)) {
+			pass(label, `not probed — no feature selects the ${label} backend`);
+			continue;
 		}
 		try {
-			pass("Claude auth", await checkClaudeAuth(pi, signal));
+			pass(label, await checkCliVersion(pi, backend, label, signal));
 		} catch (error) {
 			if (signal.aborted) throw error;
-			fail("Claude auth", error);
+			fail(label, error);
 		}
-	} else {
-		pass("Claude", "not probed — no feature selects the Claude backend");
-	}
-
-	// Version only, never a model request. No Grok auth probe exists, so a passing
-	// version says the CLI starts — it says nothing about auth or connectivity.
-	if (grokInUse) {
-		try {
-			pass("Grok", await checkCliVersion(pi, "grok", "Grok", signal));
-		} catch (error) {
-			if (signal.aborted) throw error;
-			fail("Grok", error);
+		if (backend === "claude" || backend === "codex") {
+			try {
+				pass(`${label} auth`, await (backend === "claude" ? checkClaudeAuth(pi, signal) : checkCodexAuth(pi, signal)));
+			} catch (error) {
+				if (signal.aborted) throw error;
+				fail(`${label} auth`, error);
+			}
+		} else {
+			pass(`${label} auth`, "unverified — no auth probe exists (version does not imply auth or connectivity)");
 		}
-		pass("Grok auth", "unverified — no auth probe exists (version does not imply auth or connectivity)");
-	} else {
-		pass("Grok", "not probed — no feature selects the Grok backend");
-	}
-
-	// Version and auth status only, never a model request.
-	if (codexInUse) {
-		try {
-			pass("Codex", await checkCliVersion(pi, "codex", "Codex", signal));
-		} catch (error) {
-			if (signal.aborted) throw error;
-			fail("Codex", error);
-		}
-		try {
-			pass("Codex auth", await checkCodexAuth(pi, signal));
-		} catch (error) {
-			if (signal.aborted) throw error;
-			fail("Codex auth", error);
-		}
-	} else {
-		pass("Codex", "not probed — no feature selects the Codex backend");
-	}
-
-	// Version only, never a model request. No Muse auth probe exists, so a passing
-	// version says the CLI starts — it says nothing about auth or connectivity.
-	if (museInUse) {
-		try {
-			pass("Muse", await checkCliVersion(pi, "muse", "Muse", signal));
-		} catch (error) {
-			if (signal.aborted) throw error;
-			fail("Muse", error);
-		}
-		pass("Muse auth", "unverified — no auth probe exists (version does not imply auth or connectivity)");
-	} else {
-		pass("Muse", "not probed — no feature selects the Muse backend");
 	}
 
 	// Pi is in-process: validate the selected physical model against the bridged runtime without a
@@ -417,42 +351,10 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 
 	if (settings) {
 		const defaultBackend = settings.backend ?? "agy";
-		if (defaultBackend === "claude") {
-			pass("Selected model", `claude \`${settings.model}\``);
-			if (!isClaudeEffort(settings.effort)) {
-				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
-			} else if (settings.effort === "default") {
-				pass("Reasoning effort", "built into the selected model");
-			} else {
-				pass("Reasoning effort", settings.effort);
-			}
-		} else if (defaultBackend === "grok") {
-			pass("Selected model", `grok \`${settings.model}\``);
-			if (!isGrokEffort(settings.effort)) {
-				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
-			} else if (settings.effort === "default") {
-				pass("Reasoning effort", "built into the selected model");
-			} else {
-				pass("Reasoning effort", settings.effort);
-			}
-		} else if (defaultBackend === "codex") {
-			pass("Selected model", `codex \`${settings.model}\``);
-			if (!isCodexEffort(settings.effort)) {
-				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
-			} else if (settings.effort === "default") {
-				pass("Reasoning effort", "built into the selected model");
-			} else {
-				pass("Reasoning effort", settings.effort);
-			}
-		} else if (defaultBackend === "muse") {
-			pass("Selected model", `muse \`${settings.model}\``);
-			if (!isMuseEffort(settings.effort)) {
-				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
-			} else if (settings.effort === "default") {
-				pass("Reasoning effort", "built into the selected model");
-			} else {
-				pass("Reasoning effort", settings.effort);
-			}
+		if (isExternalBackend(defaultBackend) && defaultBackend !== "pi") {
+			// readSettings already validates each external pair against this backend's effort range.
+			pass("Selected model", `${defaultBackend} \`${settings.model}\``);
+			pass("Reasoning effort", settings.effort === "default" ? "built into the selected model" : settings.effort);
 		} else if (defaultBackend === "pi") {
 			const parts = splitPiModel(settings.model);
 			const physical = parts ? findPiModel(parts.providerId, parts.modelId) : undefined;
@@ -467,11 +369,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 					pass("Selected model", `pi \`${settings.model}\``);
 				}
 			}
-			if (!isPiEffort(settings.effort)) {
-				fail("Reasoning effort", `\`${settings.effort}\` is unsupported. Run \`/bro config\` to choose another.`);
-			} else {
-				pass("Reasoning effort", piEffortDetail(physical, settings.effort));
-			}
+			pass("Reasoning effort", piEffortDetail(physical, settings.effort));
 		} else if (models) {
 			const current = resolveCatalogSettings(settings, models);
 			if (!current.family) {
@@ -501,59 +399,12 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 				pass(label, detail);
 				if (reviewNotice) lines.push(`- ℹ **${label}:** ${reviewNotice}`);
 			};
-			if (backend === "claude") {
-				if (!isClaudeEffort(pair.effort)) {
-					fail(label, `\`${pair.effort}\` is unsupported for claude \`${pair.model}\`. Run \`/bro config\` to fix this.`);
-					continue;
-				}
-				passCapability(
-					override
-						? `override claude \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
-						: `claude \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
-				);
-				continue;
-			}
-			if (backend === "grok") {
-				if (!isGrokEffort(pair.effort)) {
-					fail(label, `\`${pair.effort}\` is unsupported for grok \`${pair.model}\`. Run \`/bro config\` to fix this.`);
-					continue;
-				}
-				passCapability(
-					override
-						? `override grok \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
-						: `grok \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
-				);
-				continue;
-			}
-			if (backend === "codex") {
-				if (!isCodexEffort(pair.effort)) {
-					fail(label, `\`${pair.effort}\` is unsupported for codex \`${pair.model}\`. Run \`/bro config\` to fix this.`);
-					continue;
-				}
-				passCapability(
-					override
-						? `override codex \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
-						: `codex \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
-				);
-				continue;
-			}
-			if (backend === "muse") {
-				if (!isMuseEffort(pair.effort)) {
-					fail(label, `\`${pair.effort}\` is unsupported for muse \`${pair.model}\`. Run \`/bro config\` to fix this.`);
-					continue;
-				}
-				passCapability(
-					override
-						? `override muse \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`
-						: `muse \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`} · using the shared default`,
-				);
+			if (isExternalBackend(backend) && backend !== "pi") {
+				const selection = `${override ? "override " : ""}${backend} \`${pair.model}\`${pair.effort === "default" ? "" : ` (${pair.effort})`}`;
+				passCapability(override ? selection : `${selection} · using the shared default`);
 				continue;
 			}
 			if (backend === "pi") {
-				if (!isPiEffort(pair.effort)) {
-					fail(label, `\`${pair.effort}\` is unsupported for pi \`${pair.model}\`. Run \`/bro config\` to fix this.`);
-					continue;
-				}
 				const parts = splitPiModel(pair.model);
 				if (!parts) {
 					fail(label, `\`${pair.model}\` is not a \`<provider>/<id>\` Pi model. Run \`/bro config\` to fix this.`);
