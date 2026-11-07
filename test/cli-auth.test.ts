@@ -92,7 +92,7 @@ exit 99
 
 test("Codex child uses selected CODEX_HOME, removes API override, and forces ChatGPT login", async () => {
   await withFakeExecutables({ codex: `#!/bin/sh
-if [ "$1" = "login" ]; then echo 'Logged in using ChatGPT'; exit 0; fi
+if [ "$1" = "login" ]; then echo 'Logged in using ChatGPT' >&2; exit 0; fi
 [ "$1" = "exec" ] || exit 80
 [ -z "$CODEX_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] || exit 81
 printf '%s' "$CODEX_HOME" > "$BIN_DIR/selected-profile"
