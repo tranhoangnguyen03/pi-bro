@@ -97,6 +97,32 @@ Run `npm run docs:check` whenever commands, feature guides, links or data access
 
 Before release, manually follow the [getting-started guide](getting-started.md) in a clean Pi session. For UI changes, compare visible controls, cancellation, error states, editor insertion and screen sizes against the feature guide. For backend changes, verify that the [permissions reference](reference/data-and-permissions.md) matches actual CLI settings. Confirm external URLs and images render on GitHub and npm; the offline checker cannot establish that.
 
+## Private session recovery
+
+Use a disposable Pi session and a fake backend that can pause a response. Test on both
+the repository's pinned Pi version and the installed supported Pi version.
+
+1. Complete BTW turns, leave an unsent draft, restart Pi, and check both restore.
+   Change access mode and run `/clear`; neither restored mode nor cleared history
+   may revert after another restart.
+2. Open and close BTW five times without changing anything. The session JSONL must
+   not gain duplicate Bro custom snapshots merely because the modal was visited.
+3. Start a slow BTW response, close before it finishes, reopen and send another
+   question. The second prompt and saved session entries must **not** contain an
+   unfinished `…` answer or the cancelled question. Repeat with `/retry`;
+   the previous completed answer must survive cancellation.
+4. From a session with saved BTW/Grill/Simplify/Show work, use `/tree` to select
+   an earlier point before that work. Bro must show the selected branch's state
+   immediately, with no data copied from the abandoned branch. Make a new update,
+   restart, and verify the abandoned branch's data stays absent. Return to the
+   original branch and verify its own history is intact.
+5. Check /resume, /reload, forks, supported Desktop/RPC and PiG hosts separately.
+   Native Pi-backed BTW continuation IDs may expire on restart and need reseeding.
+   Do not claim coverage for paths not actually exercised.
+6. Remember: Bro custom entries are **on disk in the Pi session JSONL**. Check how
+   the current host exports/shares that file before claiming any export redaction.
+   Model-context isolation is not confidentiality of the session file.
+
 ## Elevate
 
 Use interactive Pi with a configured BTW backend and a non-sensitive sample task.
