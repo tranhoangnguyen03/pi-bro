@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { mkdir, writeFile, chmod, readFile, rename, rm } from "node:fs/promises";
 import { initTheme, getAgentDir } from "@earendil-works/pi-coding-agent";
-const { openGuidedReview } = await import(pathToFileURL(join(buildDir, "review-ui.js")).href);
+const { openGuidedReview, matchSavedReview, savedReviewLabel } = await import(pathToFileURL(join(buildDir, "review-ui.js")).href);
 const { newReviewView } = await import(pathToFileURL(join(buildDir, "review-modal.js")).href);
 const { saveReview, loadReview } = await import(pathToFileURL(join(buildDir, "review.js")).href);
 initTheme();
@@ -835,7 +835,7 @@ test("delete picker confirms and removes only the selected saved review", async 
 	const ctx = {
 		mode: "tui",
 		ui: {
-			select: async (_title, labels) => labels.find(label => label.includes("delete-suite/repo #90991")),
+			select: async (_title, labels) => { assert.ok(labels.some(label => label.includes("Delete only this record")), "picker title must keep all letters"); return labels.find(label => label.includes("delete-suite/repo #90991")); },
 			confirm: async (title, body) => {
 				events.push({ title, body });
 				return approve;
@@ -848,11 +848,98 @@ test("delete picker confirms and removes only the selected saved review", async 
 		assert.ok(await loadReview(root, id), "cancelled confirmation must retain the record");
 		assert.equal(await readFile(join(capture, "canary"), "utf8"), "only this review");
 		approve = true;
-		await openGuidedReview(ctx, "delete", "");
+		// Local ID resolution must not spawn gh or require repository cwd.
+		await openGuidedReview(ctx, "delete 90991", "");
 		assert.equal(await loadReview(root, id), undefined);
 		await assert.rejects(readFile(join(capture, "canary"), "utf8"), /ENOENT/);
 		assert.ok(events.some(event => event.message?.includes("Deleted saved review")));
 	} finally {
+		await rm(join(root, id + ".json"), { force: true });
+		await rm(capture, { recursive: true, force: true });
+	}
+});
+
+test("saved target matching is offline, scoped by host/repository, and rejects ambiguous numbers", () => {
+	const build = (repository, number, host = "github.com") => ({
+		snapshot: { target: { host, repository, number, title: "Return intact", head: "abcd" } },
+	});
+	const saved = [
+		build("team-one/repo", 42),
+		build("team-two/repo", 42),
+		build("team-three/repo", 50, "git.example.org"),
+	];
+	assert.match(savedReviewLabel(saved[0]), /Return intact/, "picker must not strip letters in the title");
+	assert.match(matchSavedReview(saved, "42").error, /multiple/i);
+	assert.equal(matchSavedReview(saved, "50").selected, saved[2]);
+	assert.equal(matchSavedReview(saved, "https://github.com/team-two/repo/pull/42/files").selected, saved[1]);
+	assert.equal(matchSavedReview(saved, "https://git.example.org/team-three/repo/pull/50").selected, saved[2]);
+	assert.equal(matchSavedReview(saved, "https://github.com/team-three/repo/pull/50").selected, undefined);
+	assert.equal(matchSavedReview(saved, "https://github.com/team-one/repo/pull/42").selected, saved[0]);
+	assert.equal(matchSavedReview(saved, "https://github.com/team-one/repo/pull/999").selected, undefined);
+	assert.match(matchSavedReview(saved, "42bad").error, /number|URL/i);
+});
+
+test("delete from within an open review confirms and never writes a new record on teardown", async () => {
+	const id = "f".repeat(64);
+	const root = join(getAgentDir(), "bro-reviews");
+	const capture = join(root, "source", id);
+	await saveReview(root, {
+		version: 1, id,
+		snapshot: {
+			target: { repository: "in-modal/repo", number: 99123, head: "abcdef", base: "base", title: "Delete here" },
+			mergeBase: "merge", gitDir: capture, checkout: capture, files: [], diff: "",
+		},
+		turns: [], guide: { summary: "Ready", topics: [] }, ui: newReviewView(),
+	});
+	await mkdir(capture, { recursive: true });
+	await writeFile(join(capture, "only-this-capture"), "captured");
+	let panel;
+	let approve = false;
+	let approvals = 0;
+	const ctx = {
+		mode: "tui",
+		ui: {
+			notify() {},
+			select: async (_title, labels) => labels.find(label => label.includes("in-modal/repo #99123")),
+			confirm: async (title) => { approvals++; assert.match(title, /Delete this saved review/); return approve; },
+			custom: factory => new Promise(resolve => {
+				panel = factory(
+					{ terminal: { rows: 40, columns: 100 }, requestRender() {} },
+					{ fg: (_c, text) => text, bold: text => text },
+					{}, resolve,
+				);
+			}),
+		},
+	};
+	const launchDelete = () => {
+		panel.render(100);
+		panel.handleInput("\t"); // Contents to reading body
+		panel.handleInput("\t"); // Reading body to actions
+		panel.handleInput("\x1b[B");
+		panel.handleInput("\x1b[B"); // Ask, Regenerate, Delete
+		panel.handleInput("\r");
+	};
+	try {
+		let opened = openGuidedReview(ctx, "resume", "");
+		while (!panel) await new Promise(resolve => setTimeout(resolve, 10));
+		launchDelete();
+		await new Promise(resolve => setTimeout(resolve, 20));
+		assert.equal(approvals, 1);
+		assert.ok(await loadReview(root, id), "declined modal delete keeps saved record");
+		panel.handleInput("\x1b");
+		await opened;
+
+		panel = undefined;
+		approve = true;
+		opened = openGuidedReview(ctx, "resume", "");
+		while (!panel) await new Promise(resolve => setTimeout(resolve, 10));
+		launchDelete();
+		await opened;
+		assert.equal(approvals, 2);
+		assert.equal(await loadReview(root, id), undefined, "modal deletion must not be undone by dispose");
+		await assert.rejects(readFile(join(capture, "only-this-capture"), "utf8"), /ENOENT/);
+	} finally {
+		panel?.dispose();
 		await rm(join(root, id + ".json"), { force: true });
 		await rm(capture, { recursive: true, force: true });
 	}
