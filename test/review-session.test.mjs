@@ -926,7 +926,8 @@ test("delete from within an open review confirms and never writes a new record o
 		await new Promise(resolve => setTimeout(resolve, 20));
 		assert.equal(approvals, 1);
 		assert.ok(await loadReview(root, id), "declined modal delete keeps saved record");
-		panel.handleInput("\x1b");
+		panel.handleInput("\x1b"); // Leave action row.
+		panel.handleInput("\x1b"); // Close from Contents.
 		await opened;
 
 		panel = undefined;
