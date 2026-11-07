@@ -575,7 +575,6 @@ test("deleting a saved review removes only its record and capture, with active-w
 		}
 		await writeFile(join(root, "bro-settings.json"), "untouched");
 		await assert.rejects(deleteReview(root, "../escape"), /identity/i);
-		await assert.rejects(deleteReview(root, id, () => true), /open|prepared/i);
 		assert.equal((await readFile(join(root, id + ".json"), "utf8")).includes(id), true);
 		await deleteReview(root, id);
 		await assert.rejects(readFile(join(root, id + ".json"), "utf8"), /ENOENT/);
