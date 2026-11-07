@@ -13,7 +13,7 @@ pi --tui-mode fullscreen -e ./src/bro.ts
 
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) is the code map and lists the
 invariants every change must keep. [docs/TESTING.md](docs/TESTING.md) is the
-manual end-to-end checklist for changes the offline tests cannot cover.
+selective manual qualification guide for boundaries the offline tests cannot cover.
 
 ## Tests
 
