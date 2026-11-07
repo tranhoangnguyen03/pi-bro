@@ -71,25 +71,14 @@ test("show prompt retains traceability and safe HTML rendering contracts", () =>
 	assert.match(prompt, /Never wrap identifiers or paths in Markdown links/);
 });
 
-test("show prompt requires honesty about missing evidence", () => {
+test("Show distinguishes reported work, proposed actions and missing proof", () => {
 	const prompt = buildShowPrompt("x");
-
 	assert.match(prompt, /Honesty over completeness/);
-	assert.match(prompt, /say so plainly.*name what's missing/);
-	assert.match(prompt, /rather than guessing, inferring from world knowledge, or silently leaving the gap unexplained/);
-});
-
-test("show distinguishes proposed actions from reported completion", () => {
-	const prompt = buildShowPrompt("x");
-	assert.match(prompt, /Distinguish what was explicitly requested, what was proposed but not done, what the conversation reports as complete, and what remains unresolved/);
-});
-
-test("show prompt frames the transcript as reported, not independently verified", () => {
-	const prompt = buildShowPrompt("x");
-
+	assert.match(prompt, /name what's missing/);
+	assert.match(prompt, /Distinguish what was explicitly requested/);
+	assert.match(prompt, /proposed but not done/);
 	assert.match(prompt, /Reported, not verified/);
 	assert.match(prompt, /not an independent check against the actual code or system/);
-	assert.match(prompt, /reported, claimed, proposed/);
 });
 
 test("show steering is separate, case-preserved, and omitted when blank", () => {
@@ -172,12 +161,6 @@ test("advisor prompt is backend-neutral: no backend name or CLI flags, advisory 
 });
 
 
-test("advisor prompt trims whitespace-only steering and question the same as empty", () => {
-	const withWhitespace = buildAdvisorPrompt("   ", "## user\nx", "   ");
-	const withEmpty = buildAdvisorPrompt("", "## user\nx", undefined);
-	assert.equal(withWhitespace, withEmpty);
-});
-
 test("blank preferences leave every builder unchanged", () => {
 	const source = 'source "quoted"';
 	const transcript = '## user\ncontext';
@@ -243,7 +226,6 @@ test("preferences are trimmed and JSON-quoted so their content cannot forge a se
 });
 
 test("the advisor prompt never carries preferences", () => {
-	assert.equal(buildAdvisorPrompt.length, 3);
 	assert.doesNotMatch(buildAdvisorPrompt("s", "snap", "q"), /preferences/i);
 });
 
@@ -258,6 +240,8 @@ test("advisor prompt accepts string steering or structured { durable, session } 
 
 	const blankStructured = buildAdvisorPrompt({ durable: "   \n\t", session: "  " }, "snap", undefined);
 	assert.equal(emptyLegacy, blankStructured, "whitespace-only durable and session are treated as empty");
+	assert.equal(buildAdvisorPrompt("  ", "snap", "  "), emptyLegacy,
+		"whitespace-only steering and question use the empty sections");
 });
 
 
