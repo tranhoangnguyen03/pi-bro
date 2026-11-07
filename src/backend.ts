@@ -1746,8 +1746,9 @@ async function executePi(
 		const modelRuntime = await Promise.race([bridgePiModelRuntime(host, agentDir), stopped.then(() => undefined)]);
 		if (!modelRuntime) return latchedOutcome();
 		// Fall back to the host registry, which may know a model the rebuilt runtime does not.
-		// Keep the host's resolved endpoint and metadata; the fresh runtime supplies transport/auth.
-		const model = host?.modelRegistry?.find(parts.providerId, parts.modelId) ?? modelRuntime.getModel(parts.providerId, parts.modelId);
+		// Only the host registry is authoritative for identity, endpoint and metadata.
+		// The fresh runtime supplies credentials/transport, not a fallback model catalog.
+		const model = host?.modelRegistry?.find(parts.providerId, parts.modelId);
 		if (!model) {
 			return { status: "failure", message: piErrorMessage(request.feature, `model \`${selection.model}\` is not in your Pi model catalog. Run \`/bro doctor\`.`) };
 		}
