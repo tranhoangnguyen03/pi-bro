@@ -92,6 +92,7 @@ const piRegistry = (models) => {
 		getRegisteredNativeProvider: () => undefined,
 		getRegisteredProviderConfig: () => undefined,
 		getAll: () => [...byKey.values()],
+		getAvailable: () => [...byKey.values()].filter((m) => m.auth !== false),
 		getProviderAuthStatus: () => ({ source: "stored" }),
 		getApiKeyForProvider: async () => undefined,
 		find: (provider, id) => byKey.get(`${provider}/${id}`),
@@ -224,26 +225,36 @@ test("Pi catalog honors workspace trust, including a throwing trust getter", asy
 	}
 });
 
-test("Pi doctor uses disk model and auth updates even when the host registry is stale", async () => {
+test("Pi doctor respects host reload: disk auth changes cannot create a model absent from its registry", async () => {
 	const directory = process.env.PI_CODING_AGENT_DIR;
 	const modelsPath = join(directory, "models.json");
 	const authPath = join(directory, "auth.json");
 	const settings = { version: 2, default: { backend: "pi", model: "doctor-disk/fresh", effort: "default" } };
+	const hostModel = { provider: "doctor-disk", id: "fresh", api: "openai-completions",
+		baseUrl: "https://example.invalid/v1", auth: false };
 	await writeFile(modelsPath, JSON.stringify({ providers: {
 		"doctor-disk": { api: "openai-completions", baseUrl: "https://example.invalid/v1", models: [{ id: "fresh" }] },
 	} }));
 	try {
-		const missingAuth = await piDoctor([], settings);
-		assert.match(missingAuth.report, /- ✗ \*\*Selected model:\*\* .*has no configured auth/);
-		assert.match(missingAuth.report, /- ✗ \*\*Explain:\*\* .*has no configured auth/);
+		const missingAuth = await piDoctor([hostModel], settings);
+		assert.match(missingAuth.report, /- ✗ \\*\\*Selected model:\\*\\* .*has no configured auth/);
+		assert.match(missingAuth.report, /- ✗ \\*\\*Explain:\\*\\* .*has no configured auth/);
 
 		await writeFile(authPath, JSON.stringify({ "doctor-disk": { type: "api_key", key: "offline-fixture" } }));
-		const { report, calls } = await piDoctor([], settings);
+		// Until the host refreshes models.json, its registry remains authoritative.
+		const stale = await piDoctor([], settings);
+		assert.deepEqual(stale.calls, []);
+		assert.match(stale.report, /- ✗ \\*\\*Selected model:\\*\\* .*unavailable or virtual/);
+		assert.match(stale.report, /- ✗ \\*\\*Explain:\\*\\* .*unavailable or virtual/);
+		assert.match(stale.report, /- ✓ \\*\\*Pi model catalog:\\*\\* 0 physical models/);
+
+		// A host reload makes the same model and now-authenticated source visible.
+		const { report, calls } = await piDoctor([{ ...hostModel, auth: true }], settings);
 		assert.deepEqual(calls, []);
-		assert.match(report, /- ✓ \*\*Pi model catalog:\*\* [1-9]/);
-		assert.match(report, /- ✓ \*\*Selected model:\*\* pi `doctor-disk\/fresh`/);
-		assert.match(report, /- ✓ \*\*Explain:\*\* pi `doctor-disk\/fresh`/);
-		assert.match(report, /- ✓ \*\*Guided review:\*\* pi `doctor-disk\/fresh`/);
+		assert.match(report, /- ✓ \\*\\*Pi model catalog:\\*\\* [1-9]/);
+		assert.match(report, /- ✓ \\*\\*Selected model:\\*\\* pi \`doctor-disk\\/fresh\`/);
+		assert.match(report, /- ✓ \\*\\*Explain:\\*\\* pi \`doctor-disk\\/fresh\`/);
+		assert.match(report, /- ✓ \\*\\*Guided review:\\*\\* pi \`doctor-disk\\/fresh\`/);
 		assert.doesNotMatch(report, /✗/);
 	} finally {
 		await rm(modelsPath, { force: true });
