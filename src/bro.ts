@@ -8,7 +8,7 @@ import {
 	resolveBtwThread,
 } from "./btw.ts";
 import { doctorReport, showBroConfigModal } from "./doctor.ts";
-import { setPiHostContext } from "./backend.ts";
+import { setPiHostContext, stopActiveBackendExecutions } from "./backend.ts";
 import { openElevateModal } from "./elevate.ts";
 import { openArchitectureDocs } from "./architecture.ts";
 import { openGrillModal } from "./grill.ts";
@@ -114,7 +114,14 @@ export default async function bro(pi: ExtensionAPI) {
 		}
 	};
 
-	pi.on("session_shutdown", async () => { stopGuidedReviews(); });
+	pi.on("session_shutdown", async () => {
+		// Both stop immediately. Wait for both cleanups, even if a save fails.
+		const [reviews, backends] = await Promise.allSettled([
+			stopGuidedReviews(), stopActiveBackendExecutions(),
+		]);
+		if (reviews.status === "rejected") throw reviews.reason;
+		if (backends.status === "rejected") throw backends.reason;
+	});
 
 	pi.on("session_start", async (_event, _ctx) => {
 		lastResult = undefined;

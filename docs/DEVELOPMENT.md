@@ -217,12 +217,21 @@ SIGTERM to the POSIX process group, SIGKILL after the grace period, then pipe
 closure and bounded close-wait completion. Windows only guarantees direct-child
 termination. Benchmark identity, reporting fields, and no-retry policy are unchanged.
 
-Shutdown/reload with an active detached backend remains **unverified** across Pi
-and PiG (#64). Guided Review registers `session_shutdown` cancellation via `stopGuidedReviews()`; this is abort wiring, not proof of descendant cleanup or a complete save flush on abrupt shutdown. Other execution still depends on the host aborting the supplied signal; there is no universal backend shutdown registry. Headless command execution without a supplied
-signal is bounded by its deadline, not a verified shutdown hook. An abrupt host
-exit can leave descendants running; do not treat the offline cancellation tests
-as shutdown/reload qualification. A follow-up host test should reload/shut down
-during a fake in-flight consultation and assert no delayed child activity.
+On Pi's **graceful** `session_shutdown`, Bro aborts active backend executions
+(including CLI preparation and in-process Pi calls), waits for their normal
+bounded cleanup, then waits for Guided Review's existing
+serialized save queue to flush before Pi invalidates the old session. Offline
+tests exercise the registered shutdown handler and a real fake CLI process;
+these do **not** certify OS-level kill, live providers or PiG host behavior.
+Backend processes started outside this extension's session are not isolated by
+an OS security boundary. In-process Pi model cancellation remains cooperative;
+a provider that never yields may still work after Bro returns from abort.
+
+An **abrupt** process exit, SIGKILL, machine crash or failed disk write cannot
+be flushed. Backend review of shutdown/reload on physical Pi and PiG remains
+open (#64), especially descendant behavior. The ordinary host-provided abort
+signal and per-attempt deadline still apply. Do not present fake-CLI tests as
+proof of real-provider permission enforcement or abrupt shutdown durability.
 
 ## Tests
 

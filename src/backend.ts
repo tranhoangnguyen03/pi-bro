@@ -1763,7 +1763,7 @@ function invalidModelEffortSelection(
 // request; on cancellation, host deadline, or a protocol failure, stops the whole POSIX process
 // group (SIGTERM, then SIGKILL after a bounded grace period) before resolving. `options` is for
 // offline tests only -- production callers never override the deadline or kill-escalation delay.
-export async function execute(
+async function executeOnce(
 	request: BackendRequest,
 	selection: BackendSelection,
 	signal: AbortSignal,
@@ -1833,6 +1833,33 @@ export async function execute(
 		return executeAdvisorStdin(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
 	}
 	return executeArgvPrint(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
+}
+
+// The extension owns only operations that are still running. This covers both
+// pre-spawn CLI preparation and in-process Pi sessions without a second process
+// registry. Shutdown aborts the request signal and awaits normal adapter cleanup.
+const activeBackendExecutions = new Map<AbortController, Promise<BackendOutcome>>();
+
+export async function stopActiveBackendExecutions(): Promise<void> {
+	const active = [...activeBackendExecutions];
+	for (const [controller] of active) controller.abort();
+	const finished = await Promise.allSettled(active.map(([, result]) => result));
+	for (const result of finished) if (result.status === "rejected") throw result.reason;
+}
+
+export function execute(
+	request: BackendRequest,
+	selection: BackendSelection,
+	signal: AbortSignal,
+	onProgress?: BackendOnProgress,
+	options?: BackendExecuteOptions,
+	host?: PiHostContext,
+): Promise<BackendOutcome> {
+	const controller = new AbortController();
+	const combinedSignal = AbortSignal.any([signal, controller.signal]);
+	const pending = executeOnce(request, selection, combinedSignal, onProgress, options, host);
+	activeBackendExecutions.set(controller, pending);
+	return pending.finally(() => { activeBackendExecutions.delete(controller); });
 }
 
 /** Coalesce text-only progress without leaving a timer after cancellation.

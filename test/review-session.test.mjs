@@ -117,6 +117,63 @@ test("closing a review saves once; teardown without Esc still saves", async () =
 	}
 });
 
+test("session shutdown waits for pending review persistence before host disposal", async () => {
+	const root = join(getAgentDir(), "bro-reviews");
+	const id = "6".repeat(64);
+	const file = join(root, `${id}.json`);
+	const record = {
+		version: 1, id,
+		snapshot: {
+			target: { repository: "a/b", number: 18, head: "abcdef", base: "base" },
+			mergeBase: "base", gitDir: root, checkout: root, files: [], diff: "",
+		},
+		turns: [], ui: newReviewView(),
+	};
+	await saveReview(root, record);
+	let resolveMount;
+	const mounted = new Promise((resolve) => { resolveMount = resolve; });
+	let resolveOverlay;
+	let component;
+	const opened = openGuidedReview({
+		mode: "tui",
+		ui: {
+			select: async (_title, labels) => labels.find((label) => label.includes("#18")),
+			notify() {},
+			custom: (factory) => new Promise((resolve) => {
+				resolveOverlay = resolve;
+				component = factory(
+					{ terminal: { rows: 20 }, requestRender() {} },
+					{ fg: (_c, text) => text, bold: (text) => text },
+					{}, resolve,
+				);
+				resolveMount();
+			}),
+		},
+	}, "resume", "");
+	try {
+		await mounted;
+		// The existing save queue should restore even an unsaved (removed) record.
+		// Ordinary dispose() only starts a best-effort asynchronous save.
+		await rm(file);
+		const shutdownHandlers = [];
+		const registerBro = (await import(pathToFileURL(join(sourceDir, "bro.ts")).href)).default;
+		await registerBro({
+			on(event, handler) { if (event === "session_shutdown") shutdownHandlers.push(handler); },
+			registerTool() {}, registerCommand() {},
+		});
+		assert.ok(shutdownHandlers.length > 0);
+		await shutdownHandlers[0]({ type: "session_shutdown", reason: "reload" }, {});
+		const restored = await loadReview(root, id);
+		assert.ok(restored, "session_shutdown must not return before review data is durable");
+		assert.equal(restored.id, id);
+	} finally {
+		component?.dispose();
+		resolveOverlay?.();
+		await opened;
+		await rm(file, { force: true });
+	}
+});
+
 test("resume warns about unreadable reviews but still opens a healthy one", async () => {
 	const root = join(getAgentDir(), "bro-reviews"),
 		id = "f".repeat(64),

@@ -3,10 +3,11 @@ import { withFakeExecutable } from "./test-fake-exec.ts";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, realpath } from "node:fs/promises";
+import { readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { PassThrough } from "node:stream";
+import registerBro from "../src/bro.ts";
 import {
 	type AgySelection,
 	type BackendProgress,
@@ -24,6 +25,7 @@ import {
 	piToolAllowlist,
 	reviewBackendNotice,
 	setPiHostContext,
+	stopActiveBackendExecutions,
 	splitPiModel,
 	textProgressThrottle,
 } from "../src/backend.ts";
@@ -758,6 +760,75 @@ exit 0
 			delete process.env.BIN_DIR;
 		},
 	);
+});
+
+test("graceful teardown cancels active backend work and does not poison the next request", async () => {
+	await withFakeAgy(
+		`#!/bin/sh
+	echo started > "$BIN_DIR/started"
+	sleep 2
+	echo 'late success' > "$BIN_DIR/late"
+	printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"late"}}'
+`,
+		async (binDir) => {
+			const pending = execute(
+				{ feature: "explain", access: "restricted", prompt: "Explain" },
+				{ model: "test" }, new AbortController().signal,
+				undefined, { deadlineMs: 10_000, killEscalationMs: 80 },
+			);
+			for (let i = 0; !existsSync(join(binDir, "started")) && i < 200; i++) {
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+			assert.equal(existsSync(join(binDir, "started")), true, "child must be alive before shutdown");
+			const shutdownHandlers: Array<(...args: any[]) => unknown> = [];
+			const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+			process.env.PI_CODING_AGENT_DIR = join(binDir, "agent");
+			try {
+				await registerBro({
+					on(event: string, handler: (...args: any[]) => unknown) {
+						if (event === "session_shutdown") shutdownHandlers.push(handler);
+					},
+					registerTool() {}, registerCommand() {},
+				} as any);
+				assert.ok(shutdownHandlers.length > 0);
+				await shutdownHandlers[0]!({ type: "session_shutdown", reason: "reload" }, {});
+			} finally {
+				if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+				else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+			}
+			const stopped = await pending;
+			assert.equal(stopped.status, "cancelled");
+			assert.equal(existsSync(join(binDir, "late")), false, "no late child action after shutdown");
+
+			// The stop applies only to active processes, not a permanent global-disable flag.
+			await writeFile(join(binDir, "agy"), `#!/bin/sh
+printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"new request"}}'
+`);
+			const next = await execute(
+				{ feature: "explain", access: "restricted", prompt: "Explain" },
+				{ model: "test" }, new AbortController().signal,
+			);
+			assert.equal(next.status, "success");
+			if (next.status === "success") assert.equal(next.text, "new request");
+		},
+	);
+});
+
+test("graceful teardown prevents a CLI from spawning after async preparation", async () => {
+	await withFakeExecutable("grok", `#!/bin/sh
+	echo started > "$BIN_DIR/spawned"
+	exit 0
+`, async (binDir) => {
+		const pending = execute(
+			{ feature: "explain", access: "restricted", prompt: "Explain" },
+			{ backend: "grok", model: "test" }, new AbortController().signal,
+		);
+		await stopActiveBackendExecutions();
+		const outcome = await pending;
+		assert.equal(outcome.status, "cancelled");
+		assert.equal(existsSync(join(binDir, "spawned")), false,
+			"shutting down during async preparation must not start another model call");
+	});
 });
 
 test("timeout, cancel, and unexpected signal handling", async () => {
