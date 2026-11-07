@@ -14,6 +14,7 @@ import {
 	replaceGuide,
 	guideEvidence,
 	buildReviewPrompt,
+	deleteReview,
 	listReviews,
 	loadReview,
 	parseGuide,
@@ -49,6 +50,53 @@ export async function openGuidedReview(
 		return;
 	}
 	const root = join(getAgentDir(), "bro-reviews");
+
+	if (value === "delete" || value.startsWith("delete ")) {
+		const requested = value.slice("delete".length).trim();
+		let selected: ReviewRecord | undefined;
+		if (!requested) {
+			const saved = await listReviews(root, (file, error) =>
+				ctx.ui.notify(`Cannot load ${file}: ${String(error)}. Original file left unchanged.`, "warning"));
+			if (!saved.length) {
+				ctx.ui.notify("There are no saved reviews to delete.", "info");
+				return;
+			}
+			saved.sort((a, b) => a.snapshot.target.repository.localeCompare(b.snapshot.target.repository) ||
+				b.snapshot.target.number - a.snapshot.target.number);
+			const labels = saved.map(item => `${item.snapshot.target.repository} #${item.snapshot.target.number} · ${safeReviewText(item.snapshot.target.title ?? "").replace(/[\\r\\n\\t]/g, " ")} · ${item.snapshot.target.head.slice(0, 8)}`);
+			const choice = await ctx.ui.select("Delete saved review", labels);
+			if (!choice) return;
+			selected = saved[labels.indexOf(choice)];
+		} else {
+			const target = await resolveReviewTarget(requested, ctx.cwd, new AbortController().signal);
+			selected = await loadReview(root, reviewKey(target));
+		}
+		if (!selected) {
+			ctx.ui.notify("No saved review matches that target.", "info");
+			return;
+		}
+		const id = selected.id;
+		if (activeReviews.has(id)) {
+			ctx.ui.notify("That review is currently open or being prepared. Close it before deleting.", "warning");
+			return;
+		}
+		const title = `${selected.snapshot.target.repository} #${selected.snapshot.target.number}`;
+		const approved = await ctx.ui.confirm("Delete saved review?", `Permanently remove ${title}, its notes, unsent drafts and all captured Git source? This cannot be undone.`);
+		if (!approved) return;
+		if (activeReviews.has(id)) {
+			ctx.ui.notify("That review became active. Close it and retry deletion.", "warning");
+			return;
+		}
+		// Reserve this identity while deletion runs so a new review cannot start writing it.
+		activeReviews.set(id, undefined);
+		try {
+			await deleteReview(root, id);
+			ctx.ui.notify(`Deleted saved review ${title} and its captured source.`, "info");
+		} finally {
+			activeReviews.delete(id);
+		}
+		return;
+	}
 	let record: ReviewRecord | undefined;
 	let fresh = false;
 	if (value === "resume" || !value) {
