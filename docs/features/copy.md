@@ -19,8 +19,8 @@ In Help, Esc returns to the previous view. **Enter** adds a newline in Edit; it 
 
 ## What is preserved
 
-- The source comes from the last normally completed assistant message in the active Pi session, not from the terminal's rendered output. Bro copies **text content**, including Markdown tables, links and code fences; reasoning and nontext parts are excluded.
-- Raw Markdown is copied as-is if you **do not edit** it, including original tabs and line endings. Pi's `Editor` displays tabs as spaces and normalizes line endings when editing, so after you change the draft its output follows the editor's text rules.
+- The source comes from the last normally completed assistant message in the active Pi session, not from the terminal's rendered output. Bro copies **text content**, including Markdown tables, links and code fences; reasoning and nontext parts are excluded. If one reply contains several text blocks, Bro joins them with **one newline between blocks** (same rule as Simplify); that separator is an intentional representation of the reply, not a byte in either source block.
+- Raw Markdown is copied as-is when you do **not edit** it. When you **do edit**, Bro applies the local edit to the original text, preserving untouched tabs, CRLF and indentation. Pi's `Editor` displays tabs as spaces and normalizes line endings; editing *inside* a tab expands that tab to spaces, while untouched tabs and line breaks keep their original form. The change is local and deterministic, with no model calls.
 - Preview uses the **same draft** as Edit. Switching views does not reset the editor or create another copy.
 - Large pastes: copy always reads `Editor.getExpandedText()` rather than its shortened on-screen paste markers.
 
@@ -29,6 +29,8 @@ The modal is temporary. Closing it discards the scratch draft; it does not chang
 ## When there's no reply or the terminal is too small
 
 If Pi has no completed assistant reply, Bro displays a notice instead of opening an empty modal.
+
+Pi's built-in `Editor` renders at most **about 30% of the terminal height** on Pi 1.3–1.5; a long draft can scroll inside this smaller region even when the surrounding Bro modal has unused space. No supported editor-height setting exists in those Pi versions. Bro keeps this upstream editor rather than adding a custom one solely to fill the modal.
 
 On a very small terminal, the editor refuses blind typing and asks for more space. You can still preview, copy, and close. If clipboard access fails, Bro shows an error rather than claiming a successful copy.
 

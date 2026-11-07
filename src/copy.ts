@@ -4,36 +4,24 @@
  * One Editor owns the draft. Preview is a rendering of that same draft;
  * clipboard copy never reads terminal output or the Markdown renderer.
  */
-import type { ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import { Editor, Markdown, matchesKey, wrapTextWithAnsi, type Component, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
 import { broOverlayArea, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
 import { hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
+import { latestCompletedAssistantText } from "./last-assistant.ts";
+import { RawMarkdownDraft } from "./copy-draft.ts";
 
 type CopyText = (markdown: string) => Promise<void>;
 type CopyView = "edit" | "preview";
-
-/** Preserve the original Markdown exactly, including leading/trailing blank lines. */
-export function latestCompletedMarkdown(branch: readonly SessionEntry[]): string | undefined {
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const entry = branch[i]!;
-    if (entry.type !== "message" || entry.message.role !== "assistant" || entry.message.stopReason !== "stop") continue;
-    const markdown = entry.message.content
-      .filter((part): part is { type: "text"; text: string } => part.type === "text")
-      .map((part) => part.text)
-      .join("\n");
-    if (markdown.trim()) return markdown;
-  }
-  return undefined;
-}
 
 export class CopyModal implements Component {
   readonly editor: Editor;
   private readonly preview: Markdown;
   private readonly scroller: Scroller;
   private readonly original: string;
-  private readonly normalizedInitial: string;
+  private readonly draft: RawMarkdownDraft;
   private readonly tui: TUI;
   private readonly theme: Theme;
   private readonly onClose: () => void;
@@ -61,8 +49,9 @@ export class CopyModal implements Component {
     this.editor = new Editor(tui, editorTheme);
     this.editor.focused = true;
     this.editor.setText(markdown);
-    this.normalizedInitial = this.editor.getExpandedText();
+    this.draft = new RawMarkdownDraft(markdown, this.editor.getExpandedText());
     this.editor.onChange = () => {
+      this.draft.update(this.editor.getExpandedText());
       this.discardArmed = false;
       this.notice = "";
       this.tui.requestRender();
@@ -77,11 +66,8 @@ export class CopyModal implements Component {
     this.tui.requestRender();
   }
 
-  /** Preserve unedited source verbatim; Pi Editor normalizes tabs and CRLF on load. */
-  private markdown(): string {
-    const draft = this.editor.getExpandedText();
-    return draft === this.normalizedInitial ? this.original : draft;
-  }
+  /** Copy and Preview use raw source with untouched bytes preserved across edits. */
+  private markdown(): string { return this.draft.text; }
 
   private copy(): void {
     // Snapshot before the async clipboard operation. Always copy expanded paste
@@ -218,7 +204,7 @@ export async function openCopyModal(ctx: ExtensionCommandContext): Promise<void>
     ctx.ui.notify("Use /bro copy in Pi's interactive terminal.", "warning");
     return;
   }
-  const markdown = latestCompletedMarkdown(ctx.sessionManager.getBranch());
+  const markdown = latestCompletedAssistantText(ctx.sessionManager.getBranch());
   if (!markdown) {
     ctx.ui.notify("No completed assistant reply to copy yet.", "warning");
     return;

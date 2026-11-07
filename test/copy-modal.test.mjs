@@ -6,7 +6,10 @@ import { stripVTControlCharacters } from "node:util";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { buildDir } from "./test-build.mjs";
 
-const { CopyModal, latestCompletedMarkdown } = await import(pathToFileURL(join(buildDir, "copy.js")).href);
+const { CopyModal } = await import(pathToFileURL(join(buildDir, "copy.js")).href);
+const { latestCompletedAssistantText } = await import(pathToFileURL(join(buildDir, "last-assistant.js")).href);
+const { RawMarkdownDraft, normalizeEditorMarkdown } = await import(pathToFileURL(join(buildDir, "copy-draft.js")).href);
+const { latestAssistant } = await import(pathToFileURL(join(buildDir, "explain-modal.js")).href);
 initTheme();
 const theme = { fg: (_color, text) => text, bold: text => text };
 const mk = (markdown, copied = [], rows = 40, columns = 100, copier) => {
@@ -32,15 +35,71 @@ test("Copy source chooses the last completed assistant text, not terminal output
     assistant(markdown),
     assistant("ignored in-progress", "toolUse"),
   ];
-  assert.equal(latestCompletedMarkdown(branch), markdown);
-  assert.equal(latestCompletedMarkdown([assistant("not completed", "aborted")]), undefined);
-  assert.equal(latestCompletedMarkdown([assistant("  ")]), undefined);
-  assert.equal(latestCompletedMarkdown([{
+  assert.equal(latestCompletedAssistantText(branch), markdown);
+  assert.equal(latestCompletedAssistantText([assistant("not completed", "aborted")]), undefined);
+  assert.equal(latestCompletedAssistantText([assistant("  ")]), undefined);
+  assert.equal(latestCompletedAssistantText([{
     type: "message", message: { role: "assistant", stopReason: "stop", content: [
       { type: "thinking", thinking: "not copyable" },
       { type: "text", text: "part one" }, { type: "image", data: "not text" }, { type: "text", text: "part two" },
     ] },
   }]), "part one\npart two");
+});
+
+test("Explain and Copy share one completed-reply selection rule, with different trim policies", () => {
+  const branch = [
+    {type:"message",message:{role:"assistant",stopReason:"stop",content:[{type:"text",text:" older " }]}},
+    {type:"message",message:{role:"assistant",stopReason:"stop",content:[
+      {type:"text",text:" \nFirst "},{type:"thinking",thinking:"secret"},{type:"text",text:"Second\n "},
+    ]}},
+  ];
+  const raw = latestCompletedAssistantText(branch);
+  assert.equal(raw, " \nFirst \nSecond\n ", "multiple text blocks use one synthesized LF separator");
+  const ctx = {sessionManager:{getBranch:()=>branch}};
+  assert.equal(latestAssistant(ctx)?.text, raw.trim(), "Explain keeps its historical trimming behavior");
+});
+
+test("Raw draft preserves untouched CRLF and tabs through edits and undo", () => {
+  const source = "\tfirst\r\n\tsecond\r\nthird\r\n";
+  const draft = new RawMarkdownDraft(source);
+  assert.equal(normalizeEditorMarkdown(source), "    first\n    second\nthird\n");
+  draft.update("    first\n    second\nthird changed\n");
+  assert.equal(draft.text, "\tfirst\r\n\tsecond\r\nthird changed\r\n");
+  draft.update("    first\n    second\nthird changed\nnew last line");
+  assert.equal(draft.text, "\tfirst\r\n\tsecond\r\nthird changed\r\nnew last line");
+  draft.update(normalizeEditorMarkdown(source)); // Undo to original rendered content
+  assert.equal(draft.text, source);
+  const tab = new RawMarkdownDraft("one\t\ttwo");
+  tab.update("one  X     two"); // Replace one visible space inside the first tab
+  assert.equal(normalizeEditorMarkdown(tab.text), "one  X     two");
+  assert.equal(tab.text.endsWith("\ttwo"), true, "a separate, untouched tab is preserved");
+});
+
+test("Small real editor change must not normalize unrelated tab indentation or CRLF", async () => {
+  const source = "## Title\r\n\t" + "const a = 1;\r\n\t" + "const b = 2;\r\n";
+  const m = mk(source);
+  m.view();
+  m.modal.handleInput("!"); // Append at current cursor
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.deepEqual(m.copied, [source + "!"]);
+  m.modal.handleInput("\x04"); // Preview same corrected raw source
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.deepEqual(m.copied, [source+"!",source+"!"]);
+});
+
+test("Large bracketed paste copies full expanded Markdown, not the shortened marker", async () => {
+  const m = mk("Short");
+  m.view();
+  const paste = "\n" + Array.from({length:250}, (_,i) => "row-"+i+" | value-"+i).join("\n");
+  m.modal.handleInput("\x1b[200~"+paste+"\x1b[201~");
+  assert.ok(m.modal.editor.getExpandedText().includes("row-249 | value-249"));
+  m.modal.handleInput("\x04"); // preview, then copy
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.deepEqual(m.copied, ["Short"+paste]);
+  assert.doesNotMatch(m.copied[0], /\[paste #\d/);
 });
 
 test("Untouched source copies verbatim even when Pi Editor normalizes its display", async () => {
