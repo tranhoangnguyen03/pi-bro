@@ -166,7 +166,7 @@ See [Troubleshooting and current limits](reference/troubleshooting.md#troublesho
 
 ## Simplify modal
 
-`/bro` opens Simplify and explains the latest completed assistant reply. `/bro simplify` returns to the most recent Simplify screen without another model request. Inside, `/simplify`, `/text <text>`, `/file <path>` and `/url <url>` produce one explanation at a time; `/copy` copies the answer, `/clear` clears it, and `/help` shows controls. Press **M** with an empty composer to change the explanation mode and rerun; **R** retries. The saved default mode remains unchanged. The current screen is kept only within the Pi session. Old `/bro text|file|url|open` forms remain callable for compatibility.
+`/bro` opens Simplify and explains the latest completed assistant reply. `/bro simplify` returns to the most recent Simplify screen without another model request. Inside, `/simplify`, `/text <text>`, `/file <path>` and `/url <url>` produce one explanation at a time; `/copy` copies the answer, `/clear` clears it, and `/help` shows controls. Press **M** with an empty composer to change the explanation mode and rerun; **R** retries. The saved default mode remains unchanged. The latest result is preserved in private Pi session entries across reload/restart and stays off the main model's context. Old `/bro text|file|url|open` forms remain callable for compatibility.
 
 ## Bro command discovery and Config navigation
 
