@@ -59,7 +59,7 @@ Run `npm run docs:check` after changing commands, guides or access claims. Follo
 
 Unit tests protect prompt construction, quoted/untrusted context, privacy limits, and command behavior. They do not prove the model will follow instructions or write good prose. The reader benchmark lives in [READER-BENCHMARK.md](../benchmark/READER-BENCHMARK.md); `node benchmark/recompute-reader.ts` verifies committed evidence offline. Live generation and judging remain manual, fingerprint-approved, and quota-consuming. Do not equate a fake-provider test with a real-provider result.
 
-## Architecture docs: source-safe import
+## Architecture docs
 
 For a change to architecture output, use a small CLI or mixed app/agent repo and a specification-only repo. Open the generated HTML with network access disabled; check search, keyboard controls, narrow layouts, and actual explanations rather than name lists. Preserve existing decisions; on model failures, invalid JSON, changed source, changed target docs, and cancellation, leave live material untouched or roll back without partial files. Inspect the selected backend's actual sandbox flags. Do not test destructive cases on user documents.
 
