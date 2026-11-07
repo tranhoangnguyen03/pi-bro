@@ -1,7 +1,8 @@
 import "./test-cli-guard.ts";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { withFakeExecutables } from "./test-fake-exec.ts";
@@ -138,5 +139,42 @@ sleep 30
     stopActiveBroBackends();
     const outcome = await pending;
     assert.equal(outcome.status, "cancelled");
+  }, { env: { PI_BRO_CLAUDE_AUTH_SOURCE: "inherit" } });
+});
+
+test("normal Node worker exit terminates an active backend process group", async (t) => {
+  if (process.platform === "win32") { t.skip("POSIX process-group test"); return; }
+  await withFakeExecutables({ claude: `#!/bin/sh
+echo "$$" > "$BIN_DIR/child.pid"
+trap 'echo signal > "$BIN_DIR/stopped"; exit 0' TERM
+cat >/dev/null
+while :; do sleep 1; done
+` }, async bin => {
+    const runner = join(bin, "node-worker.mjs");
+    const source = new URL("../src/backend.ts", import.meta.url).href;
+    await writeFile(runner, `import { existsSync } from "node:fs";
+import { execute } from ${JSON.stringify(source)};
+void execute(
+  { feature: "explain", access: "restricted", prompt: "run" },
+  { backend: "claude", model: "sonnet" }, new AbortController().signal,
+);
+const flag = process.env.BIN_DIR + "/child.pid";
+setInterval(() => { if (existsSync(flag)) process.exit(0); }, 20);
+`);
+    const worker = spawn(process.execPath, [runner], {
+      env: { ...process.env, PI_BRO_CLAUDE_AUTH_SOURCE: "inherit" },
+      cwd: process.cwd(), stdio: "ignore",
+    });
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      worker.once("error", reject);
+      worker.once("close", (code) => resolve(code));
+    });
+    assert.equal(exitCode, 0, "worker must exit while a CLI child is active");
+    assert.ok(existsSync(join(bin, "child.pid")));
+    for (let i = 0; i < 100 && !existsSync(join(bin, "stopped")); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(existsSync(join(bin, "stopped")), true,
+      "process exit must signal the running backend group before the worker disappears");
   }, { env: { PI_BRO_CLAUDE_AUTH_SOURCE: "inherit" } });
 });
