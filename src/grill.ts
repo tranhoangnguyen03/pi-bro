@@ -115,93 +115,79 @@ export async function openGrillModal(
         return { backend, selection, preferences };
       };
 
-      const runTurn = async (reply: string, replaced?: GrillTurn) => {
+      // Both operations share one model-call lifecycle. Only their prompts,
+      // progress presentation and completed results differ.
+      type Operation = { kind: "turn"; reply: string; replace: boolean } | { kind: "consolidate"; replace: boolean };
+      const runOperation = async (operation: Operation) => {
         if (controller || closed) return;
-        thread.retry = { reply, replace: Boolean(replaced) };
+        if (operation.kind === "consolidate" && !thread.turns.length) {
+          modal.setNotice("Start the interview before consolidating.", "warning");
+          return;
+        }
+        const turn = operation.kind === "turn";
+        thread.retry = turn
+          ? { reply: operation.reply, replace: operation.replace }
+          : { consolidate: true, replace: operation.replace };
         const attempt = new AbortController();
         controller = attempt;
         modal.setRunning(true);
-        pendingReply = reply;
+        if (turn) pendingReply = operation.reply;
         try {
           const prepared = await prepareRun(attempt.signal);
           if (!prepared) return;
           const { backend, selection, preferences } = prepared;
-          if (!thread.context && !thread.turns.length) {
+          if (turn && !thread.context && !thread.turns.length)
             thread.context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS, BTW_CONTEXT_MAX)?.text;
-          }
-          const history = replaced ? thread.turns.slice(0, -1) : [...thread.turns];
+
+          const history = operation.replace ? thread.turns.slice(0, -1) : [...thread.turns];
           const prompt = buildGrillPrompt({
-            topic: thread.topic, reply, depth: thread.depth, context: thread.context,
-            history, preferences, fullAccess: thread.fullAccess,
+            topic: thread.topic, depth: thread.depth, context: thread.context, history,
+            preferences, fullAccess: thread.fullAccess,
+            ...(turn ? { reply: operation.reply } : { consolidate: true }),
           });
-          pendingTurn = { question: reply, answer: "…" };
-          modal.setText(transcript());
-          modal.scrollToEnd();
-          const outcome = await executeBackend({
-            ...grillExecution(thread.fullAccess), cwd: ctx.cwd, prompt,
-          }, selection, attempt.signal, (event) => {
-            if (!closed && !attempt.signal.aborted && event.kind === "text") {
-              pendingTurn!.answer = event.text;
+          if (turn) {
+            pendingTurn = { question: operation.reply, answer: "…" };
+            modal.setText(transcript());
+            modal.scrollToEnd();
+          }
+          const outcome = await executeBackend(
+            { ...grillExecution(thread.fullAccess), cwd: ctx.cwd, prompt },
+            selection, attempt.signal, (event) => {
+              if (closed || attempt.signal.aborted || event.kind !== "text") return;
+              if (turn) pendingTurn!.answer = event.text;
+              else pendingSummary = event.text;
               modal.setText(transcript());
-            }
-          });
+              if (!turn) modal.scrollToEnd();
+            },
+          );
           if (closed || attempt.signal.aborted) return;
           if (outcome.status !== "success") throw new Error(outcome.message);
-          if (replaced) thread.turns.pop();
-          thread.turns.push({ question: reply, answer: outcome.text });
-          modal.setNotice(permissionNotice(backend), thread.fullAccess || backend === "agy" ? "warning" : "info");
-          delete thread.draft;
+          if (operation.replace) thread.turns.pop();
+          thread.turns.push({ question: turn ? operation.reply : "/consolidate", answer: outcome.text });
           delete thread.retry;
+          if (turn) {
+            delete thread.draft;
+            modal.setNotice(permissionNotice(backend), thread.fullAccess || backend === "agy" ? "warning" : "info");
+          } else {
+            modal.setNotice("Brief ready. Keep talking or /insert-last-message.", "success");
+          }
         } catch (error) {
           if (!closed && !attempt.signal.aborted) {
             modal.setNotice(errorMessage(error), "error");
-            if (!modal.getComposerText().trim()) modal.setComposerText(reply);
+            if (turn && !modal.getComposerText().trim()) modal.setComposerText(operation.reply);
           }
         } finally {
           pendingTurn = undefined;
+          pendingSummary = undefined;
           pendingReply = undefined;
           if (controller === attempt) controller = undefined;
           if (!closed) { modal.setRunning(false); modal.setText(transcript()); }
         }
       };
 
-      const consolidate = async (replace = false) => {
-        if (controller || closed) return;
-        if (!thread.turns.length) { modal.setNotice("Start the interview before consolidating.", "warning"); return; }
-        thread.retry = { consolidate: true, replace };
-        const attempt = new AbortController();
-        controller = attempt;
-        modal.setRunning(true);
-        try {
-          const prepared = await prepareRun(attempt.signal);
-          if (!prepared) return;
-          const { selection, preferences } = prepared;
-          const prompt = buildGrillPrompt({
-            topic: thread.topic, depth: thread.depth, context: thread.context,
-            history: replace ? thread.turns.slice(0, -1) : thread.turns, preferences, consolidate: true, fullAccess: thread.fullAccess,
-          });
-          const outcome = await executeBackend({ ...grillExecution(thread.fullAccess), cwd: ctx.cwd, prompt },
-            selection, attempt.signal, (event) => {
-              if (!closed && !attempt.signal.aborted && event.kind === "text") {
-                pendingSummary = event.text;
-                modal.setText(transcript());
-                modal.scrollToEnd();
-              }
-            });
-          if (closed || attempt.signal.aborted) return;
-          if (outcome.status !== "success") throw new Error(outcome.message);
-          if (replace) thread.turns.pop();
-          thread.turns.push({ question: "/consolidate", answer: outcome.text });
-          delete thread.retry;
-          modal.setNotice("Brief ready. Keep talking or /insert-last-message.", "success");
-        } catch (error) {
-          if (!closed && !attempt.signal.aborted) modal.setNotice(errorMessage(error), "error");
-        } finally {
-          pendingSummary = undefined;
-          if (controller === attempt) controller = undefined;
-          if (!closed) { modal.setRunning(false); modal.setText(transcript()); }
-        }
-      };
+      const runTurn = (reply: string, replaced?: GrillTurn) =>
+        runOperation({ kind: "turn", reply, replace: Boolean(replaced) });
+      const consolidate = (replace = false) => runOperation({ kind: "consolidate", replace });
 
       const insert = async () => {
         const text = thread.turns.at(-1)?.answer || "";
