@@ -115,7 +115,7 @@ Agy; reads never rewrite the file.
 - **Nothing is approved by default.** Findings start unticked so the user approves only what they read; the highlighted finding's full title, reason, expert action and assessment are reachable in scrollable detail below the pinned list. A rewrite with nothing ticked is refused with an explanation. A failed step retries that step with the same approvals.
 - Elevate leaves the main Pi editor unchanged. Copy puts the revised request on the clipboard; users decide whether to paste or submit it.
 - Compose reads the objective with `getExpandedText()`, never `getText()`: the `Editor` stores large pastes as `[paste #1 +N lines]` markers, and the marker must never be sent to the backend. When the `Editor` cannot render whole, the modal refuses to edit and says so rather than hiding the cursor.
-- Automated unit tests: `test/elevate.test.ts` and `test/elevate-docs.test.mjs`; the modal contract in `test/modal-contract.test.mjs` covers every Elevate stage. Manually test real modal use as described in [TESTING.md](TESTING.md).
+- Automated unit tests: `test/elevate.test.ts`; the modal contract in `test/modal-contract.test.mjs` covers every Elevate stage. Manually test real modal use as described in [TESTING.md](TESTING.md).
 
 ## Prompt size and recent context
 

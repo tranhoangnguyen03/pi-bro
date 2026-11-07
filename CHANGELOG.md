@@ -2,6 +2,15 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.33.0] - 2026-11-07
+
+### Highlights
+
+- Choose Bro features by four human needs: understand existing work, explore possibilities, assess work, and guide the agent. Help, docs and command completion state what each feature produces.
+- BTW and Grill Me now hand off with Copy; removed Insert commands explain copy-and-paste instead of modifying Pi's unsent editor. Elevate's revised assignment can only be copied and pasted manually.
+- Remove obsolete editor-insertion helpers and tests while keeping private Bro state, active session recovery, Overthink and Architecture behavior unchanged.
+- `bro_advisor` and the read-only `about_user` tool continue to return data directly to the agent. `/bro copy` (separate editable Markdown tool, PR #186) remains a distinct unmerged feature.
+
 ## [0.32.0] - 2026-11-07
 
 ### Highlights
