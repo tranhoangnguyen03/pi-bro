@@ -39,20 +39,20 @@ test("shared text throttle keeps the latest update and releases pending callback
   progress.receive?.({ kind: "text", text: "partial" });
   progress.receive?.({ kind: "text", text: "latest" });
   t.mock.timers.tick(74);
-  assert.deepEqual(updates, []);
+  assert.deepEqual([...updates], []);
   t.mock.timers.tick(1);
-  assert.deepEqual(updates, ["latest"]);
+  assert.deepEqual([...updates], ["latest"]);
   progress.receive?.({ kind: "text", text: "too late" });
   signal.abort();
   t.mock.timers.tick(75);
-  assert.deepEqual(updates, ["latest"], "an aborted turn emits no later text");
+  assert.deepEqual([...updates], ["latest"], "an aborted turn emits no later text");
   progress.dispose();
 
   const second = textProgressThrottle(new AbortController().signal, (text) => updates.push(text));
   second.receive?.({ kind: "text", text: "after close" });
   second.dispose();
   t.mock.timers.tick(100);
-  assert.deepEqual(updates, ["latest"], "dispose prevents stale updates after a normal finish");
+  assert.deepEqual([...updates], ["latest"], "dispose prevents stale updates after a normal finish");
 });
 
 test("review backend notice recommends file-only inspection only for shell-capable sandboxes", () => {
