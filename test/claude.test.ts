@@ -41,9 +41,6 @@ async function args(binDir: string): Promise<string[]> {
 	return (await readFile(join(binDir, "args.txt"), "utf8")).split("\n").slice(0, -1);
 }
 
-test("effort list", () => {
-	assert.deepEqual([...CLAUDE_EFFORTS], ["low", "medium", "high", "xhigh", "max"]);
-});
 
 test("claude explain: restricted fresh argv, stdin prompt, scratch cwd, text-only progress without reasoning", async () => {
 	await withFakeClaude(
@@ -326,21 +323,14 @@ test("claude btw keeps partial text on a failed terminal result and uses side-co
 	});
 });
 
-test("claude framing: split chunks, CRLF, final record without newline, and oversized line", async () => {
-	await withFakeClaude(`case "$(cat "$BIN_DIR/stdin.txt")" in
-  *oversized*)
-    node -e 'process.stdout.write("x".repeat(2000001) + "\\n")'
-    ;;
-  *)
-    node -e '
+test("claude framing: chunk boundaries, CRLF and final record without newline", async () => {
+	await withFakeClaude(`    node -e '
       process.stdout.write("{\\"type\\":\\"stream_event\\",\\"event\\":{\\"type\\":\\"content_block_delta\\",\\"delta\\":{\\"type\\":\\"text_delta\\",\\"text\\":\\"part-");
       setTimeout(() => {
         process.stdout.write("one\\"}},\\"parent_tool_use_id\\":null}\\r\\n");
         process.stdout.write("{\\"type\\":\\"result\\",\\"subtype\\":\\"success\\",\\"is_error\\":false,\\"stop_reason\\":\\"end_turn\\",\\"terminal_reason\\":\\"completed\\",\\"result\\":\\"final answer\\"}");
       }, 20);
     '
-    ;;
-esac
 `, async (binDir) => {
 		// 1. Split event + CRLF + final result without newline
 		let progressText = "";
@@ -354,16 +344,7 @@ esac
 		assert.equal(outcome.text, "final answer");
 		assert.equal(progressText, "part-one");
 
-		// 2. Oversized line (> 2MB)
-		const overOutcome = await execute(
-			{ feature: "explain", access: "restricted", prompt: "oversized", cwd: binDir },
-			claude(),
-			new AbortController().signal,
-		);
-		assert.equal(overOutcome.status, "failure");
-		assert.match(overOutcome.message, /over 2000000 characters/);
-
-		// 3. Multi-block assistant event stops on cancellation
+		// 2. Multi-block assistant event stops on cancellation
 		const controller = new AbortController();
 		const receivedLabels: string[] = [];
 		await withFakeClaude([

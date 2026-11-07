@@ -9,7 +9,7 @@ import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 import mammoth from "mammoth";
 import * as piTui from "@earendil-works/pi-tui";
-import { bro, backend, sources, buildDir, btw, explainModal } from "./test-build.mjs";
+import { bro, backend, sources, buildDir, btw, explainModal, sourceDir } from "./test-build.mjs";
 
 test("Bro helpers, modals, advisor lifecycle and SDK restrictions", async (t) => {
 const documentFixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "documents");
@@ -836,6 +836,40 @@ await t.test("Agy CLI usage formatting and model catalog parsing", () => {
 		{ id: "claude-one", label: "Claude One", efforts: [], variants: [{ id: "claude-one", effort: undefined }] },
 	]);
 	assert.throws(() => parseAgyModels("Fetching available models...\n"), /no available models/);
+});
+
+await t.test("Doctor model probe shares isolated CLI cleanup on success, error, and cancellation", async () => {
+  const { listAgyModels } = bro;
+  let workingDir;
+  const successfulPi = {
+    exec: async (_binary, _args, options) => {
+      workingDir = options.cwd;
+      assert.ok(workingDir && workingDir !== process.cwd(), "probe must not run in the caller workspace");
+      assert.ok(existsSync(workingDir), "probe scratch directory must exist while the CLI runs");
+      return { code: 0, killed: false, stderr: "", stdout: "gemini-one-low\tGemini One (Low)\n" };
+    },
+  };
+  const catalog = await listAgyModels(successfulPi);
+  assert.deepEqual(catalog.map(model => model.id), ["gemini-one"]);
+  assert.equal(existsSync(workingDir), false, "success must clean up scratch space");
+
+  await assert.rejects(listAgyModels({
+    exec: async (_binary, _args, options) => {
+      workingDir = options.cwd;
+      return { code: 0, killed: false, stderr: "", stdout: "Not a model catalog" };
+    },
+  }), /no available models/);
+  assert.equal(existsSync(workingDir), false, "invalid catalogs must clean up scratch space");
+
+  const cancelled = new AbortController();
+  await assert.rejects(listAgyModels({
+    exec: async (_binary, _args, options) => {
+      workingDir = options.cwd;
+      cancelled.abort();
+      return { code: 0, killed: false, stderr: "", stdout: "gemini-one-low\tGemini One (Low)\n" };
+    },
+  }, cancelled.signal), /Canceled/);
+  assert.equal(existsSync(workingDir), false, "cancellation must clean up scratch space");
 });
 
 await t.test("BTW argument, composer command, and thread transcript parsing", () => {
@@ -2498,7 +2532,7 @@ await t.test("Real Pi lifecycle: bro_advisor is registered like any other tool a
 	const loader = new DefaultResourceLoader({
 		cwd: workspace,
 		agentDir,
-		additionalExtensionPaths: [join(buildDir, "bro.js")],
+		additionalExtensionPaths: [join(sourceDir, "bro.ts")],
 		noSkills: true,
 		noPromptTemplates: true,
 		noThemes: true,

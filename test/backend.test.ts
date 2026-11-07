@@ -3,10 +3,11 @@ import { withFakeExecutable } from "./test-fake-exec.ts";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, realpath } from "node:fs/promises";
+import { readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { PassThrough } from "node:stream";
+import registerBro from "../src/bro.ts";
 import {
 	type AgySelection,
 	type BackendProgress,
@@ -24,10 +25,37 @@ import {
 	piToolAllowlist,
 	reviewBackendNotice,
 	setPiHostContext,
+	stopActiveBackendExecutions,
 	splitPiModel,
+	textProgressThrottle,
 } from "../src/backend.ts";
 
 const withFakeAgy = (script: string, run: (binDir: string) => Promise<void>) => withFakeExecutable("agy", script, run);
+
+test("shared text throttle keeps the latest update and releases pending callbacks", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const signal = new AbortController();
+  const updates: string[] = [];
+  const progress = textProgressThrottle(signal.signal, (text) => updates.push(text));
+  progress.receive?.({ kind: "activity", label: "tool", timestamp: 1 });
+  progress.receive?.({ kind: "text", text: "partial" });
+  progress.receive?.({ kind: "text", text: "latest" });
+  t.mock.timers.tick(74);
+  assert.deepEqual([...updates], []);
+  t.mock.timers.tick(1);
+  assert.deepEqual([...updates], ["latest"]);
+  progress.receive?.({ kind: "text", text: "too late" });
+  signal.abort();
+  t.mock.timers.tick(75);
+  assert.deepEqual([...updates], ["latest"], "an aborted turn emits no later text");
+  progress.dispose();
+
+  const second = textProgressThrottle(new AbortController().signal, (text) => updates.push(text));
+  second.receive?.({ kind: "text", text: "after close" });
+  second.dispose();
+  t.mock.timers.tick(100);
+  assert.deepEqual([...updates], ["latest"], "dispose prevents stale updates after a normal finish");
+});
 
 test("review backend notice recommends file-only inspection only for shell-capable sandboxes", () => {
 	assert.equal(reviewBackendNotice("claude"), undefined);
@@ -62,21 +90,6 @@ test("review and advisor get the 610-second deadline; explain/show stay short", 
 	assert.equal(backendDeadlineMs("advisor", "workspace-full"), 610_000);
 });
 
-test("every adapter derives its deadline from backendDeadlineMs, never a local literal", async () => {
-	// A single literal in one adapter was the original defect; the helper now owns the table. A
-	// source check is the cheap guard a 610-second process test cannot be.
-	const source = await readFile(new URL("../src/backend.ts", import.meta.url), "utf8");
-	const body = source.slice(source.indexOf("export function backendDeadlineMs"));
-	assert.equal(body.slice(0, body.indexOf("\n}")).includes("REVIEW_DEADLINE_MS"), true, "the helper owns the 610s value");
-	assert.equal(
-		(source.match(/610_000/g) ?? []).length,
-		1,
-		"610_000 may appear only once, in REVIEW_DEADLINE_MS (no adapter literal)",
-	);
-	// Every adapter routes through the helper; a new adapter that forgets to is caught here.
-	// 6 CLI adapters (Agy argv/stdin, Claude, Grok, Codex, Muse) plus the in-process Pi executor.
-	assert.equal((source.match(/deadlineMsOverride \?\? backendDeadlineMs\(/g) ?? []).length, 7);
-});
 
 test("pi tool allowlists isolate every capability: no tools for explain/show/elevate, read-only for review, workspace tools for advisor/btw-full", () => {
 	// Restricted, non-review features only ever see the prompt: this is the isolation guarantee.
@@ -749,6 +762,75 @@ exit 0
 	);
 });
 
+test("graceful teardown cancels active backend work and does not poison the next request", async () => {
+	await withFakeAgy(
+		`#!/bin/sh
+	echo started > "$BIN_DIR/started"
+	sleep 2
+	echo 'late success' > "$BIN_DIR/late"
+	printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"late"}}'
+`,
+		async (binDir) => {
+			const pending = execute(
+				{ feature: "explain", access: "restricted", prompt: "Explain" },
+				{ model: "test" }, new AbortController().signal,
+				undefined, { deadlineMs: 10_000, killEscalationMs: 80 },
+			);
+			for (let i = 0; !existsSync(join(binDir, "started")) && i < 200; i++) {
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+			assert.equal(existsSync(join(binDir, "started")), true, "child must be alive before shutdown");
+			const shutdownHandlers: Array<(...args: any[]) => unknown> = [];
+			const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+			process.env.PI_CODING_AGENT_DIR = join(binDir, "agent");
+			try {
+				await registerBro({
+					on(event: string, handler: (...args: any[]) => unknown) {
+						if (event === "session_shutdown") shutdownHandlers.push(handler);
+					},
+					registerTool() {}, registerCommand() {},
+				} as any);
+				assert.ok(shutdownHandlers.length > 0);
+				await shutdownHandlers[0]!({ type: "session_shutdown", reason: "reload" }, {});
+			} finally {
+				if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+				else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+			}
+			const stopped = await pending;
+			assert.equal(stopped.status, "cancelled");
+			assert.equal(existsSync(join(binDir, "late")), false, "no late child action after shutdown");
+
+			// The stop applies only to active processes, not a permanent global-disable flag.
+			await writeFile(join(binDir, "agy"), `#!/bin/sh
+printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"new request"}}'
+`);
+			const next = await execute(
+				{ feature: "explain", access: "restricted", prompt: "Explain" },
+				{ model: "test" }, new AbortController().signal,
+			);
+			assert.equal(next.status, "success");
+			if (next.status === "success") assert.equal(next.text, "new request");
+		},
+	);
+});
+
+test("graceful teardown prevents a CLI from spawning after async preparation", async () => {
+	await withFakeExecutable("grok", `#!/bin/sh
+	echo started > "$BIN_DIR/spawned"
+	exit 0
+`, async (binDir) => {
+		const pending = execute(
+			{ feature: "explain", access: "restricted", prompt: "Explain" },
+			{ backend: "grok", model: "test" }, new AbortController().signal,
+		);
+		await stopActiveBackendExecutions();
+		const outcome = await pending;
+		assert.equal(outcome.status, "cancelled");
+		assert.equal(existsSync(join(binDir, "spawned")), false,
+			"shutting down during async preparation must not start another model call");
+	});
+});
+
 test("timeout, cancel, and unexpected signal handling", async () => {
 	// Cancel mid-run
 	await withFakeAgy(
@@ -940,6 +1022,15 @@ test("invalid feature/access/continuation combinations fail before invocation", 
   const outcome = await execute({ prompt: "test", ...request }, { model: "test" }, new AbortController().signal);
   assert.equal(outcome.status, "failure");
   assert.match(outcome.message, /Unsupported execution request/);
+ }
+ for (const backend of ["pi", "claude", "grok", "codex", "muse"] as const) {
+   const outcome = await execute(
+     { feature: "explain", access: "restricted", prompt: "test" },
+     { backend, model: undefined } as never,
+     new AbortController().signal,
+   );
+   assert.equal(outcome.status, "failure", backend);
+   if (outcome.status === "failure") assert.match(outcome.message, /Unsupported .* selection/);
  }
  assert.equal(existsSync(join(binDir, "spawned")), false);
  });

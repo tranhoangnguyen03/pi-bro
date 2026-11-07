@@ -1,7 +1,7 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Input, Markdown, matchesKey, wrapTextWithAnsi, type Focusable } from "@earendil-works/pi-tui";
-import { execute as executeBackend, type BackendProgress, type BackendSelection } from "./backend.ts";
+import { execute as executeBackend, textProgressThrottle, type BackendSelection } from "./backend.ts";
 import { buildBtwPrompt } from "./prompt.ts";
 import {
 	type BackendName,
@@ -140,20 +140,7 @@ export async function runBtwTurn(
 	signal: AbortSignal,
 	onProgress?: (text: string) => void,
 ): Promise<{ text: string; conversationId?: string; expiredContinuation?: true }> {
-	let updateTimer: ReturnType<typeof setTimeout> | undefined;
-	let latest: string | undefined;
-	const throttledProgress = onProgress
-		? (progress: BackendProgress) => {
-				if (progress.kind !== "text") return;
-				latest = progress.text;
-				if (!updateTimer) {
-					updateTimer = setTimeout(() => {
-						updateTimer = undefined;
-						if (!signal.aborted && latest !== undefined) onProgress(latest);
-					}, 75);
-				}
-			}
-		: undefined;
+	const progress = textProgressThrottle(signal, onProgress);
 
 	try {
 		const outcome = await executeBackend(
@@ -166,13 +153,13 @@ export async function runBtwTurn(
 			},
 			selection,
 			signal,
-			throttledProgress,
+			progress.receive,
 		);
 		if (outcome.status === "success") return { text: outcome.text, conversationId: outcome.continuation?.id };
 		if (outcome.continuationExpired) return { text: "", expiredContinuation: true };
 		throw new Error(outcome.message);
 	} finally {
-		if (updateTimer) clearTimeout(updateTimer);
+		progress.dispose();
 	}
 }
 

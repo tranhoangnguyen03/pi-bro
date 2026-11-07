@@ -109,3 +109,7 @@ Domain-specific web transport tests live in `test/sources.test.ts`, isolating tr
 | 18 offline transport tests in `test/sources.test.ts` | Covers mixed DNS answers (fails closed), socket lookup pinning, private IP/hostname redirects (no private destinations contacted), HTTPS-to-HTTP downgrade rejection, protocol smuggling rejection, redirect loops and hop counts (bounded at 5), advertised Content-Length limit (> 5 MiB), streamed chunk limits (> 5 MiB), exact 5 MiB boundaries, unsupported Content-Encoding/Content-Type, status codes, and cancellation. |
 
 
+
+## Current cleanup — source tests and process ownership
+
+Offline tests now import the published TypeScript sources directly with Node's type transform option; `test-build.mjs` retains only per-worker temp home and fail-closed CLI isolation. This avoids compiling all production files in each separate test worker. `src/backend.ts` shares process spawn/diagnostics/lifecycle wiring across external adapters while preserving backend-specific protocol, permission, result, and recovery checks. Where weak wording/existence tests duplicate meaningful behavior tests, remove the former rather than growing new harnesses. GitHub Actions and local checks must validate the final branch before merge.

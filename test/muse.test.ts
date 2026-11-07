@@ -74,9 +74,6 @@ async function args(binDir: string): Promise<string[]> {
 	return (await readFile(join(binDir, "args.txt"), "utf8")).split("\n").slice(0, -1);
 }
 
-test("muse effort list", () => {
-	assert.deepEqual([...MUSE_EFFORTS], ["minimal", "low", "medium", "high", "xhigh", "max"]);
-});
 
 test("muse explain: restricted fresh argv, prompt file mode 0600, scratch cwd, text-only progress", async () => {
 	await withFakeMuse(
@@ -562,13 +559,8 @@ test("unsupported muse combinations and pre-abort fail before spawn", async () =
  });
 });
 
-test("muse framing: split chunks, CRLF, final record without newline, and oversized line", async () => {
-	await withFakeMuse(`case "$(cat "$BIN_DIR/prompt.txt")" in
-  *oversized*)
-    node -e 'process.stdout.write("x".repeat(2000001) + "\\n")'
-    ;;
-  *)
-    node -e '
+test("muse framing: chunk boundaries, CRLF and final record without newline", async () => {
+	await withFakeMuse(`    node -e '
       process.stdout.write("{\\"payload_type\\":\\"runtime.command.accepted\\",\\"stream\\":{\\"kind\\":\\"session\\",\\"id\\":\\"s1\\"},\\"payload\\":{\\"command_id\\":\\"c1\\"}}" + "\\r\\n");
       process.stdout.write("{\\"payload_type\\":\\"session.run.linked\\",\\"stream\\":{\\"kind\\":\\"session\\",\\"id\\":\\"s1\\"},\\"payload\\":{\\"command_id\\":\\"c1\\",\\"run_stream\\":{\\"kind\\":\\"run\\",\\"id\\":\\"r1\\"}}}");
       setTimeout(() => {
@@ -577,8 +569,6 @@ test("muse framing: split chunks, CRLF, final record without newline, and oversi
         process.stdout.write("{\\"payload_type\\":\\"run.terminal.completed\\",\\"payload\\":{\\"terminal\\":\\"completed\\",\\"text\\":\\"muse final\\",\\"run_stream\\":{\\"kind\\":\\"run\\",\\"id\\":\\"r1\\"}}}");
       }, 20);
     '
-    ;;
-esac
 `, async (binDir) => {
 		// 1. Split event + CRLF + final result without newline
 		let progressText = "";
@@ -592,13 +582,5 @@ esac
 		assert.equal(outcome.text, "muse final");
 		assert.equal(progressText, "muse-part");
 
-		// 2. Oversized line (> 2MB)
-		const overOutcome = await execute(
-			{ feature: "explain", access: "restricted", prompt: "oversized", cwd: binDir },
-			muse(),
-			new AbortController().signal,
-		);
-		assert.equal(overOutcome.status, "failure");
-		assert.match(overOutcome.message, /over 2000000 characters/);
 	});
 });

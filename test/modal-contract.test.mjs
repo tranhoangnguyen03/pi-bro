@@ -10,14 +10,14 @@ import { withFakeExecutable } from "./test-fake-exec.ts";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { btw, buildDir, configUi, elevate, explainModal, settings as settingsModule } from "./test-build.mjs";
+import { btw, buildDir, configUi, elevate, explainModal, settings as settingsModule, sourceDir } from "./test-build.mjs";
 import { rm } from "node:fs/promises";
 
-const load = (name) => import(pathToFileURL(join(buildDir, name)).href);
-const kit = await load("modal-kit.js");
-const { openGuidedReview } = await load("review-ui.js");
-const { newReviewView } = await load("review-modal.js");
-const { saveReview } = await load("review.js");
+const load = (name) => import(pathToFileURL(join(sourceDir, name)).href);
+const kit = await load("modal-kit.ts");
+const { openGuidedReview } = await load("review-ui.ts");
+const { newReviewView } = await load("review-modal.ts");
+const { saveReview } = await load("review.ts");
 initTheme();
 
 // Guided Review: a saved record to reopen, and a `gh` that fails at once so acquisition stays offline.
@@ -507,7 +507,7 @@ test("modal kit: the mouse lease pauses while hidden and stays off after close",
 });
 
 test("modal kit: rawWheel reads direction and cell, and ignores other mouse reports", async () => {
-	const { rawWheel, wheelDelta } = await load("ui-capabilities.js");
+	const { rawWheel, wheelDelta } = await load("ui-capabilities.ts");
 	assert.deepEqual(rawWheel("\x1b[<64;12;7M"), { delta: -3, column: 12, row: 7 });
 	assert.deepEqual(rawWheel("\x1b[<69;1;2M"), { delta: 3, column: 1, row: 2 }, "a modifier bit keeps the direction");
 	assert.equal(rawWheel("\x1b[<0;5;5M"), undefined, "a click is not a wheel");

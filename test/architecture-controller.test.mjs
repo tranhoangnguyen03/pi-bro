@@ -3,20 +3,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { initTheme } from '@earendil-works/pi-coding-agent';
 import { buildDir, settings } from './test-build.mjs';
 import { withFakeExecutable } from './test-fake-exec.ts';
 
-// Mirror the shipped src/ + resources/ layout without changing shared test-build.
-const runtime = join(buildDir, 'architecture-runtime');
-await fs.mkdir(join(runtime, 'src'), { recursive: true });
-await fs.copyFile(join(buildDir, 'architecture.js'), join(runtime, 'src/architecture.js'));
-for (const name of ['backend', 'settings', 'explain-modal']) await fs.symlink(join(buildDir, name + '.js'), join(runtime, 'src', name + '.js'));
-await fs.symlink(fileURLToPath(new URL('../resources', import.meta.url)), join(runtime, 'resources'), 'dir');
-const { generateArchitecture, openArchitectureDocs } = await import(pathToFileURL(join(runtime, 'src/architecture.js')).href);
-const { createConfigNavigationModal } = await import(pathToFileURL(join(buildDir, 'config-navigation-ui.js')).href);
-const { CONFIG_FEATURES } = await import(pathToFileURL(join(buildDir, 'config-navigation.js')).href);
+// Shipped TypeScript resolves its bundled architecture resources relative to its own file.
+const { generateArchitecture, openArchitectureDocs } = await import('../src/architecture.ts');
+const { createConfigNavigationModal } = await import('../src/config-navigation-ui.ts');
+const { CONFIG_FEATURES } = await import('../src/config-navigation.ts');
 initTheme();
 const doc = { files: { 'README.md': '# Checked architecture\n' }, graph: { project: { name: 'Fixture', summary: 'Runs a command.' }, nodes: [{ id: 'main', label: 'Main', description: 'Runs the command.', sources: ['main.js'] }], edges: [] }, summary: 'Command fixture.', unknowns: [] };
 function cli(response) {
