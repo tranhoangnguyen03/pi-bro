@@ -11,6 +11,23 @@ export const GRILL_SESSION_ENTRY = "bro-grill-thread";
 export const SIMPLIFY_SESSION_ENTRY = "bro-simplify-state";
 export const LAST_RESULT_SESSION_ENTRY = "bro-last-result";
 
+/** Last on-branch snapshot per feature, used to avoid duplicate append-only writes.
+ * A tree move rebuilds these signatures from its own branch, not the old one.
+ */
+export function privateSessionEntrySnapshots(branch: readonly SessionEntry[]): Map<string, string> {
+  const types = new Set<string>([
+    BTW_SESSION_ENTRY, GRILL_SESSION_ENTRY, SIMPLIFY_SESSION_ENTRY, LAST_RESULT_SESSION_ENTRY,
+  ]);
+  const saved = new Map<string, string>();
+  for (const entry of branch) {
+    if (entry.type === "custom" && types.has(entry.customType) && isRecord(entry.data)) {
+      saved.set(entry.customType, JSON.stringify(entry.data));
+    }
+  }
+  return saved;
+}
+
+
 export type PrivateBroSessionState = {
   btw?: BtwThread;
   grill?: GrillThread;
