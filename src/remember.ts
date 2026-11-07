@@ -6,7 +6,7 @@ import { openBroOverlay } from "./modal-kit.ts";
 import { captureShowTranscript } from "./show.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel } from "./settings.ts";
 import {
-  changeMemory, readMemoryStore, renderUserMemory,
+  changeMemory, readMemoryStore, renderUserMemory, formatMemoryDetail,
   type MemoryEntry,
 } from "./remember-store.ts";
 import {
@@ -32,13 +32,7 @@ const HELP = [
 
 function memoryDetail(m?: MemoryEntry): string {
   if (!m) return "(entry absent)";
-  return m.title+": "+m.summary+
-    (m.scope ? "\nScope: "+m.scope : "")+
-    (m.exceptions ? "\nExceptions: "+m.exceptions : "")+
-    (m.uncertainty ? "\nUNRESOLVED: "+m.uncertainty : "")+
-    "\nBackground: "+m.background+
-    (m.sourceContext ? "\nSource context: "+m.sourceContext : "")+
-    "\nBasis: "+(m.basis??"user-stated");
+  return formatMemoryDetail(m);
 }
 
 export async function openRememberModal(ctx: ExtensionCommandContext, initial = ""): Promise<void> {
