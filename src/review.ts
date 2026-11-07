@@ -151,12 +151,10 @@ function recordPath(root: string, id: string): string {
 	return join(root, id + ".json");
 }
 /** Remove one validated saved record and its captured source, never other reviews.
- * The controller must hold the single-writer lock; an optional guard can reject active users.
- * Filesystem deletion is not atomic across the record and source directory.
+ * The controller owns the active-review lock; deletion is not atomic across files.
  */
-export async function deleteReview(root: string, id: string, isActive: () => boolean = () => false): Promise<void> {
+export async function deleteReview(root: string, id: string): Promise<void> {
 	const record = recordPath(root, id); // validates the 64-character hex boundary
-	if (isActive()) throw Error("Cannot delete a review while it is open or being prepared.");
 	await rm(join(root, "source", id), { recursive: true, force: true });
 	await rm(record, { force: true });
 }
