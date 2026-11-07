@@ -22,18 +22,6 @@ export function broModalRows(tui: unknown, terminalRows: number | undefined): nu
 	return typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0 ? Math.floor(candidate) : 30;
 }
 
-export async function insertBroDesktopText(ctx: UiContext, text: string): Promise<"inserted" | "not_empty" | "unavailable"> {
-  if (!hasBroCustomUi(ctx) || ctx.mode !== "rpc") return "unavailable";
-  const ui = ctx.ui as DesktopUi & { insertEditorTextIfEmpty?: (text: string) => Promise<"inserted" | "not_empty" | "unavailable"> };
-  try {
-    const caps = ui.getDesktopUiCapabilities?.() as { atomicEditorInsert?: boolean } | undefined;
-    return caps?.atomicEditorInsert === true && ui.insertEditorTextIfEmpty ? await ui.insertEditorTextIfEmpty(text) : "unavailable";
-  } catch { return "unavailable"; }
-}
-
-/** Only terminal mode uses synchronous insertion; Desktop uses insertBroDesktopText instead. */
-export function canBroInsertIntoEditor(ctx: UiContext): boolean { return ctx.mode === "tui"; }
-
 /** Any raw SGR mouse report; regular-mode reporting delivers these to handleInput. */
 export const SGR_MOUSE = /^\x1b\[<(\d+);(\d+);(\d+)[Mm]$/;
 

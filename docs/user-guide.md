@@ -32,7 +32,7 @@ See [Guided Review](guided-review.md#guided-review).
 
 ## Bro Elevate — improve a task before sending it
 
-See [Elevate: Discover → Select → Upgrade](elevate.md). Elevate does not execute a task or send it to the main agent. It helps find gaps, lets you approve suggestions, then offers a revised request. In the terminal, insertion can replace your unchanged original draft; see the [editor-safety rules](elevate.md#what-happens-to-the-original-editor-draft).
+See [Elevate: Discover → Select → Upgrade](elevate.md). Elevate does not execute a task or send it to the main agent. It helps find gaps, lets you approve suggestions, then offers a revised request. Elevate never edits your Pi draft; copy and paste the revision if you wish.
 
 ## Bro btw (side conversation)
 

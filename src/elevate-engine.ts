@@ -71,18 +71,6 @@ export function stripElevateFence(value: string): string {
   return fence ? fence[1]!.trim() : raw;
 }
 
-/**
- * The one rule that protects unsent work: insertion may replace the editor draft Elevate was
- * opened on, and may fill an empty editor, but must never overwrite an unrelated draft.
- */
-export function elevateInsertAllowed(
-  elevatingEditorDraft: boolean,
-  initialEditor: string,
-  currentEditor: string,
-): boolean {
-  return elevatingEditorDraft ? currentEditor === initialEditor : !currentEditor.trim();
-}
-
 /** Deliberately strict: invalid model output must not create an unchecked selection. */
 export function parseElevateDiscovery(response: string): ElevateDiscovery {
   // Take the only discovery payload in the reply. Choosing between several would mean guessing
