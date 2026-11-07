@@ -358,6 +358,25 @@ export async function openBtwModal(
 		(tui, theme, _keybindings, done) => {
 			let closed = false;
 			let controller: AbortController | undefined;
+			let activeTurn: { pending?: BtwTurn; original?: BtwTurn } | undefined;
+			// Discard an unfinished reply immediately on close, before another modal can
+			// reuse the same thread. A cancelled retry restores the completed old turn.
+			const discardUnfinished = () => {
+				const work = activeTurn;
+				if (!work) return;
+				let position = thread.turns.length;
+				if (work.pending) {
+					const index = thread.turns.indexOf(work.pending);
+					if (index >= 0) {
+						position = index;
+						thread.turns.splice(index, 1);
+					}
+				}
+				if (work.original && !thread.turns.includes(work.original)) {
+					thread.turns.splice(position, 0, work.original);
+				}
+				activeTurn = undefined;
+			};
 
 			const transcript = () => formatBtwTranscript(thread.turns);
 
@@ -375,16 +394,18 @@ export async function openBtwModal(
 				if (closed) return;
 				closed = true;
 				saveDraft();
-				if (!controller) options.onChange?.();
 				controller?.abort();
+				discardUnfinished();
+				options.onChange?.();
 				done(undefined);
 			};
 
 			const modal = new BtwModal(tui, theme, close, submit, () => {
 				closed = true;
 				saveDraft();
-				if (!controller) options.onChange?.();
 				controller?.abort();
+				discardUnfinished();
+				options.onChange?.();
 			});
 			modal.onInput = () => {
 				composerTouched = true;
@@ -395,6 +416,8 @@ export async function openBtwModal(
 			const runTurn = async (question: string, replaced?: BtwTurn) => {
 				if (controller) return;
 				const turnController = new AbortController();
+				const work: { pending?: BtwTurn; original?: BtwTurn } = { original: replaced };
+				activeTurn = work;
 				controller = turnController;
 				modal.setRunning(true);
 
@@ -404,20 +427,22 @@ export async function openBtwModal(
 					settings = await readSettings();
 					preferences = await readPreferences();
 				} catch (error) {
-					if (replaced) thread.turns.push(replaced);
-					if (!replaced && !options.initialQuestion) modal.setComposerText(question);
+					if (activeTurn === work) discardUnfinished();
+					if (!closed && !replaced && !options.initialQuestion) modal.setComposerText(question);
 					if (controller === turnController) controller = undefined;
-					if (!closed) { modal.setRunning(false); modal.setNotice(errorMessage(error), "error"); }
+					if (!closed) { modal.setRunning(false); modal.setNotice(errorMessage(error), "error"); options.onChange?.(); }
 					return;
 				}
-				// Closing (or reopening) during the reads above must not touch the shared thread.
+				// Do not restore a cancelled retry twice after close/dispose.
 				if (closed || turnController.signal.aborted) {
-					if (replaced) thread.turns.push(replaced);
-					if (!replaced && !options.initialQuestion) modal.setComposerText(question);
+					if (activeTurn === work) discardUnfinished();
 					if (controller === turnController) controller = undefined;
 					return;
 				}
-				if (bindBtwBackend(thread, capabilityBackend(settings, "btw"))) modal.setNotice("Backend changed — started a fresh side thread.", "warning");
+				if (bindBtwBackend(thread, capabilityBackend(settings, "btw"))) {
+					work.original = undefined; // An old-backend retry must not recreate discarded history.
+					modal.setNotice("Backend changed — started a fresh side thread.", "warning");
+				}
 				if (thread.turns.length === 0) {
 					thread.conversationId = undefined;
 					const context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS, BTW_CONTEXT_MAX)?.text;
@@ -430,7 +455,9 @@ export async function openBtwModal(
 				const context = conversationId ? undefined : thread.context;
 				const full = thread.full;
 
-				thread.turns.push({ question, answer: "…" });
+				const pending = { question, answer: "…" };
+				work.pending = pending;
+				thread.turns.push(pending);
 				modal.setText(transcript());
 				modal.scrollToEnd();
 
@@ -446,11 +473,11 @@ export async function openBtwModal(
 						turnController.signal,
 						(partial) => {
 							if (closed || turnController.signal.aborted) return;
-							thread.turns[thread.turns.length - 1]!.answer = partial;
+							pending.answer = partial;
 							modal.setText(transcript());
 						},
 					);
-					if (turnController.signal.aborted) return;
+					if (closed || turnController.signal.aborted) return;
 					if (result.expiredContinuation) {
 						// The native session is gone. Drop the dead id, rebuild the prompt from this thread's own
 						// transcript AND its captured main-session context (the local `context` is undefined
@@ -464,7 +491,7 @@ export async function openBtwModal(
 							turnController.signal,
 							(partial) => {
 								if (closed || turnController.signal.aborted) return;
-								thread.turns[thread.turns.length - 1]!.answer = partial;
+								pending.answer = partial;
 								modal.setText(transcript());
 							},
 						);
@@ -475,13 +502,17 @@ export async function openBtwModal(
 						thread.sessionFull = full;
 						thread.sessionPreferences = preferences;
 					}
-					thread.turns[thread.turns.length - 1]!.answer = result.text;
+					pending.answer = result.text;
 				} catch (error) {
 					if (turnController.signal.aborted || closed) return;
-					thread.turns[thread.turns.length - 1]!.answer = `_${errorMessage(error)}_`;
+					pending.answer = `_${errorMessage(error)}_`;
 					modal.setNotice(errorMessage(error), "error");
 				} finally {
 					if (controller === turnController) controller = undefined;
+					if (activeTurn === work) {
+						if (closed || turnController.signal.aborted) discardUnfinished();
+						else activeTurn = undefined;
+					}
 					if (!closed) {
 						modal.setRunning(false);
 						modal.setText(transcript());
