@@ -83,8 +83,12 @@ Use Overview → Regenerate guide only when you want a fresh explanation/assessm
 
 ### Delete a saved review
 
-Use `/bro guided-review delete` to choose a saved review, or
-`/bro guided-review delete <PR number or URL>` for a specific PR.
+Use **Overview → Delete review** inside a saved review, or run
+`/bro guided-review delete` to choose from your saved reviews. For a specific
+record, use `/bro guided-review delete <PR number or URL>`. Deletion reads
+only local saved records: no GitHub access or model call is required. A bare
+PR number must match exactly one saved review; use the full PR URL if the
+number appears in more than one repository.
 Bro shows the target and asks for confirmation before removing its JSON record,
 private questions/drafts and captured Git source. Closing the picker or declining
 the confirmation changes nothing. Close an open review first; an active writer
@@ -123,7 +127,7 @@ One open writer per review is supported within a Pi process. Concurrent editing 
 
 | Problem | What to do |
 | --- | --- |
-| GitHub unavailable when reopening | Use bare `/bro guided-review` to choose a saved review; the picker does not fetch |
+| GitHub unavailable when reopening | Use bare `/bro guided-review` to choose a saved review; resume and deletion from local records do not fetch |
 | Sandboxed shell review backend (Codex, Grok, Agy) | Advisory shown; choose Claude, Muse, or Pi in `/bro config` for strict file-only inspection on untrusted PRs |
 | Git/gh authentication or fetch error | Read the acquisition error; check Git/`gh auth status`; retry explicitly |
 | Invalid/failed preparation | Changed files remain available; use Prepare guide to retry when ready for another call |

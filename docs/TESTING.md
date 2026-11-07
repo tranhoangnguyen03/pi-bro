@@ -187,9 +187,16 @@ pi --tui-mode fullscreen --no-extensions -e "$BRO/src/bro.ts"
 3. Reopen the first review in another modal; deletion must be refused while it is active.
 4. Close it, delete through the picker and confirm. Only its record, drafts and
    capture disappear. The second review and the main working tree stay unchanged.
-5. Repeat direct `/bro guided-review delete <PR number or URL>` after confirming
-   the target resolves correctly. An invalid or missing target must not delete
-   anything. No model call or GitHub mutation occurs.
+   Check that the picker label preserves every letter of the saved title.
+5. Repeat direct `/bro guided-review delete <PR number or URL>` while offline or
+   logged out of gh. It must match the saved local record, without a network
+   request. When two repos share a PR number, bare-number deletion must be
+   refused and the full URL must work.
+6. Open a saved review and use Overview → Delete review. Decline once (the
+   record remains), then accept. Close/dispose must not save the deleted record
+   back to disk. The active review remains locked until teardown.
+7. An invalid or missing target must not delete anything. No model call or
+   GitHub mutation occurs.
 
 ### Bounded live checks (not part of npm test)
 

@@ -6,8 +6,9 @@ All notable changes to pi-bro are documented here.
 
 ### Added
 
-- Guided Review can delete a specific saved PR review, its notes and captured Git source through a confirmed saved-review picker or explicit PR target.
-- Active in-process reviews block deletion. The storage helper validates review IDs, limits removal to the selected record and capture, and leaves other reviews and Pi settings untouched.
+- Guided Review can delete a saved PR review, its notes and captured source through a confirmed picker, offline PR target, or Overview action.
+- Deletion by PR target uses local records instead of GitHub; ambiguous bare PR numbers require a full URL. Resume and delete share the same picker and preserve saved titles.
+- Active in-process reviews block command deletion. Overview deletion holds the active lock, settles pending saves and cannot recreate the record on teardown. The storage helper validates review IDs and leaves sibling reviews and Pi settings untouched.
 - Offline storage and picker tests plus a manual test journey for confirmation, active writers and cleanup.
 - No automatic cleanup, new storage engine, live backend call or GitHub mutation.
 
