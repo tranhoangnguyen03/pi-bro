@@ -82,7 +82,19 @@ When shaping an answer, each part has one owner:
 | What a Show drawing focuses on | The steering query |
 | Who the answer is for: wording, tone, depth, and answer language | Your [preferences](settings.md#preferences), otherwise Bro's built-in defaults |
 
+## Architecture docs
+
+`/bro architecture` inherits the BTW backend/model/effort selection but uses Guided Review's **restricted inspection execution** (fresh, non-continuing call), against a temporary copy of non-ignored project files. Model text, source files it reads, optional focus and preferences go to the selected provider. Bro does not automatically send the main Pi conversation.
+
+Claude, Muse and Pi provide file-only inspection. Codex and Grok run shell-enabled read-only sandboxes. Agy's inspection sandbox **can write inside the temporary project copy**. A temporary directory does not constrain a CLI's global filesystem/network access. Bro's own import writes only checked `docs/architecture/` files; this is not a blanket guarantee about backend side effects. Project content remains untrusted data.
+
+Excluded/large/binary files are not in the snapshot; Bro validates graph paths and Markdown links and checks that source/target files did not change before import. Snapshot checks cannot prove semantic accuracy or guarantee multi-file atomicity across abrupt host shutdown. The temporary copy and the model proposal are removed when the operation completes. Files under `docs/architecture/` remain normal repo documents. No autonomous commits or background runs.
+
+See [feature guide](../features/architecture.md).
+
 ## Privacy and safety
+
+- **Overthink requests:** after a substantive Pi turn, Bro makes one additional provider call using Pi's active model and current session conversation projection (including exposed tool evidence), appending the current session's questions. Overthink never executes tool calls. It may still send tool descriptions copied from Pi's existing context to support cache reuse; a tool-use response is rejected without executing the tool. The provider may retain input under its policy. Results and questions are stored in private Pi session custom entries, not LLM turns; global questions use `bro-overthink-defaults.json` in the agent home. This cannot promise a cache hit or fixed incremental cost. Features → Overthink has an on/off switch (on by default). The viewer displays provider-reported input/cache-read/cache-write/output/reasoning tokens and USD cost when available; a reported cache-read value of zero may mean either a cache miss or unsupported caching. See [Overthink](../overthink.md).
 
 - **External requests**: Bro sends the latest completed assistant response,
   pasted text, extracted document text, extracted webpage text, or recent

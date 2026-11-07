@@ -13,9 +13,9 @@ const settings={backend:"agy",model:"default-model",effort:"low",mode:"balanced"
 const tui={mode:"regular",terminal:{rows:34,columns:100,write(){}},requestRender(){}};
 const theme={fg:(_color,text)=>text,bold:text=>text};
 const enter="\r",esc="\x1b",down="\x1b[B";
-const mount=state=>{
+const mount=(state, automatic=true)=>{
  let result;
- const component=createConfigNavigationModal(state,settings)(tui,theme,{},value=>{result=value;});
+ const component=createConfigNavigationModal(state,settings,automatic)(tui,theme,{},value=>{result=value;});
  return {component, result:()=>result};
 };
 
@@ -69,4 +69,23 @@ test("BTW and Review editing pages visibly disclose selected backend permissions
   const reviewScreen=review.render(100).join("\n");
   assert.match(reviewScreen,/read-only sandbox/);
   assert.match(reviewScreen,/Captured|Guide|Review/);
+});
+
+test("Features > Overthink opens global question editor, not a model picker", () => {
+  const state = { screen: "root" }, m = mount(state);
+  m.component.handleInput(down); m.component.handleInput(enter);
+  for (let i = 0; i < 8; i++) m.component.handleInput(down);
+  m.component.handleInput(enter);
+  assert.equal(state.screen,"overthink");
+  assert.match(m.component.render(100).join("\n"),/Default questions/);
+  m.component.handleInput(enter);
+  assert.deepEqual(m.result(), { kind: "overthink-defaults" });
+});
+
+test("Overthink config toggle is a separate action with no model picker",()=>{
+  const state={screen:"overthink"},m=mount(state,false);
+  assert.match(m.component.render(100).join("\n"),/Automatic checks.*Off/);
+  m.component.handleInput(down);
+  m.component.handleInput(enter);
+  assert.deepEqual(m.result(),{kind:"overthink-toggle"});
 });

@@ -393,6 +393,10 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 - Inside Simplify: \`/simplify\`, \`/text <text>\`, \`/file <path>\`, \`/url <url>\`, \`/copy\`, \`/clear\`, \`/help\`. **M** changes the mode and re-explains; **R** retries. One source at a time, no chat thread.\n- \`/bro open\` — legacy last-result view (retained for compatibility)
 - \`/bro show [n-turns] [query]\` — draw recent turns' conversation text as shapes; an optional query steers the focus
 
+## Architecture documentation
+
+- \`/bro architecture [focus]\` — inspect this project and create or refresh \`docs/architecture/\` (Markdown, diagrams and a self-contained HTML map). Inherits the BTW model selection. See docs/features/architecture.md.
+
 ## Guided Review
 
 - \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).
@@ -410,6 +414,11 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 - \`/bro grill-me [topic]\` — private decision interview. Use /consolidate, /insert-last-message or /help. Full-access risk: docs/grill-me.md.
 
+## Overthink
+
+- \`/bro overthink\` — view private automatic second-look notes without running a model. Ctrl+R forces retry; Ctrl+E edits this session's questions; ? shows help; Ctrl+C copies. Uses the active Pi model and thinking level only. No separate backend settings.
+- \`/bro config\` → Features → Overthink provides automatic on/off and editable global starting questions; session edits stay with their Pi session. See docs/overthink.md.
+
 ## Side conversation
 
 - \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
@@ -425,7 +434,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 ## Configure and check
 
 - \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
-- \`/bro config\` — Global (shared defaults, preferences, Doctor) and Features (Simplify, Show, BTW, Review, Advisor and BTW-inherited workflows). The same model pickers, safe saves and error handling remain; Esc backs out.
+- \`/bro config\` — Global (shared defaults, preferences, Doctor) and Features (Simplify, Show, BTW, Review, Advisor, Overthink defaults and BTW-inherited workflows). The same model pickers, safe saves and error handling remain; Esc backs out.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
 
