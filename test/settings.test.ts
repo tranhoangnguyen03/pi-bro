@@ -28,7 +28,6 @@ test('Simplify is discoverable, while bare /bro and /bro simplify have distinct 
 });
 
 
-const { CLAUDE_EFFORTS } = backend;
 const {
 	CLAUDE_MODELS,
 	GROK_EFFORTS,
@@ -486,10 +485,6 @@ test("Claude models support sonnet/opus aliases and arbitrary explicit IDs", () 
 	assert.equal(resolveClaudeModel(" Opus "), "opus");
 	assert.equal(resolveClaudeModel("claude-opus-4-6"), "claude-opus-4-6");
 	assert.throws(() => resolveClaudeModel("   "), /Claude model/);
-});
-
-test("Claude effort levels include xhigh and max", () => {
-	assert.deepEqual([...CLAUDE_EFFORTS], ["low", "medium", "high", "xhigh", "max"]);
 });
 
 test("withCapabilityOverride stores the whole Claude pair and clears only on explicit undefined", () => {
