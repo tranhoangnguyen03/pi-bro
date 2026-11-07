@@ -129,6 +129,16 @@ if (prompt.includes("NEXT CLEAN QUESTION")) {
     assert.deepEqual(thread.turns, [prior], "aborted placeholder removed synchronously on close");
     assert.ok(saved.every(x => x.turns.every(t => t.answer !== "…" && t.question !== "SLOWQ side")));
 
+    // A cancelled retry must restore the completed reply that /retry replaced.
+    run = open();
+    modal = await run.ready;
+    modal.setComposerText("/retry");
+    modal.handleInput("\r");
+    await until(() => thread.turns.length === 1 && thread.turns[0].answer === "…", "retry placeholder");
+    modal.handleInput("\x1b");
+    await run.finished;
+    assert.deepEqual(thread.turns, [prior], "cancelled retry must restore its previous completed turn");
+
     run = open();
     modal = await run.ready;
     assert.doesNotMatch(stripVTControlCharacters(modal.render(94).join("\n")), /SLOWQ side/);
