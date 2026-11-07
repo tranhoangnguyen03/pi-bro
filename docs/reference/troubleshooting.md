@@ -43,7 +43,7 @@ tool before giving it to Bro.
 - Direct webpage fetching does not currently use `HTTP_PROXY`, `HTTPS_PROXY`,
   or other proxy environment variables.
 - `/bro elevate` is pre-execution only. It does not validate expert claims, run source research or keep a persistent thread. Invalid discovery JSON can be retried with the [Retry] button; if it recurs, choose another BTW backend/model in `/bro config`. See [Elevate](../elevate.md).
-- `/bro btw` threads are memory-only and do not survive reloads or restarts.
+- `/bro btw` threads are saved in the Pi session file and restored on reload/restart. With the Pi backend, the native side session is memory-only, so the first turn after a restart reseeds it from the saved transcript and shows an expiry notice.
 - The Agy advisor requires Agy CLI `>=1.1.15`.
 - Show captures only the conversation text of what already happened in the
   current session — the last few turns' user and assistant messages, with

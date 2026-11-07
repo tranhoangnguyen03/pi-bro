@@ -20,7 +20,7 @@ import { errorMessage } from "./util.ts";
 export async function openGrillModal(
   ctx: ExtensionCommandContext,
   thread: GrillThread,
-  options: { start?: boolean } = {},
+  options: { start?: boolean; onChange?: () => void } = {},
 ): Promise<void> {
   const openingBackend = capabilityBackend(await readSettings(), "btw");
   await openBroOverlay<void>(
@@ -55,12 +55,14 @@ export async function openGrillModal(
         if (closed) return;
         closed = true;
         saveDraft();
+        if (!controller) options.onChange?.();
         controller?.abort();
         done(undefined);
       };
       const modal = new BtwModal(tui, theme, close, submit, () => {
         closed = true;
         saveDraft();
+        if (!controller) options.onChange?.();
         controller?.abort();
       }, {
         title: "Bro · grill-me",
@@ -181,7 +183,7 @@ export async function openGrillModal(
           pendingSummary = undefined;
           pendingReply = undefined;
           if (controller === attempt) controller = undefined;
-          if (!closed) { modal.setRunning(false); modal.setText(transcript()); }
+          if (!closed) { modal.setRunning(false); modal.setText(transcript()); options.onChange?.(); }
         }
       };
 
@@ -213,6 +215,7 @@ export async function openGrillModal(
         delete thread.draft;
         modal.clearComposer();
         modal.setText(transcript());
+        options.onChange?.();
         void runTurn(topic);
       };
 
@@ -229,6 +232,7 @@ export async function openGrillModal(
             thread.fullAccess = true;
             refreshHeader();
             modal.setNotice(permissionNotice(activeBackend), "warning");
+            options.onChange?.();
           } else clear(pending.slice(4));
           return;
         }
@@ -240,6 +244,7 @@ export async function openGrillModal(
           refreshHeader();
           modal.clearComposer();
           modal.setNotice(`Depth: ${thread.depth}. Applies to the next question.`);
+          options.onChange?.();
           return;
         }
         if (action.kind === "access") {
@@ -251,6 +256,7 @@ export async function openGrillModal(
             thread.fullAccess = action.value === "full";
             refreshHeader();
             modal.setNotice(permissionNotice(activeBackend));
+            options.onChange?.();
           }
           return;
         }

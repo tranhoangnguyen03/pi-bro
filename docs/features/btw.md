@@ -46,6 +46,7 @@ asked in.
   mode.
 - A turn is capped at 2 minutes in conversation-only mode and 10 minutes in
   full permission mode.
-- Bro's thread lives in memory only — it clears when you switch Pi sessions,
-  reload extensions, or quit Pi. Changing the BTW backend starts a fresh
+- Bro saves its completed thread, mode and draft as private Pi session entries.
+  Reloading or continuing the same session restores them. `/tree` restores the selected branch's state, and an aborted reply is discarded rather than saved as `…`. Reopening unchanged state adds no new disk entry. A new session starts fresh;
+  a fork initially inherits the shared history then changes independently. Changing the BTW backend starts a fresh
   thread; native session IDs never cross backends.

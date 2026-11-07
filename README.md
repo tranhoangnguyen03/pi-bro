@@ -105,15 +105,17 @@ which may keep it under their own policies. Paths below are under
 
 | Feature | What is sent | What Bro keeps on disk |
 | --- | --- | --- |
-| Explain | The agent's last reply, your pasted text, or text extracted from your file or webpage, plus your preferences | Nothing; the last result stays in memory |
+| Explain | The agent's last reply, your pasted text, or text extracted from your file or webpage, plus your preferences | Last result as a private Pi session entry |
 | Architecture Docs | Repository source, existing architecture docs, focus and preferences; only selected backend can see snapshot files | Generated Markdown, JSON graph and offline HTML in `docs/architecture/`; temporary inspection copy is removed |
-| Show | User and assistant text from recent turns (no tool calls, tool results, reasoning or images), plus your preferences | Diagram pages in `pi-bro-<uid>/` in your system temp folder |
-| Side questions | Your questions and up to the last 8 turns of conversation text, plus your preferences | Nothing; the thread stays in memory |
-| Grill Me | Topic, interview turns, up to the last 8 main-session text turns and preferences; any workspace files the selected inspector reads | Nothing; interview and brief are in memory |
+| Show | User and assistant text from recent turns (no tool calls, tool results, reasoning or images), plus your preferences | Last result in the private Pi session, plus temporary diagram pages in `pi-bro-<uid>/` |
+| Side questions | Your questions and up to the last 8 turns of conversation text, plus your preferences | Private Pi session entries with completed turns, mode and draft |
+| Grill Me | Topic, interview turns, up to the last 8 main-session text turns and preferences; any workspace files the selected inspector reads | Private Pi session entries with the interview and brief |
 | Overthink | Current session projection, including tool evidence, plus private user-editable questions, to the active Pi provider | Global questions in `bro-overthink-defaults.json`; per-session questions and latest private note in Pi session custom entries |
 | Elevate | Your objective, selected findings, all current-branch user/assistant text; Full also includes tool-call arguments and text results, and preferences | Nothing; the workflow stays in memory |
 | Guided Review | The PR description and diff, the files the backend reads, your questions, plus your preferences | Reviews and captured source in `bro-reviews/`, with no automatic cleanup |
 | Advisor | The agent's system instructions, tool list and whole conversation, including tool calls and results (reasoning and images omitted), plus your steering | Steering in `bro-advisor.md` and the session file |
+
+Session-scoped Bro entries live **inside Pi's session file**. They stay out of the model's conversation, but are not secret from someone who can read, back up, export, or share that file. Check the session content before sharing it; this feature does not encrypt or redact exports.
 
 `/bro url` also connects straight to the website, which sees your IP address.
 Bro runs each CLI as you, with your environment. It never reads or copies an
@@ -148,8 +150,7 @@ and [Privacy and safety](docs/reference/data-and-permissions.md#privacy-and-safe
 - No fallback: if the chosen backend, model or effort fails, Bro shows that
   backend's error instead of switching. → Run `/bro doctor`.
 - Elevate runs fresh restricted calls through the BTW model setting. Restricted does not always mean sandboxed; see [access and retention](docs/reference/data-and-permissions.md). The shortcut may not work in all terminals: use `/bro elevate` instead.
-- BTW and Grill Me threads and the last explanation live in memory only and clear on
-  reload or restart.
+- BTW, Grill Me and the latest explanation/Show result use private session entries; they survive normal Pi reload/resume. A new session starts fresh and later fork changes stay separate. Abrupt crashes during active calls are not guaranteed.
 - Guided Review runs in local interactive Pi only and does not post to
   GitHub.
 
