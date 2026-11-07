@@ -99,18 +99,12 @@ export function parseAgyModels(output: string): AgyModelFamily[] {
 }
 
 export async function listAgyModels(pi: ExtensionAPI, signal?: AbortSignal): Promise<AgyModelFamily[]> {
-	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
+	const result = await probeCli(pi, "agy", ["models"], signal, 30_000);
+	if (result.killed || result.code !== 0) throw new Error(agyFailureMessage("list models", result));
 	try {
-		const result = await pi.exec("agy", ["models"], { cwd: runDirectory, signal, timeout: 30_000 });
-		if (signal?.aborted) throw new Error("Canceled.");
-		if (result.killed || result.code !== 0) throw new Error(agyFailureMessage("list models", result));
-		try {
-			return parseAgyModels(result.stdout);
-		} catch (error) {
-			throw new Error(withDoctor(error));
-		}
-	} finally {
-		await rm(runDirectory, { recursive: true, force: true });
+		return parseAgyModels(result.stdout);
+	} catch (error) {
+		throw new Error(withDoctor(error));
 	}
 }
 
@@ -154,12 +148,12 @@ function piEffortDetail(model: Parameters<typeof piEffectiveEffort>[0], effort: 
 
 // Every diagnostic CLI probe runs away from the user's project and cleans up on all outcomes.
 async function probeCli(
-	pi: ExtensionAPI, binary: string, args: string[], signal: AbortSignal, timeout: number,
+	pi: ExtensionAPI, binary: string, args: string[], signal: AbortSignal | undefined, timeout: number,
 ): Promise<Awaited<ReturnType<ExtensionAPI["exec"]>>> {
 	const runDirectory = await mkdtemp(join(tmpdir(), "pi-bro-"));
 	try {
 		const result = await pi.exec(binary, args, { cwd: runDirectory, signal, timeout });
-		if (signal.aborted) throw new Error("Canceled.");
+		if (signal?.aborted) throw new Error("Canceled.");
 		return result;
 	} finally {
 		await rm(runDirectory, { recursive: true, force: true });
