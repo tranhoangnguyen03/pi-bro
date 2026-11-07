@@ -100,6 +100,21 @@ export async function openGrillModal(
             ? "Agy inspection sandbox can still write project files. No-edits is prompt-only on Agy."
             : "";
 
+      // Both interview turns and consolidations share a current backend snapshot and disclosure.
+      const prepareRun = async (signal: AbortSignal) => {
+        const [settings, preferences] = await Promise.all([readSettings(), readPreferences()]);
+        if (closed || signal.aborted) return;
+        const backend = capabilityBackend(settings, "btw");
+        activeBackend = backend;
+        refreshHeader();
+        modal.setNotice(permissionNotice(backend), thread.fullAccess || backend === "agy" ? "warning" : "info");
+        const selection = selectionForCapability(settings, "btw");
+        thread.model = selectionLabel(selection);
+        thread.preferences = Boolean(preferences);
+        modal.setModel(`${thread.model}${thread.preferences ? " · prefs" : ""}`);
+        return { backend, selection, preferences };
+      };
+
       const runTurn = async (reply: string, replaced?: GrillTurn) => {
         if (controller || closed) return;
         thread.retry = { reply, replace: Boolean(replaced) };
@@ -108,16 +123,9 @@ export async function openGrillModal(
         modal.setRunning(true);
         pendingReply = reply;
         try {
-          const [settings, preferences] = await Promise.all([readSettings(), readPreferences()]);
-          if (closed || attempt.signal.aborted) return;
-          const backend = capabilityBackend(settings, "btw");
-          activeBackend = backend;
-          refreshHeader();
-          modal.setNotice(permissionNotice(backend), thread.fullAccess || backend === "agy" ? "warning" : "info");
-          const selection = selectionForCapability(settings, "btw");
-          thread.model = selectionLabel(selection);
-          thread.preferences = Boolean(preferences);
-          modal.setModel(`${thread.model}${thread.preferences ? " · prefs" : ""}`);
+          const prepared = await prepareRun(attempt.signal);
+          if (!prepared) return;
+          const { backend, selection, preferences } = prepared;
           if (!thread.context && !thread.turns.length) {
             thread.context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS, BTW_CONTEXT_MAX)?.text;
           }
@@ -165,15 +173,9 @@ export async function openGrillModal(
         controller = attempt;
         modal.setRunning(true);
         try {
-          const [settings, preferences] = await Promise.all([readSettings(), readPreferences()]);
-          if (closed || attempt.signal.aborted) return;
-          activeBackend = capabilityBackend(settings, "btw");
-          refreshHeader();
-          modal.setNotice(permissionNotice(activeBackend), thread.fullAccess || activeBackend === "agy" ? "warning" : "info");
-          const selection = selectionForCapability(settings, "btw");
-          thread.model = selectionLabel(selection);
-          thread.preferences = Boolean(preferences);
-          modal.setModel(`${thread.model}${thread.preferences ? " · prefs" : ""}`);
+          const prepared = await prepareRun(attempt.signal);
+          if (!prepared) return;
+          const { selection, preferences } = prepared;
           const prompt = buildGrillPrompt({
             topic: thread.topic, depth: thread.depth, context: thread.context,
             history: replace ? thread.turns.slice(0, -1) : thread.turns, preferences, consolidate: true, fullAccess: thread.fullAccess,
