@@ -15,6 +15,7 @@ Start with what you want to do. The [README](../README.md) explains the product,
 - [Document a repository's architecture](features/architecture.md) — create or refresh Markdown, diagrams and an offline HTML map.
 - [Ask a private side question](features/btw.md#bro-btw-side-conversation) — BTW.
 - [Remember personal context for agents](remember-me.md) — approved short memories, expandable background and the read-only `about_user` tool.
+- [Review work quietly with Overthink](overthink.md) — automatic same-model second look with editable session questions.
 - [Get grilled on a decision](grill-me.md) — one question at a time in a private modal, then copy a decision brief.
 - [Improve a request before sending it](elevate.md) — Elevate: discover expert gaps, choose improvements, rewrite the task.
 - [Investigate a PR](guided-review.md) — Guided Review.

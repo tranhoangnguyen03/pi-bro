@@ -2,6 +2,19 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.31.0] - 2026-11-07
+
+### Added
+
+- Automatic Overthink second-look notes after fully settled substantive Pi work (after retry, compaction and queued continuations), using the active model, thinking level and current session projection to allow prompt-cache reuse.
+- `/bro overthink` private notes viewer with force retry, help, copy and session-question editing.
+- Session-position markers label older notes OUTDATED after later work or branch movement; a generation check prevents a stale automatic-settings read from scheduling a check for newer work.
+- One editable question-list UI for global defaults (`/bro config → Features → Overthink`) and independent per-session question snapshots. Reset global to factory and session to global; store latest notes as session-only custom entries.
+
+### Limits
+
+- Same-model criticism is not an independent review. Automatic checks start on; Features → Overthink can turn them off while keeping manual retry. Usage and cost are shown only when reported by the provider; high-effort reasoning can still be expensive. The second request retains Pi's context, which may include tool descriptions, but does not execute tools. Actual cache reuse and billable savings require live verification. Full TUI and PiG qualification still require real sessions.
+
 ## [0.30.0] - 2026-11-06
 
 ### Added

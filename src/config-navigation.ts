@@ -4,11 +4,11 @@ import { capabilityBackend, capabilityOverride, capabilityPair } from "./setting
 import { reviewBackendNotice } from "./backend.ts";
 
 export type ConfigSettingsPage = "defaults" | Capability;
-export type ConfigNavScreen = "root" | "global" | "features" | "advisor" | "inherited";
+export type ConfigNavScreen = "root" | "global" | "features" | "advisor" | "inherited" | "overthink";
 export type ConfigNavState = { screen: ConfigNavScreen; inherited?: "elevate"|"grill-me"|"remember-me"|"architecture" };
 export type ConfigNavAction =
   | {kind:"settings";page:ConfigSettingsPage}
-  | {kind:"preferences"|"doctor"|"advisor-steer"|"close"};
+  | {kind:"preferences"|"doctor"|"advisor-steer"|"overthink-defaults"|"overthink-toggle"|"close"};
 
 export const CONFIG_ROOT = [
   {value:"global",label:"Global — shared defaults, preferences and Doctor"},
@@ -28,6 +28,7 @@ export const CONFIG_FEATURES = [
   {value:"elevate",label:"Elevate — inherits BTW"},
   {value:"grill-me",label:"Grill Me — inherits BTW"},
   {value:"remember-me",label:"Remember Me — inherits BTW"},
+  {value:"overthink",label:"Overthink — automatic checks and default questions"},
   {value:"architecture",label:"Architecture Docs — inherits BTW"},
 ] as const;
 
