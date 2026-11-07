@@ -1,5 +1,5 @@
 import { matchesKey } from "@earendil-works/pi-tui";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { copyToClipboard, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { execute as executeBackend } from "./backend.ts";
 import { BtwModal, BTW_CONTEXT_MAX, BTW_CONTEXT_TURNS, formatBtwTranscript } from "./btw.ts";
 import {
@@ -9,7 +9,6 @@ import {
 import { readPreferences, readSettings, selectionForCapability, selectionLabel, capabilityBackend } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
 import { openBroOverlay } from "./modal-kit.ts";
-import { canBroInsertIntoEditor, insertBroDesktopText } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
 /**
@@ -20,7 +19,7 @@ import { errorMessage } from "./util.ts";
 export async function openGrillModal(
   ctx: ExtensionCommandContext,
   thread: GrillThread,
-  options: { start?: boolean; onChange?: () => void } = {},
+  options: { start?: boolean; onChange?: () => void; copy?: (text: string) => Promise<void> } = {},
 ): Promise<void> {
   const openingBackend = capabilityBackend(await readSettings(), "btw");
   await openBroOverlay<void>(
@@ -35,7 +34,7 @@ export async function openGrillModal(
       let activeBackend = openingBackend;
       let showingHelp = false;
       let confirmation: "full" | string | undefined;
-      const help = "## Commands\n\n- /consolidate — draft a decision brief; keep talking afterward\n- /insert-last-message — insert the latest Bro reply into an empty Pi editor, without sending\n- /depth light|balanced|exhaustive — change depth\n- /retry — retry a failed operation or regenerate the latest reply\n- /new <topic> — start over (confirmation required)\n- /access inspect|full — choose access (full requires confirmation)\n- /help — show this list\n\nAnswer with a letter or your own words. Esc returns to the interview. Type / and use Tab to complete a command.";
+      const help = "## Commands\n\n- /consolidate — draft a decision brief; keep talking afterward\n- /copy — copy the latest Bro reply or consolidated brief to the clipboard\n- /depth light|balanced|exhaustive — change depth\n- /retry — retry a failed operation or regenerate the latest reply\n- /new <topic> — start over (confirmation required)\n- /access inspect|full — choose access (full requires confirmation)\n- /help — show this list\n\nAnswer with a letter or your own words. Esc returns to the interview. Type / and use Tab to complete a command.";
 
       const transcript = () => {
         const conversation = formatBtwTranscript(pendingTurn ? [...thread.turns, pendingTurn] : thread.turns);
@@ -193,7 +192,7 @@ export async function openGrillModal(
           if (replace) thread.turns.pop();
           thread.turns.push({ question: "/consolidate", answer: outcome.text });
           delete thread.retry;
-          modal.setNotice("Brief ready. Keep talking or /insert-last-message.", "success");
+          modal.setNotice("Brief ready. Keep talking or use /copy.", "success");
         } catch (error) {
           if (!closed && !attempt.signal.aborted) modal.setNotice(errorMessage(error), "error");
         } finally {
@@ -203,18 +202,15 @@ export async function openGrillModal(
         }
       };
 
-      const insert = async () => {
+      const copy = async () => {
         const text = thread.turns.at(-1)?.answer || "";
-        if (!thread.turns.length || !text.trim()) { modal.setNotice("Nothing to insert yet.", "warning"); return; }
-        if (!canBroInsertIntoEditor(ctx)) {
-          const result = await insertBroDesktopText(ctx, text);
-          modal.setNotice(result === "inserted" ? "Inserted into main editor without sending." : result === "not_empty"
-            ? "Main editor is not empty; clear it first." : "Insertion could not be confirmed.", result === "inserted" ? "success" : "warning");
-          return;
+        if (!text.trim()) { modal.setNotice("Nothing to copy yet.", "warning"); return; }
+        try {
+          await (options.copy ?? copyToClipboard)(text);
+          if (!closed) modal.setNotice("Copied the latest reply to the clipboard.", "success");
+        } catch (error) {
+          if (!closed) modal.setNotice(`Copy failed: ${errorMessage(error)}`, "error");
         }
-        if (ctx.ui.getEditorText().trim()) { modal.setNotice("Main editor has a draft. Clear it first.", "warning"); return; }
-        ctx.ui.setEditorText(text);
-        modal.setNotice("Inserted into main editor without sending.", "success");
       };
       const clear = (topic: string) => {
         thread.topic = topic;
@@ -281,7 +277,7 @@ export async function openGrillModal(
           } else clear(action.topic);
           return;
         }
-        if (action.kind === "insert") { modal.clearComposer(); void insert(); return; }
+        if (action.kind === "copy") { modal.clearComposer(); void copy(); return; }
         if (action.kind === "consolidate") { modal.clearComposer(); void consolidate(); return; }
         if (action.kind === "retry") {
           modal.clearComposer();
