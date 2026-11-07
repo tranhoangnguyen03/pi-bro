@@ -20,7 +20,7 @@ text directly captures a new source the same way.
 
 ## Default command suggestions
 
-Typing `/bro ` displays nine task-level suggestions: `simplify`, `show`, `btw`, `guided-review`, `elevate`, `grill-me`, `remember-me`, `overthink`, and `config`. Every other documented command remains callable and discoverable by typing its prefix (e.g., `/bro doc`).
+Typing `/bro ` displays ten task-level suggestions: `simplify`, `show`, `btw`, `guided-review`, `architecture`, `elevate`, `grill-me`, `remember-me`, `overthink`, and `config`. Every other documented command remains callable and discoverable by typing its prefix (e.g., `/bro doc`).
 
 ## Commands
 
@@ -38,6 +38,7 @@ Typing `/bro ` displays nine task-level suggestions: `simplify`, `show`, `btw`, 
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro preferences` | View or edit what Bro knows about you and how you like answers; see [Preferences](settings.md#preferences). |
 | `/bro config` | Open Global (defaults, preferences and Doctor) or Features (per-feature overrides, BTW inheritance, Overthink automatic checks/default questions and Advisor steering). |
+| `/bro architecture [focus]` | Read the current project and create or refresh `docs/architecture/` with Markdown, an editable graph and offline HTML. Inherits BTW backend settings. [Guide](../features/architecture.md). |
 | `/bro guided-review <PR number or URL>` | Automatically explain and assess a captured PR in local Pi, with source evidence and optional private questions. Opening the same PR restores its saved review. |
 | `/bro guided-review` | List saved reviews; `resume` is an alias. |
 | `/bro remember-me [thought]` | Start a private memory-writing conversation, browse and expand memories, and approve saves explicitly. [Guide](../remember-me.md). |

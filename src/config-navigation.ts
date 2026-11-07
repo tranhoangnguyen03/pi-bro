@@ -5,7 +5,7 @@ import { reviewBackendNotice } from "./backend.ts";
 
 export type ConfigSettingsPage = "defaults" | Capability;
 export type ConfigNavScreen = "root" | "global" | "features" | "advisor" | "inherited" | "overthink";
-export type ConfigNavState = { screen: ConfigNavScreen; inherited?: "elevate"|"grill-me"|"remember-me" };
+export type ConfigNavState = { screen: ConfigNavScreen; inherited?: "elevate"|"grill-me"|"remember-me"|"architecture" };
 export type ConfigNavAction =
   | {kind:"settings";page:ConfigSettingsPage}
   | {kind:"preferences"|"doctor"|"advisor-steer"|"overthink-defaults"|"overthink-toggle"|"close"};
@@ -29,6 +29,7 @@ export const CONFIG_FEATURES = [
   {value:"grill-me",label:"Grill Me — inherits BTW"},
   {value:"remember-me",label:"Remember Me — inherits BTW"},
   {value:"overthink",label:"Overthink — automatic checks and default questions"},
+  {value:"architecture",label:"Architecture Docs — inherits BTW"},
 ] as const;
 
 export function effectiveConfigLabel(settings:BroSettings, capability:Capability):string {
@@ -37,8 +38,8 @@ export function effectiveConfigLabel(settings:BroSettings, capability:Capability
   return (capabilityBackend(settings,capability))+" / "+p.model+" / "+p.effort+" ("+source+")";
 }
 
-export function inheritedConfigDescription(settings:BroSettings, feature:"elevate"|"grill-me"|"remember-me"):string {
-  const purpose=feature==="elevate"?"Improve a request":feature==="grill-me"?"Private decision interview":"Personal memory writing";
+export function inheritedConfigDescription(settings:BroSettings, feature:"elevate"|"grill-me"|"remember-me"|"architecture"):string {
+  const purpose=feature==="architecture"?"Repository architecture documentation":feature==="elevate"?"Improve a request":feature==="grill-me"?"Private decision interview":"Personal memory writing";
   return purpose+". This workflow inherits BTW's configured backend, model and effort: "+
     effectiveConfigLabel(settings,"btw")+
     ". No separate override exists. Use Features > BTW to change the inherited selection.";

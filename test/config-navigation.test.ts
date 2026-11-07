@@ -12,11 +12,11 @@ const settings:BroSettings={
     show:{backend:"codex",model:"gpt-example",effort:"medium"} },
 };
 
-test("Config root has Global and Features, with the nine actual feature names",()=>{
+test("Config root has Global and Features, with the ten actual feature names",()=>{
  assert.deepEqual(CONFIG_ROOT.map(x=>x.value),["global","features"]);
  assert.deepEqual(CONFIG_GLOBAL.map(x=>x.value),["defaults","preferences","doctor"]);
  assert.deepEqual(CONFIG_FEATURES.map(x=>x.value),[
-  "explain","show","btw","review","advisor","elevate","grill-me","remember-me","overthink",
+  "explain","show","btw","review","advisor","elevate","grill-me","remember-me","overthink","architecture",
  ]);
 });
 
@@ -24,7 +24,7 @@ test("Global defaults and feature overrides have distinct, truthful effective la
  assert.match(effectiveConfigLabel(settings,"explain"),/agy \/ gemini-default \/ low \(global default\)/);
  assert.match(effectiveConfigLabel(settings,"show"),/codex \/ gpt-example \/ medium \(override\)/);
  assert.match(effectiveConfigLabel(settings,"btw"),/pi \/ anthropic\/specified-model \/ high \(override\)/);
- for(const feature of ["elevate","grill-me","remember-me"] as const){
+ for(const feature of ["elevate","grill-me","remember-me","architecture"] as const){
    const description=inheritedConfigDescription(settings,feature);
    assert.match(description,/inherits BTW/);
    assert.match(description,/anthropic\/specified-model/);

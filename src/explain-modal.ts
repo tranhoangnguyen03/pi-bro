@@ -393,6 +393,10 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 - Inside Simplify: \`/simplify\`, \`/text <text>\`, \`/file <path>\`, \`/url <url>\`, \`/copy\`, \`/clear\`, \`/help\`. **M** changes the mode and re-explains; **R** retries. One source at a time, no chat thread.\n- \`/bro open\` — legacy last-result view (retained for compatibility)
 - \`/bro show [n-turns] [query]\` — draw recent turns' conversation text as shapes; an optional query steers the focus
 
+## Architecture documentation
+
+- \`/bro architecture [focus]\` — inspect this project and create or refresh \`docs/architecture/\` (Markdown, diagrams and a self-contained HTML map). Inherits the BTW model selection. See docs/features/architecture.md.
+
 ## Guided Review
 
 - \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).

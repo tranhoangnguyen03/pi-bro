@@ -103,6 +103,12 @@ in `/bro config` as the shared default or as the capability under test.
        with the limit error, Doctor fails, and `/bro preferences` still opens
        it for trimming. Ctrl+K deletes the file.
 
+## Architecture docs
+
+In a disposable source repo, run `/bro architecture` and verify `docs/architecture/README.md`, `architecture.graph.json`, and `architecture.html`. Open the HTML with network access disabled; check keyboard navigation, flow picker, search, narrow terminals, and consistency with written pages. Try a small CLI, a data project, a mixed app/agent repo, and a specification-only repo.
+
+Run again with existing `docs/architecture/`, including a human-authored decisions page. Confirm it improves stale text without deleting that page. Change a function's behavior without renaming it; check the new explanation, not just the graph outline. Change a source file or docs page while the model runs; Bro must refuse stale imports and preserve the human changes. Test cancellation, provider failures, and invalid graph JSON; no live source changes or partial docs should appear. Test the selected backend's actual permissions rather than assuming every restricted CLI is tool-free.
+
 ## Documentation quality
 
 Run `npm run docs:check` whenever commands, feature guides, links or data access change. It checks local Markdown links and heading anchors, registered /bro subcommands and the README's first-use example. It never calls a model or uses the network.
