@@ -53,7 +53,7 @@ export function createConfigNavigationModal(
       }
       if(state.screen==="features"){
         if(value==="advisor"){go("advisor");return;}
-        if(value==="elevate"||value==="grill-me"||value==="remember-me"){
+        if(value==="elevate"||value==="grill-me"||value==="remember-me"||value==="architecture"){
           state.inherited=value;go("inherited");return;
         }
         if(value==="explain"||value==="show"||value==="btw"||value==="review")return finish({kind:"settings",page:value});

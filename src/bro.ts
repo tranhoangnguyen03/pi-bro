@@ -10,6 +10,7 @@ import {
 import { doctorReport, showBroConfigModal } from "./doctor.ts";
 import { setPiHostContext } from "./backend.ts";
 import { openElevateModal } from "./elevate.ts";
+import { openArchitectureDocs } from "./architecture.ts";
 import { openGrillModal } from "./grill.ts";
 import { openRememberModal } from "./remember.ts";
 import { openSimplifyWorkflow, type SimplifyState } from "./simplify-ui.ts";
@@ -69,6 +70,7 @@ export * from "./simplify-engine.ts";
 export * from "./simplify-ui.ts";
 
 const COMMANDS = [
+	{ value: "architecture", label: "architecture", description: "Document this repository in docs/architecture/ with diagrams and an offline map" },
 	{ value: "simplify", label: "simplify", description: "Reopen the last Simplify screen without a new model call" },
 	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
 	{ value: "file", label: "file", description: "Explain a local document" },
@@ -91,7 +93,7 @@ const COMMANDS = [
 const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
 /** Only capability-level commands appear by default; all existing commands remain discoverable by prefix. */
 export const FEATURED_BRO_COMMANDS = [
-  "simplify","show","btw","guided-review","elevate","grill-me","remember-me","config",
+  "simplify","show","btw","guided-review","architecture","elevate","grill-me","remember-me","config",
 ] as const;
 const FEATURED_COMMANDS = new Set<string>(FEATURED_BRO_COMMANDS);
 
@@ -263,6 +265,12 @@ export default async function bro(pi: ExtensionAPI) {
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");
 				}
+				return;
+			}
+
+			if (action === "architecture") {
+				try { await openArchitectureDocs(ctx, value); }
+				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
 				return;
 			}
 

@@ -82,6 +82,16 @@ When shaping an answer, each part has one owner:
 | What a Show drawing focuses on | The steering query |
 | Who the answer is for: wording, tone, depth, and answer language | Your [preferences](settings.md#preferences), otherwise Bro's built-in defaults |
 
+## Architecture docs
+
+`/bro architecture` inherits the BTW backend/model/effort selection but uses Guided Review's **restricted inspection execution** (fresh, non-continuing call), against a temporary copy of non-ignored project files. Model text, source files it reads, optional focus and preferences go to the selected provider. Bro does not automatically send the main Pi conversation.
+
+Claude, Muse and Pi provide file-only inspection. Codex and Grok run shell-enabled read-only sandboxes. Agy's inspection sandbox **can write inside the temporary project copy**. A temporary directory does not constrain a CLI's global filesystem/network access. Bro's own import writes only checked `docs/architecture/` files; this is not a blanket guarantee about backend side effects. Project content remains untrusted data.
+
+Excluded/large/binary files are not in the snapshot; Bro validates graph paths and Markdown links and checks that source/target files did not change before import. Snapshot checks cannot prove semantic accuracy or guarantee multi-file atomicity across abrupt host shutdown. The temporary copy and the model proposal are removed when the operation completes. Files under `docs/architecture/` remain normal repo documents. No autonomous commits or background runs.
+
+See [feature guide](../features/architecture.md).
+
 ## Privacy and safety
 
 - **External requests**: Bro sends the latest completed assistant response,

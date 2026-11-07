@@ -2,6 +2,20 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.30.0] - 2026-11-06
+
+### Added
+
+- `/bro architecture [focus]` inspects the current project and creates or updates `docs/architecture/` with evidence-linked Markdown, an editable graph and a standalone offline HTML viewer.
+- Bundled project-specific writing guidance and deterministic inventory, graph rendering, link checks, and guarded output import.
+- Focused tests for creation, update, model-output validation and concurrent source/document changes.
+
+### Behavior and limits
+
+- Uses the selected BTW backend/model with Guided Review's restricted inspection path on a temporary project copy; existing Bro commands and model settings are unchanged.
+- Only checked architecture docs are imported; no Git commit, live source edit, persistent memory, or automatic architecture chat.
+- Large/binary/sensitive files can be omitted; doc accuracy remains model-dependent and human review is important.
+
 ## [0.29.0] - 2026-11-05
 
 ### Highlights
