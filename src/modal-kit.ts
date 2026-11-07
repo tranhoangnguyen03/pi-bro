@@ -118,10 +118,13 @@ export class Scroller {
 	private follow = false;
 
 	/** `followEnd`: scrolling to the end pins the view to new text until the reader scrolls up. */
-	constructor(
-		private readonly onScroll: () => void,
-		private readonly options: { followEnd?: boolean } = {},
-	) {}
+	private readonly onScroll: () => void;
+	private readonly options: { followEnd?: boolean };
+
+	constructor(onScroll: () => void, options: { followEnd?: boolean } = {}) {
+		this.onScroll = onScroll;
+		this.options = options;
+	}
 
 	view(lines: string[], rows: number): string[] {
 		this.rows = Math.max(1, rows);

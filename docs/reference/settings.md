@@ -46,6 +46,8 @@ modify settings. Current selected models and overrides remain visible in the
 existing editing pages. The old `/bro doctor`, `/bro preferences` and
 `/bro advisor-steer` shortcuts remain callable.
 
+Architecture Docs inherits the **BTW** backend/model/effort selection. It uses a fresh restricted file-inspection call and does not alter the BTW thread. See [Architecture Docs](../features/architecture.md).
+
 Elevate inherits the **BTW** backend/model/effort selection. There is no separate Elevate setting in this release. See the [Elevate guide](../elevate.md).
 
 Settings live in this user-editable file, created when the extension loads

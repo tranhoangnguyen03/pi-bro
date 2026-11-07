@@ -384,9 +384,9 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 ## Pick by need
 
-- **Understand what already exists:** Simplify and Show; Architecture when released.
+- **Understand what already exists:** Simplify and Show; Architecture for this repository.
 - **Explore what could exist:** BTW for side questions; Grill Me for decisions.
-- **Get advice on existing work:** Guided Review and agent-facing Advisor; Overthink when released (#180).
+- **Get advice on existing work:** Guided Review; Overthink for automatic second looks; agent-facing Advisor.
 - **Guide the agent:** Elevate for assignments; Remember Me for approved context (about_user); Advisor Steering for priorities.
 
 These are needs, not modes. Copied text does not enter Pi until you paste and submit it.
@@ -401,6 +401,10 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 - \`/bro <input>\` — a lone URL, an existing supported file, or anything else as pasted text
 - Inside Simplify: \`/simplify\`, \`/text <text>\`, \`/file <path>\`, \`/url <url>\`, \`/copy\`, \`/clear\`, \`/help\`. **M** changes the mode and re-explains; **R** retries. One source at a time, no chat thread.\n- \`/bro open\` — legacy last-result view (retained for compatibility)
 - \`/bro show [n-turns] [query]\` — draw recent turns' conversation text as shapes; an optional query steers the focus
+
+## Architecture documentation
+
+- \`/bro architecture [focus]\` — inspect this project and create or refresh \`docs/architecture/\` (Markdown, diagrams and a self-contained HTML map). Inherits the BTW model selection. See docs/features/architecture.md.
 
 ## Guided Review
 
@@ -419,10 +423,14 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 
 - \`/bro grill-me [topic]\` — private decision interview. Use /consolidate, /copy or /help. Full-access risk: docs/grill-me.md.
 
+## Overthink
+
+- \`/bro overthink\` — view private automatic second-look notes without a model call. Ctrl+R retries; Ctrl+E edits session questions; Ctrl+C copies. Uses the active Pi model. Turn off or edit defaults in \`/bro config\` → Features → Overthink. See docs/overthink.md.
+
 ## Side conversation
 
 - \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
-- Enter asks; empty Enter or \`/retry\` re-asks. \`/mode\` toggles conversation-only/full workspace access, retaining the thread. \`/copy\`, \`/copy-all\` copy; old \`/insert\` commands now direct you to Copy. \`/clear\` resets; \`/help\` shows controls; Esc closes.
+- Enter asks; empty Enter or \`/retry\` re-asks. \`/mode\` toggles conversation-only/full workspace access, retaining the thread. \`/copy\`, \`/copy-all\` copy. \`/clear\` resets; \`/help\` shows controls; Esc closes.
 
 ## Advisor
 
@@ -434,7 +442,7 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 ## Configure and check
 
 - \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
-- \`/bro config\` — Global (shared defaults, preferences, Doctor) and Features (Simplify, Show, BTW, Review, Advisor and BTW-inherited workflows). The same model pickers, safe saves and error handling remain; Esc backs out.
+- \`/bro config\` — Global (shared defaults, preferences, Doctor) and Features (Simplify, Show, BTW, Review, Advisor, Overthink defaults and BTW-inherited workflows). The same model pickers, safe saves and error handling remain; Esc backs out.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
 

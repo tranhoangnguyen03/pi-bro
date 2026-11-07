@@ -82,7 +82,19 @@ When shaping an answer, each part has one owner:
 | What a Show drawing focuses on | The steering query |
 | Who the answer is for: wording, tone, depth, and answer language | Your [preferences](settings.md#preferences), otherwise Bro's built-in defaults |
 
+## Architecture docs
+
+`/bro architecture` inherits the BTW backend/model/effort selection but uses Guided Review's **restricted inspection execution** (fresh, non-continuing call), against a temporary copy of non-ignored project files. Model text, source files it reads, optional focus and preferences go to the selected provider. Bro does not automatically send the main Pi conversation.
+
+Claude, Muse and Pi provide file-only inspection. Codex and Grok run shell-enabled read-only sandboxes. Agy's inspection sandbox **can write inside the temporary project copy**. A temporary directory does not constrain a CLI's global filesystem/network access. Bro's own import writes only checked `docs/architecture/` files; this is not a blanket guarantee about backend side effects. Project content remains untrusted data.
+
+Excluded/large/binary files are not in the snapshot; Bro validates graph paths and Markdown links and checks that source/target files did not change before import. Snapshot checks cannot prove semantic accuracy or guarantee multi-file atomicity across abrupt host shutdown. The temporary copy and the model proposal are removed when the operation completes. Files under `docs/architecture/` remain normal repo documents. No autonomous commits or background runs.
+
+See [feature guide](../features/architecture.md).
+
 ## Privacy and safety
+
+- **Overthink requests:** after a substantive Pi turn, Bro makes one additional provider call using Pi's active model and current session conversation projection (including exposed tool evidence), appending the current session's questions. Overthink never executes tool calls. It may still send tool descriptions copied from Pi's existing context to support cache reuse; a tool-use response is rejected without executing the tool. The provider may retain input under its policy. Results and questions are stored in private Pi session custom entries, not LLM turns; global questions use `bro-overthink-defaults.json` in the agent home. This cannot promise a cache hit or fixed incremental cost. Features → Overthink has an on/off switch (on by default). The viewer displays provider-reported input/cache-read/cache-write/output/reasoning tokens and USD cost when available; a reported cache-read value of zero may mean either a cache miss or unsupported caching. See [Overthink](../overthink.md).
 
 - **External requests**: Bro sends the latest completed assistant response,
   pasted text, extracted document text, extracted webpage text, or recent
@@ -114,12 +126,9 @@ When shaping an answer, each part has one owner:
   reaches the main conversation only after the user copies, pastes, and submits it, and advisor
   results appear as normal tool results in the executor's transcript.
 - **Saved reviews**: Guided Review records, questions, drafts and captured Git source persist under the host's `getAgentDir()/bro-reviews/`. No automatic cleanup or sync is provided; see [storage and removal](../guided-review.md#access-privacy-and-storage).
-- **Memory**: the latest explanation (for `/bro open`) and the BTW thread live
-  only in process memory and clear when you switch Pi sessions, reload
-  extensions, or quit Pi. Backend-native sessions can persist independently.
-  Standing advisor priorities are stored in `~/.pi/agent/bro-advisor.md`, and
-  the session steering brief is stored as session-scoped extension data
-  (`bro-advisor-steering`) in the session file.
+- **Private session continuity**: completed BTW and Grill Me turns, modes, drafts, the latest Simplify state and the last Show result are saved as Pi `custom` entries inside the current session file. They survive normal reload/restart and are never added to the main model or Advisor snapshot. A fork initially inherits earlier entries; later updates stay on its own branch. This is local disk storage, not a global memory store or an abrupt-crash guarantee. Backend-native sessions may persist independently.
+  Standing Advisor priorities are stored in `~/.pi/agent/bro-advisor.md`, and
+  the session steering brief uses another `custom` entry (`bro-advisor-steering`). Session entries remain readable to anyone with the session file; export/sharing may include them. The private boundary is model-context isolation, not encrypted storage or export redaction.
 - **File safety**: `/bro file` reads only regular files whose resolved path is
   inside Pi's current workspace, including after resolving symlinks. Bro's
   extractor does not modify them.

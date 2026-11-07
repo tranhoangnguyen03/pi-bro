@@ -11,9 +11,13 @@ those are historical records.
 
 Production code lives in `src/` and is published as TypeScript source (no build step):
 
+- **`session-state.ts`** — restores private per-branch BTW, Grill, Simplify and last-result state from Pi custom session entries, excluded from the main model context. The same restore runs on `session_start` and `session_tree`; saved-entry fingerprints prevent redundant appends on unchanged reopen/close.
 - **`bro.ts`** — the Pi extension entry point, `/bro` command routing and completion, session lifecycle wiring, and barrel re-exports.
+- **`overthink.ts`, `overthink-state.ts`, `overthink-questions-ui.ts`** — automatic same-model review of settled Pi work; private session custom entries plus global defaults; shared question editor and latest-notes viewer. Never use Bro's separate SDK/CLI backend for this cache-sensitive feature. The request retains session context (which may include tool definitions) but runs no tools; an unexpected toolUse stop reason is rejected. Agent-end events collect substantive-work evidence; only `agent_settled` (supported from Pi 1.3) schedules automatic checks. Session-position markers ignore private custom entries, while later model messages, compaction and context edits mark notes as stale. The settings-read generation token is captured before the asynchronous read. Global automatic on/off is stored with default questions, separate from Bro's model selection.
 - **`doctor.ts`** — `/bro doctor` diagnostics, CLI version/auth probes, Agy model catalog/usage parsing, and `/bro config` modal launch wiring.
-- **`show.ts`** — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.
+- **`architecture.ts`** — `/bro architecture` orchestration: staged project, explicit bundled skill, restricted source inspection using the existing review execution contract, guarded import and progress.
+- **`resources/architecture-docs/`** — architecture-writing references, read-only inventory, offline graph renderer and output checker; packaged with Bro. The pipeline validates source/target hashes and restricts imported files to `docs/architecture/`. No persistent repo memory or new backend selection.
+- **`show.ts` — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.
 - **`advisor.ts`** — the `bro_advisor` tool registration, context snapshot builder, session/durable steering state, and progress orchestration.
 - **`btw.ts`** — the `/bro btw` side conversation thread state, native continuation/reseed policy, composer command parsing, and `BtwModal`.
 - **`elevate-engine.ts`** — independent discovery and rewrite prompts, strict discovery JSON parser, user selection and scope guards.
@@ -124,8 +128,7 @@ marked explicitly when messages or message text are removed within a turn.
 
 ## BTW continuation
 
-BTW keeps one in-memory thread bound to a backend and an access mode
-(conversation-only / full permission, toggled by `/mode`).
+BTW's active thread is bound to a backend and an access mode (conversation-only / full permission, toggled by `/mode`). Completed state is written to private Pi session entries and restored per branch; native backend continuation itself may need reseeding after restart.
 
 - Claude, Grok, Codex, and Muse resume the same native session across
   `/mode` switches (all run in the workspace).

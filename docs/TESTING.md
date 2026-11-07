@@ -20,6 +20,18 @@ pi --no-extensions -e "$BRO/src/bro.ts" --no-skills --no-prompt-templates --no-c
 Run the shared steps once per backend (Agy, Claude Code, Grok, Codex, Muse, Pi), selecting it
 in `/bro config` as the shared default or as the capability under test.
 
+## Overthink live qualification (active Pi model only)
+
+1. Start a fresh disposable Pi session with a model that exposes usage/cache counts. Check `/bro overthink` shows an empty or prior saved note **without making a call**; `?` toggles help using both ordinary and extended keyboard-protocol encoding.
+2. Run a trivial question-only turn and verify no automatic check. Run a meaningful task with at least three tool results, and check no second model request occurs on `agent_end` alone: the request must start only after `agent_settled`. The main response must not be delayed or altered. Confirm the second call does not launch any of Bro's selected external backends.
+3. Inspect the provider's usage metadata: record provider-reported cache-read/write/input/output/reasoning tokens and Pi's estimated USD cost on cold and warm runs; compare with actual billing separately when available. Do not claim low cost if cache metrics are missing or nontrivial extra reasoning/output is charged.
+4. With `/bro overthink` open, Ctrl+R forces retry, Ctrl+E edits questions, Ctrl+C copies and Esc closes. Confirm cursor, scroll, notices, save failures and key capture on both narrow and full terminals. `Alt+↑/↓` reorders when supported.
+5. `/bro config → Features → Overthink` has an automatic on/off switch (on by default) and default question editor. Switch off and verify the next meaningful task makes no second call; manual Ctrl+R must still run. Change the defaults; newly created sessions inherit them, while existing sessions keep their snapshots. Verify `Ctrl+D` twice resets global to factory and session to current globals, and only Ctrl+S persists. Edit/add/delete/reorder; empty list stops automatic checks.
+6. Reload/resume and branch/fork the session: latest notes and questions restore without appearing as user/assistant turns; sibling branches have independent edits. After saving a note, send a trivial follow-up that does not trigger a second check: `/bro overthink` must label the old note OUTDATED. Navigate to a sibling branch or change the projected context via compaction/edit: the viewer must never label an old note as current.
+7. Force auto retry and compaction between `agent_end` and `agent_settled`; the check must wait and use the post-compaction context, preserving the earlier work's tool-use evidence. Pause the automatic-settings read, start a new agent run, then complete the read: no check for the old settlement may begin. Cancel an in-flight check via new agent turn, branch switch, model change or shutdown; no stale note may appear. Trigger provider failure and confirm main task remains unaffected while manual retry shows the error.
+8. With a disposable extension that changes the `context` or `context_with_system` payload, compare the main Pi provider request with the private review request; note mismatches explicitly. Check actual cache-read tokens and estimated cost using a real provider. Do **not** assume context projection alone proves identical effective prompts. Confirm a prompt asks for plain text and no tools while retaining the same request prefix where possible. Induce a tool-use response and verify no tools execute or notes are saved; the forced retry shows the error. Check that an in-flight result is discarded if session questions change.
+9. Run both Heads-up and Overthink in a disposable session and observe that each schedules its own second call. Verify PiG separately before asserting compatibility. In two distinct agent homes, global defaults must not leak across homes.
+
 ## Shared steps
 
 1. **Config**: `/bro config` — choose a backend, then a model, for the shared
@@ -91,11 +103,43 @@ in `/bro config` as the shared default or as the capability under test.
        with the limit error, Doctor fails, and `/bro preferences` still opens
        it for trimming. Ctrl+K deletes the file.
 
+## Architecture docs
+
+In a disposable source repo, run `/bro architecture` and verify `docs/architecture/README.md`, `architecture.graph.json`, and `architecture.html`. Open the HTML with network access disabled; check keyboard navigation, flow picker, search, narrow terminals, and consistency with written pages. Try a small CLI, a data project, a mixed app/agent repo, and a specification-only repo.
+
+Run again with existing `docs/architecture/`, including a human-authored decisions page. Confirm it improves stale text without deleting that page. Change a function's behavior without renaming it; check the new explanation, not just the graph outline. Change a source file or docs page while the model runs; Bro must refuse stale imports and preserve the human changes. Test cancellation, provider failures, and invalid graph JSON; no live source changes or partial docs should appear. Test the selected backend's actual permissions rather than assuming every restricted CLI is tool-free.
+
 ## Documentation quality
 
 Run `npm run docs:check` whenever commands, feature guides, links or data access change. It checks local Markdown links and heading anchors, registered /bro subcommands and the README's first-use example. It never calls a model or uses the network.
 
 Before release, manually follow the [getting-started guide](getting-started.md) in a clean Pi session. For UI changes, compare visible controls, cancellation, error states, clipboard handoffs and screen sizes against the feature guide. For backend changes, verify that the [permissions reference](reference/data-and-permissions.md) matches actual CLI settings. Confirm external URLs and images render on GitHub and npm; the offline checker cannot establish that.
+
+## Private session recovery
+
+Use a disposable Pi session and a fake backend that can pause a response. Test on both
+the repository's pinned Pi version and the installed supported Pi version.
+
+1. Complete BTW turns, leave an unsent draft, restart Pi, and check both restore.
+   Change access mode and run `/clear`; neither restored mode nor cleared history
+   may revert after another restart.
+2. Open and close BTW five times without changing anything. The session JSONL must
+   not gain duplicate Bro custom snapshots merely because the modal was visited.
+3. Start a slow BTW response, close before it finishes, reopen and send another
+   question. The second prompt and saved session entries must **not** contain an
+   unfinished `…` answer or the cancelled question. Repeat with `/retry`;
+   the previous completed answer must survive cancellation.
+4. From a session with saved BTW/Grill/Simplify/Show work, use `/tree` to select
+   an earlier point before that work. Bro must show the selected branch's state
+   immediately, with no data copied from the abandoned branch. Make a new update,
+   restart, and verify the abandoned branch's data stays absent. Return to the
+   original branch and verify its own history is intact.
+5. Check /resume, /reload, forks, supported Desktop/RPC and PiG hosts separately.
+   Native Pi-backed BTW continuation IDs may expire on restart and need reseeding.
+   Do not claim coverage for paths not actually exercised.
+6. Remember: Bro custom entries are **on disk in the Pi session JSONL**. Check how
+   the current host exports/shares that file before claiming any export redaction.
+   Model-context isolation is not confidentiality of the session file.
 
 ## Elevate
 

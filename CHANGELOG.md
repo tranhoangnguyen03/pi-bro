@@ -2,7 +2,7 @@
 
 All notable changes to pi-bro are documented here.
 
-## [0.30.0] - 2026-11-06
+## [0.33.0] - 2026-11-07
 
 ### Highlights
 
@@ -11,6 +11,42 @@ All notable changes to pi-bro are documented here.
 - Elevate copies the revised assignment without replacing the unsent main-editor draft. Obsolete insertion code and its tests are removed.
 - Built-in help, command completion, feature guides and developer checks align around common interaction meanings while retaining each feature's special actions.
 - The read-only `about_user` agent tool and `bro_advisor` tool are unchanged. Session recovery, Guided Review lifecycle, and Overthink/Architecture PRs remain separate work.
+
+## [0.32.0] - 2026-11-07
+
+### Highlights
+
+- BTW and Grill Me preserve completed private discussions, access choices and drafts across ordinary Pi reload/restart/resume through non-model-facing custom session entries.
+- Simplify restores its most recent source and explanation; Show restores the last rendered result and focus. Cleared state stays cleared.
+- Session branches inherit their prior private state but later edits remain separate. No global user memory database or automatic context injection.
+- Added session restore validation and test coverage. Recovery still depends on Pi saving its session entries; abrupt host crashes during an active call are not guaranteed.
+
+## [0.31.0] - 2026-11-07
+
+### Added
+
+- Automatic Overthink second-look notes after fully settled substantive Pi work (after retry, compaction and queued continuations), using the active model, thinking level and current session projection to allow prompt-cache reuse.
+- `/bro overthink` private notes viewer with force retry, help, copy and session-question editing.
+- Session-position markers label older notes OUTDATED after later work or branch movement; a generation check prevents a stale automatic-settings read from scheduling a check for newer work.
+- One editable question-list UI for global defaults (`/bro config → Features → Overthink`) and independent per-session question snapshots. Reset global to factory and session to global; store latest notes as session-only custom entries.
+
+### Limits
+
+- Same-model criticism is not an independent review. Automatic checks start on; Features → Overthink can turn them off while keeping manual retry. Usage and cost are shown only when reported by the provider; high-effort reasoning can still be expensive. The second request retains Pi's context, which may include tool descriptions, but does not execute tools. Actual cache reuse and billable savings require live verification. Full TUI and PiG qualification still require real sessions.
+
+## [0.30.0] - 2026-11-06
+
+### Added
+
+- `/bro architecture [focus]` inspects the current project and creates or updates `docs/architecture/` with evidence-linked Markdown, an editable graph and a standalone offline HTML viewer.
+- Bundled project-specific writing guidance and deterministic inventory, graph rendering, link checks, and guarded output import.
+- Focused tests for creation, update, model-output validation and concurrent source/document changes.
+
+### Behavior and limits
+
+- Uses the selected BTW backend/model with Guided Review's restricted inspection path on a temporary project copy; existing Bro commands and model settings are unchanged.
+- Only checked architecture docs are imported; no Git commit, live source edit, persistent memory, or automatic architecture chat.
+- Large/binary/sensitive files can be omitted; doc accuracy remains model-dependent and human review is important.
 
 ## [0.29.0] - 2026-11-05
 

@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ADVISOR_STEERING_FILE, ADVISOR_TOOL_NAME, registerAdvisorTool } from "./advisor.ts";
 import {
 	type BtwThread,
@@ -10,7 +10,9 @@ import {
 import { doctorReport, showBroConfigModal } from "./doctor.ts";
 import { setPiHostContext } from "./backend.ts";
 import { openElevateModal } from "./elevate.ts";
+import { openArchitectureDocs } from "./architecture.ts";
 import { openGrillModal } from "./grill.ts";
+import { registerOverthink } from "./overthink.ts";
 import { openRememberModal } from "./remember.ts";
 import { openSimplifyWorkflow, type SimplifyState } from "./simplify-ui.ts";
 import { registerAboutUserTool } from "./remember-tool.ts";
@@ -48,6 +50,7 @@ import {
 } from "./sources.ts";
 import { hasBroCustomUi } from "./ui-capabilities.ts";
 import { errorMessage, unquote, withDoctor } from "./util.ts";
+import { BTW_SESSION_ENTRY, GRILL_SESSION_ENTRY, SIMPLIFY_SESSION_ENTRY, LAST_RESULT_SESSION_ENTRY, restorePrivateBroState, privateSessionEntrySnapshots } from "./session-state.ts";
 
 export * from "./util.ts";
 export * from "./ui-capabilities.ts";
@@ -67,8 +70,12 @@ export * from "./remember-engine.ts";
 export * from "./explain-modal.ts";
 export * from "./simplify-engine.ts";
 export * from "./simplify-ui.ts";
+export * from "./overthink-state.ts";
+export * from "./overthink.ts";
+export * from "./session-state.ts";
 
 const COMMANDS = [
+	{ value: "architecture", label: "architecture", description: "Document this repository in docs/architecture/ with diagrams and an offline map" },
 	{ value: "simplify", label: "simplify", description: "Reopen the last Simplify screen without a new model call" },
 	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
 	{ value: "file", label: "file", description: "Explain a local document" },
@@ -83,6 +90,7 @@ const COMMANDS = [
 	{ value: "elevate", label: "elevate", description: "Have an assignment for Pi? Get an improved request to copy and send" },
 	{ value: "remember-me", label: "remember-me", description: "Want Pi to remember your preferences? Save approved memories for about_user" },
 	{ value: "grill-me", label: "grill-me", description: "Facing a decision? Get focused challenges and an optional decision brief" },
+	{ value: "overthink", label: "overthink", description: "Want a quiet second look after big work? Get private notes from the active model" },
 	{ value: "config", label: "config", description: "Global defaults, diagnostics and feature settings" },
 	{ value: "advisor", label: "advisor", description: "Check whether the executor's advisor tool is available right now" },
 	{ value: "advisor-steer", label: "advisor-steer", description: "Want to shape future advice? Save priorities for the advisor" },
@@ -91,7 +99,7 @@ const COMMANDS = [
 const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
 /** Only capability-level commands appear by default; all existing commands remain discoverable by prefix. */
 export const FEATURED_BRO_COMMANDS = [
-  "simplify","show","btw","guided-review","elevate","grill-me","remember-me","config",
+  "simplify","show","btw","guided-review","architecture","elevate","grill-me","remember-me","overthink","config",
 ] as const;
 const FEATURED_COMMANDS = new Set<string>(FEATURED_BRO_COMMANDS);
 
@@ -101,24 +109,58 @@ export default async function bro(pi: ExtensionAPI) {
 	let lastShowSteering: string | undefined;
 	let btwThread: BtwThread | undefined;
 	let grillThread: GrillThread | undefined;
+	let savedSnapshots = new Map<string, string>();
+	// Pi custom entries are append-only. Save a new snapshot only if its content changed.
+	// Reset the comparison on /tree: a new branch must never inherit the old branch's state.
+	const appendChanged = (type: string, value: unknown) => {
+		const data = structuredClone(value);
+		const serialized = JSON.stringify(data);
+		if (savedSnapshots.get(type) === serialized) return;
+		pi.appendEntry(type, data);
+		savedSnapshots.set(type, serialized);
+	};
 	const remember = (result: ModalResult, showSteering?: string) => {
 		if (result.source) {
 			lastResult = result;
 			lastShowSteering = showSteering;
+			appendChanged(LAST_RESULT_SESSION_ENTRY, { result, steering: showSteering });
 		}
+	};
+	const saveSimplify = () => {
+		if (!savedSnapshots.has(SIMPLIFY_SESSION_ENTRY) && !simplifyState.result && !simplifyState.draft) return;
+		appendChanged(SIMPLIFY_SESSION_ENTRY, { state: simplifyState });
+	};
+	const saveBtw = () => {
+		if (!btwThread) return;
+		// Visiting an empty BTW modal does not need a disk entry.
+		if (!savedSnapshots.has(BTW_SESSION_ENTRY) &&
+			!btwThread.turns.length && !btwThread.draft && !btwThread.full) return;
+		appendChanged(BTW_SESSION_ENTRY, { thread: btwThread });
+	};
+	const saveGrill = () => {
+		if (!grillThread) return;
+		if (!savedSnapshots.has(GRILL_SESSION_ENTRY) &&
+			!grillThread.topic && !grillThread.turns.length && !grillThread.draft) return;
+		appendChanged(GRILL_SESSION_ENTRY, { thread: grillThread });
+	};
+	const restore = (ctx: ExtensionContext) => {
+		const branch = ctx.sessionManager.getBranch();
+		const restored = restorePrivateBroState(branch);
+		savedSnapshots = privateSessionEntrySnapshots(branch);
+		lastResult = restored.lastResult;
+		lastShowSteering = restored.lastShowSteering;
+		simplifyState = restored.simplify;
+		btwThread = restored.btw;
+		grillThread = restored.grill;
 	};
 
 	pi.on("session_shutdown", async () => { stopGuidedReviews(); });
-
-	pi.on("session_start", async (_event, _ctx) => {
-		lastResult = undefined;
-		simplifyState = {};
-		btwThread = undefined;
-		grillThread = undefined;
-	});
+	pi.on("session_start", async (_event, ctx) => { restore(ctx); });
+	pi.on("session_tree", async (_event, ctx) => { restore(ctx); });
 
 	registerAdvisorTool(pi);
 	registerAboutUserTool(pi);
+	const overthink = registerOverthink(pi);
 
 	pi.registerCommand("bro", {
 		description: "Explain text, documents, and webpages; draw session turns; open a side conversation; configure Bro and the executor's advisor tool",
@@ -139,7 +181,7 @@ export default async function bro(pi: ExtensionAPI) {
 
 			if (action === "simplify") {
 				if (value) { ctx.ui.notify("Use /bro simplify to reopen the last Simplify view; use /text, /file or /url inside it.", "warning"); return; }
-				try { await openSimplifyWorkflow(ctx, simplifyState, {kind:"resume"}); if (simplifyState.result) remember(simplifyState.result); }
+				try { await openSimplifyWorkflow(ctx, simplifyState, {kind:"resume"}); saveSimplify(); if (simplifyState.result) remember(simplifyState.result); }
 				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
 				return;
 			}
@@ -176,6 +218,7 @@ export default async function bro(pi: ExtensionAPI) {
 					: {kind:action as "text" | "file" | "url", input:value};
 				try {
 					await openSimplifyWorkflow(ctx, simplifyState, initial);
+					saveSimplify();
 					if (simplifyState.result) remember(simplifyState.result);
 				} catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
 				return;
@@ -266,6 +309,12 @@ export default async function bro(pi: ExtensionAPI) {
 				return;
 			}
 
+			if (action === "architecture") {
+				try { await openArchitectureDocs(ctx, value); }
+				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
+				return;
+			}
+
 			if (action === "guided-review") {
 				try { await openGuidedReview(ctx, value, await readPreferences()); }
 				catch (error) { ctx.ui.notify(errorMessage(error), "error"); }
@@ -285,9 +334,14 @@ export default async function bro(pi: ExtensionAPI) {
 				try {
 					const btwBackend = capabilityBackend(await readSettings(), "btw");
 					const thread = resolveBtwThread(btwThread);
-					if (bindBtwBackend(thread, btwBackend)) ctx.ui.notify("Backend changed — started a fresh side thread.", "info");
+					const backendChanged = bindBtwBackend(thread, btwBackend);
+					if (backendChanged) ctx.ui.notify("Backend changed — started a fresh side thread.", "info");
 					btwThread = thread;
-					await openBtwModal(ctx, { thread, initialQuestion: parsed.question });
+					if (backendChanged) saveBtw();
+					await openBtwModal(ctx, {
+						thread, initialQuestion: parsed.question,
+						onChange: () => { if (btwThread === thread) saveBtw(); },
+					});
 				} catch (error) {
 					ctx.ui.notify(withDoctor(error), "error");
 				}
@@ -308,8 +362,17 @@ export default async function bro(pi: ExtensionAPI) {
 				const start = Boolean(parsed.topic);
 				if (start) grillThread = { topic: parsed.topic, depth: parsed.depth, turns: [], fullAccess: false };
 				else grillThread ??= { topic: "", depth: parsed.depth, turns: [], fullAccess: false };
-				try { await openGrillModal(ctx, grillThread, { start }); }
+				const thread = grillThread;
+				if (start) saveGrill();
+				try { await openGrillModal(ctx, thread, { start, onChange: () => { if (grillThread === thread) saveGrill(); } }); }
 				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
+				return;
+			}
+
+			if (action === "overthink") {
+				if (value) { ctx.ui.notify("Use /bro overthink to open private notes; retry inside the modal.", "warning"); return; }
+				try { await overthink.open(ctx); }
+				catch (error) { ctx.ui.notify("Overthink: " + errorMessage(error), "error"); }
 				return;
 			}
 

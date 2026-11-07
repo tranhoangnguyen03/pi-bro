@@ -257,10 +257,8 @@ if [ "$(cat "$version_calls_file")" != "version" ]; then
 	exit 1
 fi
 
-if grep -q -e "$canary_prefix" -e "$usage_canary" -e "$document_canary" -e "SHOW_OUTPUT_CANARY" "$session_file"; then
-	printf 'Bro output leaked into the session\n' >&2
-	exit 1
-fi
+# Private custom session entries deliberately store Bro output for recovery. Check the
+# actual model projection below, not raw JSONL bytes: raw presence is no longer a leak.
 
 node --input-type=module - "$session_file" "$canary_prefix" "$usage_canary" "$document_canary" <<'JS'
 import { readFile } from "node:fs/promises";
