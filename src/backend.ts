@@ -163,7 +163,6 @@ export function stopActiveBroBackends(): void {
   for (const stop of [...activeBackendStops]) stop();
 }
 
-
 // Begins bounded lifecycle management for one already-spawned child: on cancellation, deadline, or
 // protocol failure it signals the whole POSIX process group (SIGTERM, then SIGKILL after
 // `killEscalationMs` if the child or a misbehaving grandchild ignores it). Windows only ever
@@ -599,16 +598,19 @@ async function verifyCliSubscription(
   });
   const attempt = beginAttempt(child, signal, 15_000, killEscalationMs);
   let stdout = "";
+  let stderr = "";
   let processError: NodeJS.ErrnoException | undefined;
   child.stdout?.on("data", (chunk: Buffer) => { stdout = (stdout + chunk.toString()).slice(0, 32768); });
-  child.stderr?.resume();
+  child.stderr?.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(0, 32768); });
   child.once("error", (err: NodeJS.ErrnoException) => { processError = err; });
   const { code, exitSignal } = await attempt.closed;
   attempt.dispose();
   if (attempt.causeOf() === "cancelled") return { status: "cancelled", message: "Canceled." };
   if (attempt.causeOf() === "timeout") return { status: "timeout", message: name + " subscription login check timed out." };
   if (processError) return { status: "failure", message: processStartMessage(processError, name) };
-  if (code !== 0 || exitSignal || !isSubscriptionStatus(backend, stdout)) {
+  // Codex may write its human-readable login status to stderr. Claude returns JSON on stdout.
+  const reportedStatus = backend === "codex" ? stdout + "\n" + stderr : stdout;
+  if (code !== 0 || exitSignal || !isSubscriptionStatus(backend, reportedStatus)) {
     const command = backend === "claude" ? "claude auth status" : "codex login status";
     const profile = backend === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
     return { status: "failure", message: name + " did not confirm subscription login in the selected profile. Run \`" + command +
@@ -1745,7 +1747,6 @@ async function executePi(
 		// or throwing host credential lookup becomes an ordinary outcome rather than a rejection.
 		const modelRuntime = await Promise.race([bridgePiModelRuntime(host, agentDir), stopped.then(() => undefined)]);
 		if (!modelRuntime) return latchedOutcome();
-		// Fall back to the host registry, which may know a model the rebuilt runtime does not.
 		// Only the host registry is authoritative for identity, endpoint and metadata.
 		// The fresh runtime supplies credentials/transport, not a fallback model catalog.
 		const model = host?.modelRegistry?.find(parts.providerId, parts.modelId);
