@@ -1384,3 +1384,26 @@ test("pi preserves workspace trust for system prompt discovery after settings re
 		await rm(directory, { recursive: true, force: true });
 	}
 });
+
+test("Pi dispatch uses the exact host model, including endpoint overrides, with no catalog fallback", async () => {
+  const hostModel = { ...PI_MODEL, name: "Agent-local custom model", baseUrl: "https://agent-local.invalid/v1", contextWindow: 77777 };
+  const session = fakeSession({ text: "host model dispatched" });
+  let selected: unknown;
+  const outcome = await execute(
+    piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
+    { piCreateSession: (async (options: { model: unknown }) => { selected = options.model; return { session: session.session }; }) as never },
+    fakePiHost([hostModel]),
+  );
+  assert.equal(outcome.status, "success");
+  assert.strictEqual(selected, hostModel, "model identity, baseUrl, API and metadata must come from host registry");
+
+  let started = false;
+  const unknown = await execute(
+    piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
+    { piCreateSession: (async () => { started = true; return { session: session.session }; }) as never },
+    fakePiHost([]),
+  );
+  assert.equal(unknown.status, "failure");
+  assert.match(unknown.status === "failure" ? unknown.message : "", /not in your Pi model catalog/);
+  assert.equal(started, false, "host rejection must never start the model request");
+});
