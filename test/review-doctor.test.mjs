@@ -237,24 +237,24 @@ test("Pi doctor respects host reload: disk auth changes cannot create a model ab
 	} }));
 	try {
 		const missingAuth = await piDoctor([hostModel], settings);
-		assert.match(missingAuth.report, /- ✗ \\*\\*Selected model:\\*\\* .*has no configured auth/);
-		assert.match(missingAuth.report, /- ✗ \\*\\*Explain:\\*\\* .*has no configured auth/);
+		assert.match(missingAuth.report, /- ✗ \*\*Selected model:\*\* .*has no configured auth/);
+		assert.match(missingAuth.report, /- ✗ \*\*Explain:\*\* .*has no configured auth/);
 
 		await writeFile(authPath, JSON.stringify({ "doctor-disk": { type: "api_key", key: "offline-fixture" } }));
 		// Until the host refreshes models.json, its registry remains authoritative.
 		const stale = await piDoctor([], settings);
 		assert.deepEqual(stale.calls, []);
-		assert.match(stale.report, /- ✗ \\*\\*Selected model:\\*\\* .*unavailable or virtual/);
-		assert.match(stale.report, /- ✗ \\*\\*Explain:\\*\\* .*unavailable or virtual/);
-		assert.match(stale.report, /- ✓ \\*\\*Pi model catalog:\\*\\* 0 physical models/);
+		assert.match(stale.report, /- ✗ \*\*Selected model:\*\* .*unavailable or virtual/);
+		assert.match(stale.report, /- ✗ \*\*Explain:\*\* .*unavailable or virtual/);
+		assert.match(stale.report, /- ✓ \*\*Pi model catalog:\*\* 0 physical models/);
 
 		// A host reload makes the same model and now-authenticated source visible.
 		const { report, calls } = await piDoctor([{ ...hostModel, auth: true }], settings);
 		assert.deepEqual(calls, []);
-		assert.match(report, /- ✓ \\*\\*Pi model catalog:\\*\\* [1-9]/);
-		assert.match(report, /- ✓ \\*\\*Selected model:\\*\\* pi \`doctor-disk\\/fresh\`/);
-		assert.match(report, /- ✓ \\*\\*Explain:\\*\\* pi \`doctor-disk\\/fresh\`/);
-		assert.match(report, /- ✓ \\*\\*Guided review:\\*\\* pi \`doctor-disk\\/fresh\`/);
+		assert.match(report, /- ✓ \*\*Pi model catalog:\*\* [1-9]/);
+		assert.match(report, /- ✓ \*\*Selected model:\*\* pi \`doctor-disk\/fresh\`/);
+		assert.match(report, /- ✓ \*\*Explain:\*\* pi \`doctor-disk\/fresh\`/);
+		assert.match(report, /- ✓ \*\*Guided review:\*\* pi \`doctor-disk\/fresh\`/);
 		assert.doesNotMatch(report, /✗/);
 	} finally {
 		await rm(modelsPath, { force: true });
