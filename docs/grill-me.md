@@ -28,11 +28,11 @@ This takes inspiration from the context-rich **Elephant** in Google's [Elephantâ
 | Command inside the modal | Effect |
 | --- | --- |
 | `/consolidate` | Generate a current decision brief. Does not end the interview or insert anything. |
-| `/insert-last-message` | Insert the latest completed Bro reply, including a consolidated brief, into an empty Pi editor **without sending**. No model call. |
+| `/copy` | Copy the latest reply or consolidated brief to the clipboard. No model call or editor changes. |
 | `/depth light` | Quick, focused questioning |
 | `/depth balanced` | Default: material assumptions and trade-offs |
 | `/depth exhaustive` | Deeper alternatives, evidence and failure cases |
-| `/retry` | Retry the failed/cancelled operation, otherwise regenerate the latest reply. Never repeats insertion. |
+| `/retry` | Retry the failed/cancelled operation, otherwise regenerate the latest reply. Never repeats copying. |
 | `/new <topic>` | Start over after confirmation. Resets depth to balanced and access to inspection. |
 | `/access inspect` | Request inspection tools; enforcement depends on backend |
 | `/access full` | Request full permissions; requires typing `yes` after a warning |
@@ -41,9 +41,9 @@ This takes inspiration from the context-rich **Elephant** in Google's [Elephantâ
 
 Type `/` to see matching commands; keep typing to narrow suggestions and press **Tab** to complete the first match. Completion never submits. From help, Esc returns to the discussion; a second Esc closes the modal.
 
-For confirmation prompts, type `yes` to proceed; anything else cancels. Depth can change between replies without losing the discussion. There are no question quotas or finished/locked states. Consolidate whenever useful, inspect the brief, then explicitly insert it or continue talking. The brief includes the current position, reasons, objections, unresolved questions and next actions. Insertion never overwrites a draft or submits it.
+For confirmation prompts, type `yes` to proceed; anything else cancels. Depth can change between replies without losing the discussion. There are no question quotas or finished/locked states. Consolidate whenever useful, inspect the brief, then copy it or continue talking. The brief includes the current position, reasons, objections, unresolved questions and next actions. Copy never edits or submits the Pi draft.
 
-The old `/finish`, `/copy`, `/copy-all`, `/insert`, `/insert-all`, `/clear`, and entry depth flags have been removed from this experimental interface. BTW commands are unchanged.
+The old `/finish`, `/copy-all`, `/insert`, `/insert-all`, `/insert-last-message`, `/clear`, and entry depth flags are not supported. Use `/copy` for the latest reply or brief; paste it where you choose. BTW also uses copy-only handoffs.
 
 Grill Me uses the **BTW model/backend/effort** selection from `/bro config`, but has its own independent thread. The header shows depth and effective access; `/help` keeps the footer short. Full access and Agy write risks remain visible in the header even when another notice is shown.
 
