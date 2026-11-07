@@ -2,6 +2,19 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.34.0] - 2026-11-07
+
+### Added
+
+- `/bro copy`: a model-free Markdown scratch editor for the last completed assistant reply; Ctrl+D previews, Ctrl+C copies the current raw Markdown, Ctrl+G opens Help.
+- Shared last-completed-reply extraction across Copy and Simplify, preserving Simplify's trimmed result and Copy's untrimmed source.
+- Incremental raw-text reconciliation preserves untouched tabs and CRLF even when another part of the Markdown is edited; Copy's preview and clipboard read the same draft.
+
+### Limits
+
+- Pi 1.3–1.5's built-in editor shows about 30% of terminal rows; editing long Markdown scrolls inside that region. Text parts within one assistant message are joined with one newline. Real clipboard and terminal qualification remains part of review.
+
+
 ## [0.33.0] - 2026-11-07
 
 ### Highlights
