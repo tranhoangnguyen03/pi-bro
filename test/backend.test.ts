@@ -952,6 +952,15 @@ test("invalid feature/access/continuation combinations fail before invocation", 
   assert.equal(outcome.status, "failure");
   assert.match(outcome.message, /Unsupported execution request/);
  }
+ for (const backend of ["pi", "claude", "grok", "codex", "muse"] as const) {
+   const outcome = await execute(
+     { feature: "explain", access: "restricted", prompt: "test" },
+     { backend, model: undefined } as never,
+     new AbortController().signal,
+   );
+   assert.equal(outcome.status, "failure", backend);
+   if (outcome.status === "failure") assert.match(outcome.message, /Unsupported .* selection/);
+ }
  assert.equal(existsSync(join(binDir, "spawned")), false);
  });
 });

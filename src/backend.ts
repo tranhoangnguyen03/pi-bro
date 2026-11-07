@@ -1786,6 +1786,14 @@ async function executePi(
 	}
 }
 
+/** Validate every backend's model/effort pair before an adapter accesses it. */
+function invalidModelEffortSelection(
+  pair: { model: unknown; effort?: unknown }, allowedEfforts: readonly string[],
+): boolean {
+  return typeof pair.model !== "string" || !pair.model.trim() ||
+    (pair.effort !== undefined && (typeof pair.effort !== "string" || !allowedEfforts.includes(pair.effort)));
+}
+
 // Single-attempt executor shared by all features. Never retries; never spawns a pre-aborted
 // request; on cancellation, host deadline, or a protocol failure, stops the whole POSIX process
 // group (SIGTERM, then SIGKILL after a bounded grace period) before resolving. `options` is for
@@ -1810,51 +1818,48 @@ export async function execute(
 	if (backend !== undefined && backend !== "agy" && backend !== "claude" && backend !== "grok" && backend !== "codex" && backend !== "muse" && backend !== "pi") {
 		return { status: "failure", message: `Unknown backend ${JSON.stringify(backend)}: pick Agy, Claude, Grok, Codex, Muse or Pi in \`/bro config\`.` };
 	}
+	// Review requires cwd above; restricted BTW also keeps native external sessions in the caller's workspace.
+	if (request.feature === "btw" && !request.cwd?.trim() &&
+		(backend === "codex" || backend === "muse" || backend === "grok" || backend === "claude")) {
+		return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
+	}
 	const killEscalationMs = options?.killEscalationMs ?? DEFAULT_KILL_ESCALATION_MS;
 	if (selection.backend === "pi") {
 		// Same shape checks every other adapter performs, so a corrupt runtime tag fails as an outcome
 		// instead of throwing a TypeError out of execute().
-		if (typeof selection.model !== "string" || !selection.model.trim() || (selection.effort !== undefined && !PI_EFFORTS.includes(selection.effort as never))) {
+		if (invalidModelEffortSelection(selection, PI_EFFORTS)) {
 			return { status: "failure", message: "Unsupported Pi selection: check the model (<provider>/<id>) and effort (minimal, low, medium, high, xhigh or max)." };
 		}
 		return executePi(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs, host ?? currentPiHost, options?.piCreateSession);
 	}
 	if (selection.backend === "codex") {
 		// Codex btw always runs (and resumes) in the caller's workspace, even restricted.
-		if ((request.feature === "btw" || request.feature === "review") && !request.cwd?.trim()) {
-			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
-		}
-		if (typeof selection.model !== "string" || !selection.model.trim() || (selection.effort !== undefined && !CODEX_EFFORTS.includes(selection.effort))) {
+
+		if (invalidModelEffortSelection(selection, CODEX_EFFORTS)) {
 			return { status: "failure", message: "Unsupported Codex selection: check the model and effort (low, medium, high or xhigh)." };
 		}
 		return executeCodex(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
 	}
 	if (selection.backend === "muse") {
 		// Muse btw always runs (and resumes) in the caller's workspace, even restricted.
-		if ((request.feature === "btw" || request.feature === "review") && !request.cwd?.trim()) {
-			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
-		}
-		if (typeof selection.model !== "string" || !selection.model.trim() || (selection.effort !== undefined && !MUSE_EFFORTS.includes(selection.effort))) {
+
+		if (invalidModelEffortSelection(selection, MUSE_EFFORTS)) {
 			return { status: "failure", message: "Unsupported Muse selection: check the model and effort (minimal, low, medium, high, xhigh or max)." };
 		}
 		return executeMuse(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
 	}
 	if (selection.backend === "grok") {
 		// Grok btw always runs (and resumes) in the caller's workspace, even restricted.
-		if ((request.feature === "btw" || request.feature === "review") && !request.cwd?.trim()) {
-			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
-		}
-		if (typeof selection.model !== "string" || !selection.model.trim() || (selection.effort !== undefined && !GROK_EFFORTS.includes(selection.effort))) {
+
+		if (invalidModelEffortSelection(selection, GROK_EFFORTS)) {
 			return { status: "failure", message: "Unsupported Grok selection: check the model and effort (low, medium, high or xhigh)." };
 		}
 		return executeGrok(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
 	}
 	if (selection.backend === "claude") {
 		// Claude btw always runs (and resumes) in the caller's workspace, even restricted.
-		if ((request.feature === "btw" || request.feature === "review") && !request.cwd?.trim()) {
-			return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
-		}
-		if (!selection.model.trim() || (selection.effort !== undefined && !CLAUDE_EFFORTS.includes(selection.effort))) {
+
+		if (invalidModelEffortSelection(selection, CLAUDE_EFFORTS)) {
 			return { status: "failure", message: "Unsupported Claude selection: check the model and effort (low, medium, high, xhigh or max)." };
 		}
 		return executeClaude(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
