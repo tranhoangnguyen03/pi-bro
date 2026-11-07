@@ -1,5 +1,7 @@
 # PiG compatibility
 
+> **PiG-Agent 0.5.3 qualification:** See [issue #177 shell acceptance and exact pins](piG-agent-shell-qualification.md). The older PiG 0.3.0 checks below are historical, not evidence that the independently installed PiG-Agent terminal, account selection or custom models work. The shell must rebuild with the new Bro commit and run the real TUI matrix before release.
+
 Bro uses one TypeScript package on Pi and Pi-in-Go (PiG). PiG runs Bro in a Node subprocess; it is not a Go port or a fused native extension.
 
 ## Target and installation
