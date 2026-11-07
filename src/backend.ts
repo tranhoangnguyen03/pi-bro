@@ -162,6 +162,8 @@ const activeBackendStops = new Set<() => void>();
 export function stopActiveBroBackends(): void {
   for (const stop of [...activeBackendStops]) stop();
 }
+// One process-exit handler owns all attempts, including concurrent children.
+process.once("exit", stopActiveBroBackends);
 
 // Begins bounded lifecycle management for one already-spawned child: on cancellation, deadline, or
 // protocol failure it signals the whole POSIX process group (SIGTERM, then SIGKILL after
@@ -206,11 +208,8 @@ export function beginAttempt(child: ChildProcess, signal: AbortSignal, deadlineM
 
 	const shutdown = () => stop("cancelled");
 	activeBackendStops.add(shutdown);
-	const onProcessExit = () => killProcessGroup(child, "SIGTERM");
-	process.once("exit", onProcessExit);
 	const dispose = () => {
 		activeBackendStops.delete(shutdown);
-		process.off("exit", onProcessExit);
 		signal.removeEventListener("abort", onAbort);
 		clearTimeout(deadlineTimer);
 		if (killTimer) clearTimeout(killTimer);
