@@ -25,7 +25,7 @@ const tui={ mode:"regular", terminal:{rows:42,columns:110,write(){}},requestRend
 
 async function commandHost() {
  let command;
- await bro.default({on(){},registerTool(){},registerCommand(name,def){if(name==="bro")command=def;}});
+ await bro.default({on(){},appendEntry() {}, registerTool() {},registerCommand(name,def){if(name==="bro")command=def;}});
  assert.ok(command);
  let modal;
  let mounted;
