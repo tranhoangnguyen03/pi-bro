@@ -1,0 +1,67 @@
+# PiG-Agent shell qualification — issue #177
+
+**Status:** Bro-side candidate, **not** an accepted end-to-end PiG shell release. Tests that run fake backends cannot prove an authorized login or interactive terminal behavior.
+
+## Exact inputs and responsibility
+
+| Part | Initial PiG-Agent PR #2 pin | Bro qualification work |
+| --- | --- | --- |
+| PiG binary | 0.5.3 | Unchanged |
+| Node | 24.15.0 | Unchanged |
+| PiG-Agent PR #2 | `3f121638feaf9c8a551a2d7001481cd7d936a8c9` | Must rebuild after Bro pin update |
+| Bro | 0.29.0 at `ff6b260b10be8889809d4ea02108aceb826e4668` | This PR branches from Bro 0.31.0 at `8b99515e7b7ddffdd0d57ffaea368f26e86a968c` |
+| Other extensions | Follow `shell/source-lock.json` in PiG-Agent PR #2 | Not changed by this PR |
+
+Do **not** label the newer Bro commit as a test of the old Bro 0.29.0 artifact. Pin this PR's eventual full commit and its actual `package.json` version in the shell lock; rebuild the full native shell and record the resulting artifact digest. Reviewer/Engineering prompts are not involved in the gate.
+
+## Bro → shell contracts
+
+**Storage:** Bro's settings, preferences, approved memories and Pi model runtime resolve through the host's `getAgentDir()`, rather than the main Pi home. The shell sets `PIG_CODING_AGENT_DIR` and `PI_CODING_AGENT_DIR` to `<agent-home>/.pi`. The installed application and sessions remain distinct from that directory. `models.json` lives at `<agent-home>/.pi/models.json`; Bro does not search the main Pi directory or import another model format.
+
+**Pi model selection:** The selected full `<provider>/<model-id>` is exact (split on the first slash). At execution Bro requires the model from the **host registry** and passes that physical model object (API, endpoint, limits and overrides) to the inner Pi session. A model not found in the host fails; it is never replaced with a similarly named default. Bro builds a private runtime for model transport, registrations and credentials. PiG-Agent owns optional source selection and any import/link of a shared `models.json`; changes to that source require a supported host reload or a new PiG session. No claim that the external CLI catalogs use `models.json`.
+
+**Official CLI profiles:** PiG-Agent chooses the account source and supplies `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in the agent launch environment. Bro does not store profiles. With no explicit choice, the backends simply inherit the existing CLI environment and normal login. If the shell deliberately chooses a subscription, it also sets one of the following **backend-only intent flags**:
+
+```sh
+PI_BRO_CLAUDE_AUTH_SOURCE=subscription  # Claude Code child, CLAUDE_CONFIG_DIR as selected by shell
+PI_BRO_CODEX_AUTH_SOURCE=subscription   # Codex child, CODEX_HOME as selected by shell
+```
+
+Values are `inherit` (the default) or `subscription`. An unknown value fails, rather than falling back. These flags are a small bridge for the shell's account choice, not a new account store or user-facing configuration menu. The environment of each child is copied, never changed on `process.env`. In subscription mode:
+
+- Claude child removes API-key, bearer-token, alternate-endpoint and supported alternate-cloud environment overrides, then checks `claude auth status` for `loggedIn=true` with `authMethod=claude.ai` **before** a model call.
+- Codex child removes `CODEX_API_KEY` and `OPENAI_API_KEY`, checks `codex login status` for ChatGPT login, and adds `-c 'forced_login_method="chatgpt"'` to the execution child. Codex's credential-store choice (e.g. `cli_auth_credentials_store`) still belongs to its selected `CODEX_HOME` profile.
+- A status check does **not** identify the human account by itself, prove that a request was sent, or verify subscription billing. The acceptance run must verify the effective account with non-secret CLI evidence and a genuine answer. Missing login or non-subscription login prevents the model request. No API-key fallback is attempted.
+
+**Lifecycle:** Cancellation uses existing bounded process-group termination. Bro now also stops its tracked backends on session shutdown, new-session start, and normal process exit. PiG must deliver shutdown/reload events to its Node extension worker and terminate that worker's entire child process group on hard exit. Real PiG reload and desktop exit are required checks, not an assumption based on unit cancellation.
+
+## Reproducible acceptance on the *packaged* shell
+
+Build the exact PiG-Agent PR #2 source with the Bro PR head pinned. Install it into **two fresh independent homes** `A` and `B` using `shell-reference install --home DIR`. Run `doctor` for each and record actual PiG/Node/Bro/CLI versions, commit SHA, installed archive SHA256, platform and where `getAgentDir()` resolves.
+
+1. **TUI, not RPC:** Run `shell-reference new --home A` in a real terminal. Use a real authorized backend and try `/bro`, `/bro simplify` (inside it `/text`, `/url`, `/file`, `/copy`, `/clear`, `/help`), `/bro config`, `/bro preferences`, `/bro btw`, and `/bro remember-me`. Exercise text input, selection, scrolling, resize, Esc/cancel and clipboard. Verify a real final backend answer. Check `/bro guided-review`, `/bro advisor`, `/bro elevate`, `/bro grill-me`, `/bro show`, `/bro overthink`, `/bro architecture`, and `/bro doctor`; mark unexercised paths **NOT RUN**, not PASS.
+2. **Cleanup:** During a long real Claude/Codex/Pi request, use cancel, `/reload` and exit, then inspect child PIDs/grandchildren. A terminal exit must not leave an active backend. Test the same with a fast failure, slow backend and missing executable.
+3. **Models:** Start with no `A/.pi/models.json`, check built-ins. Add an agent-local custom provider with a harmless locally controlled test endpoint; confirm picker listing, unchanged provider/model ID, request URL, configured credentials and metadata overrides in a real result. Break its key and definition and confirm useful failure with no fallback. Edit model file; check the host's supported reload/new session. Test enabled-model scopes and default settings separately.
+4. **Accounts:** With an already-authorized host Claude login, run with `CLAUDE_CONFIG_DIR` inherited and then with the shell-selected profile and `PI_BRO_CLAUDE_AUTH_SOURCE=subscription`. Confirm non-secret CLI account/method and actual answer. Repeat Codex with `CODEX_HOME` and `PI_BRO_CODEX_AUTH_SOURCE=subscription`. Test inherited API key collisions, missing/expired login, forced method and parent API env retention. For two distinct authorized accounts, test concurrent A/B routing; otherwise mark the second live account **NOT RUN**.
+5. **Isolation:** New sessions must not inherit another task's transcripts/side questions; an approved general Remember Me lesson stays available in A but not B. Inspect A and B settings, memory, session roots and model sources after concurrent use, reinstall and compatible rollback.
+
+**Fixtures:** `npm test` includes deterministic fake CLI source-routing, conflicting auth, no-fallback and process-stop tests plus host registry model identity. They are evidence of code paths only. The existing PiG 0.3.0 lane does not qualify PiG 0.5.3; run the actual PiG-Agent pinned shell.
+
+## Specific PiG-Agent PR #2 work remaining
+
+1. Add a shell-side account/model-source chooser (or clear documented setup) which picks each installed agent's existing CLI profile and optional shared `models.json` source, installs/seeds local models before launch, and supplies the **same resolved inputs** to TUI, print and RPC. It must not blindly share the main Pi home.
+2. For a deliberate subscription choice, export the matching `PI_BRO_*_AUTH_SOURCE=subscription` flag **only in that installed shell's launch env**. Keep the normal process login untouched. Bro handles backend-child auth filtering.
+3. Update `shell/source-lock.json` to this PR's exact Bro commit and matching version; rebuild a native release with PiG 0.5.3/Node 24.15.0, then execute the matrix above. Do not treat the existing smoke command registration as TUI qualification.
+4. Verify that PiG reload and hard exit tear down the Node extension worker and its backends; if not, fix the PiG host lifetime owner rather than adding a second shell worker manager.
+
+## Qualification matrix (pending host execution)
+
+| Journey | Fixture | Real PiG 0.5.3 / TUI | Authorized account |
+| --- | --- | --- | --- |
+| Explanation, settings, preferences, side question, Remember Me, advanced paths | Existing modal tests | **NOT RUN** | **NOT RUN** |
+| Cancellation, session shutdown and child group | Added fake child tests | **NOT RUN** | **NOT RUN** |
+| Host model object/endpoint selection | Added SDK fixture | **NOT RUN** | **NOT RUN** |
+| Claude/Codex subscription vs API collision | Added fake CLI tests | **NOT RUN** | **NOT RUN** |
+| Separate homes and new-session memory state | Existing storage rules; not a full shell test | **NOT RUN** | **NOT RUN** |
+
+A CI success for fixtures changes that column only. Record real outcomes and exact source/artifact pins before calling this integration accepted.

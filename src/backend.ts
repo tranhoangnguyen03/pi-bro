@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isSubscriptionStatus, resolveCliChildAuth, type CliAuthBackend } from "./cli-auth.ts";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
@@ -156,6 +157,14 @@ type Attempt = {
 
 const DEFAULT_KILL_ESCALATION_MS = 5_000;
 
+// All Bro backend attempts belong to the active host session.
+const activeBackendStops = new Set<() => void>();
+export function stopActiveBroBackends(): void {
+  for (const stop of [...activeBackendStops]) stop();
+}
+// One process-exit handler owns all attempts, including concurrent children.
+process.once("exit", stopActiveBroBackends);
+
 // Begins bounded lifecycle management for one already-spawned child: on cancellation, deadline, or
 // protocol failure it signals the whole POSIX process group (SIGTERM, then SIGKILL after
 // `killEscalationMs` if the child or a misbehaving grandchild ignores it). Windows only ever
@@ -197,7 +206,10 @@ export function beginAttempt(child: ChildProcess, signal: AbortSignal, deadlineM
 	const deadlineTimer = setTimeout(() => stop("timeout"), deadlineMs);
 	deadlineTimer.unref?.();
 
+	const shutdown = () => stop("cancelled");
+	activeBackendStops.add(shutdown);
 	const dispose = () => {
+		activeBackendStops.delete(shutdown);
 		signal.removeEventListener("abort", onAbort);
 		clearTimeout(deadlineTimer);
 		if (killTimer) clearTimeout(killTimer);
@@ -573,6 +585,39 @@ async function executeAdvisorStdin(
 }
 
 
+// Only a deliberate subscription choice adds a non-billing login check.
+// A status response verifies the method, not a paid request or account identity.
+async function verifyCliSubscription(
+  backend: CliAuthBackend, env: NodeJS.ProcessEnv, signal: AbortSignal, killEscalationMs: number,
+): Promise<BackendOutcome | undefined> {
+  const name = backend === "claude" ? "Claude Code" : "Codex";
+  if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+  const child = spawn(backend, backend === "claude" ? ["auth", "status"] : ["login", "status"], {
+    env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32",
+  });
+  const attempt = beginAttempt(child, signal, 15_000, killEscalationMs);
+  let stdout = "";
+  let stderr = "";
+  let processError: NodeJS.ErrnoException | undefined;
+  child.stdout?.on("data", (chunk: Buffer) => { stdout = (stdout + chunk.toString()).slice(0, 32768); });
+  child.stderr?.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(0, 32768); });
+  child.once("error", (err: NodeJS.ErrnoException) => { processError = err; });
+  const { code, exitSignal } = await attempt.closed;
+  attempt.dispose();
+  if (attempt.causeOf() === "cancelled") return { status: "cancelled", message: "Canceled." };
+  if (attempt.causeOf() === "timeout") return { status: "timeout", message: name + " subscription login check timed out." };
+  if (processError) return { status: "failure", message: processStartMessage(processError, name) };
+  // Codex may write its human-readable login status to stderr. Claude returns JSON on stdout.
+  const reportedStatus = backend === "codex" ? stdout + "\n" + stderr : stdout;
+  if (code !== 0 || exitSignal || !isSubscriptionStatus(backend, reportedStatus)) {
+    const command = backend === "claude" ? "claude auth status" : "codex login status";
+    const profile = backend === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
+    return { status: "failure", message: name + " did not confirm subscription login in the selected profile. Run \`" + command +
+      "\` with that " + profile + " and sign in to the intended subscription; Bro will not switch to API billing." };
+  }
+  return undefined;
+}
+
 type ClaudeEvent = {
 	type?: unknown;
 	subtype?: unknown;
@@ -617,6 +662,14 @@ async function executeClaude(
 	}
 
 	try {
+		let auth: ReturnType<typeof resolveCliChildAuth>;
+		try { auth = resolveCliChildAuth("claude"); }
+		catch (error) { return { status: "failure", message: errorMessage(error) }; }
+		if (auth.subscription) {
+			const check = await verifyCliSubscription("claude", auth.env, signal, killEscalationMs);
+			if (check) return check;
+		}
+		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const child = spawn(
 			"claude",
 			[
@@ -643,6 +696,7 @@ async function executeClaude(
 				stdio: ["pipe", "pipe", "pipe"],
 				windowsHide: true,
 				detached: process.platform !== "win32",
+				env: auth.env,
 			},
 		);
 
@@ -1067,10 +1121,19 @@ async function executeCodex(
 	}
 
 	try {
+		let auth: ReturnType<typeof resolveCliChildAuth>;
+		try { auth = resolveCliChildAuth("codex"); }
+		catch (error) { return { status: "failure", message: errorMessage(error) }; }
+		if (auth.subscription) {
+			const check = await verifyCliSubscription("codex", auth.env, signal, killEscalationMs);
+			if (check) return check;
+		}
+		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const permissionArgs = full ? ["--dangerously-bypass-approvals-and-sandbox"] : ["--sandbox", "read-only"];
 		const resume = isBtw && request.continuation;
 		const args = [
 			"exec",
+			...(auth.subscription ? ["-c", 'forced_login_method="chatgpt"'] : []),
 			...permissionArgs,
 			...(resume ? ["resume"] : []),
 			"--json",
@@ -1087,6 +1150,7 @@ async function executeCodex(
 			stdio: ["pipe", "pipe", "pipe"],
 			windowsHide: true,
 			detached: process.platform !== "win32",
+			env: auth.env,
 		});
 
 		const attempt = beginAttempt(child, signal, deadlineMs, killEscalationMs);
@@ -1662,6 +1726,8 @@ async function executePi(
 	// Same, for the sites that have already established a cause was latched.
 	const latchedOutcome = (): BackendOutcome => stoppedOutcome() ?? { status: "failure", message: piErrorMessage(request.feature, "the attempt stopped without a cause.") };
 	const onAbort = () => stop("cancelled");
+	const onShutdown = () => stop("cancelled");
+	activeBackendStops.add(onShutdown);
 	signal.addEventListener("abort", onAbort, { once: true });
 	// An abort signal that is already aborted never fires its listeners, so latch it explicitly.
 	if (signal.aborted) onAbort();
@@ -1680,8 +1746,9 @@ async function executePi(
 		// or throwing host credential lookup becomes an ordinary outcome rather than a rejection.
 		const modelRuntime = await Promise.race([bridgePiModelRuntime(host, agentDir), stopped.then(() => undefined)]);
 		if (!modelRuntime) return latchedOutcome();
-		// Fall back to the host registry, which may know a model the rebuilt runtime does not.
-		const model = modelRuntime.getModel(parts.providerId, parts.modelId) ?? host?.modelRegistry?.find(parts.providerId, parts.modelId);
+		// Only the host registry is authoritative for identity, endpoint and metadata.
+		// The fresh runtime supplies credentials/transport, not a fallback model catalog.
+		const model = host?.modelRegistry?.find(parts.providerId, parts.modelId);
 		if (!model) {
 			return { status: "failure", message: piErrorMessage(request.feature, `model \`${selection.model}\` is not in your Pi model catalog. Run \`/bro doctor\`.`) };
 		}
@@ -1852,6 +1919,7 @@ async function executePi(
 		if (stoppedResult) return stoppedResult;
 		return { status: "failure", message: withDoctor(piErrorMessage(request.feature, errorMessage(error))), ...(partial ? { partialText: partial } : {}) };
 	} finally {
+		activeBackendStops.delete(onShutdown);
 		signal.removeEventListener("abort", onAbort);
 		clearTimeout(deadlineTimer);
 		try {

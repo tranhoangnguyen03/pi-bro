@@ -3,7 +3,7 @@ import { withFakeExecutable } from "./test-fake-exec.ts";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, realpath } from "node:fs/promises";
+import { readFile, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { PassThrough } from "node:stream";
@@ -910,14 +910,21 @@ esac
 			assert.ok(failCwd.includes("pi-bro-"), "used scratch directory");
 			assert.equal(existsSync(failCwd), false, "scratch directory must be removed on failure");
 
-			// 3. Cleaned up on cancellation
+			// 3. Cleaned up on cancellation: wait for the actual child to start,
+			// not a wall-clock timer that can abort before spawn on busy CI runners.
+			await rm(cwdFile, { force: true });
 			const controller = new AbortController();
-			setTimeout(() => controller.abort(), 100);
-			const cancelOutcome = await execute(
+			const pendingCancel = execute(
 				{ feature: "explain", access: "restricted", prompt: "SLEEP case" },
 				{ model: "gemini-2.5-flash" },
 				controller.signal,
 			);
+			for (let i = 0; i < 100 && !existsSync(cwdFile); i++) {
+				await new Promise((resolve) => setTimeout(resolve, 20));
+			}
+			assert.ok(existsSync(cwdFile), "backend must spawn and write its cwd before cancellation");
+			controller.abort();
+			const cancelOutcome = await pendingCancel;
 			assert.equal(cancelOutcome.status, "cancelled");
 			const cancelCwd = (await readFile(cwdFile, "utf8")).trim();
 			assert.ok(cancelCwd.includes("pi-bro-"), "used scratch directory");
@@ -1383,4 +1390,27 @@ test("pi preserves workspace trust for system prompt discovery after settings re
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 		await rm(directory, { recursive: true, force: true });
 	}
+});
+
+test("Pi dispatch uses the exact host model, including endpoint overrides, with no catalog fallback", async () => {
+  const hostModel = { ...PI_MODEL, name: "Agent-local custom model", baseUrl: "https://agent-local.invalid/v1", contextWindow: 77777 };
+  const session = fakeSession({ text: "host model dispatched" });
+  let selected: unknown;
+  const outcome = await execute(
+    piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
+    { piCreateSession: (async (options: { model: unknown }) => { selected = options.model; return { session: session.session }; }) as never },
+    fakePiHost([hostModel]),
+  );
+  assert.equal(outcome.status, "success");
+  assert.strictEqual(selected, hostModel, "model identity, baseUrl, API and metadata must come from host registry");
+
+  let started = false;
+  const unknown = await execute(
+    piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
+    { piCreateSession: (async () => { started = true; return { session: session.session }; }) as never },
+    fakePiHost([]),
+  );
+  assert.equal(unknown.status, "failure");
+  assert.match(unknown.status === "failure" ? unknown.message : "", /not in your Pi model catalog/);
+  assert.equal(started, false, "host rejection must never start the model request");
 });

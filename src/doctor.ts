@@ -136,13 +136,15 @@ export async function listPiModels(
 	if (patterns.length) {
 		const resolved = await resolveModelScopeWithDiagnostics(patterns, modelRuntime);
 		const diagnostics = resolved.diagnostics.map((entry) => entry.message);
-		// A configured scope is authoritative even when it resolves to nothing: silently substituting
-		// every authenticated model would offer choices the user never scoped in, and would hide the
-		// diagnostics that explain why. The caller shows them.
-		return { models: toPiModelChoices(resolved.scopedModels), scope: "scoped", diagnostics, modelRuntime };
+		// The host has already resolved its configured scope and source. Never offer a
+		// locally reconstructed model the active PiG registry has not loaded.
+		const scoped = ctx.scopedModels ?? resolved.scopedModels;
+		return { models: toPiModelChoices(scoped), scope: "scoped",
+			diagnostics: ctx.scopedModels === undefined ? diagnostics : [], modelRuntime };
 	}
 
-	const available = modelRuntime.getAvailableSnapshot().map((model) => ({ model }));
+	// Picker and executor must agree, including after a host source change.
+	const available = ctx.modelRegistry.getAvailable().map((model) => ({ model }));
 	return { models: toPiModelChoices(available), scope: "available", diagnostics: [], modelRuntime };
 }
 
@@ -266,7 +268,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 	let agyVersion: string | undefined;
 	let piRuntime: Awaited<ReturnType<typeof bridgePiRuntimeForCatalog>> | undefined;
 	const findPiModel = (provider: string, id: string) => {
-		const model = piRuntime?.getModel(provider, id) ?? ctx.modelRegistry.find(provider, id);
+		const model = ctx.modelRegistry.find(provider, id);
 		return model?.api === "pi-virtual" ? undefined : model;
 	};
 	const hasPiAuth = (model: NonNullable<ReturnType<typeof findPiModel>>) =>

@@ -133,3 +133,29 @@ test("Remember Me describes every existing restricted backend without an allowli
   }
   assert.match(rememberBackendNotice("unknown"), /existing restricted explain execution path/);
 });
+
+test("independent agent homes keep approved general lessons private to their owner across sessions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bro-two-homes-"));
+  const a = join(root, "agent-a", ".pi");
+  const b = join(root, "agent-b", ".pi");
+  try {
+    // Concurrent writers cannot cross a memory root, even with shared auth outside it.
+    await Promise.all([
+      changeMemory({ kind: "save", draft: { title: "Reusable principle A",
+        summary: "Preserve approved lessons but start each task with fresh facts.",
+        background: "Approved for agent A only.", scope: "General process" } }, 0, a),
+      changeMemory({ kind: "save", draft: { title: "Independent lesson B",
+        summary: "Do not import a different agent's records.",
+        background: "Approved for agent B only.", scope: "General process" } }, 0, b),
+    ]);
+    const [sessionA1, sessionB1] = await Promise.all([readMemoryStore(a), readMemoryStore(b)]);
+    const sessionA2 = await readMemoryStore(a); // fresh session, same approved memory file
+    assert.equal(sessionA1.revision, 1);
+    assert.deepEqual(sessionA2.entries, sessionA1.entries);
+    assert.equal(sessionB1.revision, 1);
+    assert.match(renderUserMemory(sessionA2), /Preserve approved lessons/);
+    assert.doesNotMatch(renderUserMemory(sessionA2), /Independent lesson B/);
+    assert.match(renderUserMemory(sessionB1), /Independent lesson B/);
+    assert.doesNotMatch(renderUserMemory(sessionB1), /Reusable principle A/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

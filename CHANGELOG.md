@@ -2,6 +2,19 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.31.1] - 2026-11-07
+
+### Fixed
+
+- Use the active host model registry for Pi backend model identity, endpoint metadata and the model picker. A custom model newly written to disk remains unavailable until the host reloads it; no stale-catalog fallback.
+- Enforce an explicitly selected Claude Code or Codex subscription within each backend child: choose the existing CLI profile, remove conflicting API-credential overrides from the child alone, verify its login method, and prevent a silent API-billed fallback.
+- Stop active Bro backend attempts at session shutdown, new session and process exit without affecting native Pi settings or the parent login.
+- Add deterministic CLI, model-registry, two-home memory and process cleanup regression tests plus a version-pinned PiG-Agent 0.5.3 acceptance runbook.
+
+### Qualification
+
+- Bro-side fixture tests do not prove a live subscription or PiG-Agent 0.5.3 TUI integration. Live endpoint, account and shell acceptance remain explicit gates in `docs/piG-agent-shell-qualification.md`.
+
 ## [0.31.0] - 2026-11-07
 
 ### Added
