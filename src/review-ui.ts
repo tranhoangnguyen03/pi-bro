@@ -40,6 +40,59 @@ export function stopGuidedReviews(): void {
 	for (const controller of activeReviews.values()) controller?.abort();
 }
 
+/** Same picker for resume and delete. Presentation and ordering have one owner. */
+export function savedReviewLabel(item: ReviewRecord): string {
+	const target = item.snapshot.target;
+	const title = safeReviewText(target.title ?? "").replace(/[\r\n\t]/g, " ");
+	const readiness = item.guide ? (item.guide.assessment ? "review ready" : "guide ready") : "not prepared";
+	return `${target.repository} #${target.number} · ${title} · ${readiness} · ${target.head.slice(0, 8)}`;
+}
+
+async function savedReviews(ctx: ExtensionCommandContext, root: string): Promise<ReviewRecord[]> {
+	const records = await listReviews(root, (file, error) =>
+		ctx.ui.notify(`Cannot load ${file}: ${String(error)}. Original file left unchanged.`, "warning"));
+	return records.sort((a, b) =>
+		a.snapshot.target.repository.localeCompare(b.snapshot.target.repository) ||
+		b.snapshot.target.number - a.snapshot.target.number);
+}
+
+async function pickSavedReview(
+	ctx: ExtensionCommandContext, root: string, title: string,
+): Promise<ReviewRecord | undefined> {
+	const records = await savedReviews(ctx, root);
+	if (!records.length) return;
+	const labels = records.map(savedReviewLabel);
+	const picked = await ctx.ui.select(title, labels);
+	return picked ? records[labels.indexOf(picked)] : undefined;
+}
+
+/** Resolve stored PR identity offline; a bare number is allowed only if unambiguous. */
+export function matchSavedReview(
+	records: readonly ReviewRecord[], requested: string,
+): { selected?: ReviewRecord; error?: string } {
+	const input = requested.trim();
+	if (/^[1-9]\d*$/.test(input)) {
+		const matches = records.filter(item => item.snapshot.target.number === Number(input));
+		if (matches.length > 1) return { error: "Multiple saved reviews have that PR number. Use its full PR URL." };
+		return { selected: matches[0] };
+	}
+	let url: URL;
+	try { url = new URL(input); }
+	catch { return { error: "Use a saved PR number or GitHub PR URL." }; }
+	const match = /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/(?:files|commits|checks))?\/?$/.exec(url.pathname);
+	if (url.protocol !== "https:" || !match || url.username || url.password) {
+		return { error: "Use a saved PR number or GitHub PR URL." };
+	}
+	const [, owner, repo, number] = match;
+	const matches = records.filter(item => {
+		const target = item.snapshot.target;
+		return (target.host ?? "github.com").toLowerCase() === url.hostname.toLowerCase() &&
+			target.repository.toLowerCase() === `${owner}/${repo}`.toLowerCase() &&
+			target.number === Number(number);
+	});
+	return { selected: matches[0] };
+}
+
 export async function openGuidedReview(
 	ctx: ExtensionCommandContext,
 	value: string,
@@ -55,21 +108,14 @@ export async function openGuidedReview(
 		const requested = value.slice("delete".length).trim();
 		let selected: ReviewRecord | undefined;
 		if (!requested) {
-			const saved = await listReviews(root, (file, error) =>
-				ctx.ui.notify(`Cannot load ${file}: ${String(error)}. Original file left unchanged.`, "warning"));
-			if (!saved.length) {
-				ctx.ui.notify("There are no saved reviews to delete.", "info");
+			selected = await pickSavedReview(ctx, root, "Delete saved review");
+		} else {
+			const match = matchSavedReview(await savedReviews(ctx, root), requested);
+			if (match.error) {
+				ctx.ui.notify(match.error, "warning");
 				return;
 			}
-			saved.sort((a, b) => a.snapshot.target.repository.localeCompare(b.snapshot.target.repository) ||
-				b.snapshot.target.number - a.snapshot.target.number);
-			const labels = saved.map(item => `${item.snapshot.target.repository} #${item.snapshot.target.number} · ${safeReviewText(item.snapshot.target.title ?? "").replace(/[\\r\\n\\t]/g, " ")} · ${item.snapshot.target.head.slice(0, 8)}`);
-			const choice = await ctx.ui.select("Delete saved review", labels);
-			if (!choice) return;
-			selected = saved[labels.indexOf(choice)];
-		} else {
-			const target = await resolveReviewTarget(requested, ctx.cwd, new AbortController().signal);
-			selected = await loadReview(root, reviewKey(target));
+			selected = match.selected;
 		}
 		if (!selected) {
 			ctx.ui.notify("No saved review matches that target.", "info");
@@ -100,28 +146,8 @@ export async function openGuidedReview(
 	let record: ReviewRecord | undefined;
 	let fresh = false;
 	if (value === "resume" || !value) {
-		const records = await listReviews(root, (file, error) =>
-			ctx.ui.notify(
-				`Cannot load ${file}: ${String(error)}. Original file left untouched.`,
-				"warning",
-			),
-		);
-		if (!records.length) {
-			ctx.ui.notify("Start with /bro guided-review <PR number or URL>.", "info");
-			return;
-		}
-		records.sort(
-			(a, b) =>
-				a.snapshot.target.repository.localeCompare(b.snapshot.target.repository) ||
-				b.snapshot.target.number - a.snapshot.target.number,
-		);
-		const labels = records.map(
-			(item) =>
-				`${item.snapshot.target.repository} #${item.snapshot.target.number} · ${safeReviewText(item.snapshot.target.title ?? "").replace(/[\r\n\t]/g, " ")} · ${item.guide ? (item.guide.assessment ? "review ready" : "guide ready") : "not prepared"} · ${item.snapshot.target.head.slice(0, 8)}`,
-		);
-		const picked = await ctx.ui.select("Resume guided review", labels);
-		if (!picked) return;
-		record = records[labels.indexOf(picked)];
+		record = await pickSavedReview(ctx, root, "Resume guided review");
+		if (!record) return;
 	} else {
 		record = await openBroOverlay<ReviewRecord | undefined>(
 			ctx,
