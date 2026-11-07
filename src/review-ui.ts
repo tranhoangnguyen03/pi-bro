@@ -501,6 +501,34 @@ export async function openGuidedReview(
 					retrySave() {
 						void persist().catch(() => {});
 					},
+					deleteReview() {
+						if (confirming || controller || closing || closed || panel.busy) return;
+						confirming = true;
+						overlayHandle?.setHidden(true);
+						const target = state.snapshot.target;
+						const title = `${target.repository} #${target.number}`;
+						void ctx.ui.confirm(
+							"Delete this saved review?",
+							`Permanently delete ${title}, all private questions and drafts, and its captured Git source? This cannot be undone.`,
+						).then(async (approved) => {
+							if (!approved || closed || closing || controller) return;
+							closing = true;
+							// Do not let a delayed save recreate the record after deletion.
+							if (saveTimer) { clearTimeout(saveTimer); saveTimer = undefined; }
+							await running;
+							await queue;
+							await deleteReview(root, state.id);
+							closed = true;
+							ctx.ui.notify(`Deleted saved review ${title} and its captured source.`, "info");
+							done();
+						}).catch((error) => {
+							closing = false;
+							panel.notice = `Deletion failed: ${String(error)}. Review remains open; retry when ready.`;
+						}).finally(() => {
+							confirming = false;
+							if (!closed) { overlayHandle?.setHidden(false); tui.requestRender(); }
+						});
+					},
 					regenerate() {
 						if (confirming || controller || closing || closed) return;
 						confirming = true;
