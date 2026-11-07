@@ -116,7 +116,7 @@ When shaping an answer, each part has one owner:
 - **Saved reviews**: Guided Review records, questions, drafts and captured Git source persist under the host's `getAgentDir()/bro-reviews/`. No automatic cleanup or sync is provided; see [storage and removal](../guided-review.md#access-privacy-and-storage).
 - **Private session continuity**: completed BTW and Grill Me turns, modes, drafts, the latest Simplify state and the last Show result are saved as Pi `custom` entries inside the current session file. They survive normal reload/restart and are never added to the main model or Advisor snapshot. A fork initially inherits earlier entries; later updates stay on its own branch. This is local disk storage, not a global memory store or an abrupt-crash guarantee. Backend-native sessions may persist independently.
   Standing Advisor priorities are stored in `~/.pi/agent/bro-advisor.md`, and
-  the session steering brief uses another `custom` entry (`bro-advisor-steering`).
+  the session steering brief uses another `custom` entry (`bro-advisor-steering`). Session entries remain readable to anyone with the session file; export/sharing may include them. The private boundary is model-context isolation, not encrypted storage or export redaction.
 - **File safety**: `/bro file` reads only regular files whose resolved path is
   inside Pi's current workspace, including after resolving symlinks. Bro's
   extractor does not modify them.

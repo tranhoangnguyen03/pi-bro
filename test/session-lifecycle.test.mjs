@@ -124,7 +124,6 @@ if (prompt.includes("NEXT CLEAN QUESTION")) {
     modal.handleInput("\r");
     await until(() => thread.turns.length === 2, "pending placeholder");
     assert.equal(thread.turns[1].answer, "…");
-    await until(async () => true, "noop");
     modal.handleInput("\x1b");
     await run.finished;
     assert.deepEqual(thread.turns, [prior], "aborted placeholder removed synchronously on close");
@@ -141,7 +140,8 @@ if (prompt.includes("NEXT CLEAN QUESTION")) {
     assert.deepEqual(thread.turns, [prior, { question: "NEXT CLEAN QUESTION", answer: "CLEAN ANSWER" }]);
     const prompts = (await readFile(join(bin, "prompts.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
     assert.ok(prompts.some(p => p.includes("NEXT CLEAN QUESTION")));
-    assert.ok(prompts.every(p => !p.includes("SLOWQ side") || p.includes("SLOWQ side") && !p.includes("NEXT CLEAN QUESTION")), "cancelled question must not become later prompt history");
+    const followup = prompts.find(p => p.includes("NEXT CLEAN QUESTION"));
+    assert.ok(followup && !followup.includes("SLOWQ side"), "cancelled question must not become later prompt history");
     assert.ok(saved.at(-1).turns.every(t => t.answer !== "…"));
   });
 });

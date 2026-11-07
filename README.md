@@ -109,7 +109,7 @@ which may keep it under their own policies. Paths below are under
 | Guided Review | The PR description and diff, the files the backend reads, your questions, plus your preferences | Reviews and captured source in `bro-reviews/`, with no automatic cleanup |
 | Advisor | The agent's system instructions, tool list and whole conversation, including tool calls and results (reasoning and images omitted), plus your steering | Steering in `bro-advisor.md` and the session file |
 
-`/bro url` also connects straight to the website, which sees your IP address.
+Session-scoped Bro entries live **inside Pi's session file**. They stay out of the model's conversation, but are not secret from someone who can read, back up, export, or share that file. Check the session content before sharing it; this feature does not encrypt or redact exports.\n\n`/bro url` also connects straight to the website, which sees your IP address.
 Bro runs each CLI as you, with your environment. It never reads or copies an
 external CLI's provider credentials, but a CLI signs in its own way, which can
 include API keys set in your environment. The built-in **Pi** backend is the
