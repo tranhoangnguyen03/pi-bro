@@ -2,6 +2,16 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.33.0] - 2026-11-07
+
+### Highlights
+
+- Feature discovery now starts from four human needs: understand what exists, explore what could exist, assess existing work, and guide the agent.
+- BTW and Grill Me use clipboard-only manual handoff. The old Insert commands no longer modify the main Pi editor; they point users to Copy instead.
+- Elevate copies the revised assignment without replacing the unsent main-editor draft. Obsolete insertion code and its tests are removed.
+- Built-in help, command completion, feature guides and developer checks align around common interaction meanings while retaining each feature's special actions.
+- The read-only `about_user` agent tool and `bro_advisor` tool are unchanged. Session recovery, Guided Review lifecycle, and Overthink/Architecture PRs remain separate work.
+
 ## [0.32.0] - 2026-11-07
 
 ### Highlights

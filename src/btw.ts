@@ -14,7 +14,7 @@ import {
 } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
 import { BRO_OVERLAY, broOverlayArea, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
-import { canBroInsertIntoEditor, insertBroDesktopText, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
+import { type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
 export const BTW_CONTEXT_TURNS = 8;
@@ -109,7 +109,7 @@ export type BtwComposerAction =
 	| { kind: "mode" }
 	| { kind: "retry" }
 	| { kind: "clipboard"; all: boolean }
-	| { kind: "insert"; all: boolean }
+	| { kind: "help" }
 	| { kind: "removed"; command: string }
 	| { kind: "question"; text: string };
 
@@ -121,8 +121,8 @@ export function parseBtwComposerCommand(value: string): BtwComposerAction {
 	if (command === "/copy" || command === "/copy-all") {
 		return { kind: "clipboard", all: command === "/copy-all" };
 	}
-	if (command === "/insert" || command === "/insert-all") return { kind: "insert", all: command === "/insert-all" };
-	if (command === "/insert!" || command === "/insert-all!") return { kind: "removed", command };
+	if (command === "/help") return { kind: "help" };
+	if (["/insert", "/insert-all", "/insert!", "/insert-all!"].includes(command)) return { kind: "removed", command };
 	return { kind: "question", text: command };
 }
 
@@ -317,7 +317,7 @@ export class BtwModal implements Focusable {
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
 			// The frame drops lines from the top when space runs out, so the composer goes last.
 			footer: [
-				...(this.appearance.commands === "" ? [] : wrapTextWithAnsi(this.appearance.commands ?? "Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner)),
+				...(this.appearance.commands === "" ? [] : wrapTextWithAnsi(this.appearance.commands ?? "Commands: /mode · /copy · /copy-all · /clear · /retry · /help", inner)),
 				...(this.suggestions ? wrapTextWithAnsi(this.theme.fg("accent", this.suggestions), inner) : []),
 				this.theme.fg("accent", this.theme.bold(this.appearance.inputLabel ?? "Your message to Bro")),
 				this.input.render(inner)[0] ?? "",
@@ -554,25 +554,6 @@ export async function openBtwModal(
 				}
 			};
 
-			const insert = async (all: boolean) => {
-				const text = all ? transcript() : (thread.turns.at(-1)?.answer ?? "");
-				if (!text.trim()) {
-					modal.setNotice("Nothing to insert yet.", "warning");
-					return;
-				}
-				if (!canBroInsertIntoEditor(ctx)) {
-					const result = await insertBroDesktopText(ctx, text);
-					modal.setNotice(result === "inserted" ? "Inserted into the main editor. Review it before sending." : result === "not_empty" ? "Main editor has a draft or attachment. Clear it first, then insert again." : "Could not confirm insertion. Check the main editor before trying again.", result === "inserted" ? "success" : result === "not_empty" ? "warning" : "error");
-					return;
-				}
-				if (ctx.ui.getEditorText().trim()) {
-					modal.setNotice("Main editor has a draft. Edit or clear it first, then insert again.", "warning");
-					return;
-				}
-				ctx.ui.setEditorText(text);
-				modal.setNotice(all ? "Inserted the full thread into the main editor." : "Inserted the latest answer into the main editor.", "success");
-			};
-
 			function submit(value: string): void {
 				const action = parseBtwComposerCommand(value);
 				if (action.kind === "clear") {
@@ -590,14 +571,14 @@ export async function openBtwModal(
 					void copyOut(action.all);
 					return;
 				}
-				if (action.kind === "insert") {
-					modal.clearComposer();
-					void insert(action.all);
-					return;
-				}
 				if (action.kind === "removed") {
 					modal.clearComposer();
-					modal.setNotice(`${action.command} was removed. Edit or clear the main editor draft, then use /insert or /insert-all.`);
+					modal.setNotice(`${action.command} was removed. Use /copy or /copy-all, then paste where you want it.`, "warning");
+					return;
+				}
+				if (action.kind === "help") {
+					modal.clearComposer();
+					modal.setNotice("Commands: /mode, /copy, /copy-all, /clear, /retry, /help. Esc closes; completed turns stay private.");
 					return;
 				}
 				if (action.kind === "retry") {
