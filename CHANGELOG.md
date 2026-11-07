@@ -2,12 +2,37 @@
 
 All notable changes to pi-bro are documented here.
 
-## [0.32.0] - 2026-11-07
+## [0.34.0] - 2026-11-07
 
 ### Added
 
-- `/bro copy`: edit the last completed Pi reply as raw Markdown, toggle a rendered preview with Ctrl+D, and copy the current draft with Ctrl+C. No model call, saved draft, or conversation mutation. Reuses Bro's modal and Pi's Editor/Markdown components. A shared extractor prevents drift from Simplify; raw draft tracking keeps untouched tabs and CRLF even after local edits. Pi Editor's roughly 30%-height viewport remains an upstream limit.
+- `/bro copy`: a model-free Markdown scratch editor for the last completed assistant reply; Ctrl+D previews, Ctrl+C copies the current raw Markdown, Ctrl+G opens Help.
+- Shared last-completed-reply extraction across Copy and Simplify, preserving Simplify's trimmed result and Copy's untrimmed source.
+- Incremental raw-text reconciliation preserves untouched tabs and CRLF even when another part of the Markdown is edited; Copy's preview and clipboard read the same draft.
 
+### Limits
+
+- Pi 1.3–1.5's built-in editor shows about 30% of terminal rows; editing long Markdown scrolls inside that region. Text parts within one assistant message are joined with one newline. Real clipboard and terminal qualification remains part of review.
+
+
+## [0.33.0] - 2026-11-07
+
+### Highlights
+
+- Feature discovery now starts from four human needs: understand what exists, explore what could exist, assess existing work, and guide the agent.
+- BTW and Grill Me use clipboard-only manual handoff. The old Insert commands no longer modify the main Pi editor; they point users to Copy instead.
+- Elevate copies the revised assignment without replacing the unsent main-editor draft. Obsolete insertion code and its tests are removed.
+- Built-in help, command completion, feature guides and developer checks align around common interaction meanings while retaining each feature's special actions.
+- The read-only `about_user` agent tool and `bro_advisor` tool are unchanged. Session recovery, Guided Review lifecycle, and Overthink/Architecture PRs remain separate work.
+
+## [0.32.0] - 2026-11-07
+
+### Highlights
+
+- BTW and Grill Me preserve completed private discussions, access choices and drafts across ordinary Pi reload/restart/resume through non-model-facing custom session entries.
+- Simplify restores its most recent source and explanation; Show restores the last rendered result and focus. Cleared state stays cleared.
+- Session branches inherit their prior private state but later edits remain separate. No global user memory database or automatic context injection.
+- Added session restore validation and test coverage. Recovery still depends on Pi saving its session entries; abrupt host crashes during an active call are not guaranteed.
 
 ## [0.31.0] - 2026-11-07
 

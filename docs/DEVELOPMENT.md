@@ -11,6 +11,7 @@ those are historical records.
 
 Production code lives in `src/` and is published as TypeScript source (no build step):
 
+- **`session-state.ts`** — restores private per-branch BTW, Grill, Simplify and last-result state from Pi custom session entries, excluded from the main model context. The same restore runs on `session_start` and `session_tree`; saved-entry fingerprints prevent redundant appends on unchanged reopen/close.
 - **`bro.ts`** — the Pi extension entry point, `/bro` command routing and completion, session lifecycle wiring, and barrel re-exports.
 - **`overthink.ts`, `overthink-state.ts`, `overthink-questions-ui.ts`** — automatic same-model review of settled Pi work; private session custom entries plus global defaults; shared question editor and latest-notes viewer. Never use Bro's separate SDK/CLI backend for this cache-sensitive feature. The request retains session context (which may include tool definitions) but runs no tools; an unexpected toolUse stop reason is rejected. Agent-end events collect substantive-work evidence; only `agent_settled` (supported from Pi 1.3) schedules automatic checks. Session-position markers ignore private custom entries, while later model messages, compaction and context edits mark notes as stale. The settings-read generation token is captured before the asynchronous read. Global automatic on/off is stored with default questions, separate from Bro's model selection.
 - **`doctor.ts`** — `/bro doctor` diagnostics, CLI version/auth probes, Agy model catalog/usage parsing, and `/bro config` modal launch wiring.
@@ -20,7 +21,7 @@ Production code lives in `src/` and is published as TypeScript source (no build 
 - **`advisor.ts`** — the `bro_advisor` tool registration, context snapshot builder, session/durable steering state, and progress orchestration.
 - **`btw.ts`** — the `/bro btw` side conversation thread state, native continuation/reseed policy, composer command parsing, and `BtwModal`.
 - **`elevate-engine.ts`** — independent discovery and rewrite prompts, strict discovery JSON parser, user selection and scope guards.
-- **`elevate.ts`** — `/bro elevate` UI, draft capture, context filtering, backend calls, cancellation and guarded editor insertion.
+- **`elevate.ts`** — `/bro elevate` UI, draft capture, context filtering, backend calls, cancellation and copy-only handoff.
 - **`explain-modal.ts`** — `BroModal` (explain/show/doctor/help result overlay), `simplify`, `createTextEditorModal` (`/bro preferences` and `/bro advisor-steer` editors), and `/bro help` text.
 - **`review.ts`** — Guided Review schema/validation, atomic records, guide replacement and prompt construction.
 - **`review-source.ts`** — explicit GitHub identity through `gh`, managed Git capture and protected blob evidence reads.
@@ -113,7 +114,7 @@ Agy; reads never rewrite the file.
 - Each stage makes a fresh restricted backend call through `selectionForCapability(settings, "btw")`. Restrictions are backend-specific; see [data and permissions](reference/data-and-permissions.md#backends-access-and-retention).
 - **One visible focus target.** Compose uses the shared body `Editor`; review owns a checklist cursor; every consequential action is a button rendered by `buttonLabels` from `modal-kit.ts`. `Tab`/`Shift+Tab` switch zones, arrows move within a zone, and `Enter` activates only the focused thing. In the checklist, Space or Enter toggles the highlighted finding; Tab moves to the action buttons. Buttons are packed by `wrapButtons` so a label is never split across lines.
 - **Nothing is approved by default.** Findings start unticked so the user approves only what they read; the highlighted finding's full title, reason, expert action and assessment are reachable in scrollable detail below the pinned list. A rewrite with nothing ticked is refused with an explanation. A failed step retries that step with the same approvals.
-- The original main editor stays unchanged until `[Insert into editor]` (or its Desktop equivalent). Terminal insertion replaces the editor only when Elevate was opened on that draft and the text is still unchanged; with an explicit `/bro elevate <request>`, the editor must be empty first. Desktop/RPC only uses confirmed atomic insert into an empty editor. Neither action submits text.
+- Elevate leaves the main Pi editor unchanged. Copy puts the revised request on the clipboard; users decide whether to paste or submit it.
 - Compose reads the objective with `getExpandedText()`, never `getText()`: the `Editor` stores large pastes as `[paste #1 +N lines]` markers, and the marker must never be sent to the backend. When the `Editor` cannot render whole, the modal refuses to edit and says so rather than hiding the cursor.
 - Automated unit tests: `test/elevate.test.ts` and `test/elevate-docs.test.mjs`; the modal contract in `test/modal-contract.test.mjs` covers every Elevate stage. Manually test real modal use as described in [TESTING.md](TESTING.md).
 
@@ -128,8 +129,7 @@ marked explicitly when messages or message text are removed within a turn.
 
 ## BTW continuation
 
-BTW keeps one in-memory thread bound to a backend and an access mode
-(conversation-only / full permission, toggled by `/mode`).
+BTW's active thread is bound to a backend and an access mode (conversation-only / full permission, toggled by `/mode`). Completed state is written to private Pi session entries and restored per branch; native backend continuation itself may need reseeding after restart.
 
 - Claude, Grok, Codex, and Muse resume the same native session across
   `/mode` switches (all run in the workspace).
@@ -168,7 +168,7 @@ acquisition uses `renderFrame` with `REVIEW_ACQUIRE_OVERLAY` (centered 70% width
 ## Invariants
 
 - Nothing Bro produces enters Pi's conversation or main-agent context, except
-  explicit BTW `/insert`/`/insert-all` into the editor and advisor tool results.
+  an explicit user paste/submission and advisor tool results.
 - Source text is quoted data; prompts forbid inventing facts, names, or
   relationships.
 - No silent fallback between backends, models, or efforts; surface the

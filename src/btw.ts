@@ -14,7 +14,7 @@ import {
 } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
 import { BRO_OVERLAY, broOverlayArea, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
-import { canBroInsertIntoEditor, insertBroDesktopText, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
+import { type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
 export const BTW_CONTEXT_TURNS = 8;
@@ -109,7 +109,7 @@ export type BtwComposerAction =
 	| { kind: "mode" }
 	| { kind: "retry" }
 	| { kind: "clipboard"; all: boolean }
-	| { kind: "insert"; all: boolean }
+	| { kind: "help" }
 	| { kind: "removed"; command: string }
 	| { kind: "question"; text: string };
 
@@ -121,8 +121,8 @@ export function parseBtwComposerCommand(value: string): BtwComposerAction {
 	if (command === "/copy" || command === "/copy-all") {
 		return { kind: "clipboard", all: command === "/copy-all" };
 	}
-	if (command === "/insert" || command === "/insert-all") return { kind: "insert", all: command === "/insert-all" };
-	if (command === "/insert!" || command === "/insert-all!") return { kind: "removed", command };
+	if (command === "/help") return { kind: "help" };
+	if (["/insert", "/insert-all", "/insert!", "/insert-all!"].includes(command)) return { kind: "removed", command };
 	return { kind: "question", text: command };
 }
 
@@ -330,7 +330,7 @@ export class BtwModal implements Focusable {
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
 			// The frame drops lines from the top when space runs out, so the composer goes last.
 			footer: [
-				...(this.appearance.commands === "" ? [] : wrapTextWithAnsi(this.appearance.commands ?? "Commands: /mode · /copy · /copy-all · /insert · /insert-all · /clear · /retry", inner)),
+				...(this.appearance.commands === "" ? [] : wrapTextWithAnsi(this.appearance.commands ?? "Commands: /mode · /copy · /copy-all · /clear · /retry · /help", inner)),
 				...(this.suggestions ? wrapTextWithAnsi(this.theme.fg("accent", this.suggestions), inner) : []),
 				this.theme.fg("accent", this.theme.bold(this.appearance.inputLabel ?? "Your message to Bro")),
 				this.input.render(inner)[0] ?? "",
@@ -349,7 +349,7 @@ export class BtwModal implements Focusable {
 
 export async function openBtwModal(
 	ctx: ExtensionCommandContext,
-	options: { thread: BtwThread; initialQuestion?: string },
+	options: { thread: BtwThread; initialQuestion?: string; onChange?: () => void },
 ): Promise<void> {
 	const thread = options.thread;
 
@@ -358,6 +358,25 @@ export async function openBtwModal(
 		(tui, theme, _keybindings, done) => {
 			let closed = false;
 			let controller: AbortController | undefined;
+			let activeTurn: { pending?: BtwTurn; original?: BtwTurn } | undefined;
+			// Discard an unfinished reply immediately on close, before another modal can
+			// reuse the same thread. A cancelled retry restores the completed old turn.
+			const discardUnfinished = () => {
+				const work = activeTurn;
+				if (!work) return;
+				let position = thread.turns.length;
+				if (work.pending) {
+					const index = thread.turns.indexOf(work.pending);
+					if (index >= 0) {
+						position = index;
+						thread.turns.splice(index, 1);
+					}
+				}
+				if (work.original && !thread.turns.includes(work.original)) {
+					thread.turns.splice(position, 0, work.original);
+				}
+				activeTurn = undefined;
+			};
 
 			const transcript = () => formatBtwTranscript(thread.turns);
 
@@ -376,13 +395,18 @@ export async function openBtwModal(
 				closed = true;
 				saveDraft();
 				controller?.abort();
+				discardUnfinished();
+				options.onChange?.();
 				done(undefined);
 			};
 
 			const modal = new BtwModal(tui, theme, close, submit, () => {
+				if (closed) return; // Close already saved and cleaned this thread.
 				closed = true;
 				saveDraft();
 				controller?.abort();
+				discardUnfinished();
+				options.onChange?.();
 			});
 			modal.onInput = () => {
 				composerTouched = true;
@@ -393,6 +417,8 @@ export async function openBtwModal(
 			const runTurn = async (question: string, replaced?: BtwTurn) => {
 				if (controller) return;
 				const turnController = new AbortController();
+				const work: { pending?: BtwTurn; original?: BtwTurn } = { original: replaced };
+				activeTurn = work;
 				controller = turnController;
 				modal.setRunning(true);
 
@@ -402,20 +428,22 @@ export async function openBtwModal(
 					settings = await readSettings();
 					preferences = await readPreferences();
 				} catch (error) {
-					if (replaced) thread.turns.push(replaced);
-					if (!replaced && !options.initialQuestion) modal.setComposerText(question);
+					if (activeTurn === work) discardUnfinished();
+					if (!closed && !replaced && !options.initialQuestion) modal.setComposerText(question);
 					if (controller === turnController) controller = undefined;
-					if (!closed) { modal.setRunning(false); modal.setNotice(errorMessage(error), "error"); }
+					if (!closed) { modal.setRunning(false); modal.setNotice(errorMessage(error), "error"); options.onChange?.(); }
 					return;
 				}
-				// Closing (or reopening) during the reads above must not touch the shared thread.
+				// Do not restore a cancelled retry twice after close/dispose.
 				if (closed || turnController.signal.aborted) {
-					if (replaced) thread.turns.push(replaced);
-					if (!replaced && !options.initialQuestion) modal.setComposerText(question);
+					if (activeTurn === work) discardUnfinished();
 					if (controller === turnController) controller = undefined;
 					return;
 				}
-				if (bindBtwBackend(thread, capabilityBackend(settings, "btw"))) modal.setNotice("Backend changed — started a fresh side thread.", "warning");
+				if (bindBtwBackend(thread, capabilityBackend(settings, "btw"))) {
+					work.original = undefined; // An old-backend retry must not recreate discarded history.
+					modal.setNotice("Backend changed — started a fresh side thread.", "warning");
+				}
 				if (thread.turns.length === 0) {
 					thread.conversationId = undefined;
 					const context = captureShowTranscript(ctx, BTW_CONTEXT_TURNS, BTW_CONTEXT_MAX)?.text;
@@ -428,7 +456,9 @@ export async function openBtwModal(
 				const context = conversationId ? undefined : thread.context;
 				const full = thread.full;
 
-				thread.turns.push({ question, answer: "…" });
+				const pending = { question, answer: "…" };
+				work.pending = pending;
+				thread.turns.push(pending);
 				modal.setText(transcript());
 				modal.scrollToEnd();
 
@@ -444,11 +474,11 @@ export async function openBtwModal(
 						turnController.signal,
 						(partial) => {
 							if (closed || turnController.signal.aborted) return;
-							thread.turns[thread.turns.length - 1]!.answer = partial;
+							pending.answer = partial;
 							modal.setText(transcript());
 						},
 					);
-					if (turnController.signal.aborted) return;
+					if (closed || turnController.signal.aborted) return;
 					if (result.expiredContinuation) {
 						// The native session is gone. Drop the dead id, rebuild the prompt from this thread's own
 						// transcript AND its captured main-session context (the local `context` is undefined
@@ -462,7 +492,7 @@ export async function openBtwModal(
 							turnController.signal,
 							(partial) => {
 								if (closed || turnController.signal.aborted) return;
-								thread.turns[thread.turns.length - 1]!.answer = partial;
+								pending.answer = partial;
 								modal.setText(transcript());
 							},
 						);
@@ -473,16 +503,21 @@ export async function openBtwModal(
 						thread.sessionFull = full;
 						thread.sessionPreferences = preferences;
 					}
-					thread.turns[thread.turns.length - 1]!.answer = result.text;
+					pending.answer = result.text;
 				} catch (error) {
 					if (turnController.signal.aborted || closed) return;
-					thread.turns[thread.turns.length - 1]!.answer = `_${errorMessage(error)}_`;
+					pending.answer = `_${errorMessage(error)}_`;
 					modal.setNotice(errorMessage(error), "error");
 				} finally {
 					if (controller === turnController) controller = undefined;
+					if (activeTurn === work) {
+						if (closed || turnController.signal.aborted) discardUnfinished();
+						else activeTurn = undefined;
+					}
 					if (!closed) {
 						modal.setRunning(false);
 						modal.setText(transcript());
+						options.onChange?.();
 					}
 				}
 			};
@@ -491,6 +526,7 @@ export async function openBtwModal(
 				toggleBtwMode(thread);
 				modal.setFull(thread.full);
 				modal.setNotice(`Mode: ${btwModeLabel(thread.full)}`, "info");
+				options.onChange?.();
 			};
 
 			const clear = () => {
@@ -503,6 +539,7 @@ export async function openBtwModal(
 				modal.clearComposer();
 				modal.setNotice("");
 				modal.setText("");
+				options.onChange?.();
 			};
 
 			const retry = () => {
@@ -530,25 +567,6 @@ export async function openBtwModal(
 				}
 			};
 
-			const insert = async (all: boolean) => {
-				const text = all ? transcript() : (thread.turns.at(-1)?.answer ?? "");
-				if (!text.trim()) {
-					modal.setNotice("Nothing to insert yet.", "warning");
-					return;
-				}
-				if (!canBroInsertIntoEditor(ctx)) {
-					const result = await insertBroDesktopText(ctx, text);
-					modal.setNotice(result === "inserted" ? "Inserted into the main editor. Review it before sending." : result === "not_empty" ? "Main editor has a draft or attachment. Clear it first, then insert again." : "Could not confirm insertion. Check the main editor before trying again.", result === "inserted" ? "success" : result === "not_empty" ? "warning" : "error");
-					return;
-				}
-				if (ctx.ui.getEditorText().trim()) {
-					modal.setNotice("Main editor has a draft. Edit or clear it first, then insert again.", "warning");
-					return;
-				}
-				ctx.ui.setEditorText(text);
-				modal.setNotice(all ? "Inserted the full thread into the main editor." : "Inserted the latest answer into the main editor.", "success");
-			};
-
 			function submit(value: string): void {
 				const action = parseBtwComposerCommand(value);
 				if (action.kind === "clear") {
@@ -566,14 +584,14 @@ export async function openBtwModal(
 					void copyOut(action.all);
 					return;
 				}
-				if (action.kind === "insert") {
-					modal.clearComposer();
-					void insert(action.all);
-					return;
-				}
 				if (action.kind === "removed") {
 					modal.clearComposer();
-					modal.setNotice(`${action.command} was removed. Edit or clear the main editor draft, then use /insert or /insert-all.`);
+					modal.setNotice(`${action.command} was removed. Use /copy or /copy-all, then paste where you want it.`, "warning");
+					return;
+				}
+				if (action.kind === "help") {
+					modal.clearComposer();
+					modal.setNotice("Commands: /mode, /copy, /copy-all, /clear, /retry, /help. Esc closes; completed turns stay private.");
 					return;
 				}
 				if (action.kind === "retry") {

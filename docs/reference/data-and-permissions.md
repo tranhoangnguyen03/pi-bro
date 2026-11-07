@@ -102,7 +102,7 @@ See [feature guide](../features/architecture.md).
   pasted text, extracted document text, extracted webpage text, or recent
   session conversation text (tool calls, tool results, reasoning, and images
   omitted) to the selected backend and its configured model provider.
-- **Elevate requests**: `/bro elevate` sends your objective, preferences, and all user/assistant text on the current branch by default, without a fixed history cap. Its visible Context switch can include tool-call arguments and text results (Full), potentially including sensitive file contents or command output. Both modes exclude hidden reasoning and image binaries. Only explicit Retry after a context-overload error trims older history; the UI discloses reduced context. Its optional rewrite call includes only approved findings. It makes fresh restricted calls through the BTW model setting, but a backend's restricted mode is not a universal file/network sandbox (Grok restrictions are prompt-only). It does not insert or submit anything to Pi unless you approve insertion. In the terminal, insertion can replace the draft Elevate was opened on, if it is unchanged; an explicit `/bro elevate <request>` requires an empty editor. See the [Elevate guide](../elevate.md).
+- **Elevate requests**: `/bro elevate` sends your objective, preferences, and all user/assistant text on the current branch by default, without a fixed history cap. Its visible Context switch can include tool-call arguments and text results (Full), potentially including sensitive file contents or command output. Both modes exclude hidden reasoning and image binaries. Only explicit Retry after a context-overload error trims older history; the UI discloses reduced context. Its optional rewrite call includes only approved findings. It makes fresh restricted calls through the BTW model setting, but a backend's restricted mode is not a universal file/network sandbox (Grok restrictions are prompt-only). Elevate never edits or submits Pi's main draft. The user may copy the revision and paste it manually. See the [Elevate guide](../elevate.md).
 - **Side conversation requests**: `/bro btw` sends your side questions and the
   seeded main-session conversation text (plus earlier turns when a native
   session is reseeded) to the selected backend. In full permission mode the
@@ -125,15 +125,12 @@ See [feature guide](../features/architecture.md).
   instructions are not access enforcement.
 - **Context isolation**: Bro does not add explanations, BTW answers, or the
   steering brief to Pi's conversation history or main-agent context. BTW text
-  reaches the main editor only through `/insert` or `/insert-all`, and advisor
+  reaches the main conversation only after the user copies, pastes, and submits it, and advisor
   results appear as normal tool results in the executor's transcript.
 - **Saved reviews**: Guided Review records, questions, drafts and captured Git source persist under the host's `getAgentDir()/bro-reviews/`. No automatic cleanup or sync is provided; see [storage and removal](../guided-review.md#access-privacy-and-storage).
-- **Memory**: the latest explanation (for `/bro open`) and the BTW thread live
-  only in process memory and clear when you switch Pi sessions, reload
-  extensions, or quit Pi. Backend-native sessions can persist independently.
-  Standing advisor priorities are stored in `~/.pi/agent/bro-advisor.md`, and
-  the session steering brief is stored as session-scoped extension data
-  (`bro-advisor-steering`) in the session file.
+- **Private session continuity**: completed BTW and Grill Me turns, modes, drafts, the latest Simplify state and the last Show result are saved as Pi `custom` entries inside the current session file. They survive normal reload/restart and are never added to the main model or Advisor snapshot. A fork initially inherits earlier entries; later updates stay on its own branch. This is local disk storage, not a global memory store or an abrupt-crash guarantee. Backend-native sessions may persist independently.
+  Standing Advisor priorities are stored in `~/.pi/agent/bro-advisor.md`, and
+  the session steering brief uses another `custom` entry (`bro-advisor-steering`). Session entries remain readable to anyone with the session file; export/sharing may include them. The private boundary is model-context isolation, not encrypted storage or export redaction.
 - **File safety**: `/bro file` reads only regular files whose resolved path is
   inside Pi's current workspace, including after resolving symlinks. Bro's
   extractor does not modify them.

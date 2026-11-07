@@ -693,7 +693,7 @@ await t.test("Grill cancellation preserves completed turns and submitted input a
 	assert.deepEqual(thread.turns, [original], "late cancellation cannot change reopened history");
 });
 
-await t.test("Grill completes an interview, consolidates, continues, and inserts only the latest reply", { timeout: 15_000 }, async () => {
+await t.test("Grill completes an interview, consolidates, continues, and copies only the latest reply", { timeout: 15_000 }, async () => {
 	await withFakeAgy(`#!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
@@ -707,6 +707,7 @@ console.log(JSON.stringify({ event: "result", result: { status: "SUCCESS", respo
 		const mainBranch = [{ type: "message", message: { role: "user", content: "Keep working on the main task." } }];
 		const originalBranch = structuredClone(mainBranch);
 		let editor = "existing draft";
+		const copied = [];
 		let modal;
 		let expectedTurns = 1;
 		let completed = deferred();
@@ -721,7 +722,7 @@ console.log(JSON.stringify({ event: "result", result: { status: "SUCCESS", respo
 					} }, fakeTheme, {}, resolve);
 				}),
 			},
-		}, thread, { start: true });
+		}, thread, { start: true, copy: async text => { copied.push(text); } });
 		const submit = text => { modal.setComposerText(text); modal.handleInput("\r"); };
 		const reply = async text => {
 			expectedTurns++;
@@ -735,19 +736,19 @@ console.log(JSON.stringify({ event: "result", result: { status: "SUCCESS", respo
 			await reply("A");
 			await reply("/consolidate");
 			assert.deepEqual(thread.turns.at(-1), { question: "/consolidate", answer: "Completed reply 3" });
-			submit("/insert-last-message");
-			assert.equal(editor, "existing draft", "export must not overwrite the main draft");
-			editor = "";
-			submit("/insert-last-message");
-			assert.equal(editor, "Completed reply 3");
+			submit("/copy");
+			await new Promise(resolve => setImmediate(resolve));
+			assert.deepEqual(copied, ["Completed reply 3"], "copy selects the consolidated brief");
+			assert.equal(editor, "existing draft", "copy must never touch the main editor");
 			await reply("What if the queue is unavailable?");
-			assert.equal(editor, "Completed reply 3", "continuing must not export automatically");
-			editor = "";
-			submit("/insert-last-message");
-			assert.equal(editor, "Completed reply 4", "export the latest answer, not the older brief");
+			assert.deepEqual(copied, ["Completed reply 3"], "continuing must not copy automatically");
+			submit("/copy");
+			await new Promise(resolve => setImmediate(resolve));
+			assert.deepEqual(copied, ["Completed reply 3", "Completed reply 4"], "copy uses the latest answer, not the older brief");
+			assert.equal(editor, "existing draft", "copy leaves an occupied draft untouched");
 			assert.deepEqual(mainBranch, originalBranch, "private turns must not enter the main session");
 			const prompts = JSON.parse(await readFile(join(binDir, "prompts.json"), "utf8"));
-			assert.equal(prompts.length, 4, "insertion must not make a model call");
+			assert.equal(prompts.length, 4, "copy must not make a model call");
 			assert.ok(prompts[1].includes(JSON.stringify(thread.turns[0])), "answers replay completed history");
 			assert.match(prompts[2], /User instruction: consolidate the discussion so far/);
 			assert.ok(prompts[3].includes(JSON.stringify(thread.turns[2])), "continuation includes the brief");
@@ -761,8 +762,9 @@ console.log(JSON.stringify({ event: "result", result: { status: "SUCCESS", respo
 	});
 });
 
-await t.test("Grill depth, consolidation exports, and reset remain private and explicit", async () => {
+await t.test("Grill depth, copying, and reset remain private and explicit", async () => {
 	let editor = "existing draft";
+	const copied = [];
 	const thread = { topic: "Topic", depth: "balanced", fullAccess: true,
 		turns: [{ question: "Topic", answer: "Decision brief" }] };
 	await bro.openGrillModal({ cwd: process.cwd(), hasUI: true, mode: "tui", ui: {
@@ -784,9 +786,9 @@ await t.test("Grill depth, consolidation exports, and reset remain private and e
 			modal.setComposerText("/con");
 			modal.handleInput("\t");
 			assert.equal(modal.getComposerText(), "/consolidate");
-			modal.setComposerText("/ins");
+			modal.setComposerText("/cop");
 			modal.onInput();
-			assert.match(view(), /insert-last-message/);
+			assert.match(view(), /\/copy/);
 			submit("/help");
 			assert.match(view(), /FULL/);
 			assert.match(view(), /Esc returns to the interview/);
@@ -796,11 +798,10 @@ await t.test("Grill depth, consolidation exports, and reset remain private and e
 			submit("/depth exhaustive");
 			assert.equal(thread.depth, "exhaustive");
 			assert.equal(thread.turns.length, 1);
-			submit("/insert-last-message");
+			submit("/copy");
 			assert.equal(editor, "existing draft");
-			editor = "";
 			submit("/insert-last-message");
-			assert.equal(editor, "Decision brief");
+			assert.equal(editor, "existing draft", "removed insert cannot modify Pi");
 			submit("/new Another topic");
 			assert.equal(thread.topic, "Topic", "reset requires confirmation");
 			submit("yes");
@@ -810,7 +811,8 @@ await t.test("Grill depth, consolidation exports, and reset remain private and e
 			assert.deepEqual(thread.turns, []);
 			modal.handleInput("\x1b");
 		}) },
-	}, thread);
+	}, thread, { copy: async text => { copied.push(text); } });
+	assert.deepEqual(copied, ["Decision brief"]);
 });
 
 await t.test("Agy CLI usage formatting and model catalog parsing", () => {
@@ -856,8 +858,9 @@ await t.test("BTW argument, composer command, and thread transcript parsing", ()
 	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
 	assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "clipboard", all: false });
 	assert.deepEqual(parseBtwComposerCommand("/copy-all"), { kind: "clipboard", all: true });
-	assert.deepEqual(parseBtwComposerCommand("/insert"), { kind: "insert", all: false });
-	assert.deepEqual(parseBtwComposerCommand("/insert-all"), { kind: "insert", all: true });
+	assert.deepEqual(parseBtwComposerCommand("/insert"), { kind: "removed", command: "/insert" });
+	assert.deepEqual(parseBtwComposerCommand("/insert-all"), { kind: "removed", command: "/insert-all" });
+	assert.deepEqual(parseBtwComposerCommand("/help"), { kind: "help" });
 	assert.deepEqual(parseBtwComposerCommand("/insert!"), { kind: "removed", command: "/insert!" });
 	assert.deepEqual(parseBtwComposerCommand("/insert-all!"), { kind: "removed", command: "/insert-all!" });
 	assert.deepEqual(parseBtwComposerCommand("/clear"), { kind: "clear" });

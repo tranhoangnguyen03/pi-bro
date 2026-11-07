@@ -4,12 +4,12 @@ import { Editor, Markdown, matchesKey, wrapTextWithAnsi, type EditorTheme, type 
 import { runBackendText } from "./backend.ts";
 import {
   buildElevateDiscoveryPrompt, buildElevateUpgradePrompt, parseElevateDiscovery,
-  selectedFindings, stripElevateFence, elevateInsertAllowed, captureElevateContext, isElevateContextOverflow,
+  selectedFindings, stripElevateFence, captureElevateContext, isElevateContextOverflow,
   reduceElevateContext, elevateDisplayText, type ElevateContextMode, type ElevateDiscovery, type ElevateInput,
 } from "./elevate-engine.ts";
 import { BRO_OVERLAY, broOverlayArea, buttonLabels, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, wrapButtons, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel } from "./settings.ts";
-import { canBroInsertIntoEditor, insertBroDesktopText, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
+import { type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
 type Stage = "compose" | "discovering" | "review" | "upgrading" | "ready" | "failed";
@@ -65,7 +65,6 @@ export class ElevateModal implements Focusable {
     private readonly onClose: () => void,
     private readonly onDiscover: (objective: string) => void,
     private readonly onUpgrade: (indexes: ReadonlySet<number>) => void,
-    private readonly onInsert: (text: string) => void,
     private readonly onRetry: () => void,
     private readonly onDispose: () => void,
     private readonly onContextChange: (mode: ElevateContextMode) => void = () => {},
@@ -169,7 +168,7 @@ export class ElevateModal implements Focusable {
       // the checklist itself, which is the part the user acts on.
       text = this.discovery.assessment;
     } else if (this.stage === "upgrading") text = "## Upgrading your request\n\nPreserving your outcome and constraints. Incorporating only the ideas you approved…";
-    else if (this.stage === "ready") text = `## Revised request\n\n${this.revised}\n\n*Review before inserting. Nothing has been submitted to Pi.*`;
+    else if (this.stage === "ready") text = `## Revised request\n\n${this.revised}\n\n*Copy and paste where you want it. Nothing has been submitted to Pi.*`;
     else if (this.stage === "failed") text = "## Elevate stopped\n\nYour original request has not changed. Retry, or close this window.";
     this.markdown.setText(text);
     this.tui.requestRender();
@@ -211,7 +210,6 @@ export class ElevateModal implements Focusable {
       ];
     }
     if (this.stage === "ready") return [
-      { label: "Insert into editor", short: "Insert", run: () => this.onInsert(this.revised) },
       { label: "Copy", short: "Copy", run: () => void this.copy(this.revised, "Copied revised request.") },
       contextButton,
       // Back to the findings with the approvals intact, so a rewrite can be reconsidered without
@@ -455,13 +453,10 @@ export class ElevateModal implements Focusable {
 export async function openElevateModal(ctx: ExtensionCommandContext, request = ""): Promise<void> {
   const initialEditor = ctx.ui.getEditorText();
   const initialObjective = request.trim() || initialEditor.trim();
-  // Whether the editor draft is the thing being elevated. Only then may insertion replace it.
-  const elevatingEditorDraft = !request.trim() && !!initialEditor.trim();
   const branch = ctx.sessionManager.getBranch();
   await openBroOverlay<void>(ctx, (tui, theme, _keybindings, done) => {
     let closed = false;
     let controller: AbortController | undefined;
-    let inserting = false;
     let original = initialObjective;
     let contextMessages = captureElevateContext(branch, "messages");
     let reduced = false;
@@ -477,7 +472,7 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
       done(undefined);
     };
 
-    const modal = new ElevateModal(tui, theme, close, discover, upgrade, insert, retryStage, close, (mode) => {
+    const modal = new ElevateModal(tui, theme, close, discover, upgrade, retryStage, close, (mode) => {
       contextMessages = captureElevateContext(branch, mode);
       reduced = false;
       reduceOnRetry = false;
@@ -560,35 +555,6 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
       }
       if (pending.kind === "upgrade") void upgrade(pending.indexes);
       else void discover(original);
-    }
-
-    async function insert(text: string): Promise<void> {
-      if (closed || inserting) return;
-      if (canBroInsertIntoEditor(ctx)) {
-        const current = ctx.ui.getEditorText();
-        if (!elevateInsertAllowed(elevatingEditorDraft, initialEditor, current)) {
-          modal.setNotice(elevatingEditorDraft
-            ? "Main editor changed. Copy instead; your draft was not overwritten."
-            : "Main editor has a draft. Clear it first, or press Copy instead.");
-          return;
-        }
-        ctx.ui.setEditorText(text);
-        close();
-        ctx.ui.notify("Elevate inserted the revised request. Review it before submitting.", "info");
-        return;
-      }
-      // Desktop has an atomic empty-editor insertion API. Never overwrite a draft there.
-      inserting = true;
-      let result: Awaited<ReturnType<typeof insertBroDesktopText>>;
-      try { result = await insertBroDesktopText(ctx, text); }
-      finally { inserting = false; }
-      if (closed) return;
-      modal.setNotice(result === "inserted"
-        ? "Inserted into the main editor. Review it before submitting."
-        : result === "not_empty"
-          ? "Desktop editor has a draft; copy the revised request instead."
-          : "Desktop cannot insert here; copy the revised request instead.");
-      if (result === "inserted") close();
     }
 
     modal.setCompose(initialObjective);

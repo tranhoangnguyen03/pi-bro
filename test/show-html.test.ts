@@ -43,7 +43,7 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Di
 		});
 	};
 	try {
-		await registerBro({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
+		await registerBro({ on() {}, appendEntry() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
 		await command.handler("show 1 Keep My Steering", ctx);
 		ctx.mode = "tui";
 		await command.handler("open", ctx);
@@ -121,7 +121,7 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Dr
 		}
 	};
 	try {
-		await registerBro({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
+		await registerBro({ on() {}, appendEntry() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
 		await command.handler("show 1", ctx); await settled();
 		assert.ok(prompts()[0].includes(JSON.stringify("SHOW_PREFS_MARKER")), "Show prompts carry preferences");
 		assert.match(header(), / · prefs/, "the initial Show result carries the tag");

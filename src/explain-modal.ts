@@ -369,6 +369,15 @@ export function helpText(settings?: BroSettings, settingsError?: string, prefere
 
 Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/user-guide.md
 
+## Pick by need
+
+- **Understand what already exists:** Simplify and Show; Architecture for this repository.
+- **Explore what could exist:** BTW for side questions; Grill Me for decisions.
+- **Get advice on existing work:** Guided Review; Overthink for automatic second looks; agent-facing Advisor.
+- **Guide the agent:** Elevate for assignments; Remember Me for approved context (about_user); Advisor Steering for priorities.
+
+These are needs, not modes. Copied text does not enter Pi until you paste and submit it.
+
 ## Explain and show
 
 - \`/bro\` — open Simplify and explain the latest completed assistant reply
@@ -403,17 +412,16 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 ## Grill Me (experimental)
 
-- \`/bro grill-me [topic]\` — private decision interview. Use /consolidate, /insert-last-message or /help. Full-access risk: docs/grill-me.md.
+- \`/bro grill-me [topic]\` — private decision interview. Use /consolidate, /copy or /help. Full-access risk: docs/grill-me.md.
 
 ## Overthink
 
-- \`/bro overthink\` — view private automatic second-look notes without running a model. Ctrl+R forces retry; Ctrl+E edits this session's questions; ? shows help; Ctrl+C copies. Uses the active Pi model and thinking level only. No separate backend settings.
-- \`/bro config\` → Features → Overthink provides automatic on/off and editable global starting questions; session edits stay with their Pi session. See docs/overthink.md.
+- \`/bro overthink\` — view private automatic second-look notes without a model call. Ctrl+R retries; Ctrl+E edits session questions; Ctrl+C copies. Uses the active Pi model. Turn off or edit defaults in \`/bro config\` → Features → Overthink. See docs/overthink.md.
 
 ## Side conversation
 
 - \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
-- Enter asks; empty Enter or \`/retry\` re-asks. \`/mode\` toggles conversation-only/full workspace access, retaining the thread. \`/copy\`, \`/copy-all\` copy; \`/insert\`, \`/insert-all\` fill an empty main editor without submitting. \`/clear\` resets; Esc closes.
+- Enter asks; empty Enter or \`/retry\` re-asks. \`/mode\` toggles conversation-only/full workspace access, retaining the thread. \`/copy\`, \`/copy-all\` copy. \`/clear\` resets; \`/help\` shows controls; Esc closes.
 
 ## Advisor
 
@@ -457,7 +465,7 @@ The mode decides how much of the source to keep; your preferences decide who it'
 
 ## Privacy
 
-Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, and Guided Review request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you insert it, except advisor answers, which return to the agent as tool results. Access controls differ by backend; see the user guide.`;
+Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, and Guided Review request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you paste and send it, except advisor answers and approved memories read through about_user, which return to the agent as tool results. Access controls differ by backend; see the user guide.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.

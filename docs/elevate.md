@@ -4,7 +4,7 @@
 
 Elevate is useful before a design, research task, implementation, plan, or important decision. It is not a way to turn every small request into a large project. Sometimes the best result is: *Your original request is good enough.*
 
-Elevate works inside Pi's **separate Bro modal**. It does not post its discussion to the main agent or execute the revised assignment. You control whether the final text goes into the main editor, and you still press Enter to send it.
+Elevate works inside Pi's **separate Bro modal**. It does not post its discussion to the main agent or execute the revised assignment. Copy and paste the revised assignment when you choose; Elevate never edits or submits Pi's main draft.
 
 ## Start here (one minute)
 
@@ -24,7 +24,7 @@ Elevate works inside Pi's **separate Bro modal**. It does not post its discussio
 
 If the main editor contains a draft, Bro pre-fills the objective with that draft. Elevate always opens Compose first so you can choose context before any model call. Otherwise, it shows a multi-line objective field: type or paste the objective and choose **Ctrl+S** (or `Ctrl+Enter` on terminals that send it, or the `[Discover gaps]` button). `Enter` adds a new line, so a pasted multi-line task keeps its structure.
 
-When both an explicit `/bro elevate <request>` argument and a draft exist, the **explicit argument takes priority**. The main editor is left untouched unless you later choose to insert the revision.
+When both an explicit `/bro elevate <request>` argument and a draft exist, the **explicit argument takes priority**. The main editor stays untouched throughout.
 
 ## Conversation context and retry
 
@@ -41,7 +41,7 @@ The **Context: Messages** button toggles to **Context: Full**. Use Tab to focus 
 1. **Discover:** “Given my objective, what would a skilled expert know, question, investigate, or test that I haven't accounted for?” Bro looks across **altitude** (right problem), **depth** (evidence, methods, tests), and **range** (useful ideas from other fields). It offers up to **five** non-overlapping suggestions, with a reason and an expert action for each. It can also report **zero** suggestions.
 2. **Upgrade:** “Rewrite my request using only the insights I approve. Keep my outcome, constraints, and scope. Improve the quality of the work, not the amount of work.” Bro returns the improved assignment for **you to review**.
 
-The flow is **Discover → Select → Upgrade → Insert or Copy**. It typically makes **two model calls** (discovery and rewrite); if Bro finds no useful changes, it makes only the discovery call and keeps the original request.
+The flow is **Discover → Select → Upgrade → Copy**. It typically makes **two model calls** (discovery and rewrite); if Bro finds no useful changes, it makes only the discovery call and keeps the original request.
 
 ## Example: before and after
 
@@ -67,7 +67,7 @@ Bro has **not designed the system** here. It has improved the assignment you can
 
 ## Controls in the modal
 
-Every consequential action is a **button** on the action row. `Tab` / `Shift+Tab` move between the text/list area and the buttons, `←`/`→` move between buttons, and `Enter` activates the focused one. The focused button is marked with `›`. Nothing that changes your request or your editor happens on a stray keypress.
+Every consequential action is a **button** on the action row. `Tab` / `Shift+Tab` move between the text/list area and the buttons, `←`/`→` move between buttons, and `Enter` activates the focused one. The focused button is marked with `›`. Nothing changes your main Pi editor or sends a request.
 
 | Screen | Key | Effect |
 | --- | --- | --- |
@@ -78,7 +78,6 @@ Every consequential action is a **button** on the action row. `Tab` / `Shift+Tab
 | Review discoveries | `Tab` | Move focus to the buttons. |
 | Review discoveries | `[Rewrite with N selected]` | Generate a revised request using only the ticked findings. With nothing ticked it explains why instead of proceeding. |
 | Review discoveries | `[Select all]` / `[Select none]` | Change every tick at once. |
-| Revised request | `[Insert into editor]` | Insert the revised request into Pi's main editor, **without sending it**. See editor behavior below. |
 | Revised request | `[Copy]` | Copy the revised request to the system clipboard. |
 | Revised request | `[Back]` | Return to the findings and change your choices. |
 | Failed step | `[Retry]` | Repeat **the step that failed**: a failed rewrite retries the rewrite with the same approved findings, so your choices are not lost. |
@@ -86,14 +85,11 @@ Every consequential action is a **button** on the action row. `Tab` / `Shift+Tab
 | Any screen | `Esc` | Cancel/close. A running backend request is asked to stop. |
 | Read long content | `↑`/`↓`, Page Up/Down, wheel | Scroll. In the findings list, `↑`/`↓` move the highlight and Page Up/Down scroll. |
 
-If there are **no material findings**, the revised-request screen displays your original text unchanged. You may copy, insert, or close it; no rewrite model call is made.
+If there are **no material findings**, the revised-request screen displays your original text unchanged. You may copy or close it; no rewrite model call is made.
 
 ### What happens to the original editor draft?
 
-- **Before you insert:** Opening, selecting, copying, cancelling, or retrying Elevate does **not** change the main editor.
-- **In Pi terminal (TUI):** The `[Insert into editor]` button replaces the editor text with the revised request. It only replaces the draft Elevate was opened on, and only if that text has not changed since it opened; if you opened Elevate with an explicit request, the editor must be empty. Otherwise insertion is refused and you can copy instead. There is no built-in undo of this replacement in Elevate—copy the original first if you want to keep both versions.
-- **In compatible Pi Desktop/RPC:** The adapter only inserts when the editor is empty and confirms atomic insertion support. If the editor contains a draft or insertion isn't supported, use `[Copy]` and paste manually. It does **not** replace a Desktop draft.
-- **After insertion:** The new text remains editable. **Nothing is sent to Pi's main agent** until *you* submit it.
+Elevate never writes to Pi's editor. It may use the unsent draft as its starting objective, but Copy only writes to the clipboard. Paste the revised request yourself and submit when ready. If you have an unsent draft, it stays unchanged.
 
 ## What Elevate can and cannot do
 
@@ -116,7 +112,6 @@ If there are **no material findings**, the revised-request screen displays your 
 | Nothing to work on | Type the objective into the modal and choose `[Discover gaps]`, or pass it with `/bro elevate <request>`. |
 | “Invalid discovery JSON” | The model didn't follow the required response format. Choose `[Retry]` to repeat the step; consider a different BTW model in `/bro config`. |
 | Backend/model/effort fails | Run `/bro doctor`; Elevate does not silently switch models. |
-| If `[Insert into editor]` is refused | Your editor changed while Elevate was open, or Desktop can't safely insert into a non-empty editor. Use `[Copy]`, then paste. |
 | The rewrite added unwanted scope | Use `[Back]` to approve fewer findings, or `Esc` to keep your original request. |
 | You need source-backed research | Ask the main agent to investigate after you submit the improved request. Elevate's discovery alone does not verify source facts. |
 

@@ -1,16 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasBroCustomUi, broModalRows, canBroInsertIntoEditor, insertBroDesktopText } from "../src/ui-capabilities.ts";
-
-test('atomic insertion requires capability and method and preserves structured outcomes', async () => {
-  let calls=0;
-  const ui={getDesktopUiCapabilities:()=>({version:1,customTui:true,viewport:true,atomicEditorInsert:true}),insertEditorTextIfEmpty:async (_text:string)=>{calls++;return 'inserted' as const;}};
-  assert.equal(await insertBroDesktopText({mode:'tui',ui},'x'),'unavailable');assert.equal(calls,0);
-  assert.equal(await insertBroDesktopText({mode:'rpc',ui},'x'),'inserted');assert.equal(calls,1);
-  assert.equal(await insertBroDesktopText({mode:'rpc',ui:{...ui,insertEditorTextIfEmpty:async()=> 'not_empty'}},'x'),'not_empty');
-  assert.equal(await insertBroDesktopText({mode:'rpc',ui:{...ui,insertEditorTextIfEmpty:async()=>{throw Error('gone')}}},'x'),'unavailable');
-  assert.equal(await insertBroDesktopText({mode:'rpc',ui:{getDesktopUiCapabilities:ui.getDesktopUiCapabilities}},'x'),'unavailable');
-});
+import { hasBroCustomUi, broModalRows } from "../src/ui-capabilities.ts";
 
 const desktopUi = { version: 1, customTui: true, viewport: true };
 test("terminal UI remains supported", () => assert.equal(hasBroCustomUi({ mode: "tui", ui: {} }), true));
@@ -39,12 +29,6 @@ test("virtual viewport beats stdout; ordinary TUI retains stdout fallback", () =
 	assert.equal(broModalRows({}, 24), 24); assert.equal(broModalRows({}, undefined), 30);
 	assert.equal(broModalRows({ terminal: { rows: NaN } }, 24), 24);
 });
-test("desktop insertion fails closed; terminal behavior is preserved", () => {
-	assert.equal(canBroInsertIntoEditor({ mode: "rpc", ui: { getDesktopUiCapabilities: () => desktopUi } }), false);
-	assert.equal(canBroInsertIntoEditor({ mode: "tui", ui: {} }), true);
-});
-
-
 test("a broken capability query fails closed", () => {
 	assert.equal(hasBroCustomUi({ mode: "rpc", ui: { getDesktopUiCapabilities() { throw new Error("gone"); } } }), false);
 });
