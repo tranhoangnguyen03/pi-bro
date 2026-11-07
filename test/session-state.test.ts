@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
-  restorePrivateBroState, BTW_SESSION_ENTRY, GRILL_SESSION_ENTRY,
+  restorePrivateBroState, privateSessionEntrySnapshots, BTW_SESSION_ENTRY, GRILL_SESSION_ENTRY,
   SIMPLIFY_SESSION_ENTRY, LAST_RESULT_SESSION_ENTRY,
 } from "../src/session-state.ts";
 
@@ -48,4 +48,14 @@ test("custom message-like entries are ignored; private state is not a model-faci
     {type:"message",message:{role:"user",content:[{type:"text",text:"no changes"}]}},
   ] as SessionEntry[];
   assert.deepEqual(restorePrivateBroState(branch).btw, btw);
+});
+
+test("write signatures track the active branch and latest saved value", () => {
+  const oldBranch = [custom(BTW_SESSION_ENTRY, { thread: btw }), custom(GRILL_SESSION_ENTRY, { thread: grill })];
+  const signatures = privateSessionEntrySnapshots(oldBranch);
+  assert.equal(signatures.get(BTW_SESSION_ENTRY), JSON.stringify({ thread: btw }));
+  assert.equal(signatures.get(GRILL_SESSION_ENTRY), JSON.stringify({ thread: grill }));
+  assert.equal(privateSessionEntrySnapshots([]).size, 0, "rewinding before Bro activity erases stale signatures");
+  const next = [...oldBranch, custom(BTW_SESSION_ENTRY, { thread: { turns: [], full: false } })];
+  assert.equal(privateSessionEntrySnapshots(next).get(BTW_SESSION_ENTRY), JSON.stringify({ thread: { turns: [], full: false } }));
 });
