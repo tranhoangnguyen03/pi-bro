@@ -815,3 +815,45 @@ test("reopening a saved review shows the backend advisory without any model call
 		panel?.dispose();
 	}
 });
+
+test("delete picker confirms and removes only the selected saved review", async () => {
+	const id = "d".repeat(64);
+	const root = join(getAgentDir(), "bro-reviews");
+	const capture = join(root, "source", id);
+	await saveReview(root, {
+		version: 1, id,
+		snapshot: {
+			target: { repository: "delete-suite/repo", number: 90991, head: "abcdef", base: "base", title: "Delete only this record" },
+			mergeBase: "merge", gitDir: capture, checkout: capture, files: [], diff: "",
+		},
+		turns: [], ui: newReviewView(),
+	});
+	await mkdir(capture, { recursive: true });
+	await writeFile(join(capture, "canary"), "only this review");
+	let approve = false;
+	const events = [];
+	const ctx = {
+		mode: "tui",
+		ui: {
+			select: async (_title, labels) => labels.find(label => label.includes("delete-suite/repo #90991")),
+			confirm: async (title, body) => {
+				events.push({ title, body });
+				return approve;
+			},
+			notify: (message, tone) => events.push({ message, tone }),
+		},
+	};
+	try {
+		await openGuidedReview(ctx, "delete", "");
+		assert.ok(await loadReview(root, id), "cancelled confirmation must retain the record");
+		assert.equal(await readFile(join(capture, "canary"), "utf8"), "only this review");
+		approve = true;
+		await openGuidedReview(ctx, "delete", "");
+		assert.equal(await loadReview(root, id), undefined);
+		await assert.rejects(readFile(join(capture, "canary"), "utf8"), /ENOENT/);
+		assert.ok(events.some(event => event.message?.includes("Deleted saved review")));
+	} finally {
+		await rm(join(root, id + ".json"), { force: true });
+		await rm(capture, { recursive: true, force: true });
+	}
+});
