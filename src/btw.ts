@@ -401,6 +401,7 @@ export async function openBtwModal(
 			};
 
 			const modal = new BtwModal(tui, theme, close, submit, () => {
+				if (closed) return; // Close already saved and cleaned this thread.
 				closed = true;
 				saveDraft();
 				controller?.abort();
