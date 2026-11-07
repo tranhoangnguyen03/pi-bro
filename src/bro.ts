@@ -120,9 +120,23 @@ export default async function bro(pi: ExtensionAPI) {
 			appendChanged(LAST_RESULT_SESSION_ENTRY, { result, steering: showSteering });
 		}
 	};
-	const saveSimplify = () => appendChanged(SIMPLIFY_SESSION_ENTRY, { state: simplifyState });
-	const saveBtw = () => { if (btwThread) appendChanged(BTW_SESSION_ENTRY, { thread: btwThread }); };
-	const saveGrill = () => { if (grillThread) appendChanged(GRILL_SESSION_ENTRY, { thread: grillThread }); };
+	const saveSimplify = () => {
+		if (!savedSnapshots.has(SIMPLIFY_SESSION_ENTRY) && !simplifyState.result && !simplifyState.draft) return;
+		appendChanged(SIMPLIFY_SESSION_ENTRY, { state: simplifyState });
+	};
+	const saveBtw = () => {
+		if (!btwThread) return;
+		// Visiting an empty BTW modal does not need a disk entry.
+		if (!savedSnapshots.has(BTW_SESSION_ENTRY) &&
+			!btwThread.turns.length && !btwThread.draft && !btwThread.full) return;
+		appendChanged(BTW_SESSION_ENTRY, { thread: btwThread });
+	};
+	const saveGrill = () => {
+		if (!grillThread) return;
+		if (!savedSnapshots.has(GRILL_SESSION_ENTRY) &&
+			!grillThread.topic && !grillThread.turns.length && !grillThread.draft) return;
+		appendChanged(GRILL_SESSION_ENTRY, { thread: grillThread });
+	};
 	const restore = (ctx: ExtensionContext) => {
 		const branch = ctx.sessionManager.getBranch();
 		const restored = restorePrivateBroState(branch);
