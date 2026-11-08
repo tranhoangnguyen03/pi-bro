@@ -26,6 +26,7 @@ async function startHost(root) {
   await mkdir(bin);
   const agy = join(bin, "agy");
   await writeFile(agy, `#!/bin/sh
+echo "$*" > "$HOST_LIFECYCLE_DIR/agy-argv"
 case "$*" in
   *"HOST_SECOND_MARKER"*)
     printf '%s\\n' '{"event":"result","result":{"status":"SUCCESS","response":"FRESH_RESULT"}}'
@@ -134,13 +135,16 @@ async function cleanup(root, host) {
   await rm(root, { recursive: true, force: true });
 }
 
-test("real Pi RPC reload awaits Bro cancellation, then accepts new work", { timeout: 25_000 }, async () => {
+test("real Pi RPC reload awaits Bro cancellation, then accepts new work", { timeout: 25_000, skip: process.platform === "win32" }, async () => {
   const root = await mkdtemp(join(tmpdir(), "bro-host-reload-"));
   let host;
   try {
     host = await startHost(root);
     const first = host.send("/bro text HOST_FIRST_MARKER");
     await until(() => existsSync(join(root, "started-first")), "first CLI start");
+    const args = await readFile(join(root, "agy-argv"), "utf8");
+    assert.match(args, /(?:^|\s)--sandbox(?:\s|$)/, "restricted Explain must request the Agy sandbox");
+    assert.doesNotMatch(args, /--dangerously-skip-permissions/, "restricted Explain must never bypass permission checks");
     const reload = await host.send("/host-qual-reload");
     assert.equal(reload.success, true, host.output());
     await until(() => existsSync(join(root, "reloaded")), "host reload");
@@ -162,12 +166,14 @@ test("real Pi RPC reload awaits Bro cancellation, then accepts new work", { time
   } finally { await cleanup(root, host); }
 });
 
-test("real Pi RPC EOF invokes graceful Bro cleanup", { timeout: 25_000 }, async () => {
+test("real Pi RPC EOF invokes graceful Bro cleanup", { timeout: 25_000, skip: process.platform === "win32" }, async () => {
   const root = await mkdtemp(join(tmpdir(), "bro-host-eof-"));
   let host;
   try {
     host = await startHost(root);
-    const first = host.send("/bro text HOST_FIRST_MARKER");
+    // PiG 0.5.3 may close RPC without acknowledging an interrupted extension command.
+    // EOF's contract is process cleanup, not delivery of that pending acknowledgement.
+    void host.send("/bro text HOST_FIRST_MARKER").catch(() => {});
     await until(() => existsSync(join(root, "started-first")), "active CLI before EOF");
     host.child.stdin.end();
     const exit = await Promise.race([host.closed,
@@ -175,6 +181,5 @@ test("real Pi RPC EOF invokes graceful Bro cleanup", { timeout: 25_000 }, async 
     assert.equal(exit.code, 0, host.output());
     assert.equal(existsSync(join(root, "term-received")), true);
     assert.equal(existsSync(join(root, "late-result")), false);
-    assert.equal((await first).success, true, host.output());
   } finally { await cleanup(root, host); }
 });
