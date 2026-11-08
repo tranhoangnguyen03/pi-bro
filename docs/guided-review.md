@@ -90,7 +90,7 @@ only local saved records: no GitHub access or model call is required. A bare
 PR number must match exactly one saved review across all repositories, regardless
 of your current working directory. In contrast, opening a PR by number uses
 the current repository. Use the full PR URL if multiple saved reviews share
-that number. If none are saved, the picker explains how to start a review.
+that number. If none are saved, Bro says there is nothing to delete.
 Pressing Esc cancels silently.
 Bro shows the target and asks for confirmation before removing its JSON record,
 private questions/drafts and captured Git source. Closing the picker or declining
