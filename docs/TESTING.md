@@ -79,6 +79,37 @@ The same two host tests passed three consecutive runs with the native **PiG 0.5.
 
 When checking a review with a shell-capable backend, verify its sandbox warning appears on acquisition and on reopening. Findings must cite actual captured evidence; do not treat a model's claim of inspection as independently verified access. Do not run unknown project code or publish findings to GitHub merely to test the UI.
 
+## Guided Review deletion (no model calls)
+
+1. Save two reviews in a disposable Pi profile, with separate captured source.
+2. Run `/bro guided-review delete`, choose one, and decline. Both must remain.
+3. Reopen the first review in another modal; deletion must be refused while it is active.
+4. Close it, delete through the picker and confirm. Only its record, drafts and
+   capture disappear. The second review and the main working tree stay unchanged.
+   Check that the picker label preserves every letter of the saved title.
+5. Repeat direct `/bro guided-review delete <PR number or URL>` while offline or
+   logged out of gh. It must match the saved local record, without a network
+   request. When two repos share a PR number, bare-number deletion must be
+   refused and the full URL must work.
+6. Open a saved review and use Overview → Delete review. Decline once (the
+   record remains), then accept. Close/dispose must not save the deleted record
+   back to disk. The active review remains locked until teardown.
+7. An invalid or missing target must not delete anything. No model call or
+   GitHub mutation occurs.
+
+### Bounded live checks (not part of npm test)
+
+Current security/capture tests are offline: enforce review sandbox flags/no dangerous bypass, run every review backend in the captured cwd, pin the 610-second review deadline, reconstruct questions, reject prototype formats unchanged, and prove shallow captures omit intermediate commits while old/new evidence remains available. These test adapter contracts, not independently certified CLI enforcement. No additional live calls were authorized for this revision. A manual run with a Codex/Grok/Agy review override must confirm the sandbox flags, no bypass flag in the spawned argv, the advisory visible in acquisition and after reopening a saved review, and findings that cite real captured files. Grok's `--permission-mode dontAsk` in particular is unverified against an installed CLI; treat a Grok review failure as a flag-support question, not a fallback prompt.
+
+With any review backend, new capture/preparation, Send question, Prepare guide, Edit and resend followed by Send, and confirmed Regenerate guide make model calls. Specify backend/model, fixtures and maximum attempts first; never automatically retry. Use isolated source/profile and retain results. Do not post to GitHub or run unknown project code as a test shortcut.
+
+- Known defect: correct scenario, unchanged caller/test investigation when relevant, supported references and useful fix/check—not just valid JSON.
+- Clean change: distinguish present defects from intentional contract questions/speculative advice; zero findings is allowed, not required.
+- Regeneration: decline first to verify navigation without a call; then approve once. Completion must follow observed running state, not the already-ready header. Verify new identities/current replacement, unchanged captured revision, preserved question/draft/original context, clean source, close/resume without another call.
+- Streaming/cancellation and save failures: offline fake-CLI tests cover contracts. Live claims require actual observation; simulate disk errors only in disposable profiles, never by damaging user state.
+
+Historical full-access record (not qualification of the later file-only controls): manual UI accepted; 316 full serial tests passed before final prompt calibration, focused tests/typecheck passed afterward; bounded Agy known-defect and final regeneration checks succeeded. Earlier real PR #102 work also exercised Claude questions/cancellation. This is not an unfamiliar-reader study, private/fork acquisition matrix or live five-backend certification. Live calls are separate from offline documentation/contract checks. See [qualification record](plans/2026-10-10-guided-review-live-qualification.md).
+
 ## Live Guided Review: explicit budget and safe records
 
 A fresh capture, preparation, question, resend, and confirmed regeneration can each make a model call. Decide which **one** behavior changed and set a call limit. For source integrity, keep the same captured revision while replacing the guide. Verify old discussion context survives and a clean change may have zero findings. Never test save failure by damaging an existing user review.
