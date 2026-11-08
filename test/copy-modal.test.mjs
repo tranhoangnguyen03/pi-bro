@@ -131,16 +131,30 @@ test("Real editor backspace at the first of two blank lines preserves the second
   assert.deepEqual(m.copied, ["a\nb"], "the untouched LF is still LF");
 });
 
-test("Unmapped editor mutations do not silently copy normalized text", async () => {
+test("Unmapped first edit blocks copy/preview and requires explicit Esc discard", async () => {
   const m = mk("a\r\n\nb");
   m.view();
-  m.modal.editor.setText("unexpected replacement"); // bypasses input location; can't prove provenance
+  m.modal.editor.setText("unexpected replacement"); // bypasses input location; raw draft is still unchanged
   m.modal.handleInput("\x03");
   await flush();
   assert.deepEqual(m.copied, [], "unmapped editor change must NOT silently copy");
   assert.match(m.view(), /Cannot map this edit safely/);
   m.modal.handleInput("\x04");
   assert.match(m.view(), /Copy · Edit/, "unsafe source must not enter Preview as a clean draft");
+
+  m.modal.handleInput("\x1b");
+  assert.equal(m.closeCount(), 0, "the first Esc must not discard an unmappable edit");
+  assert.match(m.view(), /Unmapped edits will be discarded.*Esc again/);
+
+  // A failed copy attempt must cancel the old discard confirmation. Otherwise
+  // a single later Esc closes the modal despite the user's failed recovery.
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.equal(m.copied.length, 0, "error recovery must not copy anything");
+  m.modal.handleInput("\x1b");
+  assert.equal(m.closeCount(), 0, "copy attempt must require a fresh discard warning");
+  m.modal.handleInput("\x1b");
+  assert.equal(m.closeCount(), 1, "second consecutive Esc confirms discard");
 });
 
 test("Real editor undo restores the exact raw line endings after a deletion", async () => {

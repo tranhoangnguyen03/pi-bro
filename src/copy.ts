@@ -117,10 +117,23 @@ export class CopyModal implements Component {
     this.tui.requestRender();
   }
 
+  /** Use one definition of a dirty draft for both rendering and closing.
+   * An unmappable edit changes the visible Editor before raw reconciliation can
+   * update the draft, so comparing only the raw text can silently discard work.
+   */
+  private hasUncommittedChanges(): boolean {
+    return Boolean(this.fidelityError) ||
+      this.editor.getExpandedText() !== this.draft.editorText ||
+      this.markdown() !== this.original;
+  }
+
   /** Copy and Preview use raw source with untouched bytes preserved across edits. */
   private markdown(): string { return this.draft.text; }
 
   private copy(): void {
+    // Esc requires two consecutive presses to discard; an intervening copy
+    // attempt must never leave an earlier confirmation armed.
+    this.discardArmed = false;
     if (this.fidelityError) { this.noticeOf(this.fidelityError + " Copy is blocked.", "error"); return; }
     // Snapshot before the async clipboard operation. Always copy expanded paste
     // content, never editor display markers or rendered ANSI/Markdown.
@@ -152,7 +165,7 @@ export class CopyModal implements Component {
     this.canEdit = false;
     this.editorArea = { top: 0, left: 0, width: 0, height: 0 };
 
-    const edited = this.editor.getExpandedText() !== this.draft.editorText || this.markdown() !== this.original;
+    const edited = this.hasUncommittedChanges();
     const hint = this.showingHelp
       ? "Esc back · Ctrl+G back · Ctrl+C copy"
       : this.discardArmed
@@ -190,7 +203,8 @@ export class CopyModal implements Component {
         this.editorArea = { top: 3, left: 1, width: inner, height: editorLines.length };
         return editorLines;
       },
-      notice: this.fidelityError ? formatNotice(this.theme, this.fidelityError, "error") : this.notice,
+      notice: this.discardArmed ? this.notice :
+        this.fidelityError ? formatNotice(this.theme, this.fidelityError, "error") : this.notice,
       hints: hint,
       minBody: this.showingHelp || this.view === "preview" ? 1 : editorLines.length,
       fill: true,
@@ -217,9 +231,11 @@ export class CopyModal implements Component {
         this.tui.requestRender();
         return;
       }
-      if (this.markdown() !== this.original && !this.discardArmed) {
+      if (this.hasUncommittedChanges() && !this.discardArmed) {
         this.discardArmed = true;
-        this.noticeOf("Edits will be discarded. Esc again to close, or Ctrl+C to copy.", "warning");
+        this.noticeOf(this.fidelityError
+          ? "Unmapped edits will be discarded. Esc again to close, or Undo to recover."
+          : "Edits will be discarded. Esc again to close, or Ctrl+C to copy.", "warning");
         return;
       }
       this.closed = true;
