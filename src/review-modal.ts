@@ -49,6 +49,7 @@ export type ReviewControls = {
 	ask(target: string, question: string): void;
 	prepare(): void;
 	regenerate(): void;
+	deleteReview(): void;
 	retrySave(): void;
 	stop(): void;
 	close(): void;
@@ -297,6 +298,7 @@ export class ReviewModal {
 			...(!this.record.guide && !this.busy ? ["Prepare guide"] : []),
 			...ask,
 			...(this.busy ? stop : this.record.guide ? ["Regenerate guide"] : []),
+			...(!this.busy && this.view.selected === "overview" ? ["Delete review"] : []),
 		];
 	}
 	private changed() {
@@ -421,6 +423,7 @@ export class ReviewModal {
 		} else if (action === this.stopLabel) this.controls.stop();
 		else if (action === "Prepare guide") this.controls.prepare();
 		else if (action === "Regenerate guide") this.controls.regenerate();
+		else if (action === "Delete review") this.controls.deleteReview();
 		else if (action === "Retry saving") this.controls.retrySave();
 		else if (action === "Back" || action === "Back to files") this.back();
 		this.action = 0;

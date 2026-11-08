@@ -393,12 +393,12 @@ Copied text enters Pi only when you paste and submit it.
 
 ## Architecture documentation
 
-- \`/bro architecture [focus]\` — inspect this project and create or refresh \`docs/architecture/\` (Markdown, diagrams and a self-contained HTML map). Inherits the BTW model selection. See docs/features/architecture.md.
+- \`/bro architecture [focus]\` — create source-backed docs and an offline map in \`docs/architecture/\` using the BTW model. See docs/features/architecture.md.
 
 ## Guided Review
 
-- \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).
-- Reviews save automatically. Reopen the same PR without a model call; bare \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Captured code stays unchanged.
+- \`/bro guided-review <PR number or URL>\` — assess captured PR code in local interactive Pi (requires Git and authenticated gh).
+- Reviews save automatically. Reopen without a model call; bare \`/bro guided-review\` lists saved reviews.\n- \`/bro guided-review delete [PR number or URL]\` — delete one local saved review with confirmation; Overview also offers Delete review.
 - Enter opens items or activates focused actions. Tab changes focus; Esc goes back, then closes from Contents. Close saves; Stop and close cancels active work first.
 - Copy finding uses the clipboard, not GitHub. Regenerate requires confirmation and reviews the same capture. For untrusted PRs, prefer Claude/Muse/Pi: file-only tools, no shell/writes/web. Codex/Grok allow shell in a read-only sandbox; Agy's sandbox permits project writes. All three show an advisory. Choose a review override in /bro config. Repository text can mislead; citations are not proof.
 
@@ -431,7 +431,7 @@ Copied text enters Pi only when you paste and submit it.
 ## Configure and check
 
 - \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
-- \`/bro config\` — Global (shared defaults, preferences, Doctor) and Features (Simplify, Show, BTW, Review, Advisor, Overthink defaults and BTW-inherited workflows). The same model pickers, safe saves and error handling remain; Esc backs out.
+- \`/bro config\` — shared defaults, per-feature models, preferences, Doctor and Overthink. Esc backs out.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
 

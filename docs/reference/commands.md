@@ -42,6 +42,7 @@ Typing `/bro ` displays ten capability-level suggestions: `simplify`, `show`, `b
 | `/bro architecture [focus]` | Read the current project and create or refresh `docs/architecture/` with Markdown, an editable graph and offline HTML. Inherits BTW backend settings. [Guide](../features/architecture.md). |
 | `/bro guided-review <PR number or URL>` | Automatically explain and assess a captured PR in local Pi, with source evidence and optional private questions. Opening the same PR restores its saved review. |
 | `/bro guided-review` | List saved reviews; `resume` is an alias. |
+| `/bro guided-review delete [PR number or URL]` | Choose and confirm deletion of a saved review and its captured source. Without a target, opens the saved-review picker. |
 | `/bro remember-me [thought]` | Start a private memory-writing conversation, browse and expand memories, and approve saves explicitly. [Guide](../remember-me.md). |
 | `/bro overthink` | View the latest private automatic second-look notes, without a model call. Ctrl+R retry, Ctrl+E edit session questions, ? help, Ctrl+C copy. [Guide](../overthink.md). |
 | `/bro grill-me [topic]` | Private one-question-at-a-time decision interview. Supply a topic to start fresh; omit it to resume. `/consolidate` drafts a brief; `/copy` copies the latest reply or brief; Pi's editor stays untouched. `/help` lists modal controls. [Guide](../grill-me.md). |

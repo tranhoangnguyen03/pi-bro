@@ -2,7 +2,7 @@
 
 All notable changes to pi-bro are documented here.
 
-## [0.34.0] - 2026-11-07
+## [0.35.0] - 2026-11-08
 
 ### Added
 
@@ -14,6 +14,16 @@ All notable changes to pi-bro are documented here.
 
 - Pi 1.3–1.5's built-in editor shows about 30% of terminal rows; editing long Markdown scrolls inside that region. Text parts within one assistant message are joined with one newline. Real clipboard and terminal qualification remains part of review.
 
+
+## [0.34.0] - 2026-11-07
+
+### Added
+
+- Guided Review can delete a saved PR review, its notes and captured source through a confirmed picker, offline PR target, or Overview action.
+- Deletion by PR target uses local records instead of GitHub; ambiguous bare PR numbers require a full URL. Resume and delete share the same picker and preserve saved titles.
+- Active in-process reviews block command deletion. Overview deletion holds the active lock, settles pending saves and cannot recreate the record on teardown. The storage helper validates review IDs and leaves sibling reviews and Pi settings untouched.
+- Offline storage and picker tests plus a manual test journey for confirmation, active writers and cleanup.
+- No automatic cleanup, new storage engine, live backend call or GitHub mutation.
 
 ## [0.33.0] - 2026-11-07
 
