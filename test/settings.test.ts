@@ -1145,7 +1145,7 @@ test("default /bro suggestions contain ten capability-level commands; legacy ali
  ]);
  const shown=cmd.getArgumentCompletions("").map((x: any)=>x.value);
  assert.equal(new Set(shown).size,10);
- for(const [prefix,target] of [["doc","doctor"],["pref","preferences"],["advisor","advisor"],["text","text"],["file","file"],["url","url"],["open","open"],["help","help"],["mode","mode"]]){
+ for(const [prefix,target] of [["cop","copy"],["doc","doctor"],["pref","preferences"],["advisor","advisor"],["text","text"],["file","file"],["url","url"],["open","open"],["help","help"],["mode","mode"]]){
   assert.ok(cmd.getArgumentCompletions(prefix).some((c:any)=>c.value===target),prefix);
  }
 });
