@@ -81,6 +81,23 @@ Copy finding copies a finding's text, evidence references and suggested fix/chec
 
 Use Overview → Regenerate guide only when you want a fresh explanation/assessment. Confirmation identifies the captured revision and the model call. **It reuses the same captured source; it is not an update fetch.** Successful output replaces one current guide. Failure/cancellation keeps the current guide. Questions and nonempty drafts retain their original context under Your questions; there is no guide-version picker. A replacement that fails to save remains in memory with retry controls.
 
+### Delete a saved review
+
+Use **Overview → Delete review** inside a saved review, or run
+`/bro guided-review delete` to choose from your saved reviews. For a specific
+record, use `/bro guided-review delete <PR number or URL>`. Deletion reads
+only local saved records: no GitHub access or model call is required. A bare
+PR number must match exactly one saved review across all repositories, regardless
+of your current working directory. In contrast, opening a PR by number uses
+the current repository. Use the full PR URL if multiple saved reviews share
+that number. If none are saved, Bro says there is nothing to delete.
+Pressing Esc cancels silently.
+Bro shows the target and asks for confirmation before removing its JSON record,
+private questions/drafts and captured Git source. Closing the picker or declining
+the confirmation changes nothing. Close an open review first; an active writer
+blocks deletion. This affects only the selected review, not your main working tree.
+Deletion cannot be undone. There is no automatic cleanup.
+
 ## Access, privacy and storage
 
 Review never runs with full-access or bypass flags. **Claude, Muse, and Pi provide strict file-only inspection** and are recommended for untrusted PRs: Claude runs with `--restricted`, Read/Grep/Glob only, `dontAsk`, safe mode and no MCP; Muse disables write, shell and web tools, foreign personal context and native session logs, without trusting repository rules; Pi runs in-process with `read/grep/find/ls` only, no shell, and an isolated session. No model-run project tests, commands, Git or network tools are available on Claude, Muse, or Pi.
@@ -99,7 +116,13 @@ Records, private text and captured source remain under:
 ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/bro-reviews/
 ```
 
-The implementation uses the host's `getAgentDir()`. Records are `<review-id>.json`; captured source is under `source/<review-id>/`, including preserved `.incomplete-*` recovery directories. Failed/corrupt records are reported without overwriting them. There is no automatic cleanup or cross-machine sync. Source and recovery directories can grow. To remove one review manually, first close it in every Pi process and back up anything needed. Find its JSON record by matching `snapshot.target.repository` and `snapshot.target.number` (for example, search the JSON files for `"repository":"OWNER/REPO"`, then check the PR number). The filename without `.json` is its review ID; its source directory has that same ID under `source/`. Remove only that record and matching source directory. Do not delete the whole `bro-reviews/` directory, `bro-settings.json`, or another review's data. No deletion command is provided.
+The implementation uses the host's `getAgentDir()`. Records are
+`<review-id>.json`, captured source lives under `source/<review-id>/`,
+including preserved incomplete recovery directories. Failed/corrupt records are
+reported without overwriting them. There is no cross-machine sync or automatic
+cleanup. Use the explicit deletion picker rather than editing these files by hand.
+Cross-process writers are not locked, so close the same review in every Pi process
+before deletion.
 
 One open writer per review is supported within a Pi process. Concurrent editing of the same review from separate processes is unsupported.
 
@@ -107,7 +130,7 @@ One open writer per review is supported within a Pi process. Concurrent editing 
 
 | Problem | What to do |
 | --- | --- |
-| GitHub unavailable when reopening | Use bare `/bro guided-review` to choose a saved review; the picker does not fetch |
+| GitHub unavailable when reopening | Use bare `/bro guided-review` to choose a saved review; resume and deletion from local records do not fetch |
 | Sandboxed shell review backend (Codex, Grok, Agy) | Advisory shown; choose Claude, Muse, or Pi in `/bro config` for strict file-only inspection on untrusted PRs |
 | Git/gh authentication or fetch error | Read the acquisition error; check Git/`gh auth status`; retry explicitly |
 | Invalid/failed preparation | Changed files remain available; use Prepare guide to retry when ready for another call |

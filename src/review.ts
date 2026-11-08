@@ -150,6 +150,15 @@ function recordPath(root: string, id: string): string {
 	if (!/^[a-f0-9]{64}$/.test(id)) throw Error("Invalid review identity.");
 	return join(root, id + ".json");
 }
+/** Remove one validated saved record and its captured source, never other reviews.
+ * The controller owns the active-review lock; deletion is not atomic across files.
+ */
+export async function deleteReview(root: string, id: string): Promise<void> {
+	const record = recordPath(root, id); // validates the 64-character hex boundary
+	await rm(join(root, "source", id), { recursive: true, force: true });
+	await rm(record, { force: true });
+}
+
 export async function saveReview(root: string, record: ReviewRecord): Promise<void> {
 	const path = recordPath(root, record.id);
 	await mkdir(root, { recursive: true, mode: 0o700 });
