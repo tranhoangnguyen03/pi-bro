@@ -147,7 +147,7 @@ export async function openGuidedReview(
 			return;
 		}
 		// Reserve this identity while deletion runs so a new review cannot start writing it.
-		activeReviews.set(id, undefined);
+		activeReviews.set(id, {});
 		try {
 			await deleteReview(root, id);
 			ctx.ui.notify(`Deleted saved review ${title} and its captured source.`, "info");
