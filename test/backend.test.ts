@@ -213,6 +213,31 @@ const runPi = (request: BackendRequest, session: ReturnType<typeof fakeSession>,
 		piCreateSession: (async () => ({ session: session.session })) as never,
 	}, fakePiHost([PI_MODEL]));
 
+test("every backend receives the feature deadline chosen by execute", async (t) => {
+	const delays: number[] = [];
+	const original = globalThis.setTimeout;
+	t.mock.method(globalThis, "setTimeout", ((callback: (...args: any[]) => void, delay?: number, ...args: any[]) => {
+		if (delay !== undefined) delays.push(delay);
+		return original(callback, delay, ...args);
+	}) as typeof setTimeout);
+
+	for (const feature of ["explain", "review", "advisor"] as const) {
+		const expected = feature === "explain" ? 125_000 : 610_000;
+		const request = piRequest(feature);
+		for (const backend of ["agy", "claude", "grok", "codex", "muse", "pi"] as const) {
+			delays.length = 0;
+			if (backend === "pi") {
+				await runPi(request, fakeSession({ text: "done" }));
+			} else {
+				await withFakeExecutable(backend, "#!/bin/sh\ncat >/dev/null\n", async () => {
+					await execute(request, { backend, model: "test" }, new AbortController().signal);
+				});
+			}
+			assert.ok(delays.includes(expected), `${backend} ${feature} must use ${expected} ms`);
+		}
+	}
+});
+
 test("pi returns the final assistant text on a clean turn", async () => {
 	const outcome = await runPi(piRequest(), fakeSession({ text: "PONG" }));
 	assert.equal(outcome.status, "success");

@@ -335,7 +335,7 @@ async function executeArgvPrint(
 	signal: AbortSignal,
 	onProgress: BackendOnProgress | undefined,
 	killEscalationMs: number,
-	deadlineMsOverride: number | undefined,
+	deadlineMs: number,
 ): Promise<BackendOutcome> {
 	// Keep legacy CLI compatibility for small prompts; large inputs use the advisor's
 	// stdin protocol rather than risking Linux's per-argument byte limit.
@@ -343,7 +343,6 @@ async function executeArgvPrint(
 	const isBtw = request.feature === "btw";
 	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
 	const printTimeout = full || inspect ? "10m" : "2m";
 	const action = inspect ? "complete the guided review request" : isBtw ? "answer the side question" : "simplify the response";
 	const timeoutVerb = inspect ? "during the guided review request" : isBtw ? "during the side conversation" : "while simplifying the response";
@@ -525,11 +524,10 @@ async function executeAdvisorStdin(
 	signal: AbortSignal,
 	onProgress: BackendOnProgress | undefined,
 	killEscalationMs: number,
-	deadlineMsOverride: number | undefined,
+	deadlineMs: number,
 ): Promise<BackendOutcome> {
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 
-	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
 	const { child, attempt, diagnostics } = startCliAttempt("agy",
 		[
 			"--dangerously-skip-permissions",
@@ -624,13 +622,12 @@ async function executeClaude(
 	signal: AbortSignal,
 	onProgress: BackendOnProgress | undefined,
 	killEscalationMs: number,
-	deadlineMsOverride: number | undefined,
+	deadlineMs: number,
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
 	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
 	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
 
 	if (signal.aborted) return { status: "cancelled", message: "Canceled." };
@@ -793,12 +790,11 @@ async function executeGrok(
 	signal: AbortSignal,
 	onProgress: BackendOnProgress | undefined,
 	killEscalationMs: number,
-	deadlineMsOverride: number | undefined,
+	deadlineMs: number,
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
 	const inspect = request.feature === "review";
-	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
 	const action = inspect ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
 	const timeoutVerb = inspect ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
 	const emptyTextMessage = inspect ? "Grok returned no response for Guided Review." : isAdvisor ? "Grok returned no advice." : isBtw ? "Grok returned no answer for the side question." : "Grok returned no final explanation.";
@@ -999,13 +995,12 @@ async function executeCodex(
 	signal: AbortSignal,
 	onProgress: BackendOnProgress | undefined,
 	killEscalationMs: number,
-	deadlineMsOverride: number | undefined,
+	deadlineMs: number,
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
 	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
 	const action = inspect ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
 	const timeoutVerb = inspect ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
 	const emptyTextMessage = inspect ? "Codex returned no response for Guided Review." : isAdvisor ? "Codex returned no advice." : isBtw ? "Codex returned no answer for the side question." : "Codex returned no final explanation.";
@@ -1138,13 +1133,12 @@ async function executeMuse(
 	signal: AbortSignal,
 	onProgress: BackendOnProgress | undefined,
 	killEscalationMs: number,
-	deadlineMsOverride: number | undefined,
+	deadlineMs: number,
 ): Promise<BackendOutcome> {
 	const isAdvisor = request.feature === "advisor";
 	const isBtw = request.feature === "btw";
 	const inspect = request.feature === "review";
 	const full = request.access === "workspace-full";
-	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
 	const action = request.feature === "review" ? "complete the guided review request" : isAdvisor ? "complete the advisor consultation" : isBtw ? "answer the side question" : "simplify the response";
 	const timeoutVerb = request.feature === "review" ? "during the guided review request" : isAdvisor ? "during the advisor consultation" : isBtw ? "during the side conversation" : "while simplifying the response";
 	const emptyTextMessage = request.feature === "review" ? "Muse returned no response for Guided Review." : isAdvisor ? "Muse returned no advice." : isBtw ? "Muse returned no answer for the side question." : "Muse returned no final explanation.";
@@ -1502,12 +1496,11 @@ async function executePi(
 	signal: AbortSignal,
 	onProgress: BackendOnProgress | undefined,
 	killEscalationMs: number,
-	deadlineMsOverride: number | undefined,
+	deadlineMs: number,
 	host: PiHostContext | undefined,
 	createSession: typeof createAgentSession = createAgentSession,
 ): Promise<BackendOutcome> {
 	void killEscalationMs; // in-process: abort() is cooperative, there is no process group to kill
-	const deadlineMs = deadlineMsOverride ?? backendDeadlineMs(request.feature, request.access);
 	const parts = splitPiModel(selection.model);
 	if (!parts) return { status: "failure", message: piErrorMessage(request.feature, `\`${selection.model}\` is not a \`<provider>/<id>\` model.`) };
 
@@ -1789,13 +1782,14 @@ async function executeOnce(
 		return { status: "failure", message: "Unsupported execution request: check feature access, workspace cwd and continuation." };
 	}
 	const killEscalationMs = options?.killEscalationMs ?? DEFAULT_KILL_ESCALATION_MS;
+	const deadlineMs = options?.deadlineMs ?? backendDeadlineMs(request.feature, request.access);
 	if (selection.backend === "pi") {
 		// Same shape checks every other adapter performs, so a corrupt runtime tag fails as an outcome
 		// instead of throwing a TypeError out of execute().
 		if (invalidModelEffortSelection(selection, PI_EFFORTS)) {
 			return { status: "failure", message: "Unsupported Pi selection: check the model (<provider>/<id>) and effort (minimal, low, medium, high, xhigh or max)." };
 		}
-		return executePi(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs, host ?? currentPiHost, options?.piCreateSession);
+		return executePi(request, selection, signal, onProgress, killEscalationMs, deadlineMs, host ?? currentPiHost, options?.piCreateSession);
 	}
 	if (selection.backend === "codex") {
 		// Codex btw always runs (and resumes) in the caller's workspace, even restricted.
@@ -1803,7 +1797,7 @@ async function executeOnce(
 		if (invalidModelEffortSelection(selection, CODEX_EFFORTS)) {
 			return { status: "failure", message: "Unsupported Codex selection: check the model and effort (low, medium, high or xhigh)." };
 		}
-		return executeCodex(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
+		return executeCodex(request, selection, signal, onProgress, killEscalationMs, deadlineMs);
 	}
 	if (selection.backend === "muse") {
 		// Muse btw always runs (and resumes) in the caller's workspace, even restricted.
@@ -1811,7 +1805,7 @@ async function executeOnce(
 		if (invalidModelEffortSelection(selection, MUSE_EFFORTS)) {
 			return { status: "failure", message: "Unsupported Muse selection: check the model and effort (minimal, low, medium, high, xhigh or max)." };
 		}
-		return executeMuse(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
+		return executeMuse(request, selection, signal, onProgress, killEscalationMs, deadlineMs);
 	}
 	if (selection.backend === "grok") {
 		// Grok btw always runs (and resumes) in the caller's workspace, even restricted.
@@ -1819,7 +1813,7 @@ async function executeOnce(
 		if (invalidModelEffortSelection(selection, GROK_EFFORTS)) {
 			return { status: "failure", message: "Unsupported Grok selection: check the model and effort (low, medium, high or xhigh)." };
 		}
-		return executeGrok(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
+		return executeGrok(request, selection, signal, onProgress, killEscalationMs, deadlineMs);
 	}
 	if (selection.backend === "claude") {
 		// Claude btw always runs (and resumes) in the caller's workspace, even restricted.
@@ -1827,12 +1821,12 @@ async function executeOnce(
 		if (invalidModelEffortSelection(selection, CLAUDE_EFFORTS)) {
 			return { status: "failure", message: "Unsupported Claude selection: check the model and effort (low, medium, high, xhigh or max)." };
 		}
-		return executeClaude(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
+		return executeClaude(request, selection, signal, onProgress, killEscalationMs, deadlineMs);
 	}
 	if (request.feature === "advisor") {
-		return executeAdvisorStdin(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
+		return executeAdvisorStdin(request, selection, signal, onProgress, killEscalationMs, deadlineMs);
 	}
-	return executeArgvPrint(request, selection, signal, onProgress, killEscalationMs, options?.deadlineMs);
+	return executeArgvPrint(request, selection, signal, onProgress, killEscalationMs, deadlineMs);
 }
 
 // The extension owns only operations that are still running. This covers both
