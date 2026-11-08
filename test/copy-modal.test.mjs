@@ -150,7 +150,7 @@ test("Real editor undo restores the exact raw line endings after a deletion", as
   m.modal.handleInput("\x1b[A");
   m.modal.handleInput("\x01");
   m.modal.handleInput("\x7f");
-  m.modal.handleInput("\x1a"); // Ctrl+Z is Pi Editor's configured undo by default
+  m.modal.handleInput("\x1f"); // Ctrl+Minus is Pi Editor undo on macOS/Linux; Ctrl+Z suspends
   m.modal.handleInput("\x03");
   await flush();
   assert.deepEqual(m.copied, [source]);
