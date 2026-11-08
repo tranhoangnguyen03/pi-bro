@@ -174,14 +174,20 @@ export function createOverthinkViewer(
         }
         // The prior full-height viewer left a large blank rectangle below short
         // notes. Cap the frame to real content, but preserve scroll for long notes.
-        const cap = Math.max(8, lines.length + (notice ? 7 : 6));
+        const hints = "↑/↓ scroll · Ctrl+R retry · Ctrl+E questions · U usage · ? help · Ctrl+C copy · Esc close";
+        // renderFrame reserves 5 frame rows plus the *wrapped* shortcuts and
+        // notices. Count them before capping or short notes lose their last line.
+        const hintRows = wrapTextWithAnsi(hints, inner).length;
+        const noticeRows = notice ? Math.min(3, wrapTextWithAnsi(notice, inner).length) : 0;
+        const cap = Math.max(8, lines.length + 5 + hintRows + noticeRows);
         return renderFrame(theme, width, modalHeight(tui, undefined, cap), {
           header: () => theme.fg("accent", theme.bold("Bro · Overthink")) +
-            (busy ? " · running" : "") + (!help ? " · " + questions.length + " questions" : "") +
+            (busy ? " · running" : "") +
+            (!help ? " · " + questions.length + (questions.length === 1 ? " question" : " questions") : "") +
             (scroller.indicator() ? " · " + scroller.indicator() : ""),
           body: (rows) => scroller.view(lines, rows),
           notice,
-          hints: "↑/↓ scroll · Ctrl+R retry · Ctrl+E questions · U usage · ? help · Ctrl+C copy · Esc close",
+          hints,
           fill: false,
         });
       },

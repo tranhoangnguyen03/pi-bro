@@ -299,6 +299,7 @@ test("structured viewer shows summary, four saved answers and hidden usage by de
   assert.match(display,/Summary/);
   for(const name of ["Direction","Evidence","Risks","Next move"]) assert.match(display,new RegExp(name));
   assert.match(display,/No real reconnect test was run/);
+  assert.match(display,/Run a real reconnect and check content disclosure/, "last answer must not be clipped");
   assert.doesNotMatch(display,/39,277/);
   assert.ok(component.render(90).length<40,"short note should not fill a 70-row terminal");
   component.handleInput?.("u");
