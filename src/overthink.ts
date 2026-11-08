@@ -6,7 +6,8 @@ import { matchesKey, wrapTextWithAnsi, type Component, type TUI } from "@earendi
 import { modalHeight, openBroOverlay, renderFrame, Scroller, formatNotice, type Theme } from "./modal-kit.ts";
 import { hasBroCustomUi } from "./ui-capabilities.ts";
 import {
-  FACTORY_QUESTIONS, ensureOverthinkSession, overthinkPrompt, parseOverthinkAnswer,
+  FACTORY_QUESTIONS, FACTORY_LENSES, ensureOverthinkSession, overthinkPrompt,
+  parseOverthinkAssessment, formatOverthinkAssessment,
   questionKey, readAutomaticChecks, readGlobalQuestions, readOverthinkUsage, resolveOverthinkSession,
   overthinkContextPosition, overthinkIsStale,
   saveOverthinkNote, saveSessionQuestions, writeGlobalQuestions,
@@ -59,11 +60,19 @@ function noteWidget(ctx: CheckContext, note?: string): void {
 
 export function questionStatus(note: OverthinkNote | undefined, questions: string[], position?: string): string {
   if (!note) return "No assessment yet.";
-  const changed = note.questionKey !== questionKey(questions) ? " · questions changed since check" : "";
+  const changed = note.questionKey !== questionKey(questions) ? " · questions changed" : "";
   const freshness = overthinkIsStale(note, position)
-    ? (note.sourcePosition ? " · OUTDATED: conversation has changed since this check" : " · source position not recorded")
-    : " · current for this session position";
-  return "Checked: " + note.checkedAt + " · " + note.model + freshness + changed;
+    ? (note.sourcePosition ? " · OUTDATED (later work)" : " · source position not recorded")
+    : " · current";
+  // The full timestamp and provider usage remain in the saved note; show only
+  // what helps orient someone opening the viewer after a long work session.
+  return "Checked " + note.checkedAt.slice(0, 16).replace("T", " ") + " · " + note.model + freshness + changed;
+}
+
+/** A saved question snapshot keeps old notes aligned even after session edits. */
+export function overthinkQuestionLabel(question: string, position: number): string {
+  const index = (FACTORY_QUESTIONS as readonly string[]).indexOf(question);
+  return (position + 1) + ". " + (index < 0 ? "Question" : FACTORY_LENSES[index]);
 }
 
 /** A reported zero may mean a miss OR a provider that does not support cache accounting. */
@@ -90,6 +99,7 @@ export function createOverthinkViewer(
 ) {
   return (tui: TUI, theme: Theme, _keys: unknown, done: (action: ViewerAction) => void): Component => {
     let help = false;
+    let showUsage = false;
     let busy = false;
     let closed = false;
     let notice = "";
@@ -115,34 +125,70 @@ export function createOverthinkViewer(
       render(width: number) {
         const { questions, note, position } = read();
         const inner = Math.max(1, width - 2);
-        const body = help
-          ? [
-              "Overthink checks substantive Pi tasks automatically with the active session model.",
-              "Results are private and never enter the main conversation.",
-              "",
-              "Ctrl+R  Force a fresh check (even after a small task)",
-              "Ctrl+E  Edit this session's questions",
-              "?       Toggle help",
-              "Ctrl+C  Copy latest findings",
-              "Esc     Close / back from help",
-              "",
-              "No separate backend or model picker. Cached input is measured when the provider reports it.",
-            ]
-          : [
-              questionStatus(note, questions, position),
-              "Questions: " + questions.length + (questions.length ? "" : " (checks disabled)"),
-              ...usageStatus(note),
-              "",
-              busy ? "Checking the current Pi session…" : note
-                ? note.text || "No material concerns found in the last check."
-                : "No assessment yet. Bro checks automatically after meaningful work. Ctrl+R forces one now.",
-            ];
-        const lines = body.flatMap(line => wrapTextWithAnsi(line, inner));
-        return renderFrame(theme, width, modalHeight(tui), {
-          header: () => theme.fg("accent", theme.bold("Bro · Overthink")) + (busy ? " · running" : ""),
+        const lines: string[] = [];
+        const add = (value: string, color?: "accent" | "muted") => {
+          const styled = color ? theme.fg(color, color === "accent" ? theme.bold(value) : value) : value;
+          lines.push(...wrapTextWithAnsi(styled, inner));
+        };
+        if (help) {
+          [
+            "Overthink checks settled substantial work using the same Pi model.",
+            "It stays private and only notifies about consequential new concerns.",
+            "",
+            "Ctrl+R  Retry with the current session",
+            "Ctrl+E  Edit session questions",
+            "U       Show or hide detailed token/cache/estimated cost usage",
+            "?       Toggle help",
+            "Ctrl+C  Copy the assessment as Markdown",
+            "Esc     Close / back from help",
+          ].forEach(value => add(value));
+        } else {
+          add(questionStatus(note, questions, position), "muted");
+          if (showUsage) {
+            add("");
+            add("Usage details", "accent");
+            usageStatus(note).forEach(value => add(value));
+          }
+          add("");
+          if (busy) {
+            add("Checking the current Pi session…");
+          } else if (!note) {
+            add("No assessment yet. Bro checks after substantial work; Ctrl+R checks now.");
+          } else if (!note.text) {
+            add("No material concerns found in the last check.");
+          } else if (note.assessment) {
+            add("Summary", "accent");
+            add(note.assessment.summary);
+            note.assessment.questions.forEach((question, i) => {
+              add("");
+              add(overthinkQuestionLabel(question, i), "accent");
+              add(question, "muted");
+              add(note.assessment!.answers[i] ?? "");
+            });
+          } else {
+            // Historical notes were one free-form paragraph; never pretend
+            // their text supplies one verified answer per newer question.
+            add("Earlier assessment (plain text)", "accent");
+            note.text.split("\n").forEach(line => add(line));
+          }
+        }
+        // The prior full-height viewer left a large blank rectangle below short
+        // notes. Cap the frame to real content, but preserve scroll for long notes.
+        const hints = "↑/↓ scroll · Ctrl+R retry · Ctrl+E questions · U usage · ? help · Ctrl+C copy · Esc close";
+        // renderFrame reserves 5 frame rows plus the *wrapped* shortcuts and
+        // notices. Count them before capping or short notes lose their last line.
+        const hintRows = wrapTextWithAnsi(hints, inner).length;
+        const noticeRows = notice ? Math.min(3, wrapTextWithAnsi(notice, inner).length) : 0;
+        const cap = Math.max(8, lines.length + 5 + hintRows + noticeRows);
+        return renderFrame(theme, width, modalHeight(tui, undefined, cap), {
+          header: () => theme.fg("accent", theme.bold("Bro · Overthink")) +
+            (busy ? " · running" : "") +
+            (!help ? " · " + questions.length + (questions.length === 1 ? " question" : " questions") : "") +
+            (scroller.indicator() ? " · " + scroller.indicator() : ""),
           body: (rows) => scroller.view(lines, rows),
           notice,
-          hints: "↑/↓ scroll · Ctrl+R retry · Ctrl+E session questions · ? help · Ctrl+C copy · Esc close",
+          hints,
+          fill: false,
         });
       },
       invalidate() {},
@@ -153,6 +199,7 @@ export function createOverthinkViewer(
           return;
         }
         if (matchesKey(data, "?")) { help = !help; scroller.toStart(); tui.requestRender(); return; }
+        if (matchesKey(data, "u") || matchesKey(data, "shift+u")) { showUsage = !showUsage; scroller.toStart(); tui.requestRender(); return; }
         if (matchesKey(data, "ctrl+r")) { void rerun(); return; }
         if (matchesKey(data, "ctrl+c")) { void copy(); return; }
         if (matchesKey(data, "ctrl+e") && !busy) { closed = true; done("edit"); return; }
@@ -250,15 +297,19 @@ export function registerOverthink(pi: ExtensionAPI, loadAutomaticChecks = readAu
       if (answer.stopReason !== "stop") throw new Error("Model did not finish its assessment (" + answer.stopReason + ").");
       const currentQuestions = resolveOverthinkSession(ctx.sessionManager.getBranch()).questions ?? [];
       if (questionKey(currentQuestions) !== questionKey(questions)) throw new Error("Questions changed during check; stale result discarded.");
-      const text = parseOverthinkAnswer(answer.content.filter(part => part.type === "text").map(part => part.text).join(""));
+      const assessment = parseOverthinkAssessment(
+        answer.content.filter(part => part.type === "text").map(part => part.text).join(""), questions,
+      );
+      const text = assessment ? formatOverthinkAssessment(assessment) : "";
       const usage = readOverthinkUsage(answer.usage);
       const note: OverthinkNote = {
         text, checkedAt: new Date().toISOString(), model: name, questionKey: questionKey(questions),
         ...(position ? { sourcePosition: position } : {}),
         ...(usage ? { usage } : {}),
+        ...(assessment ? { assessment } : {}),
       };
       saveOverthinkNote(pi, note);
-      noteWidget(ctx, text);
+      noteWidget(ctx, assessment?.summary);
       return note;
     } finally {
       clearTimeout(timer);
