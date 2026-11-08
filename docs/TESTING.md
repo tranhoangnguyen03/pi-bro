@@ -64,7 +64,9 @@ the repository's pinned Pi version and the installed supported Pi version.
 
 `node --test test/host-lifecycle.test.mjs` launches the installed Pi 1.3.0 host in RPC mode, loads Bro from this checkout and uses an isolated fake Agy executable. It exercises `ctx.reload()` and stdin-EOF shutdown through the real host, confirms a running CLI receives TERM before reload completes, and proves Bro can run and save a new result in the same session afterward. The same test fails against pre-shutdown-tracking Bro. It is included in `npm test` on Linux and macOS.
 
-This proves host-level lifecycle wiring for **native Pi 1.3.0 with a fake CLI**, not live provider permission enforcement, unexpected SIGKILL or PiG-Agent compatibility. The pinned PiG 0.3.0 shell runs its own RPC integration check; qualify newer PiG-Agent shells against exact versions in their dedicated integration work.
+This proves host-level lifecycle wiring for **native Pi 1.3.0 with a fake CLI**, not live provider permission enforcement or unexpected SIGKILL. It also checks the Agy restricted `--sandbox` flag without invoking a real provider.
+
+The same two host tests passed three consecutive runs with the native **PiG 0.5.3+1.4.0.74f46864** binary taken from PiG-Agent PR #2's pinned Linux x64 shell build `0.1.0-preview.1-linux-x64-11f3ee0e4dd0accc`. They ran against this PR's Bro source, not the shell's bundled Bro 0.29.0. That qualifies direct PiG host reload/EOF wiring, **not** installation, role integration, provider-enforced permissions, or the entire PiG-Agent shell. The separate default CI check still targets PiG 0.3.0. For a repeatable PiG 0.5.3 check, run `BRO_HOST_TEST_BIN=/absolute/path/to/pig node --test test/host-lifecycle.test.mjs` against an exact locally installed binary.
 
 ## Permission and trust truth (do not generalize across backends)
 
