@@ -56,11 +56,14 @@ async function savedReviews(ctx: ExtensionCommandContext, root: string): Promise
 		b.snapshot.target.number - a.snapshot.target.number);
 }
 
-async function pickSavedReview(
-	ctx: ExtensionCommandContext, root: string, title: string,
+export async function pickSavedReview(
+	ctx: ExtensionCommandContext, root: string, title: string, emptyMessage: string,
 ): Promise<ReviewRecord | undefined> {
 	const records = await savedReviews(ctx, root);
-	if (!records.length) return;
+	if (!records.length) {
+		ctx.ui.notify(emptyMessage, "info");
+		return;
+	}
 	const labels = records.map(savedReviewLabel);
 	const picked = await ctx.ui.select(title, labels);
 	return picked ? records[labels.indexOf(picked)] : undefined;
@@ -108,7 +111,8 @@ export async function openGuidedReview(
 		const requested = value.slice("delete".length).trim();
 		let selected: ReviewRecord | undefined;
 		if (!requested) {
-			selected = await pickSavedReview(ctx, root, "Delete saved review");
+			selected = await pickSavedReview(ctx, root, "Delete saved review", "There are no saved reviews to delete.");
+			if (!selected) return; // Esc is cancellation, not a failed target lookup.
 		} else {
 			const match = matchSavedReview(await savedReviews(ctx, root), requested);
 			if (match.error) {
@@ -146,7 +150,7 @@ export async function openGuidedReview(
 	let record: ReviewRecord | undefined;
 	let fresh = false;
 	if (value === "resume" || !value) {
-		record = await pickSavedReview(ctx, root, "Resume guided review");
+		record = await pickSavedReview(ctx, root, "Resume guided review", "Start with /bro guided-review <PR number or URL>.");
 		if (!record) return;
 	} else {
 		record = await openBroOverlay<ReviewRecord | undefined>(
