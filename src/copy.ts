@@ -146,6 +146,7 @@ export class CopyModal implements Component {
 
   private toggleView(): void {
     if (this.closed) return;
+    this.discardArmed = false; // A blocked preview attempt is not a confirmation to discard.
     if (this.fidelityError) { this.noticeOf(this.fidelityError, "error"); return; }
     this.showingHelp = false;
     this.discardArmed = false;

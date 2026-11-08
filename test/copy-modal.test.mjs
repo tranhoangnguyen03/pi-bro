@@ -146,6 +146,12 @@ test("Unmapped first edit blocks copy/preview and requires explicit Esc discard"
   assert.equal(m.closeCount(), 0, "the first Esc must not discard an unmappable edit");
   assert.match(m.view(), /Unmapped edits will be discarded.*Esc again/);
 
+  // A blocked preview must also clear the previous discard confirmation.
+  m.modal.handleInput("\x04");
+  m.modal.handleInput("\x1b");
+  assert.equal(m.closeCount(), 0, "failed preview must not count as another Esc");
+  assert.match(m.view(), /Unmapped edits will be discarded.*Esc again/);
+
   // A failed copy attempt must cancel the old discard confirmation. Otherwise
   // a single later Esc closes the modal despite the user's failed recovery.
   m.modal.handleInput("\x03");
