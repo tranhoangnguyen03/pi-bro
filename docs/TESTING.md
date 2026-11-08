@@ -59,6 +59,13 @@ the repository's pinned Pi version and the installed supported Pi version.
 6. Remember: Bro custom entries are **on disk in the Pi session JSONL**. Check how
    the current host exports/shares that file before claiming any export redaction.
    Model-context isolation is not confidentiality of the session file.
+
+### Native Pi RPC lifecycle (offline, no provider credentials)
+
+`node --test test/host-lifecycle.test.mjs` launches the installed Pi 1.3.0 host in RPC mode, loads Bro from this checkout and uses an isolated fake Agy executable. It exercises `ctx.reload()` and stdin-EOF shutdown through the real host, confirms a running CLI receives TERM before reload completes, and proves Bro can run and save a new result in the same session afterward. The same test fails against pre-shutdown-tracking Bro. It is included in `npm test` on Linux and macOS.
+
+This proves host-level lifecycle wiring for **native Pi 1.3.0 with a fake CLI**, not live provider permission enforcement, unexpected SIGKILL or PiG-Agent compatibility. The pinned PiG 0.3.0 shell runs its own RPC integration check; qualify newer PiG-Agent shells against exact versions in their dedicated integration work.
+
 ## Permission and trust truth (do not generalize across backends)
 
 - **Agy:** restricted BTW runs sandboxed in a scratch directory; changing BTW access drops native continuation and reseeds the transcript. The shell sandbox is not a universal no-write guarantee.
