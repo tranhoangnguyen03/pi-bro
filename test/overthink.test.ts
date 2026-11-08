@@ -7,9 +7,9 @@ import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earen
 import {
   FACTORY_QUESTIONS, OVERTHINK_ENTRY, checkQuestions,
   readAutomaticChecks, readGlobalQuestions, writeGlobalQuestions, writeAutomaticChecks,
-  resolveOverthinkSession, overthinkPrompt,
+  resolveOverthinkSession, overthinkPrompt, parseOverthinkAssessment, formatOverthinkAssessment,
   overthinkContextPosition, overthinkIsStale,
-  questionKey, parseOverthinkAnswer, readOverthinkUsage,
+  questionKey, readOverthinkUsage,
 } from "../src/overthink-state.ts";
 import { createOverthinkViewer, overthinkReady, accumulateOverthinkEvidence, registerOverthink, usageStatus, questionStatus } from "../src/overthink.ts";
 import { createOverthinkQuestionEditor } from "../src/overthink-questions-ui.ts";
@@ -34,8 +34,7 @@ test("questions: validate ordered editable lines and keep empty list intentional
   assert.throws(() => checkQuestions([" "]), /nonempty/);
   assert.throws(() => checkQuestions(["x".repeat(501)]), /500/);
   assert.throws(() => checkQuestions(Array(33).fill("Q?")), /32/);
-  assert.deepEqual(parseOverthinkAnswer(" NONE. "), "");
-  assert.equal(parseOverthinkAnswer("A material concern"), "A material concern");
+  assert.equal(parseOverthinkAssessment(" NONE. ", ["Why?"]), undefined);
   assert.deepEqual(readOverthinkUsage({ cacheReadTokens: 200, cacheWriteTokens: 13, outputTokens: 42 }),
     { cacheRead: 200, cacheWrite: 13, output: 42 });
   assert.equal(readOverthinkUsage(undefined), undefined);
@@ -46,6 +45,41 @@ test("questions: validate ordered editable lines and keep empty list intentional
   assert.match(usageStatus({ text: "", checkedAt: "", model: "", questionKey: "",
     usage: { cacheRead: 0, cacheWrite: 4, reasoning: 321, costTotal: 0.00234 } }).join(" "), /est\. cost \$0\.002340 \(Pi price table; not billed amount\)/);
   assert.match(overthinkPrompt(["Why?"]), /do not call tools or take actions/);
+  assert.match(overthinkPrompt(["Why?"]), /answer EVERY numbered question/i);
+  assert.match(overthinkPrompt(["Why?"]), /exactly NONE/);
+  assert.match(overthinkPrompt(["Why?"]), /exactly 1 strings/i);
+});
+
+test("factory questions cover direction, evidence, risks and next move", () => {
+  assert.equal(FACTORY_QUESTIONS.length, 4);
+  assert.match(FACTORY_QUESTIONS[0], /right problem/);
+  assert.match(FACTORY_QUESTIONS[1], /assumptions or conclusions/);
+  assert.match(FACTORY_QUESTIONS[2], /risks.*needless complexity/);
+  assert.match(FACTORY_QUESTIONS[3], /next step/);
+});
+
+test("structured answers: exact order, custom questions, NONE and invalid output", () => {
+  const questions = ["Is the scope right?", "Can we prove it?", "What's next?"];
+  const json = JSON.stringify({
+    summary: "The reported severity is not established. Check the real path.",
+    answers: [
+      "The test found stale approval but not data disclosure.",
+      "The reproduction rebuilt a connection instead of testing the extension.",
+      "Test a real reconnect before assigning the severity.",
+    ],
+  });
+  const parsed = parseOverthinkAssessment(json, questions)!;
+  assert.deepEqual(parsed.questions, questions);
+  assert.equal(parsed.answers.length, 3);
+  assert.match(formatOverthinkAssessment(parsed), /### 2\. Can we prove it\?/);
+  assert.match(formatOverthinkAssessment(parsed), /the extension/);
+  assert.equal(parseOverthinkAssessment("NONE", questions), undefined);
+  const fence = String.fromCharCode(96).repeat(3);
+  assert.deepEqual(parseOverthinkAssessment(fence + "json\n" + json + "\n" + fence, questions), parsed);
+  assert.throws(() => parseOverthinkAssessment('{"summary":"Concern","answers":["One"]}', questions), /one answer for each/);
+  assert.throws(() => parseOverthinkAssessment("Not JSON", questions), /invalid JSON/);
+  assert.throws(() => parseOverthinkAssessment('{"summary":"","answers":["A","B","C"]}', questions), /short summary/);
+  assert.match(overthinkPrompt(questions), /exactly 3 strings/);
 });
 
 test("global defaults: persisted list and reset source remain independent", async () => {
@@ -65,7 +99,7 @@ test("global defaults: persisted list and reset source remain independent", asyn
     await writeAutomaticChecks(true, dir);
     assert.equal(await readAutomaticChecks(dir), true);
     assert.deepEqual(await readGlobalQuestions(dir), [], "toggling automatic checks must preserve questions");
-    assert.equal(FACTORY_QUESTIONS.length, 7);
+    assert.equal(FACTORY_QUESTIONS.length, 4);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -79,6 +113,7 @@ test("session entries: branch-local latest questions and note; no model messages
   ];
   assert.deepEqual(resolveOverthinkSession(root).questions, ["First?"]);
   assert.equal(resolveOverthinkSession(root).note?.text, "Risk");
+  assert.equal(resolveOverthinkSession(root).note?.assessment, undefined, "older notes remain readable");
   const forkA = [...root, entry("questions", { questions: ["Branch A?"] })];
   const forkB = [...root, entry("questions", { questions: ["Branch B?"] })];
   assert.deepEqual(resolveOverthinkSession(forkA).questions, ["Branch A?"]);
@@ -146,7 +181,11 @@ test("same Pi model is called once, report is stored privately, and a new turn c
         requests.push(args);
         return { result: async () => ({
           stopReason: "stop",
-          content: [{ type: "text", text: "Check one unexpected edge case." }],
+          content: [{ type: "text", text: JSON.stringify({
+            summary: "An unchecked issue may affect the decision. Verify the real flow.",
+            answers: FACTORY_QUESTIONS.map((_q, i) => i === 1 ?
+              "The test did not use the real connection." : "No material concern found."),
+          }) }],
           usage: { cacheReadTokens: 135, outputTokens: 20 },
         }) };
       },
@@ -184,7 +223,9 @@ test("same Pi model is called once, report is stored privately, and a new turn c
   assert.equal(requests[0][0], model);
   assert.equal(requests[0][2].reasoning, "high");
   assert.equal(requests[0][2].sessionId, "test-session");
-  assert.equal(resolveOverthinkSession(entries).note?.text, "Check one unexpected edge case.");
+  assert.match(resolveOverthinkSession(entries).note?.text ?? "", /## Summary/);
+  assert.equal(resolveOverthinkSession(entries).note?.assessment?.questions.length, 4);
+  assert.equal(resolveOverthinkSession(entries).note?.assessment?.answers[1], "The test did not use the real connection.");
   assert.equal(resolveOverthinkSession(entries).note?.usage?.cacheRead, 135);
   assert.equal(resolveOverthinkSession(entries).note?.sourcePosition, "post-compaction");
   assert.equal(widgets.length > 0, true);
@@ -240,6 +281,67 @@ test("a delayed automatic-settings read cannot schedule work after a new agent s
   });
 });
 
+test("structured viewer shows summary, four saved answers and hidden usage by default", () => {
+  const tui={mode:"regular",terminal:{rows:70,columns:100},requestRender(){}};
+  const theme={fg:(_color:string,value:string)=>value,bold:(value:string)=>value};
+  const questions=[...FACTORY_QUESTIONS];
+  const assessment={summary:"The key claim is unverified. Test the real connection.",
+    questions,answers:["Wrong outcome not yet proven.","No real reconnect test was run.",
+      "Severity might be overstated.","Run a real reconnect and check content disclosure."]};
+  const note={text:formatOverthinkAssessment(assessment),assessment,
+    checkedAt:"2026-11-08T10:12:50.564Z",model:"demo/model",
+    questionKey:questionKey(questions),sourcePosition:"m1",
+    usage:{input:39277,cacheRead:26368,costTotal:0.003}};
+  const component=createOverthinkViewer(
+    ()=>({questions,note,position:"m1"}),async()=>note,
+  )(tui as any,theme as any,{},()=>undefined);
+  const display=component.render(90).join("\n");
+  assert.match(display,/Summary/);
+  for(const name of ["Direction","Evidence","Risks","Next move"]) assert.match(display,new RegExp(name));
+  assert.match(display,/No real reconnect test was run/);
+  assert.doesNotMatch(display,/39,277/);
+  assert.ok(component.render(90).length<40,"short note should not fill a 70-row terminal");
+  component.handleInput?.("u");
+  assert.match(component.render(90).join("\n"),/39,277/);
+  component.handleInput?.("u");
+  assert.doesNotMatch(component.render(90).join("\n"),/39,277/);
+
+  const changed={...note,questionKey:questionKey(["Changed?"])};
+  const viewer=createOverthinkViewer(
+    ()=>({questions,note:changed,position:"m2"}),async()=>changed,
+  )(tui as any,theme as any,{},()=>undefined);
+  const latest=viewer.render(90).join("\n");
+  assert.match(latest,/OUTDATED/);
+  assert.match(latest,/questions changed/);
+  assert.match(latest,/No real reconnect test was run/);
+});
+
+test("snapshot restore keeps custom questions; older prose still opens as prose", () => {
+  const questions=["Is this the plan?","What was tested?"];
+  const assessment=parseOverthinkAssessment(JSON.stringify({
+    summary:"One risk remains. Reproduce the real flow.",
+    answers:["Direction seems sound.","Only mock data was checked."],
+  }),questions)!;
+  const noteEntry={type:"custom",customType:OVERTHINK_ENTRY,data:{
+    version:1,kind:"note",text:formatOverthinkAssessment(assessment),
+    assessment,checkedAt:"2026-11-08",model:"demo/model",questionKey:questionKey(questions),
+  }} as SessionEntry;
+  assert.deepEqual(resolveOverthinkSession([noteEntry]).note?.assessment,assessment);
+  const oldEntry={type:"custom",customType:OVERTHINK_ENTRY,data:{
+    version:1,kind:"note",text:"Earlier prose",checkedAt:"2026-11-06",
+    model:"demo/old",questionKey:"[]",
+  }} as SessionEntry;
+  const old=resolveOverthinkSession([oldEntry]).note!;
+  assert.equal(old.assessment,undefined);
+  const tui={mode:"regular",terminal:{rows:40,columns:90},requestRender(){}};
+  const theme={fg:(_color:string,value:string)=>value,bold:(value:string)=>value};
+  const component=createOverthinkViewer(
+    ()=>({questions,note:old}),async()=>old,
+  )(tui as any,theme as any,{},()=>undefined);
+  assert.match(component.render(90).join("\n"),/Earlier assessment \(plain text\)/);
+  assert.match(component.render(90).join("\n"),/Earlier prose/);
+});
+
 test("Overthink viewer opens without a call; ? help, Ctrl+R retry, Ctrl+E editor", async () => {
   let calls = 0;
   let action = "";
@@ -266,6 +368,28 @@ test("Overthink viewer opens without a call; ? help, Ctrl+R retry, Ctrl+E editor
   assert.equal(calls, 1);
   component.handleInput?.("\x05"); // Ctrl+E
   assert.equal(action, "edit");
+});
+
+test("question editor uses Ctrl+Up/Down, not Option/Alt, for reordering", async () => {
+  const saved:string[][]=[];
+  const tui={mode:"regular",terminal:{rows:35,columns:90},requestRender(){}};
+  const theme={fg:(_color:string,value:string)=>value,bold:(value:string)=>value};
+  const component=createOverthinkQuestionEditor({
+    title:"Test questions", questions:["First?","Second?","Third?"],
+    reset:async()=>["Reset source?"],save:(q:string[])=>{saved.push(q);},
+  })(tui as any,theme as any,{},()=>undefined);
+  component.render(90);
+  component.handleInput?.("\x1b[1;5B"); // Ctrl+Down
+  assert.match(component.render(90).join("\n"),/1\. Second\?/);
+  component.handleInput?.("\x1b[1;5A"); // Ctrl+Up
+  assert.match(component.render(90).join("\n"),/1\. First\?/);
+  component.handleInput?.("\x1b[1;5B");
+  component.handleInput?.("\x1b[1;3A"); // Alt+Up no longer reorders
+  assert.match(component.render(90).join("\n"),/1\. Second\?/);
+  component.handleInput?.("\x13");
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.deepEqual(saved,[["Second?","First?","Third?"]]);
+  assert.match(component.render(90).join("\n"),/Ctrl\+↑\/↓ move/);
 });
 
 test("question editor reset is a draft until explicitly saved", async () => {

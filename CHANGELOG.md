@@ -2,6 +2,15 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.35.0] - 2026-11-08
+
+### Changed
+
+- Overthink factory list now has four focused questions (Direction, Evidence, Risks, Next move), replacing seven overlapping questions. Existing saved global/session lists are unchanged until reset.
+- Structured checks return a short summary and a concise answer for **each configured question**, or `NONE` when nothing material needs attention. The strict materiality filter is inspired by Heads-up. One active Pi model call still covers all questions.
+- Overthink's modal now shows readable summary/question sections, a compact timestamp/model/status line and on-demand **U** token/cache/cost details, with content-sized rendering and scrolling. Old plain-text notes remain viewable; question snapshots remain tied to the assessment.
+- Global and session question editors now use **Ctrl+↑/↓** to reorder, not Alt/Option. All other editor controls and privacy boundaries remain unchanged.
+
 ## [0.34.0] - 2026-11-07
 
 ### Added

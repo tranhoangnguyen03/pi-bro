@@ -77,7 +77,7 @@ export function createOverthinkQuestionEditor(options: EditorOptions) {
             : scroller.view(list, rows),
           notice,
           hints: mode === "edit" ? "Enter apply · Esc cancel edit" :
-            "↑/↓ select · Enter edit · Ctrl+N add · Ctrl+X delete · Alt+↑/↓ move · Ctrl+D reset · Ctrl+S save · Esc close",
+            "↑/↓ select · Enter edit · Ctrl+N add · Ctrl+X delete · Ctrl+↑/↓ move · Ctrl+D reset · Ctrl+S save · Esc close",
           fill: true,
         });
       },
@@ -108,11 +108,11 @@ export function createOverthinkQuestionEditor(options: EditorOptions) {
           questions.splice(cursor, 1); cursor = Math.min(cursor, Math.max(0, questions.length - 1));
           warn("Question removed from draft. Ctrl+S to save."); return;
         }
-        if (matchesKey(data, "alt+up") && cursor > 0) {
+        if (matchesKey(data, "ctrl+up") && cursor > 0) {
           [questions[cursor - 1], questions[cursor]] = [questions[cursor]!, questions[cursor - 1]!];
           cursor--; tui.requestRender(); return;
         }
-        if (matchesKey(data, "alt+down") && cursor < questions.length - 1) {
+        if (matchesKey(data, "ctrl+down") && cursor < questions.length - 1) {
           [questions[cursor + 1], questions[cursor]] = [questions[cursor]!, questions[cursor + 1]!];
           cursor++; tui.requestRender(); return;
         }
