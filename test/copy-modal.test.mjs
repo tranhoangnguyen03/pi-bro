@@ -61,18 +61,99 @@ test("Explain and Copy share one completed-reply selection rule, with different 
 
 test("Raw draft preserves untouched CRLF and tabs through edits and undo", () => {
   const source = "\tfirst\r\n\tsecond\r\nthird\r\n";
+  const original = normalizeEditorMarkdown(source);
   const draft = new RawMarkdownDraft(source);
-  assert.equal(normalizeEditorMarkdown(source), "    first\n    second\nthird\n");
-  draft.update("    first\n    second\nthird changed\n");
+  assert.equal(original, "    first\n    second\nthird\n");
+  const before = original.indexOf("third") + "third".length;
+  const next = "    first\n    second\nthird changed\n";
+  draft.update(next, { kind: "insert", beforeCursor: before, afterCursor: before + " changed".length });
   assert.equal(draft.text, "\tfirst\r\n\tsecond\r\nthird changed\r\n");
-  draft.update("    first\n    second\nthird changed\nnew last line");
+  const next2 = next + "new last line";
+  draft.update(next2, { kind: "insert", beforeCursor: next.length, afterCursor: next2.length });
   assert.equal(draft.text, "\tfirst\r\n\tsecond\r\nthird changed\r\nnew last line");
-  draft.update(normalizeEditorMarkdown(source)); // Undo to original rendered content
+  draft.update(original, { kind: "undo" }); // Pi may undo several typed characters at once
   assert.equal(draft.text, source);
-  const tab = new RawMarkdownDraft("one\t\ttwo");
-  tab.update("one  X     two"); // Replace one visible space inside the first tab
-  assert.equal(normalizeEditorMarkdown(tab.text), "one  X     two");
-  assert.equal(tab.text.endsWith("\ttwo"), true, "a separate, untouched tab is preserved");
+
+  const tabOriginal = "one\t\ttwo";
+  const tab = new RawMarkdownDraft(tabOriginal);
+  const normalized = normalizeEditorMarkdown(tabOriginal);
+  const inserted = normalized.slice(0, 5) + "X" + normalized.slice(5);
+  tab.update(inserted, { kind: "insert", beforeCursor: 5, afterCursor: 6 });
+  assert.equal(normalizeEditorMarkdown(tab.text), inserted);
+  assert.equal(tab.text.endsWith("\ttwo"), true, "untouched second tab remains raw");
+});
+
+test("The exact cursor, not repeated text, chooses which line ending is deleted", () => {
+  const source = "a\r\n\nb"; // CRLF then LF: both appear as identical newlines in Pi Editor
+  const next = "a\nb";
+  const first = new RawMarkdownDraft(source);
+  first.update(next, { kind: "backward", beforeCursor: 2, afterCursor: 1 });
+  assert.equal(first.text, "a\nb", "backspace deleted the CRLF, preserving the second LF");
+  first.update(normalizeEditorMarkdown(source), { kind: "undo" });
+  assert.equal(first.text, source, "undo restores exact old CRLF/LF provenance");
+
+  const second = new RawMarkdownDraft(source);
+  second.update(next, { kind: "backward", beforeCursor: 3, afterCursor: 2 });
+  assert.equal(second.text, "a\r\nb", "backspace deleted the LF, preserving the first CRLF");
+
+  const forward = new RawMarkdownDraft(source);
+  forward.update(next, { kind: "forward", beforeCursor: 1, afterCursor: 1 });
+  assert.equal(forward.text, "a\nb", "forward delete removed the CRLF at the cursor");
+
+  const ambiguous = new RawMarkdownDraft(source);
+  assert.throws(() => ambiguous.update(next, { kind: "unknown", beforeCursor: 2 }),
+    /Ambiguous edit position/, "unknown deletion must refuse ambiguous provenance");
+});
+
+test("Deleting repeated spaces uses cursor to preserve unaffected tab indentation", () => {
+  const source = "x\t y\t  z";
+  const visible = normalizeEditorMarkdown(source);
+  const literalSpace = 5; // x + four spaces from first tab, then the literal space
+  const next = visible.slice(0, literalSpace) + visible.slice(literalSpace + 1);
+  const draft = new RawMarkdownDraft(source);
+  draft.update(next, { kind: "forward", beforeCursor: literalSpace, afterCursor: literalSpace });
+  assert.equal(draft.text, "x\ty\t  z", "both raw tabs remain intact");
+  const insideTab = new RawMarkdownDraft(source);
+  const inner = visible.slice(0, 3) + visible.slice(4);
+  insideTab.update(inner, { kind: "backward", beforeCursor: 4, afterCursor: 3 });
+  assert.equal(insideTab.text, "x    y\t  z", "only the touched tab expands, other tab preserved");
+});
+
+test("Real editor backspace at the first of two blank lines preserves the second LF", async () => {
+  const m = mk("a\r\n\nb");
+  m.view();
+  m.modal.handleInput("\x1b[A"); // from last line 'b' to blank middle line
+  m.modal.handleInput("\x01"); // Ctrl+A: start of current line
+  assert.deepEqual(m.modal.editor.getCursor(), {line: 1, col: 0});
+  m.modal.handleInput("\x7f"); // backspace merges with first line, deleting CRLF
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.deepEqual(m.copied, ["a\nb"], "the untouched LF is still LF");
+});
+
+test("Unmapped editor mutations do not silently copy normalized text", async () => {
+  const m = mk("a\r\n\nb");
+  m.view();
+  m.modal.editor.setText("unexpected replacement"); // bypasses input location; can't prove provenance
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.deepEqual(m.copied, [], "unmapped editor change must NOT silently copy");
+  assert.match(m.view(), /Cannot map this edit safely/);
+  m.modal.handleInput("\x04");
+  assert.match(m.view(), /Copy · Edit/, "unsafe source must not enter Preview as a clean draft");
+});
+
+test("Real editor undo restores the exact raw line endings after a deletion", async () => {
+  const source = "a\r\n\nb";
+  const m = mk(source);
+  m.view();
+  m.modal.handleInput("\x1b[A");
+  m.modal.handleInput("\x01");
+  m.modal.handleInput("\x7f");
+  m.modal.handleInput("\x1a"); // Ctrl+Z is Pi Editor's configured undo by default
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.deepEqual(m.copied, [source]);
 });
 
 test("Small real editor change must not normalize unrelated tab indentation or CRLF", async () => {
