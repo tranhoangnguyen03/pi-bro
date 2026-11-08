@@ -20,7 +20,7 @@ text directly captures a new source the same way.
 
 ## Default command suggestions
 
-Typing `/bro ` displays eleven task-level suggestions: `simplify`, `copy`, `show`, `btw`, `guided-review`, `architecture`, `elevate`, `grill-me`, `remember-me`, `overthink`, and `config`. Every other documented command remains callable and discoverable by typing its prefix (e.g., `/bro doc`).
+Typing `/bro ` displays ten capability-level suggestions: `simplify`, `show`, `btw`, `guided-review`, `architecture`, `elevate`, `grill-me`, `remember-me`, `overthink`, and `config`. Every other documented command remains callable and discoverable by typing its prefix (e.g., `/bro doc`).
 
 ## Commands
 
@@ -28,7 +28,7 @@ Typing `/bro ` displays eleven task-level suggestions: `simplify`, `copy`, `show
 | --- | --- |
 | `/bro` | Open Simplify and explain the latest completed assistant reply. |
 | `/bro simplify` | Reopen the last Simplify screen within this Pi session, without a new model call. |
-| `/bro copy` | Open an editable raw Markdown scratchpad from the latest completed assistant reply. Ctrl+D toggles preview; Ctrl+C copies edits; Ctrl+G opens help. No backend call or saved draft. Native Pi `/copy` remains the quick no-edit option. [Guide](../features/copy.md). |
+| `/bro copy` | Open an editable raw Markdown scratchpad from the latest completed assistant reply. Ctrl+D toggles preview; Ctrl+C copies edits; F1 opens help. No backend call or saved draft. Native Pi `/copy` remains the quick no-edit option. [Guide](../features/copy.md). |
 | `/bro text <text>` | Explain pasted text. |
 | `/bro <input>` | Explain it directly: a lone URL runs the webpage reader, an existing workspace file with a supported extension runs the document reader, and anything else is pasted text. A quoted path with spaces is routed too when the file exists. |
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |

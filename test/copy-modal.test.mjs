@@ -8,7 +8,6 @@ import { buildDir } from "./test-build.mjs";
 
 const { CopyModal } = await import(pathToFileURL(join(buildDir, "copy.js")).href);
 const { latestCompletedAssistantText } = await import(pathToFileURL(join(buildDir, "last-assistant.js")).href);
-const { RawMarkdownDraft, normalizeEditorMarkdown } = await import(pathToFileURL(join(buildDir, "copy-draft.js")).href);
 const { latestAssistant } = await import(pathToFileURL(join(buildDir, "explain-modal.js")).href);
 initTheme();
 const theme = { fg: (_color, text) => text, bold: text => text };
@@ -59,148 +58,55 @@ test("Explain and Copy share one completed-reply selection rule, with different 
   assert.equal(latestAssistant(ctx)?.text, raw.trim(), "Explain keeps its historical trimming behavior");
 });
 
-test("Raw draft preserves untouched CRLF and tabs through edits and undo", () => {
-  const source = "\tfirst\r\n\tsecond\r\nthird\r\n";
-  const original = normalizeEditorMarkdown(source);
-  const draft = new RawMarkdownDraft(source);
-  assert.equal(original, "    first\n    second\nthird\n");
-  const before = original.indexOf("third") + "third".length;
-  const next = "    first\n    second\nthird changed\n";
-  draft.update(next, { kind: "insert", beforeCursor: before, afterCursor: before + " changed".length });
-  assert.equal(draft.text, "\tfirst\r\n\tsecond\r\nthird changed\r\n");
-  const next2 = next + "new last line";
-  draft.update(next2, { kind: "insert", beforeCursor: next.length, afterCursor: next2.length });
-  assert.equal(draft.text, "\tfirst\r\n\tsecond\r\nthird changed\r\nnew last line");
-  draft.update(original, { kind: "undo" }); // Pi may undo several typed characters at once
-  assert.equal(draft.text, source);
-
-  const tabOriginal = "one\t\ttwo";
-  const tab = new RawMarkdownDraft(tabOriginal);
-  const normalized = normalizeEditorMarkdown(tabOriginal);
-  const inserted = normalized.slice(0, 5) + "X" + normalized.slice(5);
-  tab.update(inserted, { kind: "insert", beforeCursor: 5, afterCursor: 6 });
-  assert.equal(normalizeEditorMarkdown(tab.text), inserted);
-  assert.equal(tab.text.endsWith("\ttwo"), true, "untouched second tab remains raw");
-});
-
-test("The exact cursor, not repeated text, chooses which line ending is deleted", () => {
-  const source = "a\r\n\nb"; // CRLF then LF: both appear as identical newlines in Pi Editor
-  const next = "a\nb";
-  const first = new RawMarkdownDraft(source);
-  first.update(next, { kind: "backward", beforeCursor: 2, afterCursor: 1 });
-  assert.equal(first.text, "a\nb", "backspace deleted the CRLF, preserving the second LF");
-  first.update(normalizeEditorMarkdown(source), { kind: "undo" });
-  assert.equal(first.text, source, "undo restores exact old CRLF/LF provenance");
-
-  const second = new RawMarkdownDraft(source);
-  second.update(next, { kind: "backward", beforeCursor: 3, afterCursor: 2 });
-  assert.equal(second.text, "a\r\nb", "backspace deleted the LF, preserving the first CRLF");
-
-  const forward = new RawMarkdownDraft(source);
-  forward.update(next, { kind: "forward", beforeCursor: 1, afterCursor: 1 });
-  assert.equal(forward.text, "a\nb", "forward delete removed the CRLF at the cursor");
-
-  const ambiguous = new RawMarkdownDraft(source);
-  assert.throws(() => ambiguous.update(next, { kind: "unknown", beforeCursor: 2 }),
-    /Ambiguous edit position/, "unknown deletion must refuse ambiguous provenance");
-});
-
-test("Deleting repeated spaces uses cursor to preserve unaffected tab indentation", () => {
-  const source = "x\t y\t  z";
-  const visible = normalizeEditorMarkdown(source);
-  const literalSpace = 5; // x + four spaces from first tab, then the literal space
-  const next = visible.slice(0, literalSpace) + visible.slice(literalSpace + 1);
-  const draft = new RawMarkdownDraft(source);
-  draft.update(next, { kind: "forward", beforeCursor: literalSpace, afterCursor: literalSpace });
-  assert.equal(draft.text, "x\ty\t  z", "both raw tabs remain intact");
-  const insideTab = new RawMarkdownDraft(source);
-  const inner = visible.slice(0, 3) + visible.slice(4);
-  insideTab.update(inner, { kind: "backward", beforeCursor: 4, afterCursor: 3 });
-  assert.equal(insideTab.text, "x    y\t  z", "only the touched tab expands, other tab preserved");
-});
-
-test("Real editor backspace at the first of two blank lines preserves the second LF", async () => {
-  const m = mk("a\r\n\nb");
-  m.view();
-  m.modal.handleInput("\x1b[A"); // from last line 'b' to blank middle line
-  m.modal.handleInput("\x01"); // Ctrl+A: start of current line
-  assert.deepEqual(m.modal.editor.getCursor(), {line: 1, col: 0});
-  m.modal.handleInput("\x7f"); // backspace merges with first line, deleting CRLF
-  m.modal.handleInput("\x03");
-  await flush();
-  assert.deepEqual(m.copied, ["a\nb"], "the untouched LF is still LF");
-});
-
-test("Unmapped first edit blocks copy/preview and requires explicit Esc discard", async () => {
-  const m = mk("a\r\n\nb");
-  m.view();
-  m.modal.editor.setText("unexpected replacement"); // bypasses input location; raw draft is still unchanged
-  m.modal.handleInput("\x03");
-  await flush();
-  assert.deepEqual(m.copied, [], "unmapped editor change must NOT silently copy");
-  assert.match(m.view(), /Cannot map this edit safely/);
-  m.modal.handleInput("\x04");
-  assert.match(m.view(), /Copy · Edit/, "unsafe source must not enter Preview as a clean draft");
-
-  m.modal.handleInput("\x1b");
-  assert.equal(m.closeCount(), 0, "the first Esc must not discard an unmappable edit");
-  assert.match(m.view(), /Unmapped edits will be discarded.*Esc again/);
-
-  // A blocked preview must also clear the previous discard confirmation.
-  m.modal.handleInput("\x04");
-  m.modal.handleInput("\x1b");
-  assert.equal(m.closeCount(), 0, "failed preview must not count as another Esc");
-  assert.match(m.view(), /Unmapped edits will be discarded.*Esc again/);
-
-  // A failed copy attempt must cancel the old discard confirmation. Otherwise
-  // a single later Esc closes the modal despite the user's failed recovery.
-  m.modal.handleInput("\x03");
-  await flush();
-  assert.equal(m.copied.length, 0, "error recovery must not copy anything");
-  m.modal.handleInput("\x1b");
-  assert.equal(m.closeCount(), 0, "copy attempt must require a fresh discard warning");
-  m.modal.handleInput("\x1b");
-  assert.equal(m.closeCount(), 1, "second consecutive Esc confirms discard");
-});
-
-test("Real editor undo restores the exact raw line endings after a deletion", async () => {
-  const source = "a\r\n\nb";
+test("Edited source follows Pi Editor normalization; untouched source remains exact", async () => {
+  const source = "## Title\r\n\tconst a = 1;\r\n\tconst b = 2;\r\n";
   const m = mk(source);
+  m.view();
+  m.modal.handleInput("!");
+  const edited = source.replace(/\r\n/g, "\n").replace(/\t/g, "    ") + "!";
+  assert.equal(m.modal.editor.getExpandedText(), edited);
+  assert.match(m.view(), /tabs become spaces/);
+  assert.match(m.view(), /CRLF becomes LF/);
+  m.modal.handleInput("\x04");
+  assert.match(m.view(), /Copy · Preview/);
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.deepEqual(m.copied, [edited]);
+  m.modal.handleInput("\x04");
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.deepEqual(m.copied, [edited, edited]);
+});
+
+test("Pi Editor undo leaves a copyable draft even after its empty snapshot", async () => {
+  const m = mk("hello\tworld");
+  m.view();
+  m.modal.handleInput("x");
+  m.modal.handleInput("\x1f");
+  m.modal.handleInput("\x1f");
+  const expected = m.modal.editor.getExpandedText();
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.deepEqual(m.copied, [expected]);
+  m.modal.handleInput("\x04");
+  assert.match(m.view(), /Copy · Preview/);
+  m.modal.handleInput("\x03");
+  await flush();
+  assert.deepEqual(m.copied, [expected, expected]);
+});
+
+test("Deleting repeated newlines remains copyable and previews editor output", async () => {
+  const m = mk("a\r\n\nb");
   m.view();
   m.modal.handleInput("\x1b[A");
   m.modal.handleInput("\x01");
   m.modal.handleInput("\x7f");
-  m.modal.handleInput("\x1f"); // Ctrl+Minus is Pi Editor undo on macOS/Linux; Ctrl+Z suspends
+  assert.equal(m.modal.editor.getExpandedText(), "a\nb");
   m.modal.handleInput("\x03");
   await flush();
-  assert.deepEqual(m.copied, [source]);
-});
-
-test("Small real editor change must not normalize unrelated tab indentation or CRLF", async () => {
-  const source = "## Title\r\n\t" + "const a = 1;\r\n\t" + "const b = 2;\r\n";
-  const m = mk(source);
-  m.view();
-  m.modal.handleInput("!"); // Append at current cursor
-  m.modal.handleInput("\x03");
-  await flush();
-  assert.deepEqual(m.copied, [source + "!"]);
-  m.modal.handleInput("\x04"); // Preview same corrected raw source
-  m.modal.handleInput("\x03");
-  await flush();
-  assert.deepEqual(m.copied, [source+"!",source+"!"]);
-});
-
-test("Large bracketed paste copies full expanded Markdown, not the shortened marker", async () => {
-  const m = mk("Short");
-  m.view();
-  const paste = "\n" + Array.from({length:250}, (_,i) => "row-"+i+" | value-"+i).join("\n");
-  m.modal.handleInput("\x1b[200~"+paste+"\x1b[201~");
-  assert.ok(m.modal.editor.getExpandedText().includes("row-249 | value-249"));
-  m.modal.handleInput("\x04"); // preview, then copy
-  m.modal.handleInput("\x03");
-  await flush();
-  assert.deepEqual(m.copied, ["Short"+paste]);
-  assert.doesNotMatch(m.copied[0], /\[paste #\d/);
+  assert.deepEqual(m.copied, ["a\nb"]);
+  m.modal.handleInput("\x04");
+  assert.match(m.view(), /Copy · Preview/);
 });
 
 test("Untouched source copies verbatim even when Pi Editor normalizes its display", async () => {
@@ -246,10 +152,10 @@ test("Editing, previewing and copying share one draft; '?' is editable in Edit",
   assert.equal(m.closeCount(), 1);
 });
 
-test("Help works in both modes without stealing '?' from ordinary editing", () => {
+test("F1 Help works in both modes without stealing '?' from ordinary editing", () => {
   const m = mk("Hello");
   m.view();
-  m.modal.handleInput("\x07"); // Ctrl+G opens Help
+  m.modal.handleInput("\x1bOP"); // F1 opens Help
   assert.match(m.view(), /Bro · Copy · Help/);
   m.modal.handleInput("\x1b"); // Esc returns
   assert.match(m.view(), /Bro · Copy · Edit/);

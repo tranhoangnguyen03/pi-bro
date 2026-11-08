@@ -1,12 +1,12 @@
 /**
  * One authoritative selection rule for the last completed assistant reply.
- * Explain intentionally trims its result; Copy keeps the untrimmed text.
+ * Simplify intentionally trims its result; Copy keeps the untrimmed text.
  */
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
 /**
  * Multiple text content blocks are flattened with one LF, matching Bro's
- * existing Explain convention (the LF is a separator, not an original block).
+ * existing Simplify convention (the LF is a separator, not an original block).
  * Ignore reasoning, images, unfinished replies and non-text messages.
  */
 export function latestCompletedAssistantText(branch: readonly SessionEntry[]): string | undefined {

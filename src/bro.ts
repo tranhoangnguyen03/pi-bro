@@ -102,7 +102,7 @@ const COMMANDS = [
 const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
 /** Only capability-level commands appear by default; all existing commands remain discoverable by prefix. */
 export const FEATURED_BRO_COMMANDS = [
-  "simplify","copy","show","btw","guided-review","architecture","elevate","grill-me","remember-me","overthink","config",
+  "simplify","show","btw","guided-review","architecture","elevate","grill-me","remember-me","overthink","config",
 ] as const;
 const FEATURED_COMMANDS = new Set<string>(FEATURED_BRO_COMMANDS);
 

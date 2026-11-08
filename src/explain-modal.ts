@@ -376,7 +376,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 - **Get advice on existing work:** Guided Review; Overthink for automatic second looks; agent-facing Advisor.
 - **Guide the agent:** Elevate for assignments; Remember Me for approved context (about_user); Advisor Steering for priorities.
 
-These are needs, not modes. Copied text does not enter Pi until you paste and submit it.
+Copied text enters Pi only when you paste and submit it.
 
 ## Explain and show
 
@@ -389,20 +389,18 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 - Inside Simplify: \`/simplify\`, \`/text <text>\`, \`/file <path>\`, \`/url <url>\`, \`/copy\`, \`/clear\`, \`/help\`. **M** changes the mode and re-explains; **R** retries. One source at a time, no chat thread.\n- \`/bro open\` — legacy last-result view (retained for compatibility)
 - \`/bro show [n-turns] [query]\` — draw recent turns' conversation text as shapes; an optional query steers the focus
 
+- \`/bro copy\` — edit and preview the last reply before copying raw Markdown.
+
 ## Architecture documentation
 
 - \`/bro architecture [focus]\` — inspect this project and create or refresh \`docs/architecture/\` (Markdown, diagrams and a self-contained HTML map). Inherits the BTW model selection. See docs/features/architecture.md.
-
-## Copy
-
-- \`/bro copy\` — edit the last reply's Markdown: Ctrl+D preview, Ctrl+C copy, Ctrl+G help, Esc close. No model call or saved draft. Pi \`/copy\` copies directly.
 
 ## Guided Review
 
 - \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).
 - Reviews save automatically. Reopen the same PR without a model call; bare \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Captured code stays unchanged.
 - Enter opens items or activates focused actions. Tab changes focus; Esc goes back, then closes from Contents. Close saves; Stop and close cancels active work first.
-- Copy findings. Regenerate reuses the captured source. Untrusted PRs: Claude/Muse/Pi use file-only tools; Codex/Grok allow shell, Agy can write. Choose access in /bro config; verify citations.
+- Copy finding uses the clipboard, not GitHub. Regenerate requires confirmation and reviews the same capture. For untrusted PRs, prefer Claude/Muse/Pi: file-only tools, no shell/writes/web. Codex/Grok allow shell in a read-only sandbox; Agy's sandbox permits project writes. All three show an advisory. Choose a review override in /bro config. Repository text can mislead; citations are not proof.
 
 ## Elevate
 

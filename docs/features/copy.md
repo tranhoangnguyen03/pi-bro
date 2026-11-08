@@ -10,17 +10,17 @@ Pi already has **`/copy`**, which copies the last assistant reply immediately. U
 | --- | --- | --- |
 | **Ctrl+D** | Show rendered Markdown preview | Return to raw Markdown editor |
 | **Ctrl+C** | Copy the current raw Markdown | Copy the same raw Markdown, never rendered text |
-| **Ctrl+G** | Show Help without stealing typed characters | Show Help |
+| **F1** | Show Help without taking Pi's Ctrl+G shortcut | Show Help |
 | **?** | Type `?` normally in the draft | Show Help |
 | **↑/↓, PgUp/PgDn** | Move in the editor | Scroll preview |
 | **Esc** | Close; two presses if you edited the draft | Close; two presses if you edited the draft |
 
-In Help, Esc returns to the previous view. **Enter** adds a newline in Edit; it does not submit a prompt.
+In Help, Esc returns to the previous view. **Ctrl+D** switches views but replaces Pi Editor's forward-delete key inside Copy; the Delete key still works. **Enter** adds a newline in Edit; it does not submit a prompt.
 
 ## What is preserved
 
 - The source comes from the last normally completed assistant message in the active Pi session, not from the terminal's rendered output. Bro copies **text content**, including Markdown tables, links and code fences; reasoning and nontext parts are excluded. If one reply contains several text blocks, Bro joins them with **one newline between blocks** (same rule as Simplify); that separator is an intentional representation of the reply, not a byte in either source block.
-- Raw Markdown is copied as-is when you do **not edit** it. When you **do edit**, Bro applies the local edit to the original text, preserving untouched tabs, CRLF and indentation. Pi's `Editor` displays tabs as spaces and normalizes line endings. Bro uses the **actual key action and cursor position** to apply edits to the raw text; identical blank lines and repeated indentation cannot be resolved reliably from text comparison alone. Editing *inside* a tab expands only that tab; untouched tabs and line breaks keep their original form. If an uncommon editor operation cannot be mapped safely (including edits between multiple opaque paste markers), Bro **refuses to copy or preview an unverified draft**, shows the reason, and asks you to Undo or reopen Copy. It never silently replaces unaffected source characters.
+- **Unedited:** Bro copies the original Markdown verbatim, including tabs and CRLF line endings. **Edited:** Bro copies Pi Editor's expanded text, which uses spaces for tabs and LF line endings. If the original contains tabs or CRLF, the modal shows a note when edited. Undo, paste, deletion and other Pi Editor actions remain copyable; there is no secondary raw-draft store or blocked-copy recovery.
 - Preview uses the **same draft** as Edit. Switching views does not reset the editor or create another copy.
 - Large pastes: copy always reads `Editor.getExpandedText()` rather than its shortened on-screen paste markers.
 

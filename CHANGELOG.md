@@ -6,9 +6,9 @@ All notable changes to pi-bro are documented here.
 
 ### Added
 
-- `/bro copy`: a model-free Markdown scratch editor for the last completed assistant reply; Ctrl+D previews, Ctrl+C copies the current raw Markdown, Ctrl+G opens Help.
+- `/bro copy`: a model-free Markdown scratch editor for the last completed assistant reply; Ctrl+D previews, Ctrl+C copies Markdown, F1 opens Help. A utility discoverable by typing `/bro cop`, not a featured capability.
 - Shared last-completed-reply extraction across Copy and Simplify, preserving Simplify's trimmed result and Copy's untrimmed source.
-- Cursor-anchored raw-text reconciliation preserves untouched tabs and CRLF, including adjacent repeated newlines and spaces. Undo restores recorded raw snapshots; unmappable edit actions prevent copying instead of guessing. Copy's preview and clipboard read the same draft.
+- Unedited copy preserves the original raw text. Edited copies/preview use Pi Editor's expanded text (tabs become spaces; CRLF becomes LF). The modal discloses this when relevant. Removed the source-reconciliation engine and its blocked-copy recovery path.
 
 ### Limits
 

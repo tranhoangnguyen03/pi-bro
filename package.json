@@ -57,7 +57,6 @@
     "src/overthink-state.ts",
     "src/overthink-questions-ui.ts",
     "src/copy.ts",
-    "src/copy-draft.ts",
     "src/last-assistant.ts",
     "src/remember-store.ts",
     "src/remember-engine.ts",
