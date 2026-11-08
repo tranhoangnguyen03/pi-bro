@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { buildDir } from "./test-build.mjs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-import { mkdir, writeFile, chmod, readFile, rename, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, writeFile, chmod, readFile, rename, rm } from "node:fs/promises";
 import { initTheme, getAgentDir } from "@earendil-works/pi-coding-agent";
-const { openGuidedReview, matchSavedReview, savedReviewLabel } = await import(pathToFileURL(join(buildDir, "review-ui.js")).href);
+const { openGuidedReview, pickSavedReview, matchSavedReview, savedReviewLabel } = await import(pathToFileURL(join(buildDir, "review-ui.js")).href);
 const { newReviewView } = await import(pathToFileURL(join(buildDir, "review-modal.js")).href);
 const { saveReview, loadReview } = await import(pathToFileURL(join(buildDir, "review.js")).href);
 initTheme();
@@ -831,11 +832,15 @@ test("delete picker confirms and removes only the selected saved review", async 
 	await mkdir(capture, { recursive: true });
 	await writeFile(join(capture, "canary"), "only this review");
 	let approve = false;
+	let cancelPicker = false;
 	const events = [];
 	const ctx = {
 		mode: "tui",
 		ui: {
-			select: async (_title, labels) => { assert.ok(labels.some(label => label.includes("Delete only this record")), "picker title must keep all letters"); return labels.find(label => label.includes("delete-suite/repo #90991")); },
+			select: async (_title, labels) => {
+				assert.ok(labels.some(label => label.includes("Delete only this record")), "picker title must keep all letters");
+				return cancelPicker ? undefined : labels.find(label => label.includes("delete-suite/repo #90991"));
+			},
 			confirm: async (title, body) => {
 				events.push({ title, body });
 				return approve;
@@ -844,6 +849,11 @@ test("delete picker confirms and removes only the selected saved review", async 
 		},
 	};
 	try {
+		cancelPicker = true;
+		await openGuidedReview(ctx, "delete", "");
+		assert.ok(await loadReview(root, id), "Esc on delete picker must retain the record");
+		assert.equal(events.length, 0, "Esc on delete picker must not show a no-match message or confirmation");
+		cancelPicker = false;
 		await openGuidedReview(ctx, "delete", "");
 		assert.ok(await loadReview(root, id), "cancelled confirmation must retain the record");
 		assert.equal(await readFile(join(capture, "canary"), "utf8"), "only this review");
@@ -943,5 +953,28 @@ test("delete from within an open review confirms and never writes a new record o
 		panel?.dispose();
 		await rm(join(root, id + ".json"), { force: true });
 		await rm(capture, { recursive: true, force: true });
+	}
+});
+
+test("shared resume/delete picker explains empty storage without showing a selection", async () => {
+	const root = await mkdtemp(join(tmpdir(), "bro-review-empty-"));
+	const notifications = [];
+	const ctx = {
+		ui: {
+			select() { assert.fail("picker must not open on an empty list"); },
+			notify(message, level) { notifications.push({ message, level }); },
+		},
+	};
+	try {
+		assert.equal(await pickSavedReview(ctx, root, "Resume guided review",
+			"Start with /bro guided-review <PR number or URL>."), undefined);
+		assert.equal(await pickSavedReview(ctx, root, "Delete saved review",
+			"There are no saved reviews to delete."), undefined);
+		assert.deepEqual(notifications, [
+			{ message: "Start with /bro guided-review <PR number or URL>.", level: "info" },
+			{ message: "There are no saved reviews to delete.", level: "info" },
+		]);
+	} finally {
+		await rm(root, { recursive: true, force: true });
 	}
 });

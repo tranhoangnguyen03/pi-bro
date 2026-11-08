@@ -87,8 +87,11 @@ Use **Overview → Delete review** inside a saved review, or run
 `/bro guided-review delete` to choose from your saved reviews. For a specific
 record, use `/bro guided-review delete <PR number or URL>`. Deletion reads
 only local saved records: no GitHub access or model call is required. A bare
-PR number must match exactly one saved review; use the full PR URL if the
-number appears in more than one repository.
+PR number must match exactly one saved review across all repositories, regardless
+of your current working directory. In contrast, opening a PR by number uses
+the current repository. Use the full PR URL if multiple saved reviews share
+that number. If none are saved, the picker explains how to start a review.
+Pressing Esc cancels silently.
 Bro shows the target and asks for confirmation before removing its JSON record,
 private questions/drafts and captured Git source. Closing the picker or declining
 the confirmation changes nothing. Close an open review first; an active writer
