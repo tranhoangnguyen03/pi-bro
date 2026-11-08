@@ -376,7 +376,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 - **Get advice on existing work:** Guided Review; Overthink for automatic second looks; agent-facing Advisor.
 - **Guide the agent:** Elevate for assignments; Remember Me for approved context (about_user); Advisor Steering for priorities.
 
-Copied text enters Pi only when you paste and submit it.
+These are needs, not modes. Copied text does not enter Pi until you paste and submit it.
 
 ## Explain and show
 
@@ -400,7 +400,7 @@ Copied text enters Pi only when you paste and submit it.
 - \`/bro guided-review <PR number or URL>\` — assess captured PR code in local interactive Pi (requires Git and authenticated gh).
 - Reviews save automatically. Reopen without a model call; bare \`/bro guided-review\` lists saved reviews.\n- \`/bro guided-review delete [PR number or URL]\` — delete one local saved review with confirmation; Overview also offers Delete review.
 - Enter opens items or activates focused actions. Tab changes focus; Esc goes back, then closes from Contents. Close saves; Stop and close cancels active work first.
-- Copy finding uses the clipboard, not GitHub. Regenerate requires confirmation and reviews the same capture. For untrusted PRs, prefer Claude/Muse/Pi: file-only tools, no shell/writes/web. Codex/Grok allow shell in a read-only sandbox; Agy's sandbox permits project writes. All three show an advisory. Choose a review override in /bro config. Repository text can mislead; citations are not proof.
+- Copy finding goes to the clipboard, not GitHub. Regenerate reuses captured source. For untrusted PRs, choose file-only Claude/Muse/Pi; Codex/Grok offer sandboxed shell, while Agy may write captured files. Bro warns when shell is allowed. See docs/guided-review.md.
 
 ## Elevate
 
