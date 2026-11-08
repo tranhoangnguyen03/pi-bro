@@ -35,9 +35,18 @@ export const REVIEW_ACQUIRE_OVERLAY = {
 	margin: { top: 1, bottom: 1 },
 } as const;
 
-const activeReviews = new Map<string, AbortController | undefined>();
-export function stopGuidedReviews(): void {
-	for (const controller of activeReviews.values()) controller?.abort();
+type ActiveReview = {
+	controller?: AbortController;
+	flush?: () => Promise<void>;
+};
+const activeReviews = new Map<string, ActiveReview>();
+
+// Pi awaits session_shutdown handlers before invalidating the outgoing session.
+// Abort all review work first, then flush its existing serialized save queue.
+export async function stopGuidedReviews(): Promise<void> {
+	const active = [...activeReviews.values()];
+	for (const review of active) review.controller?.abort();
+	await Promise.all(active.map((review) => review.flush?.()));
 }
 
 /** Same picker for resume and delete. Presentation and ordering have one owner. */
@@ -138,7 +147,7 @@ export async function openGuidedReview(
 			return;
 		}
 		// Reserve this identity while deletion runs so a new review cannot start writing it.
-		activeReviews.set(id, undefined);
+		activeReviews.set(id, {});
 		try {
 			await deleteReview(root, id);
 			ctx.ui.notify(`Deleted saved review ${title} and its captured source.`, "info");
@@ -195,7 +204,7 @@ export async function openGuidedReview(
 							);
 						}
 						locked = id;
-						activeReviews.set(id, controller);
+						activeReviews.set(id, { controller });
 						const existing = await loadReview(root, id);
 						if (existing) {
 							if (
@@ -276,7 +285,7 @@ export async function openGuidedReview(
 		ctx.ui.notify("This review is already open in this Pi session.", "info");
 		return;
 	}
-	activeReviews.set(state.id, undefined);
+	activeReviews.set(state.id, {});
 	let overlayHandle: { setHidden(hidden: boolean): void } | undefined;
 	try {
 		await openBroOverlay<void>(
@@ -357,7 +366,7 @@ export async function openGuidedReview(
 					let generated = false;
 					const abort = new AbortController();
 					controller = abort;
-					activeReviews.set(state.id, abort);
+					activeReviews.get(state.id)!.controller = abort;
 					panel.busy = true;
 					panel.operation = question ? "answer" : regenerate ? "regenerate" : "guide";
 					panel.startedAt = Date.now();
@@ -470,7 +479,7 @@ export async function openGuidedReview(
 					} finally {
 						clearInterval(heartbeat);
 						controller = undefined;
-						if (activeReviews.has(state.id)) activeReviews.set(state.id, undefined);
+						if (activeReviews.has(state.id)) activeReviews.get(state.id)!.controller = undefined;
 						panel.activeTurn = undefined;
 						panel.stage = undefined;
 						panel.busy = false;
@@ -493,6 +502,19 @@ export async function openGuidedReview(
 					} catch {
 						closing = false;
 						tui.requestRender();
+					}
+				};
+				const active = activeReviews.get(state.id);
+				if (active) active.flush = async () => {
+					closing = true;
+					controller?.abort();
+					if (saveTimer) clearTimeout(saveTimer);
+					try {
+						await running;
+					} finally {
+						// A run can itself queue a save; this flush follows it in order.
+						await persist();
+						closed = true;
 					}
 				};
 				const panel = new ReviewModal(state, tui, theme, {
@@ -629,7 +651,7 @@ export async function openGuidedReview(
 			},
 		);
 	} finally {
-		activeReviews.get(state.id)?.abort();
+		activeReviews.get(state.id)?.controller?.abort();
 		activeReviews.delete(state.id);
 	}
 }

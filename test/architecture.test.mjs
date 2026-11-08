@@ -60,13 +60,18 @@ test('refreshes a guide in place and preserves unrelated architecture material',
   }finally{await cleanup(root,first);if(second)await fs.rm(second.dir,{recursive:true,force:true});}
 });
 
-test('refuses concurrent source changes and leaves target docs untouched',async()=>{
+test('refuses both live-source changes and staged-copy tampering without writing docs',async()=>{
   const root=await setup();let staged;
   try{
     staged=await stage(root);
     await fs.writeFile(path.join(root,'src','main.js'),'export function run() { return "changed"; }\n');
     const p=path.join(staged.dir,'proposal.json');await fs.writeFile(p,proposal());
     await assert.rejects(apply(staged.dir,p),/Source changed during documentation/);
+    // A backend may alter the private source copy during inspection. The second
+    // check catches that even when the user's live project is unchanged.
+    await fs.writeFile(path.join(root,'src','main.js'),'export function run() { return "ok"; }\n');
+    await fs.writeFile(path.join(staged.dir,'project','src','main.js'),'tampered backend source\n');
+    await assert.rejects(apply(staged.dir,p),/Staged source was modified during inspection/);
     await assert.rejects(fs.stat(path.join(root,'docs','architecture','README.md')),{code:'ENOENT'});
   }finally{await cleanup(root,staged);}
 });

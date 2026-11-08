@@ -13,7 +13,11 @@ pi --tui-mode fullscreen -e ./src/bro.ts
 
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) is the code map and lists the
 invariants every change must keep. [docs/TESTING.md](docs/TESTING.md) is the
-manual end-to-end checklist for changes the offline tests cannot cover.
+selective manual qualification guide for boundaries the offline tests cannot cover.
+
+## Tests
+
+Keep a test only when it catches a **credible, distinct failure** worth its ongoing cost. Name that failure when adding or changing coverage. Update an existing test first; choose the cheapest useful layer, and use a few representative cases for low-risk behavior. Test shared logic once, but retain boundary checks where wiring, permissions, saved data, cancellation, or recovery can fail. Delete tests with removed behavior; do not freeze incidental wording or internal layout. Simplify runtime code and tests together rather than moving complexity into new fixtures or helpers.
 
 ## Pull requests
 
