@@ -58,10 +58,16 @@ export function codexSubscriptionRouteProblem(config: unknown): string | undefin
   const effective = config as Record<string, unknown>;
   if (effective.model_provider !== "openai")
     return `Codex selected model_provider=${JSON.stringify(effective.model_provider ?? "(unknown)")}; choose the built-in OpenAI provider in the selected CODEX_HOME profile`;
-  for (const key of ["openai_base_url", "chatgpt_base_url"]) {
-    if (effective[key] !== undefined && effective[key] !== null && effective[key] !== "")
-      return `Codex has a custom ${key}; remove this redirect from the selected subscription profile`;
-  }
+  if (effective.openai_base_url !== undefined &&
+      effective.openai_base_url !== null && effective.openai_base_url !== "")
+    return "Codex has a custom openai_base_url; remove this redirect from the selected subscription profile";
+  // Codex config/read includes its built-in ChatGPT URL even in an untouched
+  // profile. Only an alternate target is a redirect.
+  const chatgptUrl = effective.chatgpt_base_url;
+  if (chatgptUrl !== undefined && chatgptUrl !== null && chatgptUrl !== "" &&
+      (typeof chatgptUrl !== "string" ||
+       chatgptUrl.replace(/\\/+$/, "") !== "https://chatgpt.com/backend-api"))
+    return "Codex has a custom chatgpt_base_url; remove this redirect from the selected subscription profile";
   const providers = effective.model_providers;
   if (providers !== null && providers !== undefined) {
     if (typeof providers !== "object" || Array.isArray(providers))
