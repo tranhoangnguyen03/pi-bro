@@ -44,6 +44,15 @@ async function listen(server) {
   return server.address().port;
 }
 
+async function withDeadline(promise, ms, message) {
+  let timer;
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message())), ms);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
 async function runHost(agent, workspace, session, expectedText) {
   const env = { ...process.env,
     PI_CODING_AGENT_DIR: agent, PIG_CODING_AGENT_DIR: agent,
@@ -78,20 +87,18 @@ async function runHost(agent, workspace, session, expectedText) {
   });
   try {
     child.stdin.write(JSON.stringify({ id: "bro-local-model", type: "prompt",
-      message: "/bro text Custom model request for " + expectedText }) + "\n");
-    const result = await Promise.race([
-      response,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("RPC timeout: " + logs + "\n" + stdout)), 25_000)),
-    ]);
+      message: "/bro text Explain the test request from this agent." }) + "\n");
+    const result = await withDeadline(response, 25_000,
+      () => "RPC timeout: " + logs + "\n" + stdout);
     assert.equal(result.success, true, "RPC command error: " + JSON.stringify(result) + "\n" + logs);
     child.stdin.end();
-    const exit = await Promise.race([
-      closed,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("RPC exit timeout: " + logs)), 10_000)),
-    ]);
+    const exit = await withDeadline(closed, 10_000, () => "RPC exit timeout: " + logs);
     assert.equal(exit.code, 0, "host did not exit cleanly: " + logs);
     const sessionText = await readFile(session, "utf8");
-    assert.ok(sessionText.includes(expectedText), "Bro must retain the selected answer in the session: " +
+    const entries = sessionText.split("\n").filter(Boolean).map(JSON.parse);
+    assert.ok(entries.some(e => e.type === "custom" && e.customType === "bro-last-result" &&
+      JSON.stringify(e.data).includes(expectedText)),
+      "Bro must retain the backend's actual result, not just the original prompt: " +
       sessionText.slice(-2800) + "\n" + logs);
   } finally {
     if (child.exitCode === null) {
