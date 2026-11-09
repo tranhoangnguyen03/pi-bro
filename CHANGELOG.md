@@ -6,8 +6,8 @@ All notable changes to pi-bro are documented here.
 
 ### Fixed
 
-- Make the Pi child use the exact active host model registry, including custom endpoints and metadata, rather than preferring a separate freshly loaded model.
-- Keep the Pi model picker and Doctor aligned with the host's model catalog and authentication. Editing a model file without a host reload cannot create a selectable model.
+- Make the Pi child use the same host-effective registry for model metadata, provider authentication, endpoint and streaming. Do not pair a stale host endpoint with a credential reread from an edited models.json. A same-host edit keeps A+key A; a new host uses B+key B.
+- Give host-supplied model scopes priority over disk patterns in the picker; keep an empty resolved host scope empty, reject unavailable scoped models and avoid diagnostics calculated from a different source. An SDK empty scope with no file patterns cannot reveal an unmatched CLI flag until the host exposes scope provenance.
 - Allow PiG-Agent to select each official Claude Code or Codex CLI subscription through existing `CLAUDE_CONFIG_DIR`/`CODEX_HOME`; filter conflicting API credentials in that child alone, check the reported login method before execution, and keep the normal parent account untouched. No new account store.
 - Add profile-routing, no-API-fallback, host-model, and two-home memory fixtures while retaining the newer real-host cleanup and session-restore behavior from 0.32–0.36.
 
