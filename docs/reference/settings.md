@@ -93,6 +93,78 @@ Bro reads the file again before each request, so manual edits apply next time.
   settings file, for example `PI_BRO_MODEL=gemini-3.7-flash-low pi`.
 - Older flat settings files (root `model`/`effort`) still load and mean Agy.
 
+## Launcher contract for CLI authentication
+
+This contract is available to any launcher of Bro's Pi-compatible extension,
+not only PiG-Agent. It selects authentication intent for the **Claude Code and
+Codex backends**; it does not make either CLI a host for Bro's UI or tools.
+
+### Ownership and launch inputs
+
+- The launcher chooses an existing CLI profile and passes its location through
+  `CLAUDE_CONFIG_DIR` (Claude Code) or `CODEX_HOME` (Codex). If unset, the official
+  CLI uses its normal profile lookup. Bro does not find, create or switch accounts.
+- The official CLI owns login, credential storage and refresh. Authenticate the
+  selected profile through that CLI; Bro does not copy tokens or manage logins.
+- Bro owns its independent sessions and backend execution. It reads the intent
+  below when preparing backend children; these flags do not select a backend or
+  model. Choose those separately with `/bro config`.
+- A launcher that offers this choice passes the same selected profile and intent
+  to interactive, print and RPC launches. The flags belong in that launch's
+  environment, not in `bro-settings.json` or a shared global account setting.
+
+| Backend | Existing profile selector | Bro authentication intent |
+| --- | --- | --- |
+| Claude Code | `CLAUDE_CONFIG_DIR` | `PI_BRO_CLAUDE_AUTH_SOURCE` |
+| Codex | `CODEX_HOME` | `PI_BRO_CODEX_AUTH_SOURCE` |
+
+Each intent flag accepts exactly `inherit` or `subscription`. Unset means
+`inherit`; any other value, including an empty string, fails for that backend.
+
+- **`inherit`:** Bro preserves the CLI's ordinary authentication environment and
+  behavior. It does not require a subscription login or reject custom API routes.
+- **`subscription`:** Bro checks the official CLI's login method and applies the
+  backend-specific policy below. A failed check stops the request; Bro does not
+  fall back to API-key authentication or silently select another provider.
+
+For example, launch native Pi with an **already authenticated** Codex profile:
+
+```sh
+CODEX_HOME="$HOME/.codex" PI_BRO_CODEX_AUTH_SOURCE=subscription pi
+```
+
+Bro must already be installed and its selected backend must be Codex. A different
+launcher passes these same environment variables to its host process; it does not
+need a separate Bro authentication implementation. To return to ordinary CLI
+behavior, omit the intent flag or set it to `inherit` on the next launch.
+
+### Backend-child policy
+
+Bro copies the parent environment, removes both Bro intent flags from the child,
+and leaves the parent's environment unchanged. Subscription filtering applies to
+that backend child only; it does not change the host's model credentials or
+another backend's authentication.
+
+- **Claude Code:** Remove `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+  `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX` and
+  `CLAUDE_CODE_USE_FOUNDRY`. Require `claude auth status` to report
+  `loggedIn=true` and `authMethod=claude.ai` before model execution.
+- **Codex:** Remove `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL` and
+  `CHATGPT_BASE_URL`. Require ChatGPT login and inspect the selected profile's
+  effective provider configuration through the official app-server `config/read`.
+  Accept the implicit or explicit built-in OpenAI route; reject custom providers,
+  overrides of the built-in provider and endpoint redirects. Unreadable configuration
+  also stops execution. Bro uses Codex's effective configuration, not its own TOML
+  parser. After validation, execution pins that route and the ChatGPT login method.
+
+`/bro doctor` applies the same explicit subscription checks as execution. A passing
+check establishes the tested login method and route, **not** a successful live
+answer, human account identity or subscription billing. See the
+[implementation notes](../DEVELOPMENT.md#official-cli-subscription-policy) for
+Codex's inspection-only catalog and the [PiG qualification guide](../piG-agent-shell-qualification.md#codex-provider-route-regression-and-diagnostic-parity)
+for the versioned real-CLI/local-server evidence.
+
 ## Preferences
 
 Tell Bro about yourself and how you like answers. Bro adds what you write to

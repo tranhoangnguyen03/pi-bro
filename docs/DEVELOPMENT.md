@@ -100,11 +100,13 @@ spawning a CLI. It is deliberately isolated from the host session:
 
 ## Official CLI subscription policy
 
-The shell selects `CLAUDE_CONFIG_DIR` or `CODEX_HOME`. A deliberate
-`PI_BRO_CLAUDE_AUTH_SOURCE=subscription` or
-`PI_BRO_CODEX_AUTH_SOURCE=subscription` makes Bro build an isolated child
-environment (never change `process.env`), inspect the official CLI's
-login method, and reject failure rather than fall back to API billing.
+The reusable [launcher contract](reference/settings.md#launcher-contract-for-cli-authentication)
+is the authority for profile selectors, intent values, child-environment filtering
+and ownership. Any launcher of the Pi-compatible extension can supply it; it is
+not a PiG-specific API. `src/cli-auth.ts` resolves this policy, and `backend.ts`
+shares its execution checks with Doctor. Keep account selection in the launcher
+and login/refresh in the official CLI; do not duplicate this policy in features
+or shell-specific branches.
 
 For Codex, `login status` is insufficient: the active `model_provider`
 can select a separate `env_key` API provider. Bro asks the official Codex
