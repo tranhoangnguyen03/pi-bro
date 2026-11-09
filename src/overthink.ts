@@ -14,6 +14,7 @@ import {
   type OverthinkNote,
 } from "./overthink-state.ts";
 import { openOverthinkQuestionEditor } from "./overthink-questions-ui.ts";
+import { readPreferences } from "./settings.ts";
 import { errorMessage } from "./util.ts";
 
 const MIN_TOOL_RESULTS = 3;
@@ -263,6 +264,7 @@ export function registerOverthink(pi: ExtensionAPI, loadAutomaticChecks = readAu
     const state = await ensureOverthinkSession(pi, ctx.sessionManager.getBranch());
     const questions = state.questions ?? [];
     if (!questions.length) throw new Error("No Overthink questions. Edit session questions to enable checks.");
+    const preferences = await readPreferences();
     if (!stillCurrent()) throw new Error("Session changed; assessment cancelled.");
 
     const projected = ctx.sessionManager.buildSessionProjection().messages;
@@ -275,7 +277,7 @@ export function registerOverthink(pi: ExtensionAPI, loadAutomaticChecks = readAu
     const model = ctx.model;
     const name = model.provider + "/" + model.id;
     const effort = pi.getThinkingLevel();
-    const ask = { role: "user" as const, content: [{ type: "text" as const, text: overthinkPrompt(questions) }], timestamp: Date.now() };
+    const ask = { role: "user" as const, content: [{ type: "text" as const, text: overthinkPrompt(questions, preferences) }], timestamp: Date.now() };
     const timer = setTimeout(() => controller.abort(), NOTE_TIMEOUT_MS);
     try {
       // The exact projected message prefix is the basis of provider cache reuse.
