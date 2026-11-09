@@ -98,6 +98,24 @@ spawning a CLI. It is deliberately isolated from the host session:
   already returned from is cooperative: it asks the SDK to stop, and a provider or tool that never
   yields may keep working in the background after the outcome is decided.
 
+## Official CLI subscription policy
+
+The shell selects `CLAUDE_CONFIG_DIR` or `CODEX_HOME`. A deliberate
+`PI_BRO_CLAUDE_AUTH_SOURCE=subscription` or
+`PI_BRO_CODEX_AUTH_SOURCE=subscription` makes Bro build an isolated child
+environment (never change `process.env`), inspect the official CLI's
+login method, and reject failure rather than fall back to API billing.
+
+For Codex, `login status` is insufficient: the active `model_provider`
+can select a separate `env_key` API provider. Bro asks the official Codex
+app-server for its effective `config/read` (including profile/working
+directory), permits only the built-in `openai` route with no endpoint
+override, and then pins that already-validated route for `codex exec`.
+`/bro doctor` calls the same subscription check as execution.
+No TOML parser, credential store, or account-management UI belongs in Bro.
+The real Codex/local HTTP test uses dummy tokens and must observe **no**
+request to a custom API provider. It cannot verify live account billing.
+
 ## Settings
 
 Saved settings are version 2: a shared `default` selection plus optional
