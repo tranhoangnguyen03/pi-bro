@@ -34,6 +34,19 @@ Then restart Pi or run `/reload`, and check your setup:
 To try Bro without installing it, run `pi -e npm:pi-bro`. To install from
 GitHub, use `pi install git:github.com/tranhoangnguyen03/pi-bro`.
 
+## Claude Code plugin (experimental)
+
+The Claude Code Mod for **/bro** and **/bro config** lives in [experiments/claude-mod](experiments/claude-mod/README.md). It supports Claude Native, Agy, Codex and Pi CLI as explanation backends. This is separate from the Pi extension.
+
+While the experimental PR is open, add the marketplace at the feature branch:
+
+~~~text
+/plugin marketplace add tranhoangnguyen03/pi-bro@experimental/claude-mod-simplify
+/plugin install bro-simplify-experimental@pi-bro
+~~~
+
+See the [Claude Mod guide](experiments/claude-mod/README.md) for setup, backend permissions, known gaps and testing. **The plugin is not on the repository's default-branch marketplace until the PR merges.**
+
 ## Try it
 
 For a first success, type this in Pi after setting up a backend:
