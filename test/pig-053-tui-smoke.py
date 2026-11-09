@@ -35,10 +35,10 @@ def run():
         backend = bins / "agy"
         backend.write_text(r"""#!/bin/sh
 case "$1" in
-  models) printf 'fixture-model\\tFixture Model\\n'; exit 0;;
-  --version) printf 'agy fixture\\n'; exit 0;;
+  models) printf 'fixture-model\tFixture Model\n'; exit 0;;
+  --version) printf 'agy fixture\n'; exit 0;;
 esac
-printf '%s\\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PIG053_TERMINAL_RESULT"}}'
+printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PIG053_TERMINAL_RESULT"}}'
 """)
         backend.chmod(0o755)
         env = dict(os.environ)
@@ -95,7 +95,7 @@ printf '%s\\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_P
                     if exited:
                         raise AssertionError("PiG TUI exited during " + label + ": " + current[-2400:])
                 raise AssertionError("PiG TUI missing " + label + " (" +
-                    ", ".join(fragments) + "); terminal tail:\\n" + plain(bytes(transcript))[-3200:])
+                    ", ".join(fragments) + "); terminal tail:\n" + plain(bytes(transcript))[-3200:])
             take(2.5)
             write(b"/bro config\r")
             expect("Bro configuration modal in actual PiG terminal", ("Global", "Features"))
