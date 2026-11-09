@@ -237,7 +237,6 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 	let settings: BroSettings | undefined;
 	let models: AgyModelFamily[] | undefined;
 	let agyVersion: string | undefined;
-	let piRuntime: Awaited<ReturnType<typeof bridgePiRuntimeForCatalog>> | undefined;
 	const findPiModel = (provider: string, id: string) => {
 		const model = ctx.modelRegistry.find(provider, id);
 		return model?.api === "pi-virtual" ? undefined : model;
@@ -330,13 +329,12 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 		}
 	}
 
-	// Pi is in-process: validate the selected physical model against the bridged runtime without a
+	// Pi is in-process: validate the host-selected physical model without a
 	// CLI spawn or a live model turn. A passing answer means the model resolves and has configured
 	// auth; it is not a connectivity test.
 	if (piInUse) {
 		try {
-			const { models: piModels, scope, diagnostics, modelRuntime } = await listPiModels(ctx, signal);
-			piRuntime = modelRuntime;
+			const { models: piModels, scope, diagnostics } = await listPiModels(ctx, signal);
 			pass("Pi model catalog", `${piModels.length} physical model${piModels.length === 1 ? "" : "s"} selectable · ${scope === "scoped" ? "from enabledModels (scoped)" : "all models with configured auth"}`);
 			for (const diagnostic of diagnostics) lines.push(`- ℹ **Pi scoped models:** ${diagnostic}`);
 		} catch (error) {
