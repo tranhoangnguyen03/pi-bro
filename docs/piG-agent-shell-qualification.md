@@ -40,11 +40,12 @@ Values are `inherit` (the default) or `subscription`. An unknown value fails, ra
 [GitHub Actions run 42568585956](https://github.com/tranhoangnguyen03/pi-bro/actions/runs/42568585956) ran on Linux x64 using PiG `0.5.3+1.4.0.74f46864`, Node `24.15.0`, and a downloaded PiG archive with SHA-256 `1e45e5e591a06d087587d5f09d2b6d61673a1e262cb2609e6189defffd5ae7ec`.
 
 - **PASS:** Real host RPC reload cancels an active fake CLI child, awaits teardown and accepts a fresh command. EOF terminates its child without a late result (2/2 host tests).
+- **PASS:** Real PiG 0.5.3 loaded `<agent-home>/.pi/models.json` containing only `study/probe`; Bro's Pi backend issued a real HTTP request to the file's local OpenAI-compatible endpoint using the selected model ID and bearer credential. After editing that file's endpoint and credential, a **new PiG host/session** called only the new endpoint and used its new key (1/1 custom-model test). No external provider was called.
 - **PASS:** In an actual pseudo-terminal, `/bro config` shows Global/Features; `/bro text` opens Simplify and displays a completed fake Agy answer; `/bro remember-me` shows its private memory view; `/bro preferences` opens its editor; `/bro btw` opens its side-question composer and returns a **fresh** backend answer; keyboard input, resize and Esc work.
 - **PASS:** Full Bro CI at the same commit: 572/572 tests in the main job, Node 22/Linux, Node 24/macOS, and legacy PiG 0.3.0 lane.
-- **NOT RUN:** Packaged PiG-Agent application with Bro 0.36.1 pinned; a genuine API endpoint/model answer and actual billing method; two authorized accounts; clipboard transfer; all remaining advanced terminal journeys and hard-exit behavior.
+- **NOT RUN:** Packaged PiG-Agent application with Bro 0.36.1 pinned; a genuine **remote provider** answer and actual billing method; two authorized accounts; clipboard transfer; all remaining advanced terminal journeys and hard-exit behavior. The custom endpoint test uses a local server and does not qualify a paid provider.
 
-These tests load the extension from its source checkout in the **real PiG host**, not from a PiG-Agent installed release. A fake Agy CLI is not a subscription or provider request.
+These tests load the extension from its source checkout in the **real PiG host**, not from a PiG-Agent installed release. A fake Agy CLI is not a subscription or provider request. The custom-model test makes real HTTP requests but only to a local test server; it is not evidence of an external provider's auth or billing.
 
 ## Reproducible acceptance on the *packaged* shell
 
@@ -56,7 +57,7 @@ Build the exact PiG-Agent PR #2 source with the Bro PR head pinned. Install it i
 4. **Accounts:** With an already-authorized host Claude login, run with `CLAUDE_CONFIG_DIR` inherited and then with the shell-selected profile and `PI_BRO_CLAUDE_AUTH_SOURCE=subscription`. Confirm non-secret CLI account/method and actual answer. Repeat Codex with `CODEX_HOME` and `PI_BRO_CODEX_AUTH_SOURCE=subscription`. Test inherited API key collisions, missing/expired login, forced method and parent API env retention. For two distinct authorized accounts, test concurrent A/B routing; otherwise mark the second live account **NOT RUN**.
 5. **Isolation:** New sessions must not inherit another task's transcripts/side questions; an approved general Remember Me lesson stays available in A but not B. Inspect A and B settings, memory, session roots and model sources after concurrent use, reinstall and compatible rollback.
 
-**Fixtures:** `npm test` includes deterministic fake CLI source-routing, conflicting auth, no-fallback and process-stop tests plus host registry model identity. The additional PiG 0.5.3 CI lane runs the real host and terminal with a synthetic Agy backend. Both checks remain distinct from an installed PiG-Agent release and from live subscription evidence.
+**Fixtures:** `npm test` includes deterministic fake CLI source-routing, conflicting auth, no-fallback and process-stop tests plus host registry model identity. The additional PiG 0.5.3 CI lane runs the real host/terminal with a synthetic Agy backend **and** runs Bro's Pi SDK against two real local HTTP model endpoints, confirming model ID, URL, credential and new-host edited-source behavior. Both remain distinct from an installed PiG-Agent release and live subscription evidence.
 
 ## Specific PiG-Agent PR #2 work remaining
 
@@ -72,7 +73,7 @@ Build the exact PiG-Agent PR #2 source with the Bro PR head pinned. Install it i
 | Simplify/config/preferences/BTW/Remember Me, resize/keyboard/Esc | **PASS** | **PASS** (synthetic Agy TUI) | **NOT RUN** | **NOT RUN** |
 | Full scroll/clipboard, Guided Review, Advisor, Elevate, Grill Me, Show, Overthink, Architecture | Unit coverage varies | **NOT RUN** | **NOT RUN** | **NOT RUN** |
 | Reload cancellation and EOF process cleanup | **PASS** | **PASS** (RPC, 2/2) | **NOT RUN** | **NOT RUN** |
-| Host-selected Pi model identity and metadata | **PASS** | **NOT RUN** — actual custom endpoint | **NOT RUN** | **NOT RUN** |
+| Host-selected Pi model identity, endpoint, key and file edits | **PASS** | **PASS** — local HTTP custom model and fresh host | **NOT RUN** | **NOT RUN** |
 | Claude/Codex profile routing, billing-safe subscription choice | **PASS** — fake CLI | **NOT RUN** — real CLI | **NOT RUN** | **NOT RUN** |
 | Two isolated homes, fresh task and approved lesson | **PASS** — memory-root fixture | **NOT RUN** | **NOT RUN** | **NOT RUN** |
 
