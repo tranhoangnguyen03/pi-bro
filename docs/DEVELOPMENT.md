@@ -55,13 +55,15 @@ Production code lives in `src/` and is published as TypeScript source (no build 
 `src/backend.ts`'s `executePi` runs a real `AgentSession` inside this process instead of
 spawning a CLI. It is deliberately isolated from the host session:
 
-- **Model runtime bridge.** The host extension context exposes a `ModelRegistry`, not its owning
-  runtime, so the executor rebuilds `ModelRuntime.create({ authPath, modelsPath })` and copies
-  every host-registered provider (`getRegisteredProviderIds`/`getRegisteredNativeProvider`/
-  `getRegisteredProviderConfig`) plus runtime credentials (`setRuntimeApiKey`) when
-  `getProviderAuthStatus(provider).source === "runtime"`. `setPiHostContext(ctx)` publishes the
-  host registry; `/bro` and the advisor tool call it before any Pi feature runs.
-  `execute(..., host)` may also pass a context explicitly.
+- **Host-effective model bridge.** The host extension context exposes its `ModelRegistry`,
+  not its owning `ModelRuntime`. The Pi SDK requires a runtime for a separate child session;
+  Bro creates one with an inert in-memory credential store and no `models.json` file.
+  Model lookup, auth preflight, provider headers and model streaming delegate to the
+  **same host registry**. Bro never copies host keys or rebuilds provider definitions,
+  so an edit to `models.json` cannot pair a stale endpoint with a newly read key.
+  `setPiHostContext(ctx)` publishes that registry; feature commands and advisor do
+  this before running. Tests exercise A+key A after a same-host file edit and B+key B
+  after a fresh host. PiG-Agent owns model-source selection and installation.
 - **Physical models only.** A `pi-virtual` model routes to another model at request time and cannot
   be driven standalone, so it is rejected before session construction. Stored values are
   `<provider>/<id>`, split on the FIRST `/` only (model IDs may contain slashes).
@@ -95,6 +97,33 @@ spawning a CLI. It is deliberately isolated from the host session:
   waiting for an uncooperative provider, and late progress is suppressed. Aborting a run Bro has
   already returned from is cooperative: it asks the SDK to stop, and a provider or tool that never
   yields may keep working in the background after the outcome is decided.
+
+## Official CLI subscription policy
+
+The reusable [launcher contract](reference/settings.md#launcher-contract-for-cli-authentication)
+is the authority for profile selectors, intent values, child-environment filtering
+and ownership. Any launcher of the Pi-compatible extension can supply it; it is
+not a PiG-specific API. `src/cli-auth.ts` resolves this policy, and `backend.ts`
+shares its execution checks with Doctor. Keep account selection in the launcher
+and login/refresh in the official CLI; do not duplicate this policy in features
+or shell-specific branches.
+
+For Codex, `login status` is insufficient: the active `model_provider`
+can select a separate `env_key` API provider. Bro asks the official Codex
+app-server for its effective `config/read` (including profile/working
+directory). The official 0.165.0 app-server starts online model discovery
+on boot, so the *inspection subprocess only* receives a disposable static
+`model_catalog_json`, preventing catalog `GET` requests to the selected
+model endpoint. Real `codex exec` does not receive this override. The
+effective `model_provider: null` is Codex's normal built-in OpenAI default
+and is accepted; explicit custom providers or endpoint redirects are not.
+Codex strips project-local `model_provider` keys, so raw project TOML is
+not an authority for determining the provider. Bro uses Codex's own merged
+config, then pins that already-validated route for `codex exec`.
+`/bro doctor` calls the same subscription check as execution.
+No TOML parser, credential store, or account-management UI belongs in Bro.
+The real Codex/local HTTP test uses dummy tokens and must observe **no**
+request to a custom API provider. It cannot verify live account billing.
 
 ## Settings
 

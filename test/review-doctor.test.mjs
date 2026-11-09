@@ -102,6 +102,7 @@ const piRegistry = (models) => {
 		getRegisteredNativeProvider: () => undefined,
 		getRegisteredProviderConfig: () => undefined,
 		getAll: () => [...byKey.values()],
+		getAvailable: () => [...byKey.values()].filter((m) => m.auth !== false),
 		getProviderAuthStatus: () => ({ source: "stored" }),
 		getApiKeyForProvider: async () => undefined,
 		find: (provider, id) => byKey.get(`${provider}/${id}`),
@@ -234,29 +235,95 @@ test("Pi catalog honors workspace trust, including a throwing trust getter", asy
 	}
 });
 
-test("Pi doctor uses disk model and auth updates even when the host registry is stale", async () => {
+test("Pi doctor respects host reload: disk auth changes cannot create a model absent from its registry", async () => {
 	const directory = process.env.PI_CODING_AGENT_DIR;
 	const modelsPath = join(directory, "models.json");
 	const authPath = join(directory, "auth.json");
 	const settings = { version: 2, default: { backend: "pi", model: "doctor-disk/fresh", effort: "default" } };
+	const hostModel = { provider: "doctor-disk", id: "fresh", api: "openai-completions",
+		baseUrl: "https://example.invalid/v1", auth: false };
 	await writeFile(modelsPath, JSON.stringify({ providers: {
 		"doctor-disk": { api: "openai-completions", baseUrl: "https://example.invalid/v1", models: [{ id: "fresh" }] },
 	} }));
 	try {
-		const missingAuth = await piDoctor([], settings);
+		const missingAuth = await piDoctor([hostModel], settings);
 		assert.match(missingAuth.report, /- ✗ \*\*Selected model:\*\* .*has no configured auth/);
 		assert.match(missingAuth.report, /- ✗ \*\*Explain:\*\* .*has no configured auth/);
 
 		await writeFile(authPath, JSON.stringify({ "doctor-disk": { type: "api_key", key: "offline-fixture" } }));
-		const { report, calls } = await piDoctor([], settings);
+		// Until the host refreshes models.json, its registry remains authoritative.
+		const stale = await piDoctor([], settings);
+		assert.deepEqual(stale.calls, []);
+		assert.match(stale.report, /- ✗ \*\*Selected model:\*\* .*unavailable or virtual/);
+		assert.match(stale.report, /- ✗ \*\*Explain:\*\* .*unavailable or virtual/);
+		assert.match(stale.report, /- ✓ \*\*Pi model catalog:\*\* 0 physical models/);
+
+		// A host reload makes the same model and now-authenticated source visible.
+		const { report, calls } = await piDoctor([{ ...hostModel, auth: true }], settings);
 		assert.deepEqual(calls, []);
 		assert.match(report, /- ✓ \*\*Pi model catalog:\*\* [1-9]/);
-		assert.match(report, /- ✓ \*\*Selected model:\*\* pi `doctor-disk\/fresh`/);
-		assert.match(report, /- ✓ \*\*Explain:\*\* pi `doctor-disk\/fresh`/);
-		assert.match(report, /- ✓ \*\*Guided review:\*\* pi `doctor-disk\/fresh`/);
+		assert.match(report, /- ✓ \*\*Selected model:\*\* pi \`doctor-disk\/fresh\`/);
+		assert.match(report, /- ✓ \*\*Explain:\*\* pi \`doctor-disk\/fresh\`/);
+		assert.match(report, /- ✓ \*\*Guided review:\*\* pi \`doctor-disk\/fresh\`/);
 		assert.doesNotMatch(report, /✗/);
 	} finally {
 		await rm(modelsPath, { force: true });
 		await rm(authPath, { force: true });
+	}
+});
+
+test("Pi picker follows host model scope even without file enabledModels, ignoring conflicting disk scope", async () => {
+	const directory = process.env.PI_CODING_AGENT_DIR;
+	const settingsPath = join(directory, "settings.json");
+	const hostOnly = { provider: "host", id: "selected", name: "Host selected", api: "openai-completions" };
+	const diskOnly = { provider: "disk", id: "other", name: "Disk other", api: "openai-completions" };
+	const registry = piRegistry([hostOnly, diskOnly]);
+	const ctx = { cwd: directory, modelRegistry: registry,
+		scopedModels: [{ model: hostOnly, thinkingLevel: "high" }] };
+	try {
+		await rm(settingsPath, { force: true });
+		const launched = await doctor.listPiModels(ctx);
+		assert.equal(launched.scope, "scoped", "launch-time scope must apply without enabledModels");
+		assert.deepEqual(launched.models.map(m => m.value), ["host/selected"]);
+		assert.deepEqual(launched.diagnostics, []);
+
+		await writeFile(settingsPath, JSON.stringify({ enabledModels: ["disk/other"] }));
+		const conflicting = await doctor.listPiModels(ctx);
+		assert.deepEqual(conflicting.models.map(m => m.value), ["host/selected"],
+			"host scope outranks separately read file patterns");
+		assert.deepEqual(conflicting.diagnostics, [],
+			"file-only matches must not be reported as host-scope diagnostics");
+
+		const staleScoped = await doctor.listPiModels({
+			cwd: directory, modelRegistry: piRegistry([hostOnly]),
+			scopedModels: [{ model: diskOnly }],
+		});
+		assert.equal(staleScoped.scope, "scoped");
+		assert.deepEqual(staleScoped.models, [],
+			"removed host-scoped models must not become selectable or trigger unscoped fallback");
+		assert.match(staleScoped.diagnostics.join(" "), /no longer available/);
+	} finally {
+		await rm(settingsPath, { force: true });
+	}
+});
+
+test("Pi picker distinguishes unscoped models from an explicitly empty host scope", async () => {
+	const directory = process.env.PI_CODING_AGENT_DIR;
+	const settingsPath = join(directory, "settings.json");
+	const model = { provider: "host", id: "available", api: "openai-completions" };
+	const registry = piRegistry([model]);
+	try {
+		await rm(settingsPath, { force: true });
+		const all = await doctor.listPiModels({ cwd: directory, modelRegistry: registry, scopedModels: [] });
+		assert.equal(all.scope, "available");
+		assert.deepEqual(all.models.map(m => m.value), ["host/available"]);
+
+		await writeFile(settingsPath, JSON.stringify({ enabledModels: ["host/available"] }));
+		const empty = await doctor.listPiModels({ cwd: directory, modelRegistry: registry, scopedModels: [] });
+		assert.equal(empty.scope, "scoped");
+		assert.deepEqual(empty.models, [], "empty host scope must never fall back to available models");
+		assert.match(empty.diagnostics.join(" "), /active host has no scoped models/);
+	} finally {
+		await rm(settingsPath, { force: true });
 	}
 });

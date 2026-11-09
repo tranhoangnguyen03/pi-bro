@@ -1,5 +1,7 @@
 # PiG compatibility
 
+> PiG-Agent **0.5.3 shell qualification** is separate from the historical 0.3.0 lane here. See [shell acceptance, exact pins and remaining real-host checks](piG-agent-shell-qualification.md). Bro 0.36.1 reuses the host model registry and honors explicit official CLI subscription selection; it does not create its own model-source/account store.
+
 Bro uses one TypeScript package on Pi and Pi-in-Go (PiG). PiG runs Bro in a Node subprocess; it is not a Go port or a fused native extension.
 
 ## Target and installation

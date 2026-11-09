@@ -16,7 +16,8 @@ import {
 	readAdvisorSteering,
 	resolveAdvisorState,
 } from "./advisor.ts";
-import { agyFailureMessage, bridgePiRuntimeForCatalog, piEffectiveEffort, reviewBackendNotice, splitPiModel } from "./backend.ts";
+import { agyFailureMessage, bridgePiRuntimeForCatalog, piEffectiveEffort, reviewBackendNotice, splitPiModel, verifyCliSubscription } from "./backend.ts";
+import { resolveCliChildAuth } from "./cli-auth.ts";
 import { createConfigModal } from "./config-ui.ts";
 import { createConfigNavigationModal } from "./config-navigation-ui.ts";
 import { type ConfigNavAction, type ConfigNavState } from "./config-navigation.ts";
@@ -124,16 +125,47 @@ export async function listPiModels(
 	if (signal?.aborted) throw new Error("Canceled.");
 
 	const patterns = settingsManager.getEnabledModels() ?? [];
-	if (patterns.length) {
-		const resolved = await resolveModelScopeWithDiagnostics(patterns, modelRuntime);
-		const diagnostics = resolved.diagnostics.map((entry) => entry.message);
-		// A configured scope is authoritative even when it resolves to nothing: silently substituting
-		// every authenticated model would offer choices the user never scoped in, and would hide the
-		// diagnostics that explain why. The caller shows them.
-		return { models: toPiModelChoices(resolved.scopedModels), scope: "scoped", diagnostics, modelRuntime };
+	const hostScoped = ctx.scopedModels;
+	// The host has already resolved --models / enabledModels. A nonempty host
+	// scope wins even if the on-disk patterns disagree or do not exist.
+	if (hostScoped?.length) {
+		const effective = hostScoped.flatMap(({ model, thinkingLevel }) => {
+			const selected = ctx.modelRegistry.find(model.provider, model.id);
+			return selected && ctx.modelRegistry.hasConfiguredAuth(selected)
+				? [{ model: selected, thinkingLevel }] : [];
+		});
+		return {
+			models: toPiModelChoices(effective),
+			scope: "scoped",
+			diagnostics: effective.length < hostScoped.length
+				? ["A model in the active host scope is no longer available or authenticated. Refresh the host selection."] : [],
+			modelRuntime,
+		};
 	}
-
-	const available = modelRuntime.getAvailableSnapshot().map((model) => ({ model }));
+	if (patterns.length) {
+		if (hostScoped !== undefined) {
+			// The host explicitly reports an empty resolved scope. Never turn it
+			// into an unscoped picker, or recompute options from newer disk files.
+			return {
+				models: [], scope: "scoped",
+				diagnostics: ["The active host has no scoped models. Check its --models / enabledModels selection; reload the host after editing settings."],
+				modelRuntime,
+			};
+		}
+		// Old test hosts without scopedModels can still resolve file patterns;
+		// use only the host-backed catalog for both choices and diagnostics.
+		const resolved = await resolveModelScopeWithDiagnostics(patterns, modelRuntime);
+		return {
+			models: toPiModelChoices(resolved.scopedModels),
+			scope: "scoped",
+			diagnostics: resolved.diagnostics.map((entry) => entry.message),
+			modelRuntime,
+		};
+	}
+	// SDK documents [] as "no scope" when there are no enabledModels.
+	// The API cannot distinguish this from a failed CLI --models scope that
+	// resolved to [], since it does not expose the CLI source patterns.
+	const available = ctx.modelRegistry.getAvailable().map((model) => ({ model }));
 	return { models: toPiModelChoices(available), scope: "available", diagnostics: [], modelRuntime };
 }
 
@@ -195,6 +227,12 @@ async function checkCliVersion(pi: ExtensionAPI, binary: string, displayName: st
 // Auth status only: a version/auth answer without a model request. A passing answer here
 // says the CLI starts and reports signed-in state -- it does not imply connectivity.
 async function checkClaudeAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+	const auth = resolveCliChildAuth("claude");
+	if (auth.subscription) {
+		const outcome = await verifyCliSubscription("claude", auth.env, signal, 5_000, 15_000);
+		if (outcome) throw new Error("message" in outcome ? outcome.message : "Unexpected subscription preflight outcome");
+		return "subscription login verified (not a model request or account identity check)";
+	}
 	const result = await probeCli(pi, "claude", ["auth", "status"], signal, 15_000);
 	if (result.killed || result.code !== 0) {
 		const detail = result.stderr.trim() || result.stdout.trim();
@@ -208,7 +246,13 @@ async function checkClaudeAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<s
 
 // Auth status only: a version/auth answer without a model request. A passing answer here
 // says the CLI starts and reports signed-in state -- it does not imply connectivity.
-async function checkCodexAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+async function checkCodexAuth(pi: ExtensionAPI, signal: AbortSignal, cwd: string): Promise<string> {
+	const auth = resolveCliChildAuth("codex");
+	if (auth.subscription) {
+		const outcome = await verifyCliSubscription("codex", auth.env, signal, 5_000, 15_000, cwd);
+		if (outcome) throw new Error("message" in outcome ? outcome.message : "Unexpected subscription preflight outcome");
+		return "ChatGPT login and built-in OpenAI provider route verified (not a model request or billing proof)";
+	}
 	const result = await probeCli(pi, "codex", ["login", "status"], signal, 15_000);
 	if (result.killed || result.code !== 0) {
 		const detail = result.stderr.trim() || result.stdout.trim();
@@ -235,13 +279,12 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 	let settings: BroSettings | undefined;
 	let models: AgyModelFamily[] | undefined;
 	let agyVersion: string | undefined;
-	let piRuntime: Awaited<ReturnType<typeof bridgePiRuntimeForCatalog>> | undefined;
 	const findPiModel = (provider: string, id: string) => {
-		const model = piRuntime?.getModel(provider, id) ?? ctx.modelRegistry.find(provider, id);
+		const model = ctx.modelRegistry.find(provider, id);
 		return model?.api === "pi-virtual" ? undefined : model;
 	};
 	const hasPiAuth = (model: NonNullable<ReturnType<typeof findPiModel>>) =>
-		piRuntime?.hasConfiguredAuth(model.provider) || ctx.modelRegistry.hasConfiguredAuth(model);
+		ctx.modelRegistry.hasConfiguredAuth(model);
 	const pass = (name: string, detail: string) => lines.push(`- ✓ **${name}:** ${detail}`);
 	const fail = (name: string, error: unknown) => {
 		failed = true;
@@ -318,7 +361,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 		}
 		if (backend === "claude" || backend === "codex") {
 			try {
-				pass(`${label} auth`, await (backend === "claude" ? checkClaudeAuth(pi, signal) : checkCodexAuth(pi, signal)));
+				pass(`${label} auth`, await (backend === "claude" ? checkClaudeAuth(pi, signal) : checkCodexAuth(pi, signal, ctx.cwd)));
 			} catch (error) {
 				if (signal.aborted) throw error;
 				fail(`${label} auth`, error);
@@ -328,13 +371,12 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 		}
 	}
 
-	// Pi is in-process: validate the selected physical model against the bridged runtime without a
+	// Pi is in-process: validate the host-selected physical model without a
 	// CLI spawn or a live model turn. A passing answer means the model resolves and has configured
 	// auth; it is not a connectivity test.
 	if (piInUse) {
 		try {
-			const { models: piModels, scope, diagnostics, modelRuntime } = await listPiModels(ctx, signal);
-			piRuntime = modelRuntime;
+			const { models: piModels, scope, diagnostics } = await listPiModels(ctx, signal);
 			pass("Pi model catalog", `${piModels.length} physical model${piModels.length === 1 ? "" : "s"} selectable · ${scope === "scoped" ? "from enabledModels (scoped)" : "all models with configured auth"}`);
 			for (const diagnostic of diagnostics) lines.push(`- ℹ **Pi scoped models:** ${diagnostic}`);
 		} catch (error) {

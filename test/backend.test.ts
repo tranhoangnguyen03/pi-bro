@@ -139,7 +139,7 @@ test("pi dispatch rejects a virtual model before session construction", async ()
 		new AbortController().signal,
 	);
 	assert.equal(outcome.status, "failure");
-	assert.match((outcome as { message: string }).message, /not in your Pi model catalog/);
+	assert.match((outcome as { message: string }).message, /host model registry is unavailable/);
 });
 
 // Offline Pi harness: a fake host registry + a fake createAgentSession, so the adapter's real setup,
@@ -1335,9 +1335,9 @@ test("pi re-issues abort when a stop is latched during prompt preflight", async 
 	assert.ok(aborts >= 2, `abort must be re-issued at preflight (saw ${aborts})`);
 });
 
-test("pi catalog bridge copies runtime keys for providers that are only in the model catalog", async () => {
-	// getRegisteredProviderIds() lists extension registrations only, so a runtime key set on a built-in
-	// provider (Pi's own --api-key) must be found through the model catalog instead.
+test("pi catalog bridge resolves runtime credentials from the host without copying keys", async () => {
+	// A runtime key set on a built-in provider (Pi's --api-key) belongs to the host.
+	// Bro must resolve it through the host, not copy it into another credential store.
 	const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
 	const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
 	const { join } = await import("node:path");
@@ -1350,29 +1350,41 @@ test("pi catalog bridge copies runtime keys for providers that are only in the m
 		{ modelRegistry: new (await import("@earendil-works/pi-coding-agent")).ModelRegistry(hostRuntime) } as never,
 		agentDir,
 	);
-	assert.equal(catalogRuntime.getProviderAuthStatus(provider).source, "runtime", "the runtime key must be carried across");
+	assert.equal(catalogRuntime.getProviderAuthStatus(provider).source, "runtime", "the host status must remain authoritative");
+	assert.equal((await catalogRuntime.getAuth(provider))?.auth.apiKey, "sk-fixture-runtime-key",
+		"the selected credential comes from the host-effective runtime");
 });
 
-test("pi bounds runtime preparation by the deadline", async () => {
-	// Credential preparation is real I/O and sits inside the latch: a slow lookup must not extend the
-	// deadline. (A never-resolving lookup would only let the process exit, since the timer is unref'd.)
+test("pi bounds host-effective credential preflight by the deadline", async () => {
+	// The SDK may await an auth preflight before creating a session. A slow host
+	// provider resolver must not start a paid turn after its deadline.
 	const baseRegistry = fakePiHost([PI_MODEL]).modelRegistry as unknown as Record<string, unknown>;
 	const slowHost = {
 		modelRegistry: {
 			...baseRegistry,
-			getProviderAuthStatus: () => ({ source: "runtime" }),
-			getApiKeyForProvider: () => new Promise((r) => setTimeout(() => r("sk-late"), 5_000)),
+			getProviderAuth: () => new Promise((resolve) => setTimeout(() => resolve({
+				auth: { apiKey: "sk-late" }, source: "runtime",
+			}), 5_000)),
 		},
 		scopedModels: [],
 	} as unknown as PiHostContext;
+	let prompted = false;
 	const started = Date.now();
 	const outcome = await execute(
 		piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
-		{ deadlineMs: 40 },
+		{
+			deadlineMs: 40,
+			piCreateSession: (async (opts: { modelRuntime: { getAuth: (model: unknown) => Promise<unknown> }; model: unknown }) => {
+				await opts.modelRuntime.getAuth(opts.model);
+				prompted = true;
+				return { session: fakeSession({ text: "should not be sent" }).session };
+			}) as never,
+		},
 		slowHost,
 	);
-	assert.equal(outcome.status, "timeout", "a slow credential lookup must be bounded by the deadline");
-	assert.ok(Date.now() - started < 2_000, "preparation must not hold the caller past the deadline");
+	assert.equal(outcome.status, "timeout", "slow host-effective auth must be bounded by the deadline");
+	assert.equal(prompted, false, "the SDK child cannot continue to a paid prompt after timeout");
+	assert.ok(Date.now() - started < 2_000, "auth preflight must not hold the caller beyond its deadline");
 });
 
 test("pi turns a throwing host registry into a failure outcome, not a rejection", async () => {
@@ -1499,4 +1511,27 @@ test("pi preserves workspace trust for system prompt discovery after settings re
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 		await rm(directory, { recursive: true, force: true });
 	}
+});
+
+test("Pi dispatch uses the exact host model, including endpoint overrides, with no catalog fallback", async () => {
+  const hostModel = { ...PI_MODEL, name: "Agent-local custom model", baseUrl: "https://agent-local.invalid/v1", contextWindow: 77777 };
+  const session = fakeSession({ text: "host model dispatched" });
+  let selected: unknown;
+  const outcome = await execute(
+    piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
+    { piCreateSession: (async (options: { model: unknown }) => { selected = options.model; return { session: session.session }; }) as never },
+    fakePiHost([hostModel]),
+  );
+  assert.equal(outcome.status, "success");
+  assert.strictEqual(selected, hostModel, "model identity, baseUrl, API and metadata must come from host registry");
+
+  let started = false;
+  const unknown = await execute(
+    piRequest(), { backend: "pi", model: "test-provider/test-model" }, new AbortController().signal, undefined,
+    { piCreateSession: (async () => { started = true; return { session: session.session }; }) as never },
+    fakePiHost([]),
+  );
+  assert.equal(unknown.status, "failure");
+  assert.match(unknown.status === "failure" ? unknown.message : "", /not in your Pi model catalog/);
+  assert.equal(started, false, "host rejection must never start the model request");
 });

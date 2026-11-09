@@ -2,6 +2,22 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.36.1] - 2026-11-09
+
+### Fixed
+
+- Make the Pi child use the same host-effective registry for model metadata, provider authentication, endpoint and streaming. Do not pair a stale host endpoint with a credential reread from an edited models.json. A same-host edit keeps A+key A; a new host uses B+key B.
+- Give host-supplied model scopes priority over disk patterns in the picker; keep an empty resolved host scope empty, reject unavailable scoped models and avoid diagnostics calculated from a different source. An SDK empty scope with no file patterns cannot reveal an unmatched CLI flag until the host exposes scope provenance.
+- Allow PiG-Agent to select each official Claude Code or Codex CLI subscription through existing `CLAUDE_CONFIG_DIR`/`CODEX_HOME`; filter conflicting API credentials in that child alone, check the reported login method before execution, and keep the normal parent account untouched. No new account store.
+- Add profile-routing, no-API-fallback, host-model, and two-home memory fixtures while retaining the newer real-host cleanup and session-restore behavior from 0.32–0.36.
+
+- For explicit Codex subscription access, inspect the official effective provider config. Accept Codex 0.165.0's implicit OpenAI default (`model_provider: null`), preserve its profile/project precedence, and reject custom API-key providers or endpoint redirects. The inspection app-server gets a temporary local model catalog to avoid startup network discovery; the actual Codex request does not. Doctor runs the same checks and cannot certify a rejected setup.
+- Publish the PiG shell qualification report in the npm package; CI checks `npm pack --dry-run` contents. Replace obsolete development docs about rebuilding host model/auth catalogs.
+
+### Qualification
+
+- Reconciled against pi-bro 0.36.0. Fixture success is not proof of PiG-Agent 0.5.3 interactive TUI or live account use. See `docs/piG-agent-shell-qualification.md`.
+
 ## [0.36.0] - 2026-11-09
 
 ### Added

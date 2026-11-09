@@ -2,6 +2,7 @@ import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { codexSubscriptionRouteProblem, isSubscriptionStatus, resolveCliChildAuth, type CliAuthBackend } from "./cli-auth.ts";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
@@ -595,6 +596,176 @@ async function executeAdvisorStdin(
 	return { status: "success", text };
 }
 
+/**
+ * Ask the official Codex app-server for the effective provider configuration.
+ * This is the same Codex CLI, CODEX_HOME, and working directory used for exec.
+ * A login status alone cannot detect custom provider env_key API billing.
+ *
+ * Inspection never makes a model request. Missing, unreadable or unsupported
+ * app-server/config/read support fails closed when subscription is explicit.
+ */
+// Codex 0.165.0 app-server starts an online catalog refresh on boot,
+// even if the only client method is config/read. Supply a disposable static
+// catalog for this *inspection process only* so the refresh worker cannot
+// contact a configured provider. The override does NOT select a provider,
+// change account credentials, or go into the real codex exec arguments.
+// The provider is still read from Codex's effective config for the same cwd.
+const CODEX_INSPECTION_CATALOG = {
+  models: [{
+    slug: "bro-config-inspection-only",
+    display_name: "Bro configuration inspection only",
+    description: "Local offline catalog; never used for inference",
+    base_instructions: "Local configuration inspection only; never used for inference.",
+    default_reasoning_level: "medium",
+    supported_reasoning_levels: [{ effort: "medium", description: "medium" }],
+    shell_type: "shell_command",
+    visibility: "none",
+    supported_in_api: true,
+    priority: 0,
+    support_verbosity: false,
+    default_verbosity: null,
+    apply_patch_tool_type: null,
+    truncation_policy: { mode: "bytes", limit: 10_000 },
+    experimental_supported_tools: [],
+  }],
+};
+
+async function inspectCodexSubscriptionRoute(
+  env: NodeJS.ProcessEnv, cwd: string | undefined, signal: AbortSignal,
+  deadlineMs: number, killEscalationMs: number,
+): Promise<BackendOutcome | undefined> {
+  if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+  const probeDir = await mkdtemp(join(tmpdir(), "pi-bro-codex-inspect-"));
+  try {
+  const catalogPath = join(probeDir, "catalog.json");
+  await writeFile(catalogPath, JSON.stringify(CODEX_INSPECTION_CATALOG), { mode: 0o600 });
+  if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+  const { child, attempt, diagnostics } = startCliAttempt(
+    "codex", ["-c", `model_catalog_json=${JSON.stringify(catalogPath)}`, "app-server"],
+    { env, cwd, stdio: ["pipe", "pipe", "pipe"] },
+    signal, Math.min(deadlineMs, 15_000), killEscalationMs,
+  );
+  let buffer = "";
+  let decided = false;
+  let finish: (problem: string | undefined) => void = () => {};
+  const decision = new Promise<string | undefined>(resolve => { finish = resolve; });
+  const settle = (problem: string | undefined) => {
+    if (decided) return;
+    decided = true;
+    finish(problem);
+  };
+  const send = (value: object) => {
+    if (decided || attempt.causeOf()) return;
+    try { child.stdin?.write(JSON.stringify(value) + "\n"); }
+    catch { settle("Codex app-server could not accept the configuration query"); }
+  };
+  // An app-server may close its input pipe while its buffered response is
+  // still readable. The close race below decides whether the query succeeded.
+  child.stdin?.on("error", () => {});
+  child.stdout?.setEncoding("utf8");
+  child.stdout?.on("data", (chunk: string) => {
+    if (decided || attempt.causeOf()) return;
+    buffer += chunk;
+    if (buffer.length > 2_000_000) { settle("Codex returned an oversized configuration response"); return; }
+    for (;;) {
+      const index = buffer.indexOf("\n");
+      if (index < 0) break;
+      const line = buffer.slice(0, index);
+      buffer = buffer.slice(index + 1);
+      if (!line.trim()) continue;
+      let message: Record<string, unknown>;
+      try {
+        message = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        settle("Codex app-server returned invalid JSON");
+        return;
+      }
+      if (message.id === 0) {
+        if (!message.result || message.error) {
+          settle("Codex app-server initialization failed");
+          return;
+        }
+        send({ method: "initialized", params: {} });
+        send({ method: "config/read", id: 1, params: { includeLayers: false, ...(cwd ? { cwd } : {}) } });
+      } else if (message.id === 1) {
+        if (message.error || !message.result || typeof message.result !== "object") {
+          settle("Codex app-server did not support config/read for this account/profile");
+          return;
+        }
+        const config = (message.result as { config?: unknown }).config;
+        settle(codexSubscriptionRouteProblem(config));
+        return;
+      }
+    }
+  });
+  send({ method: "initialize", id: 0,
+    params: { clientInfo: { name: "pi_bro", title: "Pi Bro", version: "0.36.1" } } });
+  const result = await Promise.race([
+    decision.then(problem => ({ kind: "decision" as const, problem })),
+    attempt.closed.then(() => ({ kind: "closed" as const })),
+  ]);
+  // The probe is not a long-running provider connection.
+  if (!attempt.causeOf()) attempt.stop("protocol");
+  await attempt.closed;
+  attempt.dispose();
+  if (signal.aborted || attempt.causeOf() === "cancelled")
+    return { status: "cancelled", message: "Canceled." };
+  if (attempt.causeOf() === "timeout")
+    return { status: "timeout", message: "Codex effective subscription configuration check timed out." };
+  const problem = result.kind === "decision"
+    ? result.problem
+    : diagnostics.processError
+      ? "Codex app-server could not start"
+      : "Codex app-server closed without returning the effective configuration" +
+        (diagnostics.stderr.trim() ? ": " + diagnostics.stderr.trim().slice(0, 700) : "");
+  return problem
+    ? { status: "failure", message: "Codex subscription selection is not safe: " + problem +
+        ". No Codex model execution was started; the inspection uses a temporary local catalog to suppress ordinary model discovery. Use a subscription-compatible CODEX_HOME profile or select inherited/API authentication explicitly." }
+    : undefined;
+  } finally {
+    await rm(probeDir, { recursive: true, force: true });
+  }
+}
+
+// Only a deliberate subscription choice gets an auth-method preflight.
+// CLI status is not proof of account identity or a paid model call.
+export async function verifyCliSubscription(
+  backend: CliAuthBackend,
+  env: NodeJS.ProcessEnv,
+  signal: AbortSignal,
+  killEscalationMs: number,
+  deadlineMs: number,
+  cwd?: string,
+): Promise<BackendOutcome | undefined> {
+  if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+  const label = backend === "claude" ? "Claude Code" : "Codex";
+  const args = backend === "claude" ? ["auth", "status"] : ["login", "status"];
+  const { child, attempt, diagnostics } = startCliAttempt(backend, args,
+    { env, stdio: ["ignore", "pipe", "pipe"] },
+    signal, Math.min(deadlineMs, 15_000), killEscalationMs);
+  let stdout = "";
+  child.stdout?.on("data", (chunk: Buffer) => {
+    stdout = (stdout + chunk.toString()).slice(0, 32_768);
+  });
+  const { code, exitSignal } = await attempt.closed;
+  attempt.dispose();
+  if (attempt.causeOf() === "cancelled") return { status: "cancelled", message: "Canceled." };
+  if (attempt.causeOf() === "timeout") return { status: "timeout", message: label + " subscription login check timed out." };
+  if (diagnostics.processError)
+    return { status: "failure", message: processStartMessage(diagnostics.processError as NodeJS.ErrnoException, label) };
+  const status = backend === "codex" ? stdout + "\n" + diagnostics.stderr : stdout;
+  if (code !== 0 || exitSignal || !isSubscriptionStatus(backend, status)) {
+    const command = backend === "claude" ? "claude auth status" : "codex login status";
+    const profile = backend === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
+    return { status: "failure", message: label +
+      " did not confirm subscription login in the selected profile. Run `" + command +
+      "` with that " + profile + " and sign in to the intended subscription; Bro will not switch to API billing." };
+  }
+  return backend === "codex"
+    ? inspectCodexSubscriptionRoute(env, cwd, signal, deadlineMs, killEscalationMs)
+    : undefined;
+}
+
 type ClaudeEvent = {
 	type?: unknown;
 	subtype?: unknown;
@@ -638,6 +809,14 @@ async function executeClaude(
 	}
 
 	try {
+		let auth: ReturnType<typeof resolveCliChildAuth>;
+		try { auth = resolveCliChildAuth("claude"); }
+		catch (error) { return { status: "failure", message: errorMessage(error) }; }
+		if (auth.subscription) {
+			const check = await verifyCliSubscription("claude", auth.env, signal, killEscalationMs, deadlineMs);
+			if (check) return check;
+		}
+		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const { child, attempt, diagnostics } = startCliAttempt("claude",
 			[
 				"-p",
@@ -660,7 +839,7 @@ async function executeClaude(
 			],
 			{
 				cwd: runDirectory ?? request.cwd,
-				stdio: ["pipe", "pipe", "pipe"] }, signal, deadlineMs, killEscalationMs);
+				stdio: ["pipe", "pipe", "pipe"], env: auth.env }, signal, deadlineMs, killEscalationMs);
 
 		let partial = "";
 		let final: string | undefined;
@@ -1013,10 +1192,19 @@ async function executeCodex(
 	}
 
 	try {
+		let auth: ReturnType<typeof resolveCliChildAuth>;
+		try { auth = resolveCliChildAuth("codex"); }
+		catch (error) { return { status: "failure", message: errorMessage(error) }; }
+		if (auth.subscription) {
+			const check = await verifyCliSubscription("codex", auth.env, signal, killEscalationMs, deadlineMs, runDirectory ?? request.cwd);
+			if (check) return check;
+		}
+		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
 		const permissionArgs = full ? ["--dangerously-bypass-approvals-and-sandbox"] : ["--sandbox", "read-only"];
 		const resume = isBtw && request.continuation;
 		const args = [
 			"exec",
+			...(auth.subscription ? ["-c", 'forced_login_method="chatgpt"', "-c", 'model_provider="openai"'] : []),
 			...permissionArgs,
 			...(resume ? ["resume"] : []),
 			"--json",
@@ -1030,7 +1218,7 @@ async function executeCodex(
 
 		const { child, attempt, diagnostics } = startCliAttempt("codex", args, {
 			cwd: runDirectory ?? request.cwd,
-			stdio: ["pipe", "pipe", "pipe"] }, signal, deadlineMs, killEscalationMs);
+			stdio: ["pipe", "pipe", "pipe"], env: auth.env }, signal, deadlineMs, killEscalationMs);
 
 		let partial = "";
 		let threadId: string | undefined;
@@ -1431,63 +1619,67 @@ function piAssistantText(message: { content?: unknown }): string {
 		.trim();
 }
 
-/** Copies every host-registered provider and runtime key into a fresh runtime. */
-async function bridgePiModelRuntime(host: PiHostContext | undefined, agentDir: string): Promise<ModelRuntime> {
-	const modelRuntime = await ModelRuntime.create({
-		authPath: join(agentDir, "auth.json"),
-		modelsPath: join(agentDir, "models.json"),
+/**
+ * The Pi SDK asks for a ModelRuntime even when its physical model is explicit.
+ * Bind every auth/model/stream read to the host's existing registry instead of
+ * rebuilding a second provider from models.json. In particular, an on-disk edit
+ * must never combine a host-old endpoint with a freshly read API key.
+ *
+ * The SDK runtime here only supplies agent/session mechanics; it does not own
+ * credentials, source selection or refresh. No models.json is read by this child.
+ */
+async function bridgePiModelRuntime(host: PiHostContext | undefined, _agentDir: string): Promise<ModelRuntime> {
+	const registry = host?.modelRegistry;
+	if (!registry) throw new Error("The Pi host model registry is unavailable; reopen Bro from a live Pi session.");
+	// The SDK requires a ModelRuntime, but it must not read an independent auth.json
+	// or models.json. All real auth and model calls below delegate to the host.
+	const credentials = {
+		read: async () => undefined,
+		list: async () => [],
+		modify: async (): Promise<never> => { throw new Error("The Pi host owns credential writes."); },
+		delete: async (): Promise<never> => { throw new Error("The Pi host owns credential deletion."); },
+	};
+	const runtime = await ModelRuntime.create({
+		credentials,
+		modelsPath: null,
+		refreshOnCreate: false,
 	});
-	const registry = host?.modelRegistry;
-	if (registry) {
-		for (const id of registry.getRegisteredProviderIds()) {
-			const native = registry.getRegisteredNativeProvider(id);
-			if (native) modelRuntime.registerNativeProvider(native);
-			const config = registry.getRegisteredProviderConfig(id);
-			if (config) modelRuntime.registerProvider(id, config);
-		}
-	}
-	return modelRuntime;
-}
-
-// Copying only the key for the selected provider is enough for a run, but not for listing what the
-// host can authenticate: a catalog built without runtime keys offers the user fewer models than
-// execution can actually use. Copy every runtime key the host holds.
-//
-// The provider list must come from the host's model catalog, not getRegisteredProviderIds(): that
-// method lists only extension-registered providers, so a runtime key set on a built-in provider
-// (for example Pi's own `--api-key`) would be missed and its models would vanish from `/bro config`.
-async function copyAllRuntimeCredentials(host: PiHostContext | undefined, runtime: ModelRuntime): Promise<void> {
-	const registry = host?.modelRegistry;
-	if (!registry) return;
-	const providerIds = new Set(registry.getRegisteredProviderIds());
-	// getAll() may be absent on a partial host stub; the extension list above still applies.
-	for (const model of registry.getAll?.() ?? []) providerIds.add(model.provider);
-	for (const providerId of providerIds) {
-		if (registry.getProviderAuthStatus(providerId).source !== "runtime") continue;
-		const key = await registry.getApiKeyForProvider(providerId);
-		if (key) await runtime.setRuntimeApiKey(providerId, key);
-	}
-}
-
-// The runtime a Pi request or catalog read runs against: the host's registrations plus its runtime
-// credentials. Both the executor and `/bro doctor`/`/bro config` go through here so they can never
-// disagree about which models exist.
-export async function bridgePiRuntimeForCatalog(host: PiHostContext | undefined, agentDir: string): Promise<ModelRuntime> {
-	const runtime = await bridgePiModelRuntime(host, agentDir);
-	await copyAllRuntimeCredentials(host, runtime);
+	const models = (provider?: string) => registry.getAll().filter((m) => !provider || m.provider === provider);
+	const available = (provider?: string) => registry.getAvailable().filter((m) => !provider || m.provider === provider);
+	// Use the same registry for the SDK's preflight, model lookup and final stream.
+	// Resolving auth from provider alone is intentional: ModelRegistry.getProviderAuth()
+	// is the public host API, and its underlying runtime still applies model-specific
+	// headers and request overrides inside streamSimple().
+	Object.assign(runtime, {
+		getModel: (provider: string, id: string) => registry.find(provider, id),
+		getModels: models,
+		getAllModels: models,
+		getAvailableSnapshot: () => available(),
+		getAvailable: async (provider?: string) => available(provider),
+		getProvider: (provider: string) => registry.getProvider(provider),
+		getProviderAuthStatus: (provider: string) => registry.getProviderAuthStatus(provider),
+		getAuth: async (modelOrProvider: string | { provider: string }) =>
+			registry.getProviderAuth(typeof modelOrProvider === "string" ? modelOrProvider : modelOrProvider.provider),
+		hasConfiguredAuth: (provider: string) => models(provider).some((model) => registry.hasConfiguredAuth(model)),
+		checkAuth: async (provider: string) =>
+			(await registry.getProviderAuth(provider)) ? { type: "api_key", source: "host registry" } : undefined,
+		isUsingOAuth: (provider: string) => models(provider).some((model) => registry.isUsingOAuth(model)),
+		streamSimple: (
+			model: Parameters<ModelRuntime["streamSimple"]>[0],
+			context: Parameters<ModelRuntime["streamSimple"]>[1],
+			options: Parameters<ModelRuntime["streamSimple"]>[2],
+		) => {
+			// Neither another runtime nor child options may override the host's auth.
+			const { apiKey: _key, env: _env, ...rest } = options ?? {};
+			return registry.streamSimple(model, context, rest);
+		},
+	});
 	return runtime;
 }
 
-async function copyRuntimeCredentials(
-	host: PiHostContext | undefined,
-	runtime: ModelRuntime,
-	providerId: string,
-): Promise<void> {
-	const registry = host?.modelRegistry;
-	if (!registry) return;
-	if (registry.getProviderAuthStatus(providerId).source !== "runtime") return;
-	const key = await registry.getApiKeyForProvider(providerId);
-	if (key) await runtime.setRuntimeApiKey(providerId, key);
+/** The picker and the executor use this same host-backed model/auth view. */
+export async function bridgePiRuntimeForCatalog(host: PiHostContext | undefined, agentDir: string): Promise<ModelRuntime> {
+	return bridgePiModelRuntime(host, agentDir);
 }
 
 async function executePi(
@@ -1557,16 +1749,15 @@ async function executePi(
 		// or throwing host credential lookup becomes an ordinary outcome rather than a rejection.
 		const modelRuntime = await Promise.race([bridgePiModelRuntime(host, agentDir), stopped.then(() => undefined)]);
 		if (!modelRuntime) return latchedOutcome();
-		// Fall back to the host registry, which may know a model the rebuilt runtime does not.
-		const model = modelRuntime.getModel(parts.providerId, parts.modelId) ?? host?.modelRegistry?.find(parts.providerId, parts.modelId);
+		// Use the effective host model for its exact identity, endpoint and metadata.
+		// The SDK child uses the same host model, auth resolver and streaming transport.
+		const model = host?.modelRegistry?.find(parts.providerId, parts.modelId);
 		if (!model) {
 			return { status: "failure", message: piErrorMessage(request.feature, `model \`${selection.model}\` is not in your Pi model catalog. Run \`/bro doctor\`.`) };
 		}
 		if ((model as { api?: string }).api === "pi-virtual") {
 			return { status: "failure", message: piErrorMessage(request.feature, `\`${selection.model}\` is a virtual model; choose a physical model in \`/bro config\`.`) };
 		}
-		await Promise.race([copyRuntimeCredentials(host, modelRuntime, parts.providerId), stopped]);
-		if (stopCause) return latchedOutcome();
 
 		// Guided Review runs on an untrusted PR checkout, so its `.pi/settings.json` must never be merged.
 		// Elsewhere the host's own trust decision decides: a repo the user declined to trust must not get

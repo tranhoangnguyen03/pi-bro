@@ -25,3 +25,32 @@ jobs:
           tar -xzf pig-0.3.0-linux-amd64.tar.gz
           echo "PIG_BIN=$RUNNER_TEMP/pig-release/pig-0.3.0-linux-amd64/pig" >> "$GITHUB_ENV"
       - run: sh test/pig-test.sh
+
+  pig-shell-host:
+    # Bro's real Pi RPC tests also run in the independent shell's pinned PiG host.
+    # This is a host-lifecycle check; it does not claim terminal modal or live account coverage.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.15.0'
+          cache: npm
+      - run: npm ci
+      - name: Install exact PiG-Agent shell host (PiG 0.5.3)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/pig053" "$RUNNER_TEMP/pig053-archive"
+          gh release download v0.5.3 --repo MichaelKinsy/PiG --pattern pig-0.5.3-linux-amd64.tar.gz --dir "$RUNNER_TEMP/pig053-archive"
+          echo '1e45e5e591a06d087587d5f09d2b6d61673a1e262cb2609e6189defffd5ae7ec  '${RUNNER_TEMP}'/pig053-archive/pig-0.5.3-linux-amd64.tar.gz' | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/pig053-archive/pig-0.5.3-linux-amd64.tar.gz" -C "$RUNNER_TEMP/pig053" --strip-components=1
+          "$RUNNER_TEMP/pig053/pig" --version
+          echo "BRO_HOST_TEST_BIN=$RUNNER_TEMP/pig053/pig" >> "$GITHUB_ENV"
+      - name: Real PiG 0.5.3 RPC reload and EOF cleanup
+        run: node --experimental-transform-types --test --test-concurrency=1 test/host-lifecycle.test.mjs
+      - name: Real PiG 0.5.3 agent-local custom model endpoint and edited source
+        run: node --experimental-transform-types --test --test-concurrency=1 test/pig-053-custom-model.test.mjs
+      - name: Real PiG 0.5.3 TUI modal smoke (synthetic backend)
+        run: python3 test/pig-053-tui-smoke.py
