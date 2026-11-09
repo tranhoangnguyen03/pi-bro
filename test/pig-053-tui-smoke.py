@@ -134,12 +134,21 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PI
             expect("BTW backend answer in actual PiG terminal", ("BRO_PIG053_TERMINAL_RESULT",), since=before_question)
             write(b"\x1b")
             write(b"/bro help\r")
-            expect("Bro help modal in actual PiG terminal", ("Bro · help",))
+            expect("Bro help modal in actual PiG terminal", ("Quick reference. Full user guide:", "↑/↓ scroll"))
+            scrolled_from = len(transcript)
             write(b"\x1b[6~")  # PageDown
+            # Unlike merely sending keys, require the real help scroller to move.
+            scroll_deadline = time.monotonic() + 6
+            while time.monotonic() < scroll_deadline and not re.search(r"Bro · ↑[1-9][0-9]*", plain(bytes(transcript[scrolled_from:]))):
+                take(0.15)
+            if not re.search(r"Bro · ↑[1-9][0-9]*", plain(bytes(transcript[scrolled_from:]))):
+                raise AssertionError("Help PageDown did not move its scroll position")
+            print("PASS: Help PageDown moved the actual TUI scroller", flush=True)
             write(b"\x1b[5~")  # PageUp
             write(b"\x1b")
+            after_help = len(transcript)
             write(b"/bro config\r")
-            expect("Bro remains usable after help scrolling", ("Global", "Features"))
+            expect("Bro remains usable after help scrolling", ("Global", "Features"), since=after_help)
             write(b"\x1b")
             print("PASS: resize, PageUp/PageDown, keyboard input and Esc retained the TUI", flush=True)
         finally:
