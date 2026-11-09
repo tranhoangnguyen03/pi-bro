@@ -37,7 +37,7 @@ Values are `inherit` (the default) or `subscription`. An unknown value fails, ra
 
 ## Verified direct PiG 0.5.3 host checks (not packaged shell)
 
-[GitHub Actions run 42568585956](https://github.com/tranhoangnguyen03/pi-bro/actions/runs/42568585956) ran on Linux x64 using PiG `0.5.3+1.4.0.74f46864`, Node `24.15.0`, and a downloaded PiG archive with SHA-256 `1e45e5e591a06d087587d5f09d2b6d61673a1e262cb2609e6189defffd5ae7ec`.
+[GitHub Actions run 42569331543](https://github.com/tranhoangnguyen03/pi-bro/actions/runs/42569331543) ran on Linux x64 using PiG `0.5.3+1.4.0.74f46864`, Node `24.15.0`, and a downloaded PiG archive with SHA-256 `1e45e5e591a06d087587d5f09d2b6d61673a1e262cb2609e6189defffd5ae7ec`.
 
 - **PASS:** Real host RPC reload cancels an active fake CLI child, awaits teardown and accepts a fresh command. EOF terminates its child without a late result (2/2 host tests).
 - **PASS:** Real PiG 0.5.3 loaded `<agent-home>/.pi/models.json` containing only `study/probe`; Bro's Pi backend issued a real HTTP request to the file's local OpenAI-compatible endpoint using the selected model ID and bearer credential. After editing that file's endpoint and credential, a **new PiG host/session** called only the new endpoint and used its new key (1/1 custom-model test). No external provider was called.
