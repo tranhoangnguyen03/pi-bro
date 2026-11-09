@@ -1494,11 +1494,19 @@ function piAssistantText(message: { content?: unknown }): string {
  * The SDK runtime here only supplies agent/session mechanics; it does not own
  * credentials, source selection or refresh. No models.json is read by this child.
  */
-async function bridgePiModelRuntime(host: PiHostContext | undefined, agentDir: string): Promise<ModelRuntime> {
+async function bridgePiModelRuntime(host: PiHostContext | undefined, _agentDir: string): Promise<ModelRuntime> {
 	const registry = host?.modelRegistry;
 	if (!registry) throw new Error("The Pi host model registry is unavailable; reopen Bro from a live Pi session.");
+	// The SDK requires a ModelRuntime, but it must not read an independent auth.json
+	// or models.json. All real auth and model calls below delegate to the host.
+	const credentials = {
+		read: async () => undefined,
+		list: async () => [],
+		modify: async (): Promise<never> => { throw new Error("The Pi host owns credential writes."); },
+		delete: async (): Promise<never> => { throw new Error("The Pi host owns credential deletion."); },
+	};
 	const runtime = await ModelRuntime.create({
-		authPath: join(agentDir, "auth.json"),
+		credentials,
 		modelsPath: null,
 		refreshOnCreate: false,
 	});
