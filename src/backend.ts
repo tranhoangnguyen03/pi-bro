@@ -715,7 +715,8 @@ async function inspectCodexSubscriptionRoute(
     ? result.problem
     : diagnostics.processError
       ? "Codex app-server could not start"
-      : "Codex app-server closed without returning the effective configuration";
+      : "Codex app-server closed without returning the effective configuration" +
+        (diagnostics.stderr.trim() ? ": " + diagnostics.stderr.trim().slice(0, 700) : "");
   return problem
     ? { status: "failure", message: "Codex subscription selection is not safe: " + problem +
         ". No inference or provider discovery request was sent by the inspection process. Use a subscription-compatible CODEX_HOME profile or select inherited/API authentication explicitly." }
