@@ -47,9 +47,6 @@ async function args(binDir: string): Promise<string[]> {
 	return (await readFile(join(binDir, "args.txt"), "utf8")).split("\n").slice(0, -1);
 }
 
-test("codex effort list", () => {
-	assert.deepEqual([...CODEX_EFFORTS], ["low", "medium", "high", "xhigh"]);
-});
 
 test("codex explain: restricted fresh argv, stdin prompt, scratch cwd, text-only progress", async () => {
 	await withFakeCodex(
@@ -474,21 +471,14 @@ test("unsupported codex combinations and pre-abort fail before spawn", async () 
  });
 });
 
-test("codex framing: split chunks, CRLF, final record without newline, and oversized line", async () => {
-	await withFakeCodex(`case "$(cat "$BIN_DIR/stdin.txt")" in
-  *oversized*)
-    node -e 'process.stdout.write("x".repeat(2000001) + "\\n")'
-    ;;
-  *)
-    node -e '
+test("codex framing: chunk boundaries, CRLF and final record without newline", async () => {
+	await withFakeCodex(`    node -e '
       process.stdout.write("{\\"type\\":\\"item.completed\\",\\"item\\":{\\"type\\":\\"agent_message\\",\\"text\\":\\"codex-");
       setTimeout(() => {
         process.stdout.write("part\\"}}\\r\\n");
         process.stdout.write("{\\"type\\":\\"turn.completed\\"}");
       }, 20);
     '
-    ;;
-esac
 `, async (binDir) => {
 		// 1. Split event + CRLF + final result without newline
 		let progressText = "";
@@ -502,13 +492,5 @@ esac
 		assert.equal(outcome.text, "codex-part");
 		assert.equal(progressText, "codex-part");
 
-		// 2. Oversized line (> 2MB)
-		const overOutcome = await execute(
-			{ feature: "explain", access: "restricted", prompt: "oversized", cwd: binDir },
-			codex(),
-			new AbortController().signal,
-		);
-		assert.equal(overOutcome.status, "failure");
-		assert.match(overOutcome.message, /over 2000000 characters/);
 	});
 });

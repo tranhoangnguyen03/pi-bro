@@ -1,14 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { buildDir } from "./test-build.mjs";
 
-const { CopyModal } = await import(pathToFileURL(join(buildDir, "copy.js")).href);
-const { latestCompletedAssistantText } = await import(pathToFileURL(join(buildDir, "last-assistant.js")).href);
-const { latestAssistant } = await import(pathToFileURL(join(buildDir, "explain-modal.js")).href);
+const { CopyModal } = await import("../src/copy.ts");
+const { latestCompletedAssistantText } = await import("../src/last-assistant.ts");
+const { latestAssistant } = await import("../src/explain-modal.ts");
 initTheme();
 const theme = { fg: (_color, text) => text, bold: text => text };
 const mk = (markdown, copied = [], rows = 40, columns = 100, copier) => {

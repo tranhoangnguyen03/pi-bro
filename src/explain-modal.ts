@@ -25,8 +25,8 @@ import {
 	type BroSettings,
 	CAPABILITIES,
 	CAPABILITY_LABELS,
-	PREFERENCES_FILE,
 	capabilityOverride,
+	preferencesFile,
 	queuePreferencesWrite,
 	readPreferences,
 	readPreferencesRaw,
@@ -313,8 +313,9 @@ export function createPreferencesModal(
 }
 
 export async function showPreferencesModal(ctx: ExtensionCommandContext): Promise<void> {
+	const file = preferencesFile();
 	if (!hasBroCustomUi(ctx)) {
-		ctx.ui.notify(`Edit ${PREFERENCES_FILE} directly.`, "warning");
+		ctx.ui.notify(`Edit ${file} directly.`, "warning");
 		return;
 	}
 	let loaded: { text?: string; error?: string };
@@ -329,8 +330,8 @@ export async function showPreferencesModal(ctx: ExtensionCommandContext): Promis
 		ctx,
 		createPreferencesModal(loaded, {
 			// ponytail: last writer wins against external edits while the editor is open, like writeSettings.
-			save: (text) => queuePreferencesWrite(() => writeFile(PREFERENCES_FILE, `${text.trim()}\n`, "utf8")),
-			clear: () => queuePreferencesWrite(() => rm(PREFERENCES_FILE, { force: true })),
+			save: (text) => queuePreferencesWrite(() => writeFile(preferencesFile(), `${text.trim()}\n`, "utf8")),
+			clear: () => queuePreferencesWrite(() => rm(preferencesFile(), { force: true })),
 		}),
 	);
 }
@@ -430,7 +431,7 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 
 ## Configure and check
 
-- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
+- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate, Guided Review and Overthink prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
 - \`/bro config\` — shared defaults, per-feature models, preferences, Doctor and Overthink. Esc backs out.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
@@ -440,7 +441,7 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 ${settingsSummary}
 - **Preferences:** ${preferences} — \`/bro preferences\`
 
-Saved in \`${settingsFile()}\`, \`${PREFERENCES_FILE}\`, and \`${ADVISOR_STEERING_FILE}\`.
+Saved in \`${settingsFile()}\`, \`${preferencesFile()}\`, and \`${ADVISOR_STEERING_FILE}\`.
 
 ## Explanation modes
 
@@ -463,7 +464,7 @@ The mode decides how much of the source to keep; your preferences decide who it'
 
 ## Privacy
 
-Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, and Guided Review request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you paste and send it, except advisor answers and approved memories read through about_user, which return to the agent as tool results. Access controls differ by backend; see the user guide.`;
+Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, Elevate, Guided Review, and Overthink request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you paste and send it, except advisor answers and approved memories read through about_user, which return to the agent as tool results. Access controls differ by backend; see the user guide.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.

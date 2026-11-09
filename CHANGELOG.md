@@ -2,18 +2,31 @@
 
 All notable changes to pi-bro are documented here.
 
-## [0.35.0] - 2026-11-08
+## [0.36.0] - 2026-11-09
 
 ### Added
 
-- `/bro copy`: a model-free Markdown scratch editor for the last completed assistant reply; Ctrl+D previews, Ctrl+C copies Markdown, F1 opens Help. A utility discoverable by typing `/bro cop`, not a featured capability.
-- Shared last-completed-reply extraction across Copy and Simplify, preserving Simplify's trimmed result and Copy's untrimmed source.
-- Unedited copy preserves the original raw text. Edited copies/preview use Pi Editor's expanded text (tabs become spaces; CRLF becomes LF). The modal discloses this when relevant. Removed the source-reconciliation engine and its blocked-copy recovery path.
+- `/bro copy` opens the last completed assistant reply as raw editable Markdown, with Ctrl+D Preview and Ctrl+C clipboard copy, without model calls or saved drafts.
+- Unedited copies preserve source text exactly. Edited copies use Pi Editor's text, with notice for normalized tabs and CRLF.
+- Copy and Simplify now share the same completed-reply extractor, keeping Simplify's trim.
+- Copy source, editor, clipboard, and modal regression tests; live Pi terminal/clipboard qualification remains open.
 
-### Limits
+## [0.35.1] - 2026-11-09
 
-- Pi 1.3–1.5's built-in editor shows about 30% of terminal rows; editing long Markdown scrolls inside that region. Text parts within one assistant message are joined with one newline. Real clipboard and terminal qualification remains part of review.
+### Highlights
 
+- Overthink assessments now hard-code plain, everyday words for a tired reader alongside the 2–3-sentence summary and 1–2-sentence per-question limits, preventing dense jargon compression.
+- Saved `bro-preferences.md` preferences now layer on top of Overthink to adjust tone or override the default answer language for prose, while keeping `NONE`, JSON keys (`summary`, `answers`), code, commands, paths, names, numbers, and sentence limits intact.
+- Unified `preferencesFile()` path resolution across reads, saves, deletes, and help display.
+
+## [0.35.0] - 2026-11-08
+
+### Changed
+
+- Overthink factory list now has four focused questions (Direction, Evidence, Risks, Next move), replacing seven overlapping questions. Existing saved global/session lists are unchanged until reset.
+- Structured checks return a short summary and a concise answer for **each configured question**, or `NONE` when nothing material needs attention. The strict materiality filter is inspired by Heads-up. One active Pi model call still covers all questions.
+- Overthink's modal now shows readable summary/question sections, a compact timestamp/model/status line and on-demand **U** token/cache/cost details, with content-sized rendering and scrolling. Old plain-text notes remain viewable; question snapshots remain tied to the assessment.
+- Global and session question editors now use **Ctrl+↑/↓** to reorder, not Alt/Option. All other editor controls and privacy boundaries remain unchanged.
 
 ## [0.34.0] - 2026-11-07
 

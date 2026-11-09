@@ -129,12 +129,12 @@ that is set):
   means no preferences, and Bro's prompts are then exactly the built-in ones.
 - **What preferences can change**: wording, tone, technical depth, length in
   BTW, and the answer language. If you name a language, code, commands, paths,
-  names, and numbers still stay exactly as written. In `/bro show`,
-  preferences only change wording and language. Guided Review also receives preferences for explanation/answer wording; they do not override its evidence or review rules. A per-run choice (the mode,
+  names, and numbers still stay exactly as written. In `/bro show` and `/bro overthink`,
+  preferences only change wording/tone and language. Guided Review also receives preferences for explanation/answer wording; they do not override its evidence or review rules. A per-run choice (the mode,
   **M**, a Show steering query, or what a BTW/review question asks for) wins over a
   standing preference.
 - **Limit**: 4,000 characters, because the text goes with every request. A
-  longer file stops explain, Show, BTW, and Guided Review with an error until you trim it;
+  longer file stops explain, Show, BTW, Guided Review, and manual Overthink checks with an error until you trim it (automatic Overthink checks are skipped quietly);
   Bro never cuts it silently. `/bro doctor` reports the problem, and the
   editor still opens the file so you can fix it.
 - **BTW threads**: when your preferences change, the next side question starts

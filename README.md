@@ -61,13 +61,13 @@ File and webpage examples need your own real path or URL; see [how to explain th
 
 | Command | What you get |
 | --- | --- |
-| `/bro copy` | **[Copy Markdown](docs/features/copy.md).** A private scratch editor for the last assistant reply. Ctrl+D previews, Ctrl+C copies the edited Markdown; no model call or saved file. |
+| `/bro copy` | **[Copy Markdown](docs/features/copy.md).** Edit, preview and copy the last completed reply as Markdown, without a model call or saved file. |
 | `/bro`, `/bro text`, `/bro file`, `/bro url` | **[Explain](docs/features/explain.md).** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
 | `/bro show` | **[Show](docs/features/show.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
 | `/bro architecture [focus]` | **[Architecture Docs](docs/features/architecture.md).** Inspects the project and writes Markdown, diagrams and an offline interactive `architecture.html` under `docs/architecture/`. Uses BTW model settings. |
 | `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
 | `/bro remember-me [thought]` | **[Remember Me](docs/remember-me.md).** Privately clarify and approve short personal memories with unfoldable background. Agents can call `about_user` to read summaries and expand IDs. |
-| `/bro overthink` | **[Overthink](docs/overthink.md).** Quietly checks meaningful work with the active Pi model, using editable global/session questions and a private notes modal. Automatic checks can be switched off in config. No separate backend. |
+| `/bro overthink` | **[Overthink](docs/overthink.md).** Quietly checks meaningful work with the active Pi model; four factory questions, a short summary and one response per editable question. Automatic checks can be switched off in config. No separate backend. |
 | `/bro grill-me` | **[Grill Me](docs/grill-me.md) (experimental).** A private, opinionated decision interview: light, balanced or exhaustive; one question per round; `/consolidate` drafts a brief without ending the interview; `/copy` returns the latest reply or decision brief to the clipboard. Uses BTW model settings; read-only restrictions vary by backend. |
 | `/bro btw` | **[Side questions](docs/features/btw.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
 | `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Claude, Muse, or Pi is recommended for untrusted PRs. |
@@ -108,13 +108,13 @@ which may keep it under their own policies. Paths below are under
 
 | Feature | What is sent | What Bro keeps on disk |
 | --- | --- | --- |
-| Copy Markdown | Nothing; it reads the last completed assistant reply already in Pi's session | Nothing; only a temporary editor draft while the modal is open |
+| Copy Markdown | Nothing; it reads the last completed assistant reply already in Pi's session | Nothing; only a temporary draft while the modal is open |
 | Explain | The agent's last reply, your pasted text, or text extracted from your file or webpage, plus your preferences | Last result as a private Pi session entry |
 | Architecture Docs | Repository source, existing architecture docs, focus and preferences; only selected backend can see snapshot files | Generated Markdown, JSON graph and offline HTML in `docs/architecture/`; temporary inspection copy is removed |
 | Show | User and assistant text from recent turns (no tool calls, tool results, reasoning or images), plus your preferences | Last result in the private Pi session, plus temporary diagram pages in `pi-bro-<uid>/` |
 | Side questions | Your questions and up to the last 8 turns of conversation text, plus your preferences | Private Pi session entries with completed turns, mode and draft |
 | Grill Me | Topic, interview turns, up to the last 8 main-session text turns and preferences; any workspace files the selected inspector reads | Private Pi session entries with the interview and brief |
-| Overthink | Current session projection, including tool evidence, plus private user-editable questions, to the active Pi provider | Global questions in `bro-overthink-defaults.json`; per-session questions and latest private note in Pi session custom entries |
+| Overthink | Current session projection, including tool evidence, plus private user-editable questions and preferences, to the active Pi provider | Global questions in `bro-overthink-defaults.json`; per-session questions and latest private note in Pi session custom entries |
 | Elevate | Your objective, selected findings, all current-branch user/assistant text; Full also includes tool-call arguments and text results, and preferences | Nothing; the workflow stays in memory |
 | Guided Review | The PR description and diff, the files the backend reads, your questions, plus your preferences | Reviews and captured source in `bro-reviews/`, with no automatic cleanup |
 | Advisor | The agent's system instructions, tool list and whole conversation, including tool calls and results (reasoning and images omitted), plus your steering | Steering in `bro-advisor.md` and the session file |

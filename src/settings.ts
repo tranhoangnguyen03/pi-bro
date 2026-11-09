@@ -583,34 +583,39 @@ export async function writeSettings(settings: BroSettings): Promise<void> {
 	}
 }
 
-export const PREFERENCES_FILE = join(getAgentDir(), "bro-preferences.md");
+export function preferencesFile(): string {
+	return join(getAgentDir(), "bro-preferences.md");
+}
+export const PREFERENCES_FILE = preferencesFile();
 // Larger files are rejected before reading, even by the editor; the prompt limit is MAX_PREFERENCES_CHARS.
 export const MAX_PREFERENCES_FILE_BYTES = 64 * 1024;
 
 // Raw file text for the editor, undefined when there is no file: never rejects for length, so an
 // oversize file can be opened and trimmed.
 export async function readPreferencesRaw(): Promise<string | undefined> {
+	const file = preferencesFile();
 	let size: number;
 	try {
-		size = (await stat(PREFERENCES_FILE)).size;
+		size = (await stat(file)).size;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-		throw new Error(`Cannot read ${PREFERENCES_FILE}: ${errorMessage(error)}`);
+		throw new Error(`Cannot read ${file}: ${errorMessage(error)}`);
 	}
-	if (size > MAX_PREFERENCES_FILE_BYTES) throw new Error(`${PREFERENCES_FILE} is larger than 64 KB. Edit or delete it directly.`);
+	if (size > MAX_PREFERENCES_FILE_BYTES) throw new Error(`${file} is larger than 64 KB. Edit or delete it directly.`);
 	try {
-		return (await readFile(PREFERENCES_FILE, "utf8")).replace(/^\uFEFF/, "");
+		return (await readFile(file, "utf8")).replace(/^\uFEFF/, "");
 	} catch (error) {
-		throw new Error(`Cannot read ${PREFERENCES_FILE}: ${errorMessage(error)}`);
+		throw new Error(`Cannot read ${file}: ${errorMessage(error)}`);
 	}
 }
 
 // Preferences for prompts: "" when absent or blank. Re-read on every request. An oversize file stops
 // the request before any backend call instead of being silently truncated.
 export async function readPreferences(): Promise<string> {
+	const file = preferencesFile();
 	const text = ((await readPreferencesRaw()) ?? "").trim();
 	if (text.length > MAX_PREFERENCES_CHARS) {
-		throw new Error(`${PREFERENCES_FILE} is ${text.length.toLocaleString("en-US")} characters; keep it under ${MAX_PREFERENCES_CHARS.toLocaleString("en-US")} (it's sent with every request). Use /bro preferences to trim it.`);
+		throw new Error(`${file} is ${text.length.toLocaleString("en-US")} characters; keep it under ${MAX_PREFERENCES_CHARS.toLocaleString("en-US")} (it's sent with every request). Use /bro preferences to trim it.`);
 	}
 	return text;
 }

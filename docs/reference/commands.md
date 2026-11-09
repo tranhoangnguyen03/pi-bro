@@ -20,7 +20,7 @@ text directly captures a new source the same way.
 
 ## Default command suggestions
 
-Typing `/bro ` displays ten capability-level suggestions: `simplify`, `show`, `btw`, `guided-review`, `architecture`, `elevate`, `grill-me`, `remember-me`, `overthink`, and `config`. Every other documented command remains callable and discoverable by typing its prefix (e.g., `/bro doc`).
+Typing `/bro ` displays ten task-level suggestions: `simplify`, `show`, `btw`, `guided-review`, `architecture`, `elevate`, `grill-me`, `remember-me`, `overthink`, and `config`. Every other documented command remains callable and discoverable by typing its prefix (e.g., `/bro doc`).
 
 ## Commands
 
@@ -28,7 +28,7 @@ Typing `/bro ` displays ten capability-level suggestions: `simplify`, `show`, `b
 | --- | --- |
 | `/bro` | Open Simplify and explain the latest completed assistant reply. |
 | `/bro simplify` | Reopen the last Simplify screen within this Pi session, without a new model call. |
-| `/bro copy` | Open an editable raw Markdown scratchpad from the latest completed assistant reply. Ctrl+D toggles preview; Ctrl+C copies edits; F1 opens help. No backend call or saved draft. Native Pi `/copy` remains the quick no-edit option. [Guide](../features/copy.md). |
+| `/bro copy` | Edit and preview the latest completed assistant reply as raw Markdown. Ctrl+D switches views; Ctrl+C copies Markdown; F1 opens Help. No backend call or saved draft. Native Pi `/copy` copies immediately. [Guide](../features/copy.md). |
 | `/bro text <text>` | Explain pasted text. |
 | `/bro <input>` | Explain it directly: a lone URL runs the webpage reader, an existing workspace file with a supported extension runs the document reader, and anything else is pasted text. A quoted path with spaces is routed too when the file exists. |
 | `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
@@ -44,7 +44,7 @@ Typing `/bro ` displays ten capability-level suggestions: `simplify`, `show`, `b
 | `/bro guided-review` | List saved reviews; `resume` is an alias. |
 | `/bro guided-review delete [PR number or URL]` | Choose and confirm deletion of a saved review and its captured source. Without a target, opens the saved-review picker. |
 | `/bro remember-me [thought]` | Start a private memory-writing conversation, browse and expand memories, and approve saves explicitly. [Guide](../remember-me.md). |
-| `/bro overthink` | View the latest private automatic second-look notes, without a model call. Ctrl+R retry, Ctrl+E edit session questions, ? help, Ctrl+C copy. [Guide](../overthink.md). |
+| `/bro overthink` | View the latest private automatic second-look notes, without a model call. Ctrl+R retry, Ctrl+E edit session questions, U usage details, ? help, Ctrl+C copy. [Guide](../overthink.md). |
 | `/bro grill-me [topic]` | Private one-question-at-a-time decision interview. Supply a topic to start fresh; omit it to resume. `/consolidate` drafts a brief; `/copy` copies the latest reply or brief; Pi's editor stays untouched. `/help` lists modal controls. [Guide](../grill-me.md). |
 | `/bro elevate [request]` | Improve an assignment before execution. Discover up to five gaps, choose useful findings, and copy the revised request. Pi's editor is never changed. **Ctrl+Shift+E** can use your unsent draft. See [Elevate](../elevate.md). |
 | `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; `/mode` toggles full workspace access; `/copy` and `/copy-all` copy the latest answer or full thread. |

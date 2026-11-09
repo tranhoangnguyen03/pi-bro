@@ -32,6 +32,16 @@ test("doctor probes each backend selected only by the review capability", async 
 			calls.some((call) => call.command === backend),
 			`${backend} review override must be probed`,
 		);
+		assert.deepEqual(new Set(calls.map(({ command }) => command)), new Set([backend, other]),
+			"Doctor must probe selected backends only, never unrelated installed CLIs");
+		if (["grok", "muse"].includes(backend)) {
+			assert.ok(report.includes(`**${backend === "grok" ? "Grok" : "Muse"} auth:** unverified`),
+				"a version probe must not be presented as authentication");
+		} else if (["claude", "codex"].includes(backend)) {
+			assert.ok(calls.some(({ command, args }) => command === backend &&
+				args.includes(backend === "claude" ? "auth" : "login")),
+				"a backend with an auth status API must probe it explicitly");
+		}
 		assert.doesNotMatch(report, /needs a Claude or Muse override/);
 		if (["claude", "muse"].includes(backend)) {
 			// File-only backends get no advisory at all: not the shell-sandbox wording, not a review line.
