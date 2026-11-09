@@ -80,11 +80,11 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PI
             def write(data: bytes):
                 os.write(fd, data)
                 take(0.25)
-            def expect(label: str, fragments: tuple[str, ...], timeout: float = 15.0):
+            def expect(label: str, fragments: tuple[str, ...], timeout: float = 15.0, since: int = 0):
                 deadline = time.monotonic() + timeout
                 while time.monotonic() < deadline:
                     take(0.15)
-                    current = plain(bytes(transcript))
+                    current = plain(bytes(transcript[since:]))
                     if all(x in current for x in fragments):
                         print("PASS:", label, flush=True)
                         return
@@ -108,6 +108,15 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PI
             write(b"\x1b")  # close explanation
             write(b"/bro remember-me\r")
             expect("Remember Me modal in actual PiG terminal", ("Your memory or correction", "No matching personal memories."))
+            write(b"\x1b")
+            write(b"/bro preferences\r")
+            expect("Preferences editor in actual PiG terminal", ("Bro · preferences",))
+            write(b"\x1b")
+            write(b"/bro btw\r")
+            expect("BTW side-question modal in actual PiG terminal", ("Bro · btw", "Your message to Bro"))
+            before_question = len(transcript)
+            write(b"Why did this test use a synthetic backend?\r")
+            expect("BTW backend answer in actual PiG terminal", ("BRO_PIG053_TERMINAL_RESULT",), since=before_question)
             write(b"\x1b")
             print("PASS: resize, keyboard input and Esc did not crash the TUI", flush=True)
         finally:
