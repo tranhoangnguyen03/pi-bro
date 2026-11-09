@@ -16,7 +16,8 @@ import {
 	readAdvisorSteering,
 	resolveAdvisorState,
 } from "./advisor.ts";
-import { agyFailureMessage, bridgePiRuntimeForCatalog, piEffectiveEffort, reviewBackendNotice, splitPiModel } from "./backend.ts";
+import { agyFailureMessage, bridgePiRuntimeForCatalog, piEffectiveEffort, reviewBackendNotice, splitPiModel, verifyCliSubscription } from "./backend.ts";
+import { resolveCliChildAuth } from "./cli-auth.ts";
 import { createConfigModal } from "./config-ui.ts";
 import { createConfigNavigationModal } from "./config-navigation-ui.ts";
 import { type ConfigNavAction, type ConfigNavState } from "./config-navigation.ts";
@@ -226,6 +227,12 @@ async function checkCliVersion(pi: ExtensionAPI, binary: string, displayName: st
 // Auth status only: a version/auth answer without a model request. A passing answer here
 // says the CLI starts and reports signed-in state -- it does not imply connectivity.
 async function checkClaudeAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+	const auth = resolveCliChildAuth("claude");
+	if (auth.subscription) {
+		const outcome = await verifyCliSubscription("claude", auth.env, signal, 5_000, 15_000);
+		if (outcome) throw new Error(outcome.message);
+		return "subscription login verified (not a model request or account identity check)";
+	}
 	const result = await probeCli(pi, "claude", ["auth", "status"], signal, 15_000);
 	if (result.killed || result.code !== 0) {
 		const detail = result.stderr.trim() || result.stdout.trim();
@@ -239,7 +246,13 @@ async function checkClaudeAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<s
 
 // Auth status only: a version/auth answer without a model request. A passing answer here
 // says the CLI starts and reports signed-in state -- it does not imply connectivity.
-async function checkCodexAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<string> {
+async function checkCodexAuth(pi: ExtensionAPI, signal: AbortSignal, cwd: string): Promise<string> {
+	const auth = resolveCliChildAuth("codex");
+	if (auth.subscription) {
+		const outcome = await verifyCliSubscription("codex", auth.env, signal, 5_000, 15_000, cwd);
+		if (outcome) throw new Error(outcome.message);
+		return "ChatGPT login and built-in OpenAI provider route verified (not a model request or billing proof)";
+	}
 	const result = await probeCli(pi, "codex", ["login", "status"], signal, 15_000);
 	if (result.killed || result.code !== 0) {
 		const detail = result.stderr.trim() || result.stdout.trim();
@@ -348,7 +361,7 @@ export async function doctorReport(pi: ExtensionAPI, ctx: ExtensionCommandContex
 		}
 		if (backend === "claude" || backend === "codex") {
 			try {
-				pass(`${label} auth`, await (backend === "claude" ? checkClaudeAuth(pi, signal) : checkCodexAuth(pi, signal)));
+				pass(`${label} auth`, await (backend === "claude" ? checkClaudeAuth(pi, signal) : checkCodexAuth(pi, signal, ctx.cwd)));
 			} catch (error) {
 				if (signal.aborted) throw error;
 				fail(`${label} auth`, error);
