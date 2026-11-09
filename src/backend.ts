@@ -1485,63 +1485,59 @@ function piAssistantText(message: { content?: unknown }): string {
 		.trim();
 }
 
-/** Copies every host-registered provider and runtime key into a fresh runtime. */
+/**
+ * The Pi SDK asks for a ModelRuntime even when its physical model is explicit.
+ * Bind every auth/model/stream read to the host's existing registry instead of
+ * rebuilding a second provider from models.json. In particular, an on-disk edit
+ * must never combine a host-old endpoint with a freshly read API key.
+ *
+ * The SDK runtime here only supplies agent/session mechanics; it does not own
+ * credentials, source selection or refresh. No models.json is read by this child.
+ */
 async function bridgePiModelRuntime(host: PiHostContext | undefined, agentDir: string): Promise<ModelRuntime> {
-	const modelRuntime = await ModelRuntime.create({
+	const registry = host?.modelRegistry;
+	if (!registry) throw new Error("The Pi host model registry is unavailable; reopen Bro from a live Pi session.");
+	const runtime = await ModelRuntime.create({
 		authPath: join(agentDir, "auth.json"),
-		modelsPath: join(agentDir, "models.json"),
+		modelsPath: null,
+		refreshOnCreate: false,
 	});
-	const registry = host?.modelRegistry;
-	if (registry) {
-		for (const id of registry.getRegisteredProviderIds()) {
-			const native = registry.getRegisteredNativeProvider(id);
-			if (native) modelRuntime.registerNativeProvider(native);
-			const config = registry.getRegisteredProviderConfig(id);
-			if (config) modelRuntime.registerProvider(id, config);
-		}
-	}
-	return modelRuntime;
-}
-
-// Copying only the key for the selected provider is enough for a run, but not for listing what the
-// host can authenticate: a catalog built without runtime keys offers the user fewer models than
-// execution can actually use. Copy every runtime key the host holds.
-//
-// The provider list must come from the host's model catalog, not getRegisteredProviderIds(): that
-// method lists only extension-registered providers, so a runtime key set on a built-in provider
-// (for example Pi's own `--api-key`) would be missed and its models would vanish from `/bro config`.
-async function copyAllRuntimeCredentials(host: PiHostContext | undefined, runtime: ModelRuntime): Promise<void> {
-	const registry = host?.modelRegistry;
-	if (!registry) return;
-	const providerIds = new Set(registry.getRegisteredProviderIds());
-	// getAll() may be absent on a partial host stub; the extension list above still applies.
-	for (const model of registry.getAll?.() ?? []) providerIds.add(model.provider);
-	for (const providerId of providerIds) {
-		if (registry.getProviderAuthStatus(providerId).source !== "runtime") continue;
-		const key = await registry.getApiKeyForProvider(providerId);
-		if (key) await runtime.setRuntimeApiKey(providerId, key);
-	}
-}
-
-// The runtime a Pi request or catalog read runs against: the host's registrations plus its runtime
-// credentials. Both the executor and `/bro doctor`/`/bro config` go through here so they can never
-// disagree about which models exist.
-export async function bridgePiRuntimeForCatalog(host: PiHostContext | undefined, agentDir: string): Promise<ModelRuntime> {
-	const runtime = await bridgePiModelRuntime(host, agentDir);
-	await copyAllRuntimeCredentials(host, runtime);
+	const models = (provider?: string) => registry.getAll().filter((m) => !provider || m.provider === provider);
+	const available = (provider?: string) => registry.getAvailable().filter((m) => !provider || m.provider === provider);
+	// Use the same registry for the SDK's preflight, model lookup and final stream.
+	// Resolving auth from provider alone is intentional: ModelRegistry.getProviderAuth()
+	// is the public host API, and its underlying runtime still applies model-specific
+	// headers and request overrides inside streamSimple().
+	Object.assign(runtime, {
+		getModel: (provider: string, id: string) => registry.find(provider, id),
+		getModels: models,
+		getAllModels: models,
+		getAvailableSnapshot: () => available(),
+		getAvailable: async (provider?: string) => available(provider),
+		getProvider: (provider: string) => registry.getProvider(provider),
+		getProviderAuthStatus: (provider: string) => registry.getProviderAuthStatus(provider),
+		getAuth: async (modelOrProvider: string | { provider: string }) =>
+			registry.getProviderAuth(typeof modelOrProvider === "string" ? modelOrProvider : modelOrProvider.provider),
+		hasConfiguredAuth: (provider: string) => models(provider).some((model) => registry.hasConfiguredAuth(model)),
+		checkAuth: async (provider: string) =>
+			(await registry.getProviderAuth(provider)) ? { type: "api_key", source: "host registry" } : undefined,
+		isUsingOAuth: (provider: string) => models(provider).some((model) => registry.isUsingOAuth(model)),
+		streamSimple: (
+			model: Parameters<ModelRuntime["streamSimple"]>[0],
+			context: Parameters<ModelRuntime["streamSimple"]>[1],
+			options: Parameters<ModelRuntime["streamSimple"]>[2],
+		) => {
+			// Neither another runtime nor child options may override the host's auth.
+			const { apiKey: _key, env: _env, ...rest } = options ?? {};
+			return registry.streamSimple(model, context, rest);
+		},
+	});
 	return runtime;
 }
 
-async function copyRuntimeCredentials(
-	host: PiHostContext | undefined,
-	runtime: ModelRuntime,
-	providerId: string,
-): Promise<void> {
-	const registry = host?.modelRegistry;
-	if (!registry) return;
-	if (registry.getProviderAuthStatus(providerId).source !== "runtime") return;
-	const key = await registry.getApiKeyForProvider(providerId);
-	if (key) await runtime.setRuntimeApiKey(providerId, key);
+/** The picker and the executor use this same host-backed model/auth view. */
+export async function bridgePiRuntimeForCatalog(host: PiHostContext | undefined, agentDir: string): Promise<ModelRuntime> {
+	return bridgePiModelRuntime(host, agentDir);
 }
 
 async function executePi(
@@ -1611,9 +1607,8 @@ async function executePi(
 		// or throwing host credential lookup becomes an ordinary outcome rather than a rejection.
 		const modelRuntime = await Promise.race([bridgePiModelRuntime(host, agentDir), stopped.then(() => undefined)]);
 		if (!modelRuntime) return latchedOutcome();
-		// Fall back to the host registry, which may know a model the rebuilt runtime does not.
 		// Use the effective host model for its exact identity, endpoint and metadata.
-		// A reconstructed runtime cannot silently substitute its own model.
+		// The SDK child uses the same host model, auth resolver and streaming transport.
 		const model = host?.modelRegistry?.find(parts.providerId, parts.modelId);
 		if (!model) {
 			return { status: "failure", message: piErrorMessage(request.feature, `model \`${selection.model}\` is not in your Pi model catalog. Run \`/bro doctor\`.`) };
@@ -1621,8 +1616,6 @@ async function executePi(
 		if ((model as { api?: string }).api === "pi-virtual") {
 			return { status: "failure", message: piErrorMessage(request.feature, `\`${selection.model}\` is a virtual model; choose a physical model in \`/bro config\`.`) };
 		}
-		await Promise.race([copyRuntimeCredentials(host, modelRuntime, parts.providerId), stopped]);
-		if (stopCause) return latchedOutcome();
 
 		// Guided Review runs on an untrusted PR checkout, so its `.pi/settings.json` must never be merged.
 		// Elsewhere the host's own trust decision decides: a repo the user declined to trust must not get
