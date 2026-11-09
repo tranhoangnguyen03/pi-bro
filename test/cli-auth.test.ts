@@ -56,6 +56,9 @@ test("CLI status recognizes subscription but rejects API modes and unverified da
 
 test("Codex subscription accepts only the built-in OpenAI route in effective config", () => {
   assert.equal(codexSubscriptionRouteProblem({ model_provider: "openai" }), undefined);
+  assert.equal(codexSubscriptionRouteProblem({ model_provider: "openai",
+    chatgpt_base_url: "https://chatgpt.com/backend-api/" }), undefined,
+    "Codex config/read includes its built-in ChatGPT endpoint");
   assert.equal(codexSubscriptionRouteProblem({ model_provider: "openai", model_providers: { custom: { env_key: "BRO_FIXTURE_API_KEY" } } }), undefined,
     "an unused custom provider is not an auth escape");
   for (const config of [
