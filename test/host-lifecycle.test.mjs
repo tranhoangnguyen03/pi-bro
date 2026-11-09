@@ -25,20 +25,27 @@ async function startHost(root) {
   const bin = join(root, "bin");
   await mkdir(bin);
   const agy = join(bin, "agy");
-  await writeFile(agy, `#!/bin/sh
-echo "$*" > "$HOST_LIFECYCLE_DIR/agy-argv"
-case "$*" in
-  *"HOST_SECOND_MARKER"*)
-    printf '%s\\n' '{"event":"result","result":{"status":"SUCCESS","response":"FRESH_RESULT"}}'
-    echo second-started > "$HOST_LIFECYCLE_DIR/second-started"
-    exit 0;;
-esac
-echo started > "$HOST_LIFECYCLE_DIR/started-first"
-echo "$$" > "$HOST_LIFECYCLE_DIR/child.pid"
-trap 'echo term > "$HOST_LIFECYCLE_DIR/term-received"; exit 0' TERM
-sleep 30
-echo late > "$HOST_LIFECYCLE_DIR/late-result"
-printf '%s\\n' '{"event":"result","result":{"status":"SUCCESS","response":"BAD_LATE_RESULT"}}'
+  await writeFile(agy, `#!/usr/bin/env node
+const fs = require("node:fs");
+const root = process.env.HOST_LIFECYCLE_DIR;
+fs.writeFileSync(root + "/agy-argv", process.argv.slice(2).join(" "));
+if (process.argv.some(arg => arg.includes("HOST_SECOND_MARKER"))) {
+  process.stdout.write(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"FRESH_RESULT"}}) + "\\n");
+  fs.writeFileSync(root + "/second-started", "yes");
+  process.exit(0);
+}
+process.on("SIGTERM", () => {
+  fs.writeFileSync(root + "/term-received", "yes");
+  process.exit(0);
+});
+fs.writeFileSync(root + "/started-first", "yes");
+fs.writeFileSync(root + "/child.pid", String(process.pid));
+setInterval(() => {
+  // A late response here would violate Bro's cancellation contract.
+  fs.writeFileSync(root + "/late-result", "yes");
+  process.stdout.write(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"BAD_LATE_RESULT"}}) + "\\n");
+  process.exit(0);
+}, 30_000);
 `);
   await chmod(agy, 0o755);
   for (const name of ["claude", "grok", "codex", "muse"]) {
