@@ -56,8 +56,14 @@ export function codexSubscriptionRouteProblem(config: unknown): string | undefin
   if (!config || typeof config !== "object" || Array.isArray(config))
     return "Codex did not provide a usable effective configuration";
   const effective = config as Record<string, unknown>;
-  if (effective.model_provider !== "openai")
-    return `Codex selected model_provider=${JSON.stringify(effective.model_provider ?? "(unknown)")}; choose the built-in OpenAI provider in the selected CODEX_HOME profile`;
+  // Codex 0.165.0 config/read reports null for an omitted provider.
+  // Its own Config::load resolves that implicit default to "openai" *after*
+  // managed, CLI and merged file/profile overrides. The app-server query
+  // already uses those effective layers for the requested working directory.
+  const configured = effective.model_provider;
+  const provider = configured === null || configured === undefined ? "openai" : configured;
+  if (provider !== "openai")
+    return `Codex selected model_provider=${JSON.stringify(provider)}; choose the built-in OpenAI provider in the selected CODEX_HOME profile`;
   if (effective.openai_base_url !== undefined &&
       effective.openai_base_url !== null && effective.openai_base_url !== "")
     return "Codex has a custom openai_base_url; remove this redirect from the selected subscription profile";
