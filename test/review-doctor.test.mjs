@@ -293,6 +293,15 @@ test("Pi picker follows host model scope even without file enabledModels, ignori
 			"host scope outranks separately read file patterns");
 		assert.deepEqual(conflicting.diagnostics, [],
 			"file-only matches must not be reported as host-scope diagnostics");
+
+		const staleScoped = await doctor.listPiModels({
+			cwd: directory, modelRegistry: piRegistry([hostOnly]),
+			scopedModels: [{ model: diskOnly }],
+		});
+		assert.equal(staleScoped.scope, "scoped");
+		assert.deepEqual(staleScoped.models, [],
+			"removed host-scoped models must not become selectable or trigger unscoped fallback");
+		assert.match(staleScoped.diagnostics.join(" "), /no longer available/);
 	} finally {
 		await rm(settingsPath, { force: true });
 	}
