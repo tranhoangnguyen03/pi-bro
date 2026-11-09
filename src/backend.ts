@@ -2,7 +2,7 @@ import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isSubscriptionStatus, resolveCliChildAuth, type CliAuthBackend } from "./cli-auth.ts";
+import { codexSubscriptionRouteProblem, isSubscriptionStatus, resolveCliChildAuth, type CliAuthBackend } from "./cli-auth.ts";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
@@ -596,14 +596,108 @@ async function executeAdvisorStdin(
 	return { status: "success", text };
 }
 
+/**
+ * Ask the official Codex app-server for the effective provider configuration.
+ * This is the same Codex CLI, CODEX_HOME, and working directory used for exec.
+ * A login status alone cannot detect custom provider env_key API billing.
+ *
+ * Inspection never makes a model request. Missing, unreadable or unsupported
+ * app-server/config/read support fails closed when subscription is explicit.
+ */
+async function inspectCodexSubscriptionRoute(
+  env: NodeJS.ProcessEnv, cwd: string | undefined, signal: AbortSignal,
+  deadlineMs: number, killEscalationMs: number,
+): Promise<BackendOutcome | undefined> {
+  if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+  const { child, attempt, diagnostics } = startCliAttempt(
+    "codex", ["app-server"], { env, cwd, stdio: ["pipe", "pipe", "pipe"] },
+    signal, Math.min(deadlineMs, 15_000), killEscalationMs,
+  );
+  let buffer = "";
+  let decided = false;
+  let finish: (problem: string | undefined) => void = () => {};
+  const decision = new Promise<string | undefined>(resolve => { finish = resolve; });
+  const settle = (problem: string | undefined) => {
+    if (decided) return;
+    decided = true;
+    finish(problem);
+  };
+  const send = (value: object) => {
+    if (decided || attempt.causeOf()) return;
+    try { child.stdin?.write(JSON.stringify(value) + "\n"); }
+    catch { settle("Codex app-server could not accept the configuration query"); }
+  };
+  child.stdin?.on("error", () => settle("Codex app-server closed before the configuration query completed"));
+  child.stdout?.setEncoding("utf8");
+  child.stdout?.on("data", (chunk: string) => {
+    if (decided || attempt.causeOf()) return;
+    buffer += chunk;
+    if (buffer.length > 2_000_000) { settle("Codex returned an oversized configuration response"); return; }
+    for (;;) {
+      const index = buffer.indexOf("\n");
+      if (index < 0) break;
+      const line = buffer.slice(0, index);
+      buffer = buffer.slice(index + 1);
+      if (!line.trim()) continue;
+      let message: Record<string, unknown>;
+      try {
+        message = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        settle("Codex app-server returned invalid JSON");
+        return;
+      }
+      if (message.id === 0) {
+        if (!message.result || message.error) {
+          settle("Codex app-server initialization failed");
+          return;
+        }
+        send({ method: "initialized", params: {} });
+        send({ method: "config/read", id: 1, params: { includeLayers: false, ...(cwd ? { cwd } : {}) } });
+      } else if (message.id === 1) {
+        if (message.error || !message.result || typeof message.result !== "object") {
+          settle("Codex app-server did not support config/read for this account/profile");
+          return;
+        }
+        const config = (message.result as { config?: unknown }).config;
+        settle(codexSubscriptionRouteProblem(config));
+        return;
+      }
+    }
+  });
+  send({ method: "initialize", id: 0,
+    params: { clientInfo: { name: "pi_bro", title: "Pi Bro", version: "0.36.1" } } });
+  const result = await Promise.race([
+    decision.then(problem => ({ kind: "decision" as const, problem })),
+    attempt.closed.then(() => ({ kind: "closed" as const })),
+  ]);
+  // The probe is not a long-running provider connection.
+  if (!attempt.causeOf()) attempt.stop("protocol");
+  await attempt.closed;
+  attempt.dispose();
+  if (signal.aborted || attempt.causeOf() === "cancelled")
+    return { status: "cancelled", message: "Canceled." };
+  if (attempt.causeOf() === "timeout")
+    return { status: "timeout", message: "Codex effective subscription configuration check timed out." };
+  const problem = result.kind === "decision"
+    ? result.problem
+    : diagnostics.processError
+      ? "Codex app-server could not start"
+      : "Codex app-server closed without returning the effective configuration";
+  return problem
+    ? { status: "failure", message: "Codex subscription selection is not safe: " + problem +
+        ". No request was sent. Use a subscription-compatible CODEX_HOME profile or select inherited/API authentication explicitly." }
+    : undefined;
+}
+
 // Only a deliberate subscription choice gets an auth-method preflight.
 // CLI status is not proof of account identity or a paid model call.
-async function verifyCliSubscription(
+export async function verifyCliSubscription(
   backend: CliAuthBackend,
   env: NodeJS.ProcessEnv,
   signal: AbortSignal,
   killEscalationMs: number,
   deadlineMs: number,
+  cwd?: string,
 ): Promise<BackendOutcome | undefined> {
   if (signal.aborted) return { status: "cancelled", message: "Canceled." };
   const label = backend === "claude" ? "Claude Code" : "Codex";
@@ -629,7 +723,9 @@ async function verifyCliSubscription(
       " did not confirm subscription login in the selected profile. Run `" + command +
       "` with that " + profile + " and sign in to the intended subscription; Bro will not switch to API billing." };
   }
-  return undefined;
+  return backend === "codex"
+    ? inspectCodexSubscriptionRoute(env, cwd, signal, deadlineMs, killEscalationMs)
+    : undefined;
 }
 
 type ClaudeEvent = {
@@ -1062,7 +1158,7 @@ async function executeCodex(
 		try { auth = resolveCliChildAuth("codex"); }
 		catch (error) { return { status: "failure", message: errorMessage(error) }; }
 		if (auth.subscription) {
-			const check = await verifyCliSubscription("codex", auth.env, signal, killEscalationMs, deadlineMs);
+			const check = await verifyCliSubscription("codex", auth.env, signal, killEscalationMs, deadlineMs, runDirectory ?? request.cwd);
 			if (check) return check;
 		}
 		if (signal.aborted) return { status: "cancelled", message: "Canceled." };
@@ -1070,7 +1166,7 @@ async function executeCodex(
 		const resume = isBtw && request.continuation;
 		const args = [
 			"exec",
-			...(auth.subscription ? ["-c", 'forced_login_method="chatgpt"'] : []),
+			...(auth.subscription ? ["-c", 'forced_login_method="chatgpt"', "-c", 'model_provider="openai"'] : []),
 			...permissionArgs,
 			...(resume ? ["resume"] : []),
 			"--json",
