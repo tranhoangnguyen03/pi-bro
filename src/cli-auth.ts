@@ -66,7 +66,7 @@ export function codexSubscriptionRouteProblem(config: unknown): string | undefin
   const chatgptUrl = effective.chatgpt_base_url;
   if (chatgptUrl !== undefined && chatgptUrl !== null && chatgptUrl !== "" &&
       (typeof chatgptUrl !== "string" ||
-       chatgptUrl.replace(/\\/+$/, "") !== "https://chatgpt.com/backend-api"))
+       chatgptUrl.replace(/[/]+$/, "") !== "https://chatgpt.com/backend-api"))
     return "Codex has a custom chatgpt_base_url; remove this redirect from the selected subscription profile";
   const providers = effective.model_providers;
   if (providers !== null && providers !== undefined) {
