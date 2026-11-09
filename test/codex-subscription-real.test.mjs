@@ -37,6 +37,7 @@ test("real Codex 0.165.0 rejects custom env_key API provider despite ChatGPT log
       'cli_auth_credentials_store = "file"',
       'model_provider = "localfixture"',
       '[model_providers.localfixture]',
+      'name = "Local fixture"',
       `base_url = "http://127.0.0.1:${port}/v1"`,
       'env_key = "BRO_FIXTURE_API_KEY"',
       'wire_api = "responses"',
