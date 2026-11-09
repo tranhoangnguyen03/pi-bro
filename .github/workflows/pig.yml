@@ -50,3 +50,5 @@ jobs:
           echo "BRO_HOST_TEST_BIN=$RUNNER_TEMP/pig053/pig" >> "$GITHUB_ENV"
       - name: Real PiG 0.5.3 RPC reload and EOF cleanup
         run: node --experimental-transform-types --test --test-concurrency=1 test/host-lifecycle.test.mjs
+      - name: Real PiG 0.5.3 TUI modal smoke (synthetic backend)
+        run: python3 test/pig-053-tui-smoke.py
