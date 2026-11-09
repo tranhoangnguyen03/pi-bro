@@ -1,12 +1,14 @@
 import "./test-cli-guard.ts";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { withFakeExecutables } from "./test-fake-exec.ts";
 import { execute, stopActiveBackendExecutions } from "../src/backend.ts";
-import { isSubscriptionStatus, resolveCliChildAuth } from "../src/cli-auth.ts";
+import { codexSubscriptionRouteProblem, isSubscriptionStatus, resolveCliChildAuth } from "../src/cli-auth.ts";
+import { doctorReport } from "../src/doctor.ts";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 const request = { feature: "explain" as const, access: "restricted" as const, prompt: "Explain this." };
 const claude = { backend: "claude" as const, model: "sonnet" };
@@ -48,6 +50,21 @@ test("CLI status recognizes subscription but rejects API modes and unverified da
   assert.equal(isSubscriptionStatus("claude", "not JSON"), false);
   assert.equal(isSubscriptionStatus("codex", "Logged in using ChatGPT"), true);
   assert.equal(isSubscriptionStatus("codex", "Logged in using an API key"), false);
+});
+
+
+test("Codex subscription accepts only the built-in OpenAI route in effective config", () => {
+  assert.equal(codexSubscriptionRouteProblem({ model_provider: "openai" }), undefined);
+  assert.equal(codexSubscriptionRouteProblem({ model_provider: "openai", model_providers: { custom: { env_key: "BRO_FIXTURE_API_KEY" } } }), undefined,
+    "an unused custom provider is not an auth escape");
+  for (const config of [
+    null,
+    {},
+    { model_provider: "localfixture", model_providers: { localfixture: { env_key: "BRO_FIXTURE_API_KEY" } } },
+    { model_provider: "openai", openai_base_url: "http://127.0.0.1:1234" },
+    { model_provider: "openai", chatgpt_base_url: "https://other.example.invalid" },
+    { model_provider: "openai", model_providers: { openai: { env_key: "MY_API_KEY" } } },
+  ]) assert.ok(codexSubscriptionRouteProblem(config), JSON.stringify(config));
 });
 
 test("Claude child uses selected profile, drops inherited API auth, and runs only after subscription status", async () => {
@@ -93,6 +110,15 @@ exit 99
 test("Codex child uses selected CODEX_HOME, removes API override, and forces ChatGPT login", async () => {
   await withFakeExecutables({ codex: `#!/bin/sh
 if [ "$1" = "login" ]; then echo 'Logged in using ChatGPT' >&2; exit 0; fi
+if [ "$1" = "app-server" ]; then
+  while IFS= read -r line; do
+    case "$line" in
+      *'"method":"initialize"'*) echo '{"id":0,"result":{"userAgent":"fixture"}}';;
+      *'"method":"config/read"'*) echo '{"id":1,"result":{"config":{"model_provider":"openai"}}}';;
+    esac
+  done
+  exit 0
+fi
 [ "$1" = "exec" ] || exit 80
 [ -z "$CODEX_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] || exit 81
 printf '%s' "$CODEX_HOME" > "$BIN_DIR/selected-profile"
@@ -109,6 +135,7 @@ echo '{"type":"turn.completed"}'
     assert.equal(await readFile(join(bin, "selected-profile"), "utf8"), "/fixture/codex-profile");
     const args = (await readFile(join(bin, "exec-args"), "utf8")).split("\n");
     assert.ok(args.includes('forced_login_method="chatgpt"'));
+    assert.ok(args.includes('model_provider="openai"'), "pin the already validated built-in provider");
     assert.equal(process.env.CODEX_API_KEY, "api-billing-key");
   }, { env: { PI_BRO_CODEX_AUTH_SOURCE: "subscription", CODEX_HOME: "/fixture/codex-profile", CODEX_API_KEY: "api-billing-key", OPENAI_API_KEY: "other-key" } });
 });
@@ -122,6 +149,58 @@ touch "$BIN_DIR/model-ran"
     assert.equal(outcome.status, "failure");
     assert.match(outcome.status === "failure" ? outcome.message : "", /will not switch to API billing/);
     assert.equal(existsSync(join(bin, "model-ran")), false);
+  }, { env: { PI_BRO_CODEX_AUTH_SOURCE: "subscription" } });
+});
+
+
+test("Codex ChatGPT login with a custom env_key provider fails before any request", async () => {
+  await withFakeExecutables({ codex: `#!/bin/sh
+if [ "$1" = "login" ]; then echo 'Logged in using ChatGPT'; exit 0; fi
+if [ "$1" = "app-server" ]; then
+  while IFS= read -r line; do
+    case "$line" in
+      *'"method":"initialize"'*) echo '{"id":0,"result":{"userAgent":"fixture"}}';;
+      *'"method":"config/read"'*) echo '{"id":1,"result":{"config":{"model_provider":"localfixture","model_providers":{"localfixture":{"base_url":"http://127.0.0.1:8765/v1","env_key":"BRO_FIXTURE_API_KEY","requires_openai_auth":false}}}}}';;
+    esac
+  done
+  exit 0
+fi
+touch "$BIN_DIR/model-ran"
+exit 93
+` }, async bin => {
+    const outcome = await execute(request, codex, new AbortController().signal);
+    assert.equal(outcome.status, "failure");
+    assert.match(outcome.status === "failure" ? outcome.message : "", /model_provider=.*localfixture/);
+    assert.equal(existsSync(join(bin, "model-ran")), false, "custom provider's model child never starts");
+    assert.equal(process.env.BRO_FIXTURE_API_KEY, "fixture-key", "parent is unchanged");
+  }, { env: { PI_BRO_CODEX_AUTH_SOURCE: "subscription", CODEX_HOME: "/fixture/codex-custom",
+    BRO_FIXTURE_API_KEY: "fixture-key" } });
+});
+
+test("Doctor follows subscription auth method and rejects Codex API-key login", async () => {
+  await withFakeExecutables({ codex: `#!/bin/sh
+if [ "$1" = "login" ]; then echo 'Logged in using an API key'; exit 0; fi
+if [ "$1" = "app-server" ]; then touch "$BIN_DIR/unexpected-app-server"; exit 92; fi
+exit 0
+` }, async bin => {
+    const settings = join(getAgentDir(), "bro-settings.json");
+    await writeFile(settings, JSON.stringify({
+      version: 2, default: { backend: "codex", model: "gpt-5.5", effort: "default" },
+    }));
+    try {
+      const report = await doctorReport({
+        getAllTools: () => [], getActiveTools: () => [],
+        exec: async () => ({ code: 0, killed: false, stdout: "codex-cli 0.165.0", stderr: "" }),
+      } as never, { cwd: process.cwd(), sessionManager: { getBranch: () => [] } } as never,
+      new AbortController().signal);
+      assert.match(report, /Bro needs attention/);
+      assert.match(report, /did not confirm subscription login/);
+      assert.doesNotMatch(report, /Codex auth:\*\* authentication configured/);
+      assert.equal(existsSync(join(bin, "unexpected-app-server")), false);
+    } finally {
+      await writeFile(settings, JSON.stringify({ version: 2,
+        default: { backend: "agy", model: "fixture", effort: "default" } }));
+    }
   }, { env: { PI_BRO_CODEX_AUTH_SOURCE: "subscription" } });
 });
 
