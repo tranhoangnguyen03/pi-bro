@@ -230,7 +230,7 @@ async function checkClaudeAuth(pi: ExtensionAPI, signal: AbortSignal): Promise<s
 	const auth = resolveCliChildAuth("claude");
 	if (auth.subscription) {
 		const outcome = await verifyCliSubscription("claude", auth.env, signal, 5_000, 15_000);
-		if (outcome) throw new Error(outcome.message);
+		if (outcome) throw new Error("message" in outcome ? outcome.message : "Unexpected subscription preflight outcome");
 		return "subscription login verified (not a model request or account identity check)";
 	}
 	const result = await probeCli(pi, "claude", ["auth", "status"], signal, 15_000);
@@ -250,7 +250,7 @@ async function checkCodexAuth(pi: ExtensionAPI, signal: AbortSignal, cwd: string
 	const auth = resolveCliChildAuth("codex");
 	if (auth.subscription) {
 		const outcome = await verifyCliSubscription("codex", auth.env, signal, 5_000, 15_000, cwd);
-		if (outcome) throw new Error(outcome.message);
+		if (outcome) throw new Error("message" in outcome ? outcome.message : "Unexpected subscription preflight outcome");
 		return "ChatGPT login and built-in OpenAI provider route verified (not a model request or billing proof)";
 	}
 	const result = await probeCli(pi, "codex", ["login", "status"], signal, 15_000);
