@@ -109,8 +109,15 @@ login method, and reject failure rather than fall back to API billing.
 For Codex, `login status` is insufficient: the active `model_provider`
 can select a separate `env_key` API provider. Bro asks the official Codex
 app-server for its effective `config/read` (including profile/working
-directory), permits only the built-in `openai` route with no endpoint
-override, and then pins that already-validated route for `codex exec`.
+directory). The official 0.165.0 app-server starts online model discovery
+on boot, so the *inspection subprocess only* receives a disposable static
+`model_catalog_json`, preventing catalog `GET` requests to the selected
+model endpoint. Real `codex exec` does not receive this override. The
+effective `model_provider: null` is Codex's normal built-in OpenAI default
+and is accepted; explicit custom providers or endpoint redirects are not.
+Codex strips project-local `model_provider` keys, so raw project TOML is
+not an authority for determining the provider. Bro uses Codex's own merged
+config, then pins that already-validated route for `codex exec`.
 `/bro doctor` calls the same subscription check as execution.
 No TOML parser, credential store, or account-management UI belongs in Bro.
 The real Codex/local HTTP test uses dummy tokens and must observe **no**
