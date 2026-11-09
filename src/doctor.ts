@@ -124,17 +124,35 @@ export async function listPiModels(
 	if (signal?.aborted) throw new Error("Canceled.");
 
 	const patterns = settingsManager.getEnabledModels() ?? [];
-	if (patterns.length) {
-		const resolved = await resolveModelScopeWithDiagnostics(patterns, modelRuntime);
-		const diagnostics = resolved.diagnostics.map((entry) => entry.message);
-		// A configured scope is authoritative even when it resolves to nothing: silently substituting
-		// every authenticated model would offer choices the user never scoped in, and would hide the
-		// diagnostics that explain why. The caller shows them.
-		const effective = ctx.scopedModels ?? resolved.scopedModels;
-		return { models: toPiModelChoices(effective.filter(({model}) => Boolean(ctx.modelRegistry.find(model.provider, model.id)))),
-			scope: "scoped", diagnostics, modelRuntime };
+	const hostScoped = ctx.scopedModels;
+	// The host has already resolved --models / enabledModels. A nonempty host
+	// scope wins even if the on-disk patterns disagree or do not exist.
+	if (hostScoped?.length) {
+		return { models: toPiModelChoices(hostScoped), scope: "scoped", diagnostics: [], modelRuntime };
 	}
-
+	if (patterns.length) {
+		if (hostScoped !== undefined) {
+			// The host explicitly reports an empty resolved scope. Never turn it
+			// into an unscoped picker, or recompute options from newer disk files.
+			return {
+				models: [], scope: "scoped",
+				diagnostics: ["The active host has no scoped models. Check its --models / enabledModels selection; reload the host after editing settings."],
+				modelRuntime,
+			};
+		}
+		// Old test hosts without scopedModels can still resolve file patterns;
+		// use only the host-backed catalog for both choices and diagnostics.
+		const resolved = await resolveModelScopeWithDiagnostics(patterns, modelRuntime);
+		return {
+			models: toPiModelChoices(resolved.scopedModels),
+			scope: "scoped",
+			diagnostics: resolved.diagnostics.map((entry) => entry.message),
+			modelRuntime,
+		};
+	}
+	// SDK documents [] as "no scope" when there are no enabledModels.
+	// The API cannot distinguish this from a failed CLI --models scope that
+	// resolved to [], since it does not expose the CLI source patterns.
 	const available = ctx.modelRegistry.getAvailable().map((model) => ({ model }));
 	return { models: toPiModelChoices(available), scope: "available", diagnostics: [], modelRuntime };
 }
