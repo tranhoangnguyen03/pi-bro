@@ -1,7 +1,8 @@
 import "./test-cli-guard.ts";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { withFakeExecutables } from "./test-fake-exec.ts";
@@ -178,6 +179,8 @@ exit 93
 });
 
 test("Doctor follows subscription auth method and rejects Codex API-key login", async () => {
+  const home = await mkdtemp(join(tmpdir(), "bro-codex-doctor-"));
+  try {
   await withFakeExecutables({ codex: `#!/bin/sh
 if [ "$1" = "login" ]; then echo 'Logged in using an API key'; exit 0; fi
 if [ "$1" = "app-server" ]; then touch "$BIN_DIR/unexpected-app-server"; exit 92; fi
@@ -201,7 +204,10 @@ exit 0
       await writeFile(settings, JSON.stringify({ version: 2,
         default: { backend: "agy", model: "fixture", effort: "default" } }));
     }
-  }, { env: { PI_BRO_CODEX_AUTH_SOURCE: "subscription" } });
+  }, { env: { PI_BRO_CODEX_AUTH_SOURCE: "subscription", PI_CODING_AGENT_DIR: home } });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 test("session shutdown cancels a running CLI child instead of leaving it after exit", async () => {
