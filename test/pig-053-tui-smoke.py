@@ -132,15 +132,15 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PI
             before_question = len(transcript)
             write(b"Why did this test use a synthetic backend?\r")
             expect("BTW backend answer in actual PiG terminal", ("BRO_PIG053_TERMINAL_RESULT",), since=before_question)
-            write(b"\\x1b")
+            write(b"\x1b")
             write(b"/bro help\r")
             expect("Bro help modal in actual PiG terminal", ("Bro · help",))
             write(b"\x1b[6~")  # PageDown
             write(b"\x1b[5~")  # PageUp
-            write(b"\\x1b")
+            write(b"\x1b")
             write(b"/bro config\r")
             expect("Bro remains usable after help scrolling", ("Global", "Features"))
-            write(b"\\x1b")
+            write(b"\x1b")
             print("PASS: resize, PageUp/PageDown, keyboard input and Esc retained the TUI", flush=True)
         finally:
             try:
