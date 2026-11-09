@@ -37,13 +37,13 @@ Values are `inherit` (the default) or `subscription`. An unknown value fails, ra
 
 ## Verified direct PiG 0.5.3 host checks (not packaged shell)
 
-[GitHub Actions run 42569331543](https://github.com/tranhoangnguyen03/pi-bro/actions/runs/42569331543) ran on Linux x64 using PiG `0.5.3+1.4.0.74f46864`, Node `24.15.0`, and a downloaded PiG archive with SHA-256 `1e45e5e591a06d087587d5f09d2b6d61673a1e262cb2609e6189defffd5ae7ec`.
+[GitHub Actions run 42570254400](https://github.com/tranhoangnguyen03/pi-bro/actions/runs/42570254400) ran on Linux x64 using PiG `0.5.3+1.4.0.74f46864`, Node `24.15.0`, and a downloaded PiG archive with SHA-256 `1e45e5e591a06d087587d5f09d2b6d61673a1e262cb2609e6189defffd5ae7ec`.
 
 - **PASS:** Real host RPC reload cancels an active fake CLI child, awaits teardown and accepts a fresh command. EOF terminates its child without a late result (2/2 host tests).
 - **PASS:** Real PiG 0.5.3 loaded `<agent-home>/.pi/models.json` containing only `study/probe`; Bro's Pi backend issued a real HTTP request to the file's local OpenAI-compatible endpoint using the selected model ID and bearer credential. After editing that file's endpoint and credential, a **new PiG host/session** called only the new endpoint and used its new key (1/1 custom-model test). No external provider was called.
-- **PASS:** In an actual pseudo-terminal, `/bro config` shows Global/Features; `/bro text` opens Simplify and displays a completed fake Agy answer; `/bro remember-me` shows its private memory view; `/bro preferences` opens its editor; `/bro btw` opens its side-question composer and returns a **fresh** backend answer; keyboard input, resize and Esc work.
-- **PASS:** Full Bro CI at the same commit: 572/572 tests in the main job, Node 22/Linux, Node 24/macOS, and legacy PiG 0.3.0 lane.
-- **NOT RUN:** Packaged PiG-Agent application with Bro 0.36.1 pinned; a genuine **remote provider** answer and actual billing method; two authorized accounts; clipboard transfer; all remaining advanced terminal journeys and hard-exit behavior. The custom endpoint test uses a local server and does not qualify a paid provider.
+- **PASS:** In an actual pseudo-terminal, `/bro config` shows Global/Features; `/bro text` opens Simplify and displays a completed fake Agy answer; Simplify `/copy` writes the exact answer via a **stubbed Linux clipboard command**; `/bro remember-me` shows its private memory view; `/bro preferences` opens its editor; `/bro btw` opens its side-question composer and returns a **fresh** backend answer; `/bro help` opens and PageDown moves its scroll position. Keyboard input, resize and Esc work, and Bro remains usable after closing Help.
+- **PASS:** Full Bro CI at the tested code commit: 572/572 tests in the main job, Node 22/Linux, Node 24/macOS, and legacy PiG 0.3.0 lane.
+- **NOT RUN:** Packaged PiG-Agent application with Bro 0.36.1 pinned; a genuine **remote provider** answer and actual billing method; two authorized accounts; macOS/native clipboard delivery; all remaining advanced terminal journeys and hard-exit behavior. The custom endpoint test uses a local server and does not qualify a paid provider.
 
 These tests load the extension from its source checkout in the **real PiG host**, not from a PiG-Agent installed release. A fake Agy CLI is not a subscription or provider request. The custom-model test makes real HTTP requests but only to a local test server; it is not evidence of an external provider's auth or billing.
 
@@ -70,8 +70,9 @@ Build the exact PiG-Agent PR #2 source with the Bro PR head pinned. Install it i
 
 | Journey | Fixture / CI | Direct PiG 0.5.3 host | Installed PiG-Agent shell | Authorized account |
 | --- | --- | --- | --- | --- |
-| Simplify/config/preferences/BTW/Remember Me, resize/keyboard/Esc | **PASS** | **PASS** (synthetic Agy TUI) | **NOT RUN** | **NOT RUN** |
-| Full scroll/clipboard, Guided Review, Advisor, Elevate, Grill Me, Show, Overthink, Architecture | Unit coverage varies | **NOT RUN** | **NOT RUN** | **NOT RUN** |
+| Simplify/config/preferences/BTW/Remember Me/Help, resize/scroll/Esc | **PASS** | **PASS** (synthetic Agy TUI) | **NOT RUN** | **NOT RUN** |
+| Simplify clipboard write through fake Linux `xclip` | **PASS** | **PASS** — copied actual answer | **NOT RUN** | **NOT RUN** |
+| Native macOS clipboard, Guided Review, Advisor, Elevate, Grill Me, Show, Overthink, Architecture | Unit coverage varies | **NOT RUN** | **NOT RUN** | **NOT RUN** |
 | Reload cancellation and EOF process cleanup | **PASS** | **PASS** (RPC, 2/2) | **NOT RUN** | **NOT RUN** |
 | Host-selected Pi model identity, endpoint, key and file edits | **PASS** | **PASS** — local HTTP custom model and fresh host | **NOT RUN** | **NOT RUN** |
 | Claude/Codex profile routing, billing-safe subscription choice | **PASS** — fake CLI | **NOT RUN** — real CLI | **NOT RUN** | **NOT RUN** |
