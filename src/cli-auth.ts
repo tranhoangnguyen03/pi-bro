@@ -24,6 +24,9 @@ export function resolveCliChildAuth(backend: CliAuthBackend, parent: NodeJS.Proc
       // Codex exec has independent, documented API-key overrides.
       delete env.CODEX_API_KEY;
       delete env.OPENAI_API_KEY;
+      // A subscription request must not inherit a provider URL redirect.
+      delete env.OPENAI_BASE_URL;
+      delete env.CHATGPT_BASE_URL;
     }
   }
   return { env, subscription: choice === "subscription" };
