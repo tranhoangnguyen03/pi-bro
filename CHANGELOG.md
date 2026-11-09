@@ -11,7 +11,7 @@ All notable changes to pi-bro are documented here.
 - Allow PiG-Agent to select each official Claude Code or Codex CLI subscription through existing `CLAUDE_CONFIG_DIR`/`CODEX_HOME`; filter conflicting API credentials in that child alone, check the reported login method before execution, and keep the normal parent account untouched. No new account store.
 - Add profile-routing, no-API-fallback, host-model, and two-home memory fixtures while retaining the newer real-host cleanup and session-restore behavior from 0.32–0.36.
 
-- For explicit Codex subscription access, use the official Codex app-server `config/read` to inspect the effective request provider. Reject custom API-key providers and endpoint redirects even when `codex login status` reports ChatGPT. Pin only the already validated built-in provider; do not switch silently. Doctor runs the same subscription checks and cannot certify a rejected setup.
+- For explicit Codex subscription access, inspect the official effective provider config. Accept Codex 0.165.0's implicit OpenAI default (`model_provider: null`), preserve its profile/project precedence, and reject custom API-key providers or endpoint redirects. The inspection app-server gets a temporary local model catalog to avoid startup network discovery; the actual Codex request does not. Doctor runs the same checks and cannot certify a rejected setup.
 - Publish the PiG shell qualification report in the npm package; CI checks `npm pack --dry-run` contents. Replace obsolete development docs about rebuilding host model/auth catalogs.
 
 ### Qualification
