@@ -37,3 +37,34 @@ export function isSubscriptionStatus(backend: CliAuthBackend, stdout: string): b
     return status?.loggedIn === true && status.authMethod === "claude.ai";
   } catch { return false; }
 }
+
+
+/**
+ * Codex login status describes the account, not the effective request provider.
+ * Read Codex's own resolved config via app-server config/read rather than
+ * interpreting individual TOML layers in Bro.
+ *
+ * Only the built-in OpenAI provider with no endpoint override is admitted for
+ * explicit ChatGPT subscription intent. Never silently switch the user's
+ * configured custom provider to OpenAI. Other providers remain available in
+ * ordinary (inherit) mode.
+ */
+export function codexSubscriptionRouteProblem(config: unknown): string | undefined {
+  if (!config || typeof config !== "object" || Array.isArray(config))
+    return "Codex did not provide a usable effective configuration";
+  const effective = config as Record<string, unknown>;
+  if (effective.model_provider !== "openai")
+    return `Codex selected model_provider=${JSON.stringify(effective.model_provider ?? "(unknown)")}; choose the built-in OpenAI provider in the selected CODEX_HOME profile`;
+  for (const key of ["openai_base_url", "chatgpt_base_url"]) {
+    if (effective[key] !== undefined && effective[key] !== null && effective[key] !== "")
+      return `Codex has a custom ${key}; remove this redirect from the selected subscription profile`;
+  }
+  const providers = effective.model_providers;
+  if (providers !== null && providers !== undefined) {
+    if (typeof providers !== "object" || Array.isArray(providers))
+      return "Codex returned an unreadable provider table";
+    if (Object.prototype.hasOwnProperty.call(providers, "openai"))
+      return "Codex overrides the built-in OpenAI provider; use an unmodified subscription provider";
+  }
+  return undefined;
+}
