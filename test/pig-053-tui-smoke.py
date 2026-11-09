@@ -41,6 +41,11 @@ esac
 printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PIG053_TERMINAL_RESULT"}}'
 """)
         backend.chmod(0o755)
+        clipboard_capture = home / "clipboard.txt"
+        # Capture the actual Linux clipboard command called by Pi/Bro.
+        xclip = bins / "xclip"
+        xclip.write_text('#!/bin/sh\\ncat > "$BRO_TUI_COPY_CAPTURE"\\n')
+        xclip.chmod(0o755)
         env = dict(os.environ)
         env.update({
             "TERM": "xterm-256color",
@@ -50,6 +55,8 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PI
             "PI_CODING_AGENT_DIR": str(agent),
             "PIG_CODING_AGENT_DIR": str(agent),
             "PI_OFFLINE": "1",
+            "DISPLAY": ":bro-ci-fixture",
+            "BRO_TUI_COPY_CAPTURE": str(clipboard_capture),
             "PATH": str(bins) + os.pathsep + env.get("PATH", ""),
         })
         argv = [PIG, "--offline", "--no-extensions", "-e", str(ROOT / "src" / "bro.ts"),
@@ -108,7 +115,12 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PI
             write(b"\x1b")  # leave config
             write(b"/bro text Explain this synthetic input\r")
             expect("Bro backend answer in actual PiG terminal", ("BRO_PIG053_TERMINAL_RESULT",))
-            write(b"\x1b")  # close explanation
+            write(b"/copy\\r")
+            expect("Simplify clipboard confirmation", ("Explanation copied.",))
+            if not clipboard_capture.exists() or "BRO_PIG053_TERMINAL_RESULT" not in clipboard_capture.read_text():
+                raise AssertionError("Simplify /copy did not write the answer to the clipboard command")
+            print("PASS: Simplify /copy passed the answer to the Linux clipboard command", flush=True)
+            write(b"\\x1b")  # close explanation
             write(b"/bro remember-me\r")
             expect("Remember Me modal in actual PiG terminal", ("Your memory or correction", "No matching personal memories."))
             write(b"\x1b")
@@ -120,8 +132,16 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PI
             before_question = len(transcript)
             write(b"Why did this test use a synthetic backend?\r")
             expect("BTW backend answer in actual PiG terminal", ("BRO_PIG053_TERMINAL_RESULT",), since=before_question)
-            write(b"\x1b")
-            print("PASS: resize, keyboard input and Esc did not crash the TUI", flush=True)
+            write(b"\\x1b")
+            write(b"/bro help\\r")
+            expect("Bro help modal in actual PiG terminal", ("Bro · help",))
+            write(b"\\x1b[6~")  # PageDown
+            write(b"\\x1b[5~")  # PageUp
+            write(b"\\x1b")
+            write(b"/bro config\\r")
+            expect("Bro remains usable after help scrolling", ("Global", "Features"))
+            write(b"\\x1b")
+            print("PASS: resize, PageUp/PageDown, keyboard input and Esc retained the TUI", flush=True)
         finally:
             try:
                 os.killpg(pid, signal.SIGTERM)
