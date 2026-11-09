@@ -128,7 +128,18 @@ export async function listPiModels(
 	// The host has already resolved --models / enabledModels. A nonempty host
 	// scope wins even if the on-disk patterns disagree or do not exist.
 	if (hostScoped?.length) {
-		return { models: toPiModelChoices(hostScoped), scope: "scoped", diagnostics: [], modelRuntime };
+		const effective = hostScoped.flatMap(({ model, thinkingLevel }) => {
+			const selected = ctx.modelRegistry.find(model.provider, model.id);
+			return selected && ctx.modelRegistry.hasConfiguredAuth(selected)
+				? [{ model: selected, thinkingLevel }] : [];
+		});
+		return {
+			models: toPiModelChoices(effective),
+			scope: "scoped",
+			diagnostics: effective.length < hostScoped.length
+				? ["A model in the active host scope is no longer available or authenticated. Refresh the host selection."] : [],
+			modelRuntime,
+		};
 	}
 	if (patterns.length) {
 		if (hostScoped !== undefined) {
