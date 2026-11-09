@@ -96,7 +96,10 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PI
                         raise AssertionError("PiG TUI exited during " + label + ": " + current[-2400:])
                 raise AssertionError("PiG TUI missing " + label + " (" +
                     ", ".join(fragments) + "); terminal tail:\n" + plain(bytes(transcript))[-3200:])
-            take(2.5)
+            # The host may still be loading extensions when the PTY first appears.
+            # Wait for its startup checks rather than sending Enter to an unfinished UI.
+            expect("PiG extension startup before typing", ("bro.ts", "No models available."), timeout=30.0)
+            take(0.4)
             write(b"/bro config\r")
             expect("Bro configuration modal in actual PiG terminal", ("Global", "Features"))
             window(fd, 18, 72)
