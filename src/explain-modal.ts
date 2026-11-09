@@ -39,6 +39,7 @@ import type { BroSource } from "./sources.ts";
 import { BRO_OVERLAY, broOverlayArea, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
 import { hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
+import { latestCompletedAssistantText } from "./last-assistant.ts";
 
 const LOADING_TEXT = "Simplifying for my bro…";
 
@@ -49,22 +50,8 @@ export type BroResult = { source: BroSource; text: string; model?: string; mode?
 export type ModalResult = { source?: BroSource; text: string; htmlPath?: string; model?: string; mode?: BroMode; preferences?: boolean };
 
 export function latestAssistant(ctx: ExtensionCommandContext): BroSource | undefined {
-	const branch = ctx.sessionManager.getBranch();
-
-	for (let i = branch.length - 1; i >= 0; i--) {
-		const entry = branch[i];
-		if (entry.type !== "message" || entry.message.role !== "assistant" || entry.message.stopReason !== "stop") {
-			continue;
-		}
-
-		const text = entry.message.content
-			.filter((part): part is { type: "text"; text: string } => part.type === "text")
-			.map((part) => part.text)
-			.join("\n")
-			.trim();
-
-		if (text) return { text };
-	}
+  const text = latestCompletedAssistantText(ctx.sessionManager.getBranch())?.trim();
+  return text ? { text } : undefined;
 }
 
 export async function simplify(
@@ -402,6 +389,8 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 - \`/bro <input>\` — a lone URL, an existing supported file, or anything else as pasted text
 - Inside Simplify: \`/simplify\`, \`/text <text>\`, \`/file <path>\`, \`/url <url>\`, \`/copy\`, \`/clear\`, \`/help\`. **M** changes the mode and re-explains; **R** retries. One source at a time, no chat thread.\n- \`/bro open\` — legacy last-result view (retained for compatibility)
 - \`/bro show [n-turns] [query]\` — draw recent turns' conversation text as shapes; an optional query steers the focus
+
+- \`/bro copy\` — edit and preview the last reply before copying raw Markdown.
 
 ## Architecture documentation
 

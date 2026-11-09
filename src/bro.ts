@@ -12,6 +12,7 @@ import { setPiHostContext, stopActiveBackendExecutions } from "./backend.ts";
 import { openElevateModal } from "./elevate.ts";
 import { openArchitectureDocs } from "./architecture.ts";
 import { openGrillModal } from "./grill.ts";
+import { openCopyModal } from "./copy.ts";
 import { registerOverthink } from "./overthink.ts";
 import { openRememberModal } from "./remember.ts";
 import { openSimplifyWorkflow, type SimplifyState } from "./simplify-ui.ts";
@@ -73,10 +74,12 @@ export * from "./simplify-ui.ts";
 export * from "./overthink-state.ts";
 export * from "./overthink.ts";
 export * from "./session-state.ts";
+export * from "./copy.ts";
 
 const COMMANDS = [
 	{ value: "architecture", label: "architecture", description: "Document this repository in docs/architecture/ with diagrams and an offline map" },
 	{ value: "simplify", label: "simplify", description: "Reopen the last Simplify screen without a new model call" },
+	{ value: "copy", label: "copy", description: "Edit, preview and copy the last assistant reply as Markdown — no model call" },
 	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
 	{ value: "file", label: "file", description: "Explain a local document" },
 	{ value: "url", label: "url", description: "Explain a public webpage" },
@@ -228,6 +231,13 @@ export default async function bro(pi: ExtensionAPI) {
 					saveSimplify();
 					if (simplifyState.result) remember(simplifyState.result);
 				} catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
+				return;
+			}
+
+			if (action === "copy") {
+				if (value) { ctx.ui.notify("Use /bro copy without arguments to edit the last reply.", "warning"); return; }
+				try { await openCopyModal(ctx); }
+				catch (error) { ctx.ui.notify("Bro Copy: " + errorMessage(error), "error"); }
 				return;
 			}
 

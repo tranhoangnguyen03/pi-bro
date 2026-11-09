@@ -15,6 +15,7 @@ import { rm } from "node:fs/promises";
 
 const load = (name) => import(pathToFileURL(join(sourceDir, name)).href);
 const kit = await load("modal-kit.ts");
+const { CopyModal } = await load("copy.ts");
 const { openGuidedReview } = await load("review-ui.ts");
 const { newReviewView } = await load("review-modal.ts");
 const { saveReview } = await load("review.ts");
@@ -143,7 +144,27 @@ const SURFACES = [
 		smallShows: [/Enlarge the terminal/],
 		open: factoryRow(() => explainModal.createAdvisorSteerModal(long, () => {}, () => {})),
 	},
-	// SettingsList prints config's full hints inside the list; the safe tiny state still keeps Esc visible.
+  {
+    name: "Copy Markdown editor",
+    mouse: true,
+    minRows: 22,
+    fullShows: [/Ctrl\+D preview/, /Ctrl\+C copy/],
+    smallShows: [/Enlarge the terminal/],
+    open: ctx => kit.openBroOverlay(ctx,
+      (tui, theme, _kb, done) => new CopyModal(tui, theme, long, () => done(), async () => {}),
+      { mouse: true }),
+  },
+  {
+    name: "Copy Markdown preview",
+    mouse: true,
+    scrolls: true,
+    fullShows: [/Ctrl\+D edit/, /Ctrl\+C copy/],
+    open: ctx => kit.openBroOverlay(ctx,
+      (tui, theme, _kb, done) => new CopyModal(tui, theme, long, () => done(), async () => {}),
+      { mouse: true }),
+    after: component => component.handleInput("\x04"), // Ctrl+D into Preview
+  },
+  	// SettingsList prints config's full hints inside the list; the safe tiny state still keeps Esc visible.
 	{ name: "config", minRows: 14, shows: [/Esc/], fullShows: [/Enter\/Space to change · Esc/], open: factoryRow(() => configUi.createConfigModal(settings, [], async () => {})) },
 	{
 		name: "config with the model picker open",

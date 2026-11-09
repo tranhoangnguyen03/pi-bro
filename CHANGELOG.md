@@ -2,6 +2,15 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.36.0] - 2026-11-09
+
+### Added
+
+- `/bro copy` opens the last completed assistant reply as raw editable Markdown, with Ctrl+D Preview and Ctrl+C clipboard copy, without model calls or saved drafts.
+- Unedited copies preserve source text exactly. Edited copies use Pi Editor's text, with notice for normalized tabs and CRLF.
+- Copy and Simplify now share the same completed-reply extractor, keeping Simplify's trim.
+- Copy source, editor, clipboard, and modal regression tests; live Pi terminal/clipboard qualification remains open.
+
 ## [0.35.1] - 2026-11-09
 
 ### Highlights
