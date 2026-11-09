@@ -7,7 +7,7 @@ import { createServer } from "node:http";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { execute } from "../src/backend.ts";
 import { doctorReport } from "../src/doctor.ts";
 
@@ -63,6 +63,7 @@ test("real Codex 0.165.0 rejects custom env_key API provider despite ChatGPT log
     }));
 
     const selectedEnv = {
+      PATH: dirname(codex) + ":" + (process.env.PATH ?? ""),
       CODEX_HOME: profile,
       PI_CODING_AGENT_DIR: agentDir,
       PI_BRO_CODEX_AUTH_SOURCE: "subscription",
