@@ -8,7 +8,8 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { execute } from "../src/backend.ts";
+import { execute, verifyCliSubscription } from "../src/backend.ts";
+import { resolveCliChildAuth } from "../src/cli-auth.ts";
 import { doctorReport } from "../src/doctor.ts";
 
 const codex = process.env.BRO_REAL_CODEX_BIN;
@@ -96,6 +97,29 @@ test("real Codex 0.165.0 rejects custom env_key API provider despite ChatGPT log
     assert.match(report, /Bro needs attention/);
     assert.match(report, /model_provider=.*localfixture/);
     assert.deepEqual(calls, [], "Doctor also must not send any model request");
+
+    // A compatible profile must pass inspection without a model request.
+    await writeFile(join(profile, "config.toml"), [
+      'cli_auth_credentials_store = "file"',
+      'model_provider = "openai"',
+    ].join("\n") + "\n");
+    const resolved = resolveCliChildAuth("codex");
+    const accepted = await verifyCliSubscription("codex", resolved.env,
+      new AbortController().signal, 5_000, 15_000, cwd);
+    assert.equal(accepted, undefined, JSON.stringify(accepted));
+    assert.deepEqual(calls, [], "subscription config inspection cannot make a provider request");
+
+    // Even the built-in provider may be pointed at a different endpoint.
+    await writeFile(join(profile, "config.toml"), [
+      'cli_auth_credentials_store = "file"',
+      'model_provider = "openai"',
+      `openai_base_url = "http://127.0.0.1:${port}/v1"`,
+    ].join("\n") + "\n");
+    const redirected = await verifyCliSubscription("codex", resolved.env,
+      new AbortController().signal, 5_000, 15_000, cwd);
+    assert.equal(redirected?.status, "failure");
+    assert.match(redirected && "message" in redirected ? redirected.message : "", /openai_base_url/);
+    assert.deepEqual(calls, [], "redirected provider cannot receive an explicit subscription request");
   } finally {
     for (const [key, value] of savedEnv) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
