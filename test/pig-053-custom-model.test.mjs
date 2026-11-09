@@ -53,7 +53,7 @@ async function withDeadline(promise, ms, message) {
   } finally { clearTimeout(timer); }
 }
 
-async function runHost(agent, workspace, session, expectedText) {
+async function runHost(agent, workspace, session, expectedText, afterFirstReply) {
   const env = { ...process.env,
     PI_CODING_AGENT_DIR: agent, PIG_CODING_AGENT_DIR: agent,
     PIG_HOME: join(dirname(agent), ".pig"), PIG_USE_PI_DIRS: "1",
@@ -66,9 +66,8 @@ async function runHost(agent, workspace, session, expectedText) {
     "--provider", "study", "--model", "probe", "--session", session];
   const child = spawn(pig, args, { cwd: workspace, env, stdio: ["pipe", "pipe", "pipe"] });
   let logs = "", stdout = "", buffer = "";
-  const response = new Promise((resolve, reject) => {
-    child.on("error", reject);
-    child.stdout.on("data", chunk => {
+  const pending = new Map();
+  child.stdout.on("data", chunk => {
       buffer += chunk.toString("utf8");
       while (buffer.includes("\n")) {
         const i = buffer.indexOf("\n");
@@ -76,21 +75,31 @@ async function runHost(agent, workspace, session, expectedText) {
         stdout += line + "\n";
         let value;
         try { value = JSON.parse(line); } catch { continue; }
-        if (value.type === "response" && value.id === "bro-local-model") resolve(value);
+        if (value.type === "response" && pending.has(value.id)) {
+          pending.get(value.id)(value);
+          pending.delete(value.id);
+        }
       }
     });
-  });
   child.stderr.on("data", chunk => { logs = (logs + chunk.toString()).slice(-9000); });
   const closed = new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("close", (code, signal) => resolve({ code, signal }));
   });
   try {
-    child.stdin.write(JSON.stringify({ id: "bro-local-model", type: "prompt",
-      message: "/bro text Explain the test request from this agent." }) + "\n");
-    const result = await withDeadline(response, 25_000,
-      () => "RPC timeout: " + logs + "\n" + stdout);
-    assert.equal(result.success, true, "RPC command error: " + JSON.stringify(result) + "\n" + logs);
+    const sendBroRequest = async (id) => {
+      const response = new Promise(resolve => pending.set(id, resolve));
+      child.stdin.write(JSON.stringify({ id, type: "prompt",
+        message: "/bro text Explain the test request from this agent." }) + "\n");
+      const result = await withDeadline(response, 25_000,
+        () => "RPC timeout: " + logs + "\n" + stdout);
+      assert.equal(result.success, true, "RPC command error: " + JSON.stringify(result) + "\n" + logs);
+    };
+    await sendBroRequest("bro-local-model-1");
+    if (afterFirstReply) {
+      await afterFirstReply();
+      await sendBroRequest("bro-local-model-2");
+    }
     child.stdin.end();
     const exit = await withDeadline(closed, 10_000, () => "RPC exit timeout: " + logs);
     assert.equal(exit.code, 0, "host did not exit cleanly: " + logs);
@@ -136,17 +145,25 @@ test("real PiG 0.5.3 uses the agent-local custom model's endpoint and key, then 
         }) + "\n");
         return file;
       };
-      await runHost(agent, workspace, await session("one"), "LOCAL_MODEL_FIRST_REPLY");
-      assert.equal(one.requests.length, 1, "first configured endpoint must receive exactly one model request");
-      assert.equal(two.requests.length, 0, "unselected endpoint must receive nothing");
-      assert.deepEqual(one.requests[0], {
-        url: "/v1/chat/completions", authorization: "Bearer " + firstKey, model: "probe",
-      });
-
       const secondKey = "fixture-only-agent-two";
-      await writeFile(join(agent, "models.json"), JSON.stringify(models(p2, secondKey)));
+      await runHost(agent, workspace, await session("one"), "LOCAL_MODEL_FIRST_REPLY",
+        async () => {
+          // Edit the selected model while PiG is still running. The SDK child must
+          // use the host-old endpoint A AND its host-old credential A, never A+B.
+          assert.equal(one.requests.length, 1);
+          await writeFile(join(agent, "models.json"), JSON.stringify(models(p2, secondKey)));
+        });
+      assert.equal(one.requests.length, 2, "the unchanged host must use endpoint A for both turns");
+      assert.equal(two.requests.length, 0, "the unchanged host must not send to endpoint B");
+      for (const request of one.requests) {
+        assert.deepEqual(request, {
+          url: "/v1/chat/completions", authorization: "Bearer " + firstKey, model: "probe",
+        }, "the unchanged host must not pair its old endpoint with the new credential");
+      }
+
+      // A new PiG host loads the edited model, endpoint and credential as one source.
       await runHost(agent, workspace, await session("two"), "LOCAL_MODEL_EDITED_REPLY");
-      assert.equal(one.requests.length, 1, "fresh host must not call stale endpoint");
+      assert.equal(one.requests.length, 2, "fresh host must not call stale endpoint");
       assert.equal(two.requests.length, 1, "edited agent-local endpoint must receive one request");
       assert.deepEqual(two.requests[0], {
         url: "/v1/chat/completions", authorization: "Bearer " + secondKey, model: "probe",
