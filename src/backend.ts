@@ -604,13 +604,44 @@ async function executeAdvisorStdin(
  * Inspection never makes a model request. Missing, unreadable or unsupported
  * app-server/config/read support fails closed when subscription is explicit.
  */
+// Codex 0.165.0 app-server starts an online catalog refresh on boot,
+// even if the only client method is config/read. Supply a disposable static
+// catalog for this *inspection process only* so the refresh worker cannot
+// contact a configured provider. The override does NOT select a provider,
+// change account credentials, or go into the real codex exec arguments.
+// The provider is still read from Codex's effective config for the same cwd.
+const CODEX_INSPECTION_CATALOG = {
+  models: [{
+    slug: "bro-config-inspection-only",
+    display_name: "Bro configuration inspection only",
+    description: "Local offline catalog; never used for inference",
+    default_reasoning_level: "medium",
+    supported_reasoning_levels: [{ effort: "medium", description: "medium" }],
+    shell_type: "shell_command",
+    visibility: "none",
+    supported_in_api: true,
+    priority: 0,
+    support_verbosity: false,
+    default_verbosity: null,
+    apply_patch_tool_type: null,
+    truncation_policy: { mode: "bytes", limit: 10_000 },
+    experimental_supported_tools: [],
+  }],
+};
+
 async function inspectCodexSubscriptionRoute(
   env: NodeJS.ProcessEnv, cwd: string | undefined, signal: AbortSignal,
   deadlineMs: number, killEscalationMs: number,
 ): Promise<BackendOutcome | undefined> {
   if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+  const probeDir = await mkdtemp(join(tmpdir(), "pi-bro-codex-inspect-"));
+  try {
+  const catalogPath = join(probeDir, "catalog.json");
+  await writeFile(catalogPath, JSON.stringify(CODEX_INSPECTION_CATALOG), { mode: 0o600 });
+  if (signal.aborted) return { status: "cancelled", message: "Canceled." };
   const { child, attempt, diagnostics } = startCliAttempt(
-    "codex", ["app-server"], { env, cwd, stdio: ["pipe", "pipe", "pipe"] },
+    "codex", ["-c", `model_catalog_json=${JSON.stringify(catalogPath)}`, "app-server"],
+    { env, cwd, stdio: ["pipe", "pipe", "pipe"] },
     signal, Math.min(deadlineMs, 15_000), killEscalationMs,
   );
   let buffer = "";
@@ -687,8 +718,11 @@ async function inspectCodexSubscriptionRoute(
       : "Codex app-server closed without returning the effective configuration";
   return problem
     ? { status: "failure", message: "Codex subscription selection is not safe: " + problem +
-        ". No request was sent. Use a subscription-compatible CODEX_HOME profile or select inherited/API authentication explicitly." }
+        ". No inference or provider discovery request was sent by the inspection process. Use a subscription-compatible CODEX_HOME profile or select inherited/API authentication explicitly." }
     : undefined;
+  } finally {
+    await rm(probeDir, { recursive: true, force: true });
+  }
 }
 
 // Only a deliberate subscription choice gets an auth-method preflight.
