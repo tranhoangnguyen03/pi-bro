@@ -720,7 +720,7 @@ async function inspectCodexSubscriptionRoute(
         (diagnostics.stderr.trim() ? ": " + diagnostics.stderr.trim().slice(0, 700) : "");
   return problem
     ? { status: "failure", message: "Codex subscription selection is not safe: " + problem +
-        ". No inference or provider discovery request was sent by the inspection process. Use a subscription-compatible CODEX_HOME profile or select inherited/API authentication explicitly." }
+        ". No Codex model execution was started; the inspection uses a temporary local catalog to suppress ordinary model discovery. Use a subscription-compatible CODEX_HOME profile or select inherited/API authentication explicitly." }
     : undefined;
   } finally {
     await rm(probeDir, { recursive: true, force: true });
