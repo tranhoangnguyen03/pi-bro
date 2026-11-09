@@ -33,7 +33,7 @@ def run():
         bins = home / "bin"
         bins.mkdir()
         backend = bins / "agy"
-        backend.write_text("""#!/bin/sh
+        backend.write_text(r"""#!/bin/sh
 case "$1" in
   models) printf 'fixture-model\\tFixture Model\\n'; exit 0;;
   --version) printf 'agy fixture\\n'; exit 0;;
