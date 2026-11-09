@@ -1335,9 +1335,9 @@ test("pi re-issues abort when a stop is latched during prompt preflight", async 
 	assert.ok(aborts >= 2, `abort must be re-issued at preflight (saw ${aborts})`);
 });
 
-test("pi catalog bridge copies runtime keys for providers that are only in the model catalog", async () => {
-	// getRegisteredProviderIds() lists extension registrations only, so a runtime key set on a built-in
-	// provider (Pi's own --api-key) must be found through the model catalog instead.
+test("pi catalog bridge resolves runtime credentials from the host without copying keys", async () => {
+	// A runtime key set on a built-in provider (Pi's --api-key) belongs to the host.
+	// Bro must resolve it through the host, not copy it into another credential store.
 	const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
 	const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
 	const { join } = await import("node:path");
@@ -1350,7 +1350,9 @@ test("pi catalog bridge copies runtime keys for providers that are only in the m
 		{ modelRegistry: new (await import("@earendil-works/pi-coding-agent")).ModelRegistry(hostRuntime) } as never,
 		agentDir,
 	);
-	assert.equal(catalogRuntime.getProviderAuthStatus(provider).source, "runtime", "the runtime key must be carried across");
+	assert.equal(catalogRuntime.getProviderAuthStatus(provider).source, "runtime", "the host status must remain authoritative");
+	assert.equal((await catalogRuntime.getAuth(provider))?.auth.apiKey, "sk-fixture-runtime-key",
+		"the selected credential comes from the host-effective runtime");
 });
 
 test("pi bounds host-effective credential preflight by the deadline", async () => {
