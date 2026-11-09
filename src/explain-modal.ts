@@ -25,8 +25,8 @@ import {
 	type BroSettings,
 	CAPABILITIES,
 	CAPABILITY_LABELS,
-	PREFERENCES_FILE,
 	capabilityOverride,
+	preferencesFile,
 	queuePreferencesWrite,
 	readPreferences,
 	readPreferencesRaw,
@@ -39,6 +39,7 @@ import type { BroSource } from "./sources.ts";
 import { BRO_OVERLAY, broOverlayArea, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
 import { hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
+import { latestCompletedAssistantText } from "./last-assistant.ts";
 
 const LOADING_TEXT = "Simplifying for my bro…";
 
@@ -49,22 +50,8 @@ export type BroResult = { source: BroSource; text: string; model?: string; mode?
 export type ModalResult = { source?: BroSource; text: string; htmlPath?: string; model?: string; mode?: BroMode; preferences?: boolean };
 
 export function latestAssistant(ctx: ExtensionCommandContext): BroSource | undefined {
-	const branch = ctx.sessionManager.getBranch();
-
-	for (let i = branch.length - 1; i >= 0; i--) {
-		const entry = branch[i];
-		if (entry.type !== "message" || entry.message.role !== "assistant" || entry.message.stopReason !== "stop") {
-			continue;
-		}
-
-		const text = entry.message.content
-			.filter((part): part is { type: "text"; text: string } => part.type === "text")
-			.map((part) => part.text)
-			.join("\n")
-			.trim();
-
-		if (text) return { text };
-	}
+  const text = latestCompletedAssistantText(ctx.sessionManager.getBranch())?.trim();
+  return text ? { text } : undefined;
 }
 
 export async function simplify(
@@ -326,8 +313,9 @@ export function createPreferencesModal(
 }
 
 export async function showPreferencesModal(ctx: ExtensionCommandContext): Promise<void> {
+	const file = preferencesFile();
 	if (!hasBroCustomUi(ctx)) {
-		ctx.ui.notify(`Edit ${PREFERENCES_FILE} directly.`, "warning");
+		ctx.ui.notify(`Edit ${file} directly.`, "warning");
 		return;
 	}
 	let loaded: { text?: string; error?: string };
@@ -342,8 +330,8 @@ export async function showPreferencesModal(ctx: ExtensionCommandContext): Promis
 		ctx,
 		createPreferencesModal(loaded, {
 			// ponytail: last writer wins against external edits while the editor is open, like writeSettings.
-			save: (text) => queuePreferencesWrite(() => writeFile(PREFERENCES_FILE, `${text.trim()}\n`, "utf8")),
-			clear: () => queuePreferencesWrite(() => rm(PREFERENCES_FILE, { force: true })),
+			save: (text) => queuePreferencesWrite(() => writeFile(preferencesFile(), `${text.trim()}\n`, "utf8")),
+			clear: () => queuePreferencesWrite(() => rm(preferencesFile(), { force: true })),
 		}),
 	);
 }
@@ -382,6 +370,15 @@ export function helpText(settings?: BroSettings, settingsError?: string, prefere
 
 Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/user-guide.md
 
+## Pick by need
+
+- **Understand what already exists:** Simplify and Show; Architecture for this repository.
+- **Explore what could exist:** BTW for side questions; Grill Me for decisions.
+- **Get advice on existing work:** Guided Review; Overthink for automatic second looks; agent-facing Advisor.
+- **Guide the agent:** Elevate for assignments; Remember Me for approved context (about_user); Advisor Steering for priorities.
+
+These are needs, not modes. Copied text does not enter Pi until you paste and submit it.
+
 ## Explain and show
 
 - \`/bro\` — open Simplify and explain the latest completed assistant reply
@@ -393,16 +390,18 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 - Inside Simplify: \`/simplify\`, \`/text <text>\`, \`/file <path>\`, \`/url <url>\`, \`/copy\`, \`/clear\`, \`/help\`. **M** changes the mode and re-explains; **R** retries. One source at a time, no chat thread.\n- \`/bro open\` — legacy last-result view (retained for compatibility)
 - \`/bro show [n-turns] [query]\` — draw recent turns' conversation text as shapes; an optional query steers the focus
 
+- \`/bro copy\` — edit and preview the last reply before copying raw Markdown.
+
 ## Architecture documentation
 
-- \`/bro architecture [focus]\` — inspect this project and create or refresh \`docs/architecture/\` (Markdown, diagrams and a self-contained HTML map). Inherits the BTW model selection. See docs/features/architecture.md.
+- \`/bro architecture [focus]\` — create source-backed docs and an offline map in \`docs/architecture/\` using the BTW model. See docs/features/architecture.md.
 
 ## Guided Review
 
-- \`/bro guided-review <PR number or URL>\` — automatically explain and assess a PR with captured code and optional private questions (local Pi interactive only; Git and authenticated gh required).
-- Reviews save automatically. Reopen the same PR without a model call; bare \`/bro guided-review\` lists saved reviews (\`resume\` is an alias). Captured code stays unchanged.
+- \`/bro guided-review <PR number or URL>\` — assess captured PR code in local interactive Pi (requires Git and authenticated gh).
+- Reviews save automatically. Reopen without a model call; bare \`/bro guided-review\` lists saved reviews.\n- \`/bro guided-review delete [PR number or URL]\` — delete one local saved review with confirmation; Overview also offers Delete review.
 - Enter opens items or activates focused actions. Tab changes focus; Esc goes back, then closes from Contents. Close saves; Stop and close cancels active work first.
-- Copy finding uses the clipboard, not GitHub. Regenerate requires confirmation and reviews the same capture. For untrusted PRs, prefer Claude/Muse/Pi: file-only tools, no shell/writes/web. Codex/Grok allow shell in a read-only sandbox; Agy's sandbox permits project writes. All three show an advisory. Choose a review override in /bro config. Repository text can mislead; citations are not proof.
+- Copy finding goes to the clipboard, not GitHub. Regenerate reuses captured source. For untrusted PRs, choose file-only Claude/Muse/Pi; Codex/Grok offer sandboxed shell, while Agy may write captured files. Bro warns when shell is allowed. See docs/guided-review.md.
 
 ## Elevate
 
@@ -412,17 +411,16 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 ## Grill Me (experimental)
 
-- \`/bro grill-me [topic]\` — private decision interview. Use /consolidate, /insert-last-message or /help. Full-access risk: docs/grill-me.md.
+- \`/bro grill-me [topic]\` — private decision interview. Use /consolidate, /copy or /help. Full-access risk: docs/grill-me.md.
 
 ## Overthink
 
-- \`/bro overthink\` — view private automatic second-look notes without running a model. Ctrl+R forces retry; Ctrl+E edits this session's questions; ? shows help; Ctrl+C copies. Uses the active Pi model and thinking level only. No separate backend settings.
-- \`/bro config\` → Features → Overthink provides automatic on/off and editable global starting questions; session edits stay with their Pi session. See docs/overthink.md.
+- \`/bro overthink\` — view private automatic second-look notes without a model call. Ctrl+R retries; Ctrl+E edits session questions; Ctrl+C copies. Uses the active Pi model. Turn off or edit defaults in \`/bro config\` → Features → Overthink. See docs/overthink.md.
 
 ## Side conversation
 
 - \`/bro btw [question]\` — open a side conversation seeded with recent main-session context. It starts conversation-only; reopening keeps the thread and its mode.
-- Enter asks; empty Enter or \`/retry\` re-asks. \`/mode\` toggles conversation-only/full workspace access, retaining the thread. \`/copy\`, \`/copy-all\` copy; \`/insert\`, \`/insert-all\` fill an empty main editor without submitting. \`/clear\` resets; Esc closes.
+- Enter asks; empty Enter or \`/retry\` re-asks. \`/mode\` toggles conversation-only/full workspace access, retaining the thread. \`/copy\`, \`/copy-all\` copy. \`/clear\` resets; \`/help\` shows controls; Esc closes.
 
 ## Advisor
 
@@ -433,8 +431,8 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 ## Configure and check
 
-- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate and Guided Review prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
-- \`/bro config\` — Global (shared defaults, preferences, Doctor) and Features (Simplify, Show, BTW, Review, Advisor, Overthink defaults and BTW-inherited workflows). The same model pickers, safe saves and error handling remain; Esc backs out.
+- \`/bro preferences\` — tell Bro about yourself and how you like answers; added to explain, show, btw, Elevate, Guided Review and Overthink prompts, never the advisor (**Ctrl+S** save, **Ctrl+K** delete, **Ctrl+C** copy, **Esc** close)
+- \`/bro config\` — shared defaults, per-feature models, preferences, Doctor and Overthink. Esc backs out.
 - \`/bro mode [brief|balanced|faithful]\` — view or choose the explanation mode
 - \`/bro doctor\` — check settings, preferences, and every selected backend without running a model turn
 
@@ -443,7 +441,7 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 ${settingsSummary}
 - **Preferences:** ${preferences} — \`/bro preferences\`
 
-Saved in \`${settingsFile()}\`, \`${PREFERENCES_FILE}\`, and \`${ADVISOR_STEERING_FILE}\`.
+Saved in \`${settingsFile()}\`, \`${preferencesFile()}\`, and \`${ADVISOR_STEERING_FILE}\`.
 
 ## Explanation modes
 
@@ -466,7 +464,7 @@ The mode decides how much of the source to keep; your preferences decide who it'
 
 ## Privacy
 
-Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, and Guided Review request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you insert it, except advisor answers, which return to the agent as tool results. Access controls differ by backend; see the user guide.`;
+Bro sends the captured source (or, for the advisor, the executor's instructions, tools, and conversation) to the selected backend and its model provider, which may retain it under their own policies. Your preferences go with every explain, show, btw, Elevate, Guided Review, and Overthink request. Guided Review sends PR data/diff and relevant private questions; records/source remain locally under getAgentDir()/bro-reviews. Copy finding goes to the system clipboard, not GitHub. Nothing is added to Pi's conversation unless you paste and send it, except advisor answers and approved memories read through about_user, which return to the agent as tool results. Access controls differ by backend; see the user guide.`;
 }
 
 // The overlay framing pattern is adapted from pi-btw (MIT); see THIRD_PARTY_NOTICES.md.

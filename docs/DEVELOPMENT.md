@@ -11,16 +11,17 @@ those are historical records.
 
 Production code lives in `src/` and is published as TypeScript source (no build step):
 
+- **`session-state.ts`** — restores private per-branch BTW, Grill, Simplify and last-result state from Pi custom session entries, excluded from the main model context. The same restore runs on `session_start` and `session_tree`; saved-entry fingerprints prevent redundant appends on unchanged reopen/close.
 - **`bro.ts`** — the Pi extension entry point, `/bro` command routing and completion, session lifecycle wiring, and barrel re-exports.
 - **`overthink.ts`, `overthink-state.ts`, `overthink-questions-ui.ts`** — automatic same-model review of settled Pi work; private session custom entries plus global defaults; shared question editor and latest-notes viewer. Never use Bro's separate SDK/CLI backend for this cache-sensitive feature. The request retains session context (which may include tool definitions) but runs no tools; an unexpected toolUse stop reason is rejected. Agent-end events collect substantive-work evidence; only `agent_settled` (supported from Pi 1.3) schedules automatic checks. Session-position markers ignore private custom entries, while later model messages, compaction and context edits mark notes as stale. The settings-read generation token is captured before the asynchronous read. Global automatic on/off is stored with default questions, separate from Bro's model selection.
-- **`doctor.ts`** — `/bro doctor` diagnostics, CLI version/auth probes, Agy model catalog/usage parsing, and `/bro config` modal launch wiring.
 - **`architecture.ts`** — `/bro architecture` orchestration: staged project, explicit bundled skill, restricted source inspection using the existing review execution contract, guarded import and progress.
 - **`resources/architecture-docs/`** — architecture-writing references, read-only inventory, offline graph renderer and output checker; packaged with Bro. The pipeline validates source/target hashes and restricts imported files to `docs/architecture/`. No persistent repo memory or new backend selection.
-- **`show.ts` — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.
+- **`doctor.ts`** — `/bro doctor` diagnostics, CLI version/auth probes, Agy model catalog/usage parsing, and `/bro config` modal launch wiring.
+- **`show.ts`** — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution.
 - **`advisor.ts`** — the `bro_advisor` tool registration, context snapshot builder, session/durable steering state, and progress orchestration.
 - **`btw.ts`** — the `/bro btw` side conversation thread state, native continuation/reseed policy, composer command parsing, and `BtwModal`.
 - **`elevate-engine.ts`** — independent discovery and rewrite prompts, strict discovery JSON parser, user selection and scope guards.
-- **`elevate.ts`** — `/bro elevate` UI, draft capture, context filtering, backend calls, cancellation and guarded editor insertion.
+- **`elevate.ts`** — `/bro elevate` UI, draft capture, context filtering, backend calls, cancellation and copy-only handoff.
 - **`explain-modal.ts`** — `BroModal` (explain/show/doctor/help result overlay), `simplify`, `createTextEditorModal` (`/bro preferences` and `/bro advisor-steer` editors), and `/bro help` text.
 - **`review.ts`** — Guided Review schema/validation, atomic records, guide replacement and prompt construction.
 - **`review-source.ts`** — explicit GitHub identity through `gh`, managed Git capture and protected blob evidence reads.
@@ -45,6 +46,7 @@ Production code lives in `src/` and is published as TypeScript source (no build 
   advisor. Prompts are backend-neutral; backend differences belong in
   `backend.ts`, not in prompt text.
 - **`ui-capabilities.ts`** — environment UI capability probes (interactive TUI, virtual viewport, Desktop panels) and terminal mouse-reporting helpers.
+- **`copy.ts`** — model-free last-assistant Markdown scratch editor. Preview and clipboard use the sole Pi Editor draft: original reply if unchanged, `Editor.getExpandedText()` if edited. Pi Editor normalizes tabs to spaces and CRLF to LF; a visible note discloses this when relevant. **`last-assistant.ts`** is the one untrimmed session-reply extractor used by Copy and Simplify.
 - **`modal-kit.ts`** — shared overlay building blocks: the `Theme`/`TuiLike` types, the `BRO_OVERLAY` preset and `modalHeight`, `renderFrame`, `Scroller`, `delegateMouse`, the regular-mode mouse lease and `openBroOverlay`. See [Modals](#modals).
 - **`dev/`** — manual review launcher and recorded #102 source fixture, not shipped or included in the normal typecheck. `review-live.ts` uses the production controller but omits preferences; use `bro.ts` for a production-equivalent journey. The JSON fixture is kept as historical acquisition/rendering source data, not an automated test or generated-answer substitute.
 
@@ -112,9 +114,9 @@ Agy; reads never rewrite the file.
 - Each stage makes a fresh restricted backend call through `selectionForCapability(settings, "btw")`. Restrictions are backend-specific; see [data and permissions](reference/data-and-permissions.md#backends-access-and-retention).
 - **One visible focus target.** Compose uses the shared body `Editor`; review owns a checklist cursor; every consequential action is a button rendered by `buttonLabels` from `modal-kit.ts`. `Tab`/`Shift+Tab` switch zones, arrows move within a zone, and `Enter` activates only the focused thing. In the checklist, Space or Enter toggles the highlighted finding; Tab moves to the action buttons. Buttons are packed by `wrapButtons` so a label is never split across lines.
 - **Nothing is approved by default.** Findings start unticked so the user approves only what they read; the highlighted finding's full title, reason, expert action and assessment are reachable in scrollable detail below the pinned list. A rewrite with nothing ticked is refused with an explanation. A failed step retries that step with the same approvals.
-- The original main editor stays unchanged until `[Insert into editor]` (or its Desktop equivalent). Terminal insertion replaces the editor only when Elevate was opened on that draft and the text is still unchanged; with an explicit `/bro elevate <request>`, the editor must be empty first. Desktop/RPC only uses confirmed atomic insert into an empty editor. Neither action submits text.
+- Elevate leaves the main Pi editor unchanged. Copy puts the revised request on the clipboard; users decide whether to paste or submit it.
 - Compose reads the objective with `getExpandedText()`, never `getText()`: the `Editor` stores large pastes as `[paste #1 +N lines]` markers, and the marker must never be sent to the backend. When the `Editor` cannot render whole, the modal refuses to edit and says so rather than hiding the cursor.
-- Automated unit tests: `test/elevate.test.ts` and `test/elevate-docs.test.mjs`; the modal contract in `test/modal-contract.test.mjs` covers every Elevate stage. Manually test real modal use as described in [TESTING.md](TESTING.md).
+- Automated unit tests: `test/elevate.test.ts`; the modal contract in `test/modal-contract.test.mjs` covers every Elevate stage. Qualify changed physical terminal/desktop behavior with the relevant checks in [TESTING.md](TESTING.md).
 
 ## Prompt size and recent context
 
@@ -127,8 +129,7 @@ marked explicitly when messages or message text are removed within a turn.
 
 ## BTW continuation
 
-BTW keeps one in-memory thread bound to a backend and an access mode
-(conversation-only / full permission, toggled by `/mode`).
+BTW's active thread is bound to a backend and an access mode (conversation-only / full permission, toggled by `/mode`). Completed state is written to private Pi session entries and restored per branch; native backend continuation itself may need reseeding after restart.
 
 - Claude, Grok, Codex, and Muse resume the same native session across
   `/mode` switches (all run in the workspace).
@@ -167,7 +168,7 @@ acquisition uses `renderFrame` with `REVIEW_ACQUIRE_OVERLAY` (centered 70% width
 ## Invariants
 
 - Nothing Bro produces enters Pi's conversation or main-agent context, except
-  explicit BTW `/insert`/`/insert-all` into the editor and advisor tool results.
+  an explicit user paste/submission and advisor tool results.
 - Source text is quoted data; prompts forbid inventing facts, names, or
   relationships.
 - No silent fallback between backends, models, or efforts; surface the
@@ -208,7 +209,7 @@ Normal journey: open PR → read/investigate → close. Automatic persistence su
 - Shell-free means the backend has no shell tool (Claude, Muse, and Pi review); it is not a claim about Codex/Grok/Agy. Never add a bypass flag to review. Captured text remains a prompt-injection/model-quality risk. Source ranges are validated, but inspected paths, conclusions, reported access errors and execution remain model-reported. Preserve the non-fatal advisory in doctor (no `✗`).
 - Fresh guide calls omit prior guide/discussion; question calls include current guide, original target context and latest 12 relevant nonfailed turns. First 100,000 diff characters are seeded with disclosure. Preferences are included; main-session context is not.
 - Copy delegates to Pi's clipboard helper and reports errors. It does not insert into the editor, mutate code or publish; clipboard retention is outside Bro.
-- One active writer per target in-process; no cross-process locking/sync guarantee. Do not delete user review/source data as part of a simplification.
+- One active writer per target in-process; no cross-process locking/sync guarantee. Explicit deletion is user-triggered, confirmed, and protected by the controller's existing `activeReviews` lock. The Overview action settles outstanding saves before removing local data, then closes without re-saving. The shared resume/delete picker reads saved records; direct delete PR lookup is offline, and ambiguous numbers require a full URL. `deleteReview` validates the 64-hex ID and removes only matching JSON and captured source. Never delete data automatically.
 
 ## Lifecycle limits
 
@@ -217,14 +218,25 @@ SIGTERM to the POSIX process group, SIGKILL after the grace period, then pipe
 closure and bounded close-wait completion. Windows only guarantees direct-child
 termination. Benchmark identity, reporting fields, and no-retry policy are unchanged.
 
-Shutdown/reload with an active detached backend remains **unverified** across Pi
-and PiG (#64). Guided Review registers `session_shutdown` cancellation via `stopGuidedReviews()`; this is abort wiring, not proof of descendant cleanup or a complete save flush on abrupt shutdown. Other execution still depends on the host aborting the supplied signal; there is no universal backend shutdown registry. Headless command execution without a supplied
-signal is bounded by its deadline, not a verified shutdown hook. An abrupt host
-exit can leave descendants running; do not treat the offline cancellation tests
-as shutdown/reload qualification. A follow-up host test should reload/shut down
-during a fake in-flight consultation and assert no delayed child activity.
+On Pi's **graceful** `session_shutdown`, Bro aborts active backend executions
+(including CLI preparation and in-process Pi calls), waits for their normal
+bounded cleanup, then waits for Guided Review's existing
+serialized save queue to flush before Pi invalidates the old session. Offline
+tests exercise the registered shutdown handler and a real fake CLI process;
+these do **not** certify OS-level kill, live providers or PiG host behavior.
+Backend processes started outside this extension's session are not isolated by
+an OS security boundary. In-process Pi model cancellation remains cooperative;
+a provider that never yields may still work after Bro returns from abort.
+
+An **abrupt** process exit, SIGKILL, machine crash or failed disk write cannot
+be flushed. Backend review of shutdown/reload on physical Pi and PiG remains
+open (#64), especially descendant behavior. The ordinary host-provided abort
+signal and per-attempt deadline still apply. Do not present fake-CLI tests as
+proof of real-provider permission enforcement or abrupt shutdown durability.
 
 ## Tests
+
+Each retained test should detect a specific failure that a cheaper existing test would miss. Review its risk, distinct coverage, execution cost, and maintenance cost when touching it. Replace redundant render/text assertions with behavior checks; retain tests for trust boundaries, data loss, cancellation, state recovery, and public integration. Do not set test-count targets or build another test-review framework.
 
 ```sh
 npm test                                   # typecheck, node tests, test/smoke-test.sh
@@ -233,15 +245,14 @@ node .github/scripts/release-utils.mjs selftest
 npm run benchmark:dry-run                  # manual live benchmark: see benchmark/README.md
 ```
 
-Extension tests and their helpers live in `test/`; benchmark tests stay in `benchmark/`. CI runs `npm test` on Linux with Node 24 and Node 22.19.0 (the `engines` floor), and on macOS with Node 24, all with the pinned Pi (1.3.0). The `pi-floor` job reruns it on the oldest supported Pi, which is also that pin: it catches the floor drifting up unnoticed when the dev pin is next bumped.
+Extension tests and helpers live in `test/`; benchmark tests stay in `benchmark/`. CI runs `npm test` on Node 22.19.0/Linux and Node 24/macOS with the normal locked dependencies, plus Node 24/Linux with Pi pinned to the supported 1.3.0 floor. The Linux floor run also checks release metadata and synthetic benchmark regeneration; there is no second identical Pi-floor job.
 
-Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs` and `review-ux.test.mjs` (rendering/interaction), `review-session.test.mjs` and `review-regeneration.test.mjs` (fake-CLI controller/save/recovery), `review-versions.test.mjs` (single-guide/current validation and rejected prototype schemas), `review-ui.test.mjs` (evidence/save presentation), `review-doctor.test.mjs` (review-only backend selection). Adapter tests keep BTW/native-session behavior separate from stateless review. Add regressions to the existing owner; do not create another generic harness.
+Review tests: `review.test.ts` (capture/schema/prompts), `review-modal.test.mjs` (rendering, captured/unresolved evidence), `review-ux.test.mjs` (navigation and visible save recovery), `review-session.test.mjs` and `review-regeneration.test.mjs` (fake-CLI controller/save/recovery), `review-versions.test.mjs` (current schema and rejected prototype schemas), and `review-doctor.test.mjs` (review-only backend selection). Adapter tests keep BTW/native-session behavior separate from stateless review. Add regressions to the existing owner; do not create another generic harness.
 
 `npm test` never calls a real model: `backend.test.ts`, `claude.test.ts`,
 `grok.test.ts`, `codex.test.ts`, and `muse.test.ts` run fake CLIs; `settings.test.ts` and `prompt.test.ts` cover
 pure helpers; `helpers.test.mjs` contains sequential modal/advisor checks and Pi SDK
-integration checks formerly embedded in the shell suite. `test-build.mjs` provides
-isolated compilation for these tests, settings, and Show HTML tests.
+integration checks formerly embedded in the shell suite. `test-build.mjs` isolates test files' scratch data, while Node loads the shipped TypeScript source directly with `--experimental-transform-types`. No test-file-specific compilation is needed.
 `test/smoke-test.sh` drives Pi offline over RPC with a fake `agy`.
 See [test-consolidation.md](test-consolidation.md) for the #74 coverage ledger,
 throttle mutation check, and before/after timings.

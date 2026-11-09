@@ -5,10 +5,12 @@ Start with what you want to do. The [README](../README.md) explains the product,
 ## I'm new
 
 - [Getting started](getting-started.md) — install, check your backend, and complete a working first example.
+- [Choose by your current need](feature-map.md) — four intent states, expected results, and handoff rules.
 - [Command lookup](reference/commands.md#commands) — find the right command.
 
 ## I want to do something
 
+- [Edit, preview and copy Markdown](features/copy.md) — a model-free scratch editor for the last reply.
 - [Explain an agent answer or text](features/explain.md#explanation-modes) — plain-language explanations.
 - [Explain a local file](features/explain.md#explain-a-document) or [webpage](features/explain.md#explain-a-webpage).
 - [Visualize a conversation](features/show.md#bro-show) — Show diagrams.

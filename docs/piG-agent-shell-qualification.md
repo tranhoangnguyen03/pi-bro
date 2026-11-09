@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | PiG binary | 0.5.3 | Unchanged |
 | Node | 24.15.0 | Unchanged |
-| PiG-Agent PR #2 | `3f121638feaf9c8a551a2d7001481cd7d936a8c9` | Must rebuild after Bro pin update |
-| Bro | 0.29.0 at `ff6b260b10be8889809d4ea02108aceb826e4668` | This PR branches from Bro 0.31.0 at `8b99515e7b7ddffdd0d57ffaea368f26e86a968c` |
+| PiG-Agent PR #2 | `3f121638feaf9c8a551a2d7001481cd7d936a8c9` | Rebuild with reconciled Bro 0.36.1 |
+| Bro | 0.29.0 at `ff6b260b10be8889809d4ea02108aceb826e4668` | Reconciled with main 0.36.0 at `55f050343ec9e48afc5b6768596326b5714c5278`; PR stages 0.36.1 |
 | Other extensions | Follow `shell/source-lock.json` in PiG-Agent PR #2 | Not changed by this PR |
 
 Do **not** label the newer Bro commit as a test of the old Bro 0.29.0 artifact. Pin this PR's eventual full commit and its actual `package.json` version in the shell lock; rebuild the full native shell and record the resulting artifact digest. Reviewer/Engineering prompts are not involved in the gate.
@@ -33,7 +33,7 @@ Values are `inherit` (the default) or `subscription`. An unknown value fails, ra
 - Codex child removes `CODEX_API_KEY` and `OPENAI_API_KEY`, checks `codex login status` for ChatGPT login, and adds `-c 'forced_login_method="chatgpt"'` to the execution child. Codex's credential-store choice (e.g. `cli_auth_credentials_store`) still belongs to its selected `CODEX_HOME` profile.
 - A status check does **not** identify the human account by itself, prove that a request was sent, or verify subscription billing. The acceptance run must verify the effective account with non-secret CLI evidence and a genuine answer. Missing login or non-subscription login prevents the model request. No API-key fallback is attempted.
 
-**Lifecycle:** Cancellation uses existing bounded process-group termination. Bro now also stops its tracked backends on session shutdown, new-session start, and normal process exit. PiG must deliver shutdown/reload events to its Node extension worker and terminate that worker's entire child process group on hard exit. Real PiG reload and desktop exit are required checks, not an assumption based on unit cancellation.
+**Lifecycle:** Cancellation uses existing bounded process-group termination. Bro retains main's tracked, awaited backend shutdown on session lifecycle. PiG must deliver shutdown/reload events to its Node extension worker and terminate that worker's children on hard exit. Real PiG reload and desktop exit are required checks, not an assumption based on unit cancellation.
 
 ## Reproducible acceptance on the *packaged* shell
 
@@ -45,7 +45,7 @@ Build the exact PiG-Agent PR #2 source with the Bro PR head pinned. Install it i
 4. **Accounts:** With an already-authorized host Claude login, run with `CLAUDE_CONFIG_DIR` inherited and then with the shell-selected profile and `PI_BRO_CLAUDE_AUTH_SOURCE=subscription`. Confirm non-secret CLI account/method and actual answer. Repeat Codex with `CODEX_HOME` and `PI_BRO_CODEX_AUTH_SOURCE=subscription`. Test inherited API key collisions, missing/expired login, forced method and parent API env retention. For two distinct authorized accounts, test concurrent A/B routing; otherwise mark the second live account **NOT RUN**.
 5. **Isolation:** New sessions must not inherit another task's transcripts/side questions; an approved general Remember Me lesson stays available in A but not B. Inspect A and B settings, memory, session roots and model sources after concurrent use, reinstall and compatible rollback.
 
-**Fixtures:** `npm test` includes deterministic fake CLI source-routing, conflicting auth, no-fallback and process-stop tests plus host registry model identity. They are evidence of code paths only. The existing PiG 0.3.0 lane does not qualify PiG 0.5.3; run the actual PiG-Agent pinned shell.
+**Fixtures:** `npm test` includes deterministic fake CLI source-routing, conflicting auth, no-fallback and process-stop tests plus host registry model identity. They are evidence of code paths only. Existing main's real Pi RPC lifecycle test and PiG 0.3.0 lane still do not qualify the packaged PiG 0.5.3 interactive TUI; run the actual PiG-Agent pinned shell.
 
 ## Specific PiG-Agent PR #2 work remaining
 

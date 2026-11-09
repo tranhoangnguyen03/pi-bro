@@ -14,6 +14,7 @@ import {
 	replaceGuide,
 	guideEvidence,
 	buildReviewPrompt,
+	deleteReview,
 	listReviews,
 	loadReview,
 	parseGuide,
@@ -34,9 +35,74 @@ export const REVIEW_ACQUIRE_OVERLAY = {
 	margin: { top: 1, bottom: 1 },
 } as const;
 
-const activeReviews = new Map<string, AbortController | undefined>();
-export function stopGuidedReviews(): void {
-	for (const controller of activeReviews.values()) controller?.abort();
+type ActiveReview = {
+	controller?: AbortController;
+	flush?: () => Promise<void>;
+};
+const activeReviews = new Map<string, ActiveReview>();
+
+// Pi awaits session_shutdown handlers before invalidating the outgoing session.
+// Abort all review work first, then flush its existing serialized save queue.
+export async function stopGuidedReviews(): Promise<void> {
+	const active = [...activeReviews.values()];
+	for (const review of active) review.controller?.abort();
+	await Promise.all(active.map((review) => review.flush?.()));
+}
+
+/** Same picker for resume and delete. Presentation and ordering have one owner. */
+export function savedReviewLabel(item: ReviewRecord): string {
+	const target = item.snapshot.target;
+	const title = safeReviewText(target.title ?? "").replace(/[\r\n\t]/g, " ");
+	const readiness = item.guide ? (item.guide.assessment ? "review ready" : "guide ready") : "not prepared";
+	return `${target.repository} #${target.number} · ${title} · ${readiness} · ${target.head.slice(0, 8)}`;
+}
+
+async function savedReviews(ctx: ExtensionCommandContext, root: string): Promise<ReviewRecord[]> {
+	const records = await listReviews(root, (file, error) =>
+		ctx.ui.notify(`Cannot load ${file}: ${String(error)}. Original file left untouched.`, "warning"));
+	return records.sort((a, b) =>
+		a.snapshot.target.repository.localeCompare(b.snapshot.target.repository) ||
+		b.snapshot.target.number - a.snapshot.target.number);
+}
+
+export async function pickSavedReview(
+	ctx: ExtensionCommandContext, root: string, title: string, emptyMessage: string,
+): Promise<ReviewRecord | undefined> {
+	const records = await savedReviews(ctx, root);
+	if (!records.length) {
+		ctx.ui.notify(emptyMessage, "info");
+		return;
+	}
+	const labels = records.map(savedReviewLabel);
+	const picked = await ctx.ui.select(title, labels);
+	return picked ? records[labels.indexOf(picked)] : undefined;
+}
+
+/** Resolve stored PR identity offline; a bare number is allowed only if unambiguous. */
+export function matchSavedReview(
+	records: readonly ReviewRecord[], requested: string,
+): { selected?: ReviewRecord; error?: string } {
+	const input = requested.trim();
+	if (/^[1-9]\d*$/.test(input)) {
+		const matches = records.filter(item => item.snapshot.target.number === Number(input));
+		if (matches.length > 1) return { error: "Multiple saved reviews have that PR number. Use its full PR URL." };
+		return { selected: matches[0] };
+	}
+	let url: URL;
+	try { url = new URL(input); }
+	catch { return { error: "Use a saved PR number or GitHub PR URL." }; }
+	const match = /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/(?:files|commits|checks))?\/?$/.exec(url.pathname);
+	if (url.protocol !== "https:" || !match || url.username || url.password) {
+		return { error: "Use a saved PR number or GitHub PR URL." };
+	}
+	const [, owner, repo, number] = match;
+	const matches = records.filter(item => {
+		const target = item.snapshot.target;
+		return (target.host ?? "github.com").toLowerCase() === url.hostname.toLowerCase() &&
+			target.repository.toLowerCase() === `${owner}/${repo}`.toLowerCase() &&
+			target.number === Number(number);
+	});
+	return { selected: matches[0] };
 }
 
 export async function openGuidedReview(
@@ -49,31 +115,52 @@ export async function openGuidedReview(
 		return;
 	}
 	const root = join(getAgentDir(), "bro-reviews");
+
+	if (value === "delete" || value.startsWith("delete ")) {
+		const requested = value.slice("delete".length).trim();
+		let selected: ReviewRecord | undefined;
+		if (!requested) {
+			selected = await pickSavedReview(ctx, root, "Delete saved review", "There are no saved reviews to delete.");
+			if (!selected) return; // Esc is cancellation, not a failed target lookup.
+		} else {
+			const match = matchSavedReview(await savedReviews(ctx, root), requested);
+			if (match.error) {
+				ctx.ui.notify(match.error, "warning");
+				return;
+			}
+			selected = match.selected;
+		}
+		if (!selected) {
+			ctx.ui.notify("No saved review matches that target.", "info");
+			return;
+		}
+		const id = selected.id;
+		if (activeReviews.has(id)) {
+			ctx.ui.notify("That review is currently open or being prepared. Close it before deleting.", "warning");
+			return;
+		}
+		const title = `${selected.snapshot.target.repository} #${selected.snapshot.target.number}`;
+		const approved = await ctx.ui.confirm("Delete saved review?", `Permanently remove ${title}, its notes, unsent drafts and all captured Git source? This cannot be undone.`);
+		if (!approved) return;
+		if (activeReviews.has(id)) {
+			ctx.ui.notify("That review became active. Close it and retry deletion.", "warning");
+			return;
+		}
+		// Reserve this identity while deletion runs so a new review cannot start writing it.
+		activeReviews.set(id, {});
+		try {
+			await deleteReview(root, id);
+			ctx.ui.notify(`Deleted saved review ${title} and its captured source.`, "info");
+		} finally {
+			activeReviews.delete(id);
+		}
+		return;
+	}
 	let record: ReviewRecord | undefined;
 	let fresh = false;
 	if (value === "resume" || !value) {
-		const records = await listReviews(root, (file, error) =>
-			ctx.ui.notify(
-				`Cannot load ${file}: ${String(error)}. Original file left untouched.`,
-				"warning",
-			),
-		);
-		if (!records.length) {
-			ctx.ui.notify("Start with /bro guided-review <PR number or URL>.", "info");
-			return;
-		}
-		records.sort(
-			(a, b) =>
-				a.snapshot.target.repository.localeCompare(b.snapshot.target.repository) ||
-				b.snapshot.target.number - a.snapshot.target.number,
-		);
-		const labels = records.map(
-			(item) =>
-				`${item.snapshot.target.repository} #${item.snapshot.target.number} · ${safeReviewText(item.snapshot.target.title ?? "").replace(/[\r\n\t]/g, " ")} · ${item.guide ? (item.guide.assessment ? "review ready" : "guide ready") : "not prepared"} · ${item.snapshot.target.head.slice(0, 8)}`,
-		);
-		const picked = await ctx.ui.select("Resume guided review", labels);
-		if (!picked) return;
-		record = records[labels.indexOf(picked)];
+		record = await pickSavedReview(ctx, root, "Resume guided review", "Start with /bro guided-review <PR number or URL>.");
+		if (!record) return;
 	} else {
 		record = await openBroOverlay<ReviewRecord | undefined>(
 			ctx,
@@ -117,7 +204,7 @@ export async function openGuidedReview(
 							);
 						}
 						locked = id;
-						activeReviews.set(id, controller);
+						activeReviews.set(id, { controller });
 						const existing = await loadReview(root, id);
 						if (existing) {
 							if (
@@ -198,7 +285,7 @@ export async function openGuidedReview(
 		ctx.ui.notify("This review is already open in this Pi session.", "info");
 		return;
 	}
-	activeReviews.set(state.id, undefined);
+	activeReviews.set(state.id, {});
 	let overlayHandle: { setHidden(hidden: boolean): void } | undefined;
 	try {
 		await openBroOverlay<void>(
@@ -279,7 +366,7 @@ export async function openGuidedReview(
 					let generated = false;
 					const abort = new AbortController();
 					controller = abort;
-					activeReviews.set(state.id, abort);
+					activeReviews.get(state.id)!.controller = abort;
 					panel.busy = true;
 					panel.operation = question ? "answer" : regenerate ? "regenerate" : "guide";
 					panel.startedAt = Date.now();
@@ -392,7 +479,7 @@ export async function openGuidedReview(
 					} finally {
 						clearInterval(heartbeat);
 						controller = undefined;
-						if (activeReviews.has(state.id)) activeReviews.set(state.id, undefined);
+						if (activeReviews.has(state.id)) activeReviews.get(state.id)!.controller = undefined;
 						panel.activeTurn = undefined;
 						panel.stage = undefined;
 						panel.busy = false;
@@ -417,6 +504,19 @@ export async function openGuidedReview(
 						tui.requestRender();
 					}
 				};
+				const active = activeReviews.get(state.id);
+				if (active) active.flush = async () => {
+					closing = true;
+					controller?.abort();
+					if (saveTimer) clearTimeout(saveTimer);
+					try {
+						await running;
+					} finally {
+						// A run can itself queue a save; this flush follows it in order.
+						await persist();
+						closed = true;
+					}
+				};
 				const panel = new ReviewModal(state, tui, theme, {
 					ask(target, question) {
 						running = run(target, question);
@@ -426,6 +526,34 @@ export async function openGuidedReview(
 					},
 					retrySave() {
 						void persist().catch(() => {});
+					},
+					deleteReview() {
+						if (confirming || controller || closing || closed || panel.busy) return;
+						confirming = true;
+						overlayHandle?.setHidden(true);
+						const target = state.snapshot.target;
+						const title = `${target.repository} #${target.number}`;
+						void ctx.ui.confirm(
+							"Delete this saved review?",
+							`Permanently delete ${title}, all private questions and drafts, and its captured Git source? This cannot be undone.`,
+						).then(async (approved) => {
+							if (!approved || closed || closing || controller) return;
+							closing = true;
+							// Do not let a delayed save recreate the record after deletion.
+							if (saveTimer) { clearTimeout(saveTimer); saveTimer = undefined; }
+							await running;
+							await queue;
+							await deleteReview(root, state.id);
+							closed = true;
+							ctx.ui.notify(`Deleted saved review ${title} and its captured source.`, "info");
+							done();
+						}).catch((error) => {
+							closing = false;
+							panel.notice = `Deletion failed: ${String(error)}. Review remains open; retry when ready.`;
+						}).finally(() => {
+							confirming = false;
+							if (!closed) { overlayHandle?.setHidden(false); tui.requestRender(); }
+						});
 					},
 					regenerate() {
 						if (confirming || controller || closing || closed) return;
@@ -523,7 +651,7 @@ export async function openGuidedReview(
 			},
 		);
 	} finally {
-		activeReviews.get(state.id)?.abort();
+		activeReviews.get(state.id)?.controller?.abort();
 		activeReviews.delete(state.id);
 	}
 }

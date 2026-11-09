@@ -1,6 +1,6 @@
 # PiG compatibility
 
-> **PiG-Agent 0.5.3 qualification:** See [issue #177 shell acceptance and exact pins](piG-agent-shell-qualification.md). The older PiG 0.3.0 checks below are historical, not evidence that the independently installed PiG-Agent terminal, account selection or custom models work. The shell must rebuild with the new Bro commit and run the real TUI matrix before release.
+> PiG-Agent **0.5.3 shell qualification** is separate from the historical 0.3.0 lane here. See [shell acceptance, exact pins and remaining real-host checks](piG-agent-shell-qualification.md). Bro 0.36.1 reuses the host model registry and honors explicit official CLI subscription selection; it does not create its own model-source/account store.
 
 Bro uses one TypeScript package on Pi and Pi-in-Go (PiG). PiG runs Bro in a Node subprocess; it is not a Go port or a fused native extension.
 
@@ -24,7 +24,7 @@ Bro follows the host's `getAgentDir()`: normally `~/.pi/agent` on Pi and `~/.pig
 
 - **PiG 0.3.0 RPC does not enforce `--exclude-tools`.** Excluded tools may remain active and reach provider requests. This is not a sandbox boundary. Use an explicit `--tools` allowlist instead; do not rely on `/bro doctor` to prove exclusion. Bro does not mask this defect by falsely reporting an active tool as unavailable.
 - The smoke suite retains Pi's strict exclusion assertion. The PiG lane has an explicit version-specific expected failure; a changed result fails the lane so the exception must be reviewed/removed.
-- Elevate is not yet qualified end-to-end on PiG. Interactive behavior, keyboard shortcut delivery and guarded editor insertion must be checked on PiG before claiming support.
+- Elevate is not yet qualified end-to-end on PiG. Interactive behavior, keyboard shortcut delivery and clipboard Copy must be checked on PiG before claiming support.
 - Guided Review currently targets local Pi interactive mode. Its capture/reading/question/regeneration journey is not qualified on PiG or RPC/Desktop; existing Bro PiG checks do not establish review support. See [current review scope](guided-review.md#not-available-yet).
 - Mouse-wheel forwarding is not qualified; use keyboard scrolling.
 - Remote/SSH OSC 52 clipboard forwarding is not qualified. Local clipboard behavior depends on the host and installed platform utilities.

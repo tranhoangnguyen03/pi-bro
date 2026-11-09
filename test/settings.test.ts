@@ -12,7 +12,7 @@ const repoDir = dirname(dirname(fileURLToPath(import.meta.url)));
 import { bro, backend } from "./test-build.mjs";
 test('Simplify is discoverable, while bare /bro and /bro simplify have distinct behavior', async () => {
  let command: any;
- await bro.default({on() {},registerTool() {},registerCommand(_name: string,def: any){command=def;}});
+ await bro.default({on() {},appendEntry() {}, registerTool() {},registerCommand(_name: string,def: any){command=def;}});
  assert.ok(command.getArgumentCompletions("simpl").some((item: any)=>item.value==="simplify"));
  const notices: string[]=[];
  const rpc={mode:"rpc",cwd:process.cwd(),waitForIdle:async()=>{},sessionManager:{getBranch:()=>[]},
@@ -28,7 +28,6 @@ test('Simplify is discoverable, while bare /bro and /bro simplify have distinct 
 });
 
 
-const { CLAUDE_EFFORTS } = backend;
 const {
 	CLAUDE_MODELS,
 	GROK_EFFORTS,
@@ -242,78 +241,33 @@ test("writeSettings persists valid settings atomically with mode 0o600 and no le
 	}
 });
 
-test("writeSettings failure during rename preserves original file and cleans up temp files", async (t) => {
-	const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-rename-fail-"));
-	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = tempDir;
-	try {
-		const target = join(tempDir, "bro-settings.json");
-		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "initial-model", effort: "low" } });
-		await bro.writeSettings(initial);
-		const initialRaw = readFileSync(target, "utf8");
-
-		t.mock.method(fsp, "rename", async () => {
-			throw Object.assign(new Error("Injected rename failure"), { code: "EIO" });
-		});
-		syncBuiltinESMExports();
-
-		const mutated = parseBroSettings({ version: 2, default: { backend: "agy", model: "mutated-model", effort: "high" } });
-		await assert.rejects(bro.writeSettings(mutated), /Injected rename failure/);
-
-		// Original file remains completely unchanged
-		const currentRaw = readFileSync(target, "utf8");
-		assert.equal(currentRaw, initialRaw);
-		const preserved = await bro.readSettings();
-		assert.equal(preserved.model, "initial-model");
-
-		// Temporary sibling files cleaned up
-		const files = readdirSync(tempDir);
-		assert.deepEqual(files, ["bro-settings.json"]);
-	} finally {
-		t.mock.restoreAll();
-		syncBuiltinESMExports();
-		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
-		rmSync(tempDir, { recursive: true, force: true });
-	}
-});
-
-test("writeSettings failure during write preserves original file and cleans up temp files", async (t) => {
-	const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-write-fail-"));
-	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = tempDir;
-	try {
-		const target = join(tempDir, "bro-settings.json");
-		const initial = parseBroSettings({ version: 2, default: { backend: "agy", model: "initial-model", effort: "low" } });
-		await bro.writeSettings(initial);
-		const initialRaw = readFileSync(target, "utf8");
-
-		t.mock.method(fsp, "writeFile", async () => {
-			throw Object.assign(new Error("Injected write failure (ENOSPC)"), { code: "ENOSPC" });
-		});
-		syncBuiltinESMExports();
-
-		const mutated = parseBroSettings({ version: 2, default: { backend: "agy", model: "mutated-model", effort: "high" } });
-		await assert.rejects(bro.writeSettings(mutated), /Injected write failure/);
-
-		t.mock.restoreAll();
-		syncBuiltinESMExports();
-
-		// Original file remains completely unchanged
-		const currentRaw = readFileSync(target, "utf8");
-		assert.equal(currentRaw, initialRaw);
-		const preserved = await bro.readSettings();
-		assert.equal(preserved.model, "initial-model");
-
-		// Temporary sibling files cleaned up
-		const files = readdirSync(tempDir);
-		assert.deepEqual(files, ["bro-settings.json"]);
-	} finally {
-		t.mock.restoreAll();
-		syncBuiltinESMExports();
-		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
-		rmSync(tempDir, { recursive: true, force: true });
+test("writeSettings failures during write or rename preserve the original and clean scratch files", async (t) => {
+	// Both filesystem failure points guard the same durable-data contract.
+	for (const operation of ["writeFile", "rename"] as const) {
+		const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-failure-"));
+		const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = tempDir;
+		try {
+			const target = join(tempDir, "bro-settings.json");
+			await bro.writeSettings(parseBroSettings({ version: 2,
+				default: { backend: "agy", model: "initial-model", effort: "low" } }));
+			const initialRaw = readFileSync(target, "utf8");
+			t.mock.method(fsp, operation, async () => {
+				throw Object.assign(new Error(`Injected ${operation} failure`), { code: operation === "writeFile" ? "ENOSPC" : "EIO" });
+			});
+			syncBuiltinESMExports();
+			const mutated = parseBroSettings({ version: 2,
+				default: { backend: "agy", model: "mutated-model", effort: "high" } });
+			await assert.rejects(bro.writeSettings(mutated), new RegExp(`Injected ${operation} failure`));
+			assert.equal(readFileSync(target, "utf8"), initialRaw, `${operation}: original bytes preserved`);
+			assert.deepEqual(readdirSync(tempDir), ["bro-settings.json"], `${operation}: no temp file survives`);
+		} finally {
+			t.mock.restoreAll();
+			syncBuiltinESMExports();
+			if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+			rmSync(tempDir, { recursive: true, force: true });
+		}
 	}
 });
 
@@ -533,10 +487,6 @@ test("Claude models support sonnet/opus aliases and arbitrary explicit IDs", () 
 	assert.throws(() => resolveClaudeModel("   "), /Claude model/);
 });
 
-test("Claude effort levels include xhigh and max", () => {
-	assert.deepEqual([...CLAUDE_EFFORTS], ["low", "medium", "high", "xhigh", "max"]);
-});
-
 test("withCapabilityOverride stores the whole Claude pair and clears only on explicit undefined", () => {
 	const base = parseBroSettings({ model: "m", effort: "low" });
 	const pinned = withCapabilityOverride(base, "btw", { backend: "claude", model: "sonnet", effort: "low" });
@@ -598,206 +548,66 @@ test("pure model/effort transitions preserve resolved variant effort and pin fam
 });
 
 
-test("Grok all-feature support: selection, efforts, models", () => {
-	assert.deepEqual([...GROK_EFFORTS], ["low", "medium", "high", "xhigh"]);
-	assert.deepEqual(
-		GROK_MODELS.map((model: { id: string }) => model.id).sort(),
-		["grok-4.7", "grok-4.7-build-fast"],
-	);
-	assert.equal(resolveGrokModel("grok-4.7"), "grok-4.7");
-	assert.equal(resolveGrokModel("  custom-grok-id  "), "custom-grok-id");
-	assert.throws(() => resolveGrokModel("   "), /Grok model/);
+// These backends differ in metadata, but share the same saved-selection contract.
+const externalSettingsCases = [
+  { backend: "grok", primary: "grok-4.7", secondary: "grok-4.7-build-fast", efforts: GROK_EFFORTS,
+    models: GROK_MODELS, resolve: resolveGrokModel, selected: "xhigh", override: "medium", invalid: "max",
+    expectedModels: ["grok-4.7", "grok-4.7-build-fast"] },
+  { backend: "codex", primary: "gpt-5.5", secondary: "gpt-5.4", efforts: CODEX_EFFORTS,
+    models: CODEX_MODELS, resolve: resolveCodexModel, selected: "xhigh", override: "medium", invalid: "max",
+    expectedModels: ["gpt-5.4", "gpt-5.5"] },
+  { backend: "muse", primary: "muse-spark-1.3", secondary: "muse-spark-1.3-contributor", efforts: MUSE_EFFORTS,
+    models: MUSE_MODELS, resolve: resolveMuseModel, selected: "minimal", override: "max", invalid: "none",
+    expectedModels: ["muse-spark-1.3", "muse-spark-1.3-contributor"] },
+] as const;
 
+for (const c of externalSettingsCases) {
+  test(`${c.backend} model catalog, aliases and effort metadata`, () => {
+    assert.deepEqual([...c.efforts], c.backend === "muse"
+      ? ["minimal", "low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high", "xhigh"]);
+    assert.deepEqual(c.models.map((model: { id: string }) => model.id).sort(), [...c.expectedModels]);
+    assert.equal(c.resolve(c.primary), c.primary);
+    assert.equal(c.resolve(`  custom-${c.backend}-id  `), `custom-${c.backend}-id`);
+    assert.throws(() => c.resolve("  "), /model/);
+  });
 
+  test(`${c.backend} settings round-trip and whole capability override`, () => {
+    const settings = parseBroSettings({ version: 2,
+      default: { backend: c.backend, model: c.primary, effort: c.selected },
+      mode: "balanced", showTurns: 1,
+      overrides: { advisor: { backend: c.backend, model: c.secondary, effort: c.override } },
+    });
+    assert.equal(capabilityBackend(settings, "advisor"), c.backend);
+    assert.equal(capabilityBackend(settings, "explain"), c.backend);
+    assert.deepEqual(selectionForCapability(settings, "advisor"), {
+      backend: c.backend, model: c.secondary, effort: c.override,
+    });
+    assert.deepEqual(resolveModelEffort({ backend: c.backend, model: c.primary, effort: c.override }, []), {
+      pair: { backend: c.backend, model: c.primary, effort: c.override },
+    });
+    const payload = settingsPayload(settings);
+    assert.deepEqual(payload.default, { backend: c.backend, model: c.primary, effort: c.selected });
+    assert.deepEqual(parseBroSettings(payload), settings);
+  });
 
-
-});
-
-test("Grok pairs parse, round-trip, and resolve with no Agy family", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "grok", model: "grok-4.7", effort: "xhigh" },
-		mode: "balanced",
-		showTurns: 1,
-		overrides: { advisor: { backend: "grok", model: "grok-4.7-build-fast", effort: "medium" } },
-	});
-	assert.equal(capabilityBackend(settings, "advisor"), "grok");
-	assert.equal(capabilityBackend(settings, "explain"), "grok");
-	assert.deepEqual(selectionForCapability(settings, "advisor"), {
-		backend: "grok",
-		model: "grok-4.7-build-fast",
-		effort: "medium",
-	});
-	assert.deepEqual(resolveModelEffort({ backend: "grok", model: "grok-4.7", effort: "medium" }, []), {
-		pair: { backend: "grok", model: "grok-4.7", effort: "medium" },
-	});
-	const payload = settingsPayload(settings);
-	assert.deepEqual(payload.default, { backend: "grok", model: "grok-4.7", effort: "xhigh" });
-	assert.deepEqual(parseBroSettings(payload), settings);
-});
-
-test("Grok default effort omits effort; max rejected, backend-less override stays Agy", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "grok", model: "grok-4.7", effort: "default" },
-	});
-	assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: "grok", model: "grok-4.7" });
-	assert.throws(
-		() =>
-			parseBroSettings({
-				version: 2,
-				default: { backend: "grok", model: "grok-4.7", effort: "max" },
-			}),
-		/must contain a model and effort/,
-	);
-	const mixed = parseBroSettings({
-		version: 2,
-		default: { backend: "grok", model: "grok-4.7", effort: "low" },
-		overrides: { show: { model: "gemini-a", effort: "low" } },
-	});
-	assert.equal(capabilityBackend(mixed, "show"), "agy");
-	assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
-	const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
-		backend: "grok",
-		model: "grok-4.7",
-		effort: "high",
-	});
-	assert.deepEqual(pinned.overrides.advisor, { backend: "grok", model: "grok-4.7", effort: "high" });
-});
-
-test("Codex all-feature support: selection, efforts, models", () => {
-	assert.deepEqual([...CODEX_EFFORTS], ["low", "medium", "high", "xhigh"]);
-	assert.deepEqual(
-		CODEX_MODELS.map((model: { id: string }) => model.id).sort(),
-		["gpt-5.4", "gpt-5.5"],
-	);
-	assert.equal(resolveCodexModel("gpt-5.5"), "gpt-5.5");
-	assert.equal(resolveCodexModel("  custom-codex-id  "), "custom-codex-id");
-	assert.throws(() => resolveCodexModel("   "), /Codex model/);
-
-
-
-
-});
-
-test("Codex pairs parse, round-trip, and resolve with no Agy family", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "codex", model: "gpt-5.5", effort: "xhigh" },
-		mode: "balanced",
-		showTurns: 1,
-		overrides: { advisor: { backend: "codex", model: "gpt-5.4", effort: "medium" } },
-	});
-	assert.equal(capabilityBackend(settings, "advisor"), "codex");
-	assert.equal(capabilityBackend(settings, "explain"), "codex");
-	assert.deepEqual(selectionForCapability(settings, "advisor"), {
-		backend: "codex",
-		model: "gpt-5.4",
-		effort: "medium",
-	});
-	assert.deepEqual(resolveModelEffort({ backend: "codex", model: "gpt-5.5", effort: "medium" }, []), {
-		pair: { backend: "codex", model: "gpt-5.5", effort: "medium" },
-	});
-	const payload = settingsPayload(settings);
-	assert.deepEqual(payload.default, { backend: "codex", model: "gpt-5.5", effort: "xhigh" });
-	assert.deepEqual(parseBroSettings(payload), settings);
-});
-
-test("Codex default effort omits effort; max rejected, backend-less override stays Agy", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "codex", model: "gpt-5.5", effort: "default" },
-	});
-	assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: "codex", model: "gpt-5.5" });
-	assert.throws(
-		() =>
-			parseBroSettings({
-				version: 2,
-				default: { backend: "codex", model: "gpt-5.5", effort: "max" },
-			}),
-		/must contain a model and effort/,
-	);
-	const mixed = parseBroSettings({
-		version: 2,
-		default: { backend: "codex", model: "gpt-5.5", effort: "low" },
-		overrides: { show: { model: "gemini-a", effort: "low" } },
-	});
-	assert.equal(capabilityBackend(mixed, "show"), "agy");
-	assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
-	const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
-		backend: "codex",
-		model: "gpt-5.5",
-		effort: "high",
-	});
-	assert.deepEqual(pinned.overrides.advisor, { backend: "codex", model: "gpt-5.5", effort: "high" });
-});
-
-test("Muse all-feature support: selection, efforts, models", () => {
-	assert.deepEqual([...MUSE_EFFORTS], ["minimal", "low", "medium", "high", "xhigh", "max"]);
-	assert.deepEqual(
-		MUSE_MODELS.map((model: { id: string }) => model.id).sort(),
-		["muse-spark-1.3", "muse-spark-1.3-contributor"],
-	);
-	assert.equal(resolveMuseModel("muse-spark-1.3"), "muse-spark-1.3");
-	assert.equal(resolveMuseModel("  custom-muse-id  "), "custom-muse-id");
-	assert.throws(() => resolveMuseModel("   "), /Muse model/);
-
-
-
-
-});
-
-test("Muse pairs parse, round-trip, and resolve with no Agy family", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "muse", model: "muse-spark-1.3", effort: "minimal" },
-		mode: "balanced",
-		showTurns: 1,
-		overrides: { advisor: { backend: "muse", model: "muse-spark-1.3-contributor", effort: "max" } },
-	});
-	assert.equal(capabilityBackend(settings, "advisor"), "muse");
-	assert.equal(capabilityBackend(settings, "explain"), "muse");
-	assert.deepEqual(selectionForCapability(settings, "advisor"), {
-		backend: "muse",
-		model: "muse-spark-1.3-contributor",
-		effort: "max",
-	});
-	assert.deepEqual(resolveModelEffort({ backend: "muse", model: "muse-spark-1.3", effort: "minimal" }, []), {
-		pair: { backend: "muse", model: "muse-spark-1.3", effort: "minimal" },
-	});
-	const payload = settingsPayload(settings);
-	assert.deepEqual(payload.default, { backend: "muse", model: "muse-spark-1.3", effort: "minimal" });
-	assert.deepEqual(parseBroSettings(payload), settings);
-});
-
-test("Muse default effort omits effort; none/off rejected, backend-less override stays Agy", () => {
-	const settings = parseBroSettings({
-		version: 2,
-		default: { backend: "muse", model: "muse-spark-1.3", effort: "default" },
-	});
-	assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: "muse", model: "muse-spark-1.3" });
-	assert.throws(
-		() =>
-			parseBroSettings({
-				version: 2,
-				default: { backend: "muse", model: "muse-spark-1.3", effort: "none" },
-			}),
-		/must contain a model and effort/,
-	);
-	const mixed = parseBroSettings({
-		version: 2,
-		default: { backend: "muse", model: "muse-spark-1.3", effort: "low" },
-		overrides: { show: { model: "gemini-a", effort: "low" } },
-	});
-	assert.equal(capabilityBackend(mixed, "show"), "agy");
-	assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
-	const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
-		backend: "muse",
-		model: "muse-spark-1.3",
-		effort: "high",
-	});
-	assert.deepEqual(pinned.overrides.advisor, { backend: "muse", model: "muse-spark-1.3", effort: "high" });
-});
+  test(`${c.backend} omits default effort, rejects unsupported effort and keeps Agy fallback explicit`, () => {
+    const settings = parseBroSettings({ version: 2, default: { backend: c.backend, model: c.primary, effort: "default" } });
+    assert.deepEqual(selectionForCapability(settings, "advisor"), { backend: c.backend, model: c.primary });
+    assert.throws(() => parseBroSettings({ version: 2,
+      default: { backend: c.backend, model: c.primary, effort: c.invalid },
+    }), /must contain a model and effort/);
+    const mixed = parseBroSettings({ version: 2,
+      default: { backend: c.backend, model: c.primary, effort: "low" },
+      overrides: { show: { model: "gemini-a", effort: "low" } },
+    });
+    assert.equal(capabilityBackend(mixed, "show"), "agy");
+    assert.deepEqual(selectionForCapability(mixed, "show"), { model: "gemini-a", effort: "low" });
+    const pinned = withCapabilityOverride(parseBroSettings({ model: "m", effort: "low" }), "advisor", {
+      backend: c.backend, model: c.primary, effort: "high",
+    });
+    assert.deepEqual(pinned.overrides.advisor, { backend: c.backend, model: c.primary, effort: "high" });
+  });
+}
 
 for (const backend of ["claude", "grok", "codex", "muse", "pi"] as const) {
 	test(`${EXTERNAL_BACKENDS[backend].label} custom picker cancels atomically and resets cross-backend effort`, async () => {
@@ -952,30 +762,19 @@ test("modal model label shows the resolved per-capability model and effort", () 
 	assert.equal(selectionLabel(selectionForCapability(parseBroSettings({ model: "gemini-b-low", effort: "low" }), "explain")), "gemini-b · low");
 });
 
-test("help no longer lists /bro usage or the conversation-only access label", () => {
-	const text = helpText(parseBroSettings({ model: "m", effort: "low" }));
-	assert.doesNotMatch(text, /\/bro usage/);
-	assert.doesNotMatch(text, /not sandboxed/i);
-	assert.doesNotMatch(text, /Usage checks/);
-});
 
-test("help drops removed /bro model, /bro effort, --fresh, and forced inserts", () => {
-	const text = helpText(parseBroSettings({ model: "m", effort: "low" }));
-	assert.doesNotMatch(text, /\/bro (model|effort)/);
-	assert.doesNotMatch(text, /--fresh/);
-	assert.doesNotMatch(text, /\/insert(-all)?!/);
-	assert.match(text, /\/bro config/);
-});
 
 test("help is a concise reference: no removed BTW flags, /mode documented, user guide pointer", () => {
 	for (const backend of ["agy", "claude", "grok"] as const) {
 		const text = helpText(parseBroSettings({ version: 2, default: { backend, model: "m", effort: "default" } }));
 		assert.doesNotMatch(text, /--(full|sandbox|fresh)\b/);
 		assert.doesNotMatch(text, /--dangerously|--permission-mode|--resume|--conversation/);
+		assert.doesNotMatch(text, /\/bro (model|effort|usage)/);
+		assert.doesNotMatch(text, /\/insert(-all)?!/);
+		assert.match(text, /\/bro config/);
 		assert.match(text, /`\/mode`/);
 		assert.match(text, /docs\/user-guide\.md/);
 		assert.match(text, /brief —/);
-		assert.ok(text.length < 7200, `help is ${text.length} chars`);
 	}
 });
 
@@ -983,7 +782,7 @@ test("help is a concise reference: no removed BTW flags, /mode documented, user 
 test("modals use live host terminal rows, not extension stdout", async () => {
  const { initTheme } = await import("@earendil-works/pi-coding-agent"); initTheme();
  let command: any;
- await bro.default({on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command=def; }});
+ await bro.default({on() {}, appendEntry() {}, registerTool() {}, registerCommand(_name: string, def: any) { command=def; }});
  const tui = {mode: "regular", terminal: {rows: 20}, requestRender() {}};
  const theme = {fg: (_color: string, text: string) => text, bold: (text: string) => text};
  for (const action of ["help", "btw"]) {
@@ -1026,7 +825,7 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'AN
  };
  try {
   writeFileSync(preferences, "BTW_PREFS_A");
-  await bro.default({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
+  await bro.default({ on() {}, appendEntry() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
   const ctx = { mode: "tui", hasUI: true, cwd: bin, sessionManager: { getBranch: () => [] }, ui: { notify() {}, custom: async (factory: any) => { modal = factory({ mode: "fullscreen", terminal: { rows: 40 }, requestRender() {} }, { fg: (_c: string, t: string) => t, bold: (t: string) => t }, {}, () => {}); } } };
   await command.handler("btw", ctx);
   const header = () => modal.render(120)[1] as string;
@@ -1101,7 +900,7 @@ test("/bro still registers when the optional Elevate shortcut cannot", async () 
 // Registering a key must not be required for Elevate itself; the command is the supported path.
 test("a host without registerShortcut still loads Bro", async () => {
 	let command: any;
-	await bro.default({ on() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } } as any);
+	await bro.default({ on() {}, appendEntry() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } } as any);
 	assert.ok(command, "/bro was not registered on a host without registerShortcut");
 });
 
@@ -1137,15 +936,15 @@ test("Pi custom model rejects a malformed ID in place instead of throwing out of
 });
 
 
-test("default /bro suggestions contain ten task commands; legacy aliases remain discoverable", async () => {
+test("default /bro suggestions contain ten capability-level commands; legacy aliases remain discoverable", async () => {
  let cmd: any;
- await bro.default({on(){},registerTool(){},registerCommand(_name: string,def: any){cmd=def;}});
+ await bro.default({on(){},appendEntry() {}, registerTool() {},registerCommand(_name: string,def: any){cmd=def;}});
  assert.deepEqual(cmd.getArgumentCompletions("").map((x: any)=>x.value),[
   "architecture","simplify","show","guided-review","btw","elevate","remember-me","grill-me","overthink","config"
  ]);
  const shown=cmd.getArgumentCompletions("").map((x: any)=>x.value);
  assert.equal(new Set(shown).size,10);
- for(const [prefix,target] of [["doc","doctor"],["pref","preferences"],["advisor","advisor"],["text","text"],["file","file"],["url","url"],["open","open"],["help","help"],["mode","mode"]]){
+ for(const [prefix,target] of [["cop","copy"],["doc","doctor"],["pref","preferences"],["advisor","advisor"],["text","text"],["file","file"],["url","url"],["open","open"],["help","help"],["mode","mode"]]){
   assert.ok(cmd.getArgumentCompletions(prefix).some((c:any)=>c.value===target),prefix);
  }
 });

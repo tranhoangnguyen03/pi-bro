@@ -4,10 +4,10 @@ import { mkdir, writeFile, chmod, readFile, rename, rm } from "node:fs/promises"
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { initTheme, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { buildDir } from "./test-build.mjs";
-const { openGuidedReview } = await import(pathToFileURL(join(buildDir, "review-ui.js")).href);
-const { saveReview, loadReview } = await import(pathToFileURL(join(buildDir, "review.js")).href);
-const { newReviewView } = await import(pathToFileURL(join(buildDir, "review-modal.js")).href);
+import { buildDir, sourceDir } from "./test-build.mjs";
+const { openGuidedReview } = await import(pathToFileURL(join(sourceDir, "review-ui.ts")).href);
+const { saveReview, loadReview } = await import(pathToFileURL(join(sourceDir, "review.ts")).href);
+const { newReviewView } = await import(pathToFileURL(join(sourceDir, "review-modal.ts")).href);
 initTheme();
 const root = join(getAgentDir(), "bro-reviews");
 const wait = async (fn) => {

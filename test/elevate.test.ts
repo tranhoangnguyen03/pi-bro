@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   MAX_ELEVATE_FINDINGS, buildElevateDiscoveryPrompt, buildElevateUpgradePrompt,
-  elevateInsertAllowed, parseElevateDiscovery, selectedFindings, stripElevateFence,
+  parseElevateDiscovery, selectedFindings, stripElevateFence,
   captureElevateContext, isElevateContextOverflow, reduceElevateContext,
 } from "../src/elevate-engine.ts";
 
@@ -149,14 +149,3 @@ test("parser rejects ambiguous multi-payload replies", () => {
   assert.throws(() => parseElevateDiscovery('{"assessment":"A","findings":[]'), /valid discovery JSON/);
 });
 
-// Regression: `/bro elevate <request>` with an unrelated unsent draft must not clobber that draft.
-test("insertion never overwrites an unrelated editor draft", () => {
-  const draft = "MY UNFINISHED ESSAY";
-  // Opened on the editor draft: replacing it is the point, but only while unchanged.
-  assert.equal(elevateInsertAllowed(true, draft, draft), true);
-  assert.equal(elevateInsertAllowed(true, draft, `${draft} more`), false);
-  // Opened with an explicit request: an empty editor is fine, a draft is not.
-  assert.equal(elevateInsertAllowed(false, draft, ""), true);
-  assert.equal(elevateInsertAllowed(false, draft, draft), false);
-  assert.equal(elevateInsertAllowed(false, draft, "  "), true);
-});

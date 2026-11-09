@@ -32,7 +32,7 @@ See [Guided Review](guided-review.md#guided-review).
 
 ## Bro Elevate — improve a task before sending it
 
-See [Elevate: Discover → Select → Upgrade](elevate.md). Elevate does not execute a task or send it to the main agent. It helps find gaps, lets you approve suggestions, then offers a revised request. In the terminal, insertion can replace your unchanged original draft; see the [editor-safety rules](elevate.md#what-happens-to-the-original-editor-draft).
+See [Elevate: Discover → Select → Upgrade](elevate.md). Elevate does not execute a task or send it to the main agent. It helps find gaps, lets you approve suggestions, then offers a revised request. Elevate never edits your Pi draft; copy and paste the revision if you wish.
 
 ## Bro btw (side conversation)
 
@@ -166,7 +166,7 @@ See [Troubleshooting and current limits](reference/troubleshooting.md#troublesho
 
 ## Simplify modal
 
-`/bro` opens Simplify and explains the latest completed assistant reply. `/bro simplify` returns to the most recent Simplify screen without another model request. Inside, `/simplify`, `/text <text>`, `/file <path>` and `/url <url>` produce one explanation at a time; `/copy` copies the answer, `/clear` clears it, and `/help` shows controls. Press **M** with an empty composer to change the explanation mode and rerun; **R** retries. The saved default mode remains unchanged. The current screen is kept only within the Pi session. Old `/bro text|file|url|open` forms remain callable for compatibility.
+`/bro` opens Simplify and explains the latest completed assistant reply. `/bro simplify` returns to the most recent Simplify screen without another model request. Inside, `/simplify`, `/text <text>`, `/file <path>` and `/url <url>` produce one explanation at a time; `/copy` copies the answer, `/clear` clears it, and `/help` shows controls. Press **M** with an empty composer to change the explanation mode and rerun; **R** retries. The saved default mode remains unchanged. The latest result is preserved in private Pi session entries across reload/restart and stays off the main model's context. Old `/bro text|file|url|open` forms remain callable for compatibility.
 
 ## Bro command discovery and Config navigation
 

@@ -10,14 +10,15 @@ import { withFakeExecutable } from "./test-fake-exec.ts";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { btw, buildDir, configUi, elevate, explainModal, settings as settingsModule } from "./test-build.mjs";
+import { btw, buildDir, configUi, elevate, explainModal, settings as settingsModule, sourceDir } from "./test-build.mjs";
 import { rm } from "node:fs/promises";
 
-const load = (name) => import(pathToFileURL(join(buildDir, name)).href);
-const kit = await load("modal-kit.js");
-const { openGuidedReview } = await load("review-ui.js");
-const { newReviewView } = await load("review-modal.js");
-const { saveReview } = await load("review.js");
+const load = (name) => import(pathToFileURL(join(sourceDir, name)).href);
+const kit = await load("modal-kit.ts");
+const { CopyModal } = await load("copy.ts");
+const { openGuidedReview } = await load("review-ui.ts");
+const { newReviewView } = await load("review-modal.ts");
+const { saveReview } = await load("review.ts");
 initTheme();
 
 // Guided Review: a saved record to reopen, and a `gh` that fails at once so acquisition stays offline.
@@ -106,7 +107,7 @@ const elevateStage = (stage) => (ctx) =>
 	kit.openBroOverlay(
 		ctx,
 		(tui, theme, _keybindings, done) => {
-			const modal = new elevate.ElevateModal(tui, theme, () => done(), () => {}, () => {}, () => {}, () => {}, () => done());
+			const modal = new elevate.ElevateModal(tui, theme, () => done(), () => {}, () => {}, () => {}, () => done());
 			if (stage === "review") modal.setDiscovery({ assessment: "The request is workable but misses concrete evidence.", findings: elevateFindings });
 			else if (stage === "ready") modal.setReady(Array.from({ length: 60 }, (_, index) => `Requirement ${index}: do the thing carefully.`).join("\n\n"));
 			else modal.setFailed("Bro did not return valid discovery JSON. Retry discovery.");
@@ -143,7 +144,27 @@ const SURFACES = [
 		smallShows: [/Enlarge the terminal/],
 		open: factoryRow(() => explainModal.createAdvisorSteerModal(long, () => {}, () => {})),
 	},
-	// SettingsList prints config's full hints inside the list; the safe tiny state still keeps Esc visible.
+  {
+    name: "Copy Markdown editor",
+    mouse: true,
+    minRows: 22,
+    fullShows: [/Ctrl\+D preview/, /Ctrl\+C copy/],
+    smallShows: [/Enlarge the terminal/],
+    open: ctx => kit.openBroOverlay(ctx,
+      (tui, theme, _kb, done) => new CopyModal(tui, theme, long, () => done(), async () => {}),
+      { mouse: true }),
+  },
+  {
+    name: "Copy Markdown preview",
+    mouse: true,
+    scrolls: true,
+    fullShows: [/Ctrl\+D edit/, /Ctrl\+C copy/],
+    open: ctx => kit.openBroOverlay(ctx,
+      (tui, theme, _kb, done) => new CopyModal(tui, theme, long, () => done(), async () => {}),
+      { mouse: true }),
+    after: component => component.handleInput("\x04"), // Ctrl+D into Preview
+  },
+  	// SettingsList prints config's full hints inside the list; the safe tiny state still keeps Esc visible.
 	{ name: "config", minRows: 14, shows: [/Esc/], fullShows: [/Enter\/Space to change · Esc/], open: factoryRow(() => configUi.createConfigModal(settings, [], async () => {})) },
 	{
 		name: "config with the model picker open",
@@ -176,7 +197,7 @@ const SURFACES = [
 		scrolls: true,
 		mouse: true,
 		shows: [/Esc/],
-		fullShows: [/[\[›]Insert/],
+		fullShows: [/[\[›]Copy/],
 		open: elevateStage("ready"),
 	},
 	{ name: "elevate failed", mouse: true, open: elevateStage("failed") },
@@ -507,7 +528,7 @@ test("modal kit: the mouse lease pauses while hidden and stays off after close",
 });
 
 test("modal kit: rawWheel reads direction and cell, and ignores other mouse reports", async () => {
-	const { rawWheel, wheelDelta } = await load("ui-capabilities.js");
+	const { rawWheel, wheelDelta } = await load("ui-capabilities.ts");
 	assert.deepEqual(rawWheel("\x1b[<64;12;7M"), { delta: -3, column: 12, row: 7 });
 	assert.deepEqual(rawWheel("\x1b[<69;1;2M"), { delta: 3, column: 1, row: 2 }, "a modifier bit keeps the direction");
 	assert.equal(rawWheel("\x1b[<0;5;5M"), undefined, "a click is not a wheel");
@@ -700,7 +721,7 @@ test("modal kit: elevate keeps the target visible and the reader's place", async
 // Compose is a real multi-line editor: a pasted objective must keep its structure, and the modal
 // must refuse to edit rather than draw the Editor cut short.
 test("modal kit: elevate compose accepts a multi-line objective and guards a tiny terminal", async () => {
-	const mounted = await mount((ctx) => kit.openBroOverlay(ctx, (tui, theme, _kb, done) => new elevate.ElevateModal(tui, theme, () => done(), () => {}, () => {}, () => {}, () => {}, () => done()), { mouse: true }), "fullscreen", 80, 24);
+	const mounted = await mount((ctx) => kit.openBroOverlay(ctx, (tui, theme, _kb, done) => new elevate.ElevateModal(tui, theme, () => done(), () => {}, () => {}, () => {}, () => done()), { mouse: true }), "fullscreen", 80, 24);
 	const { component, tui } = mounted;
 	const view = () => stripVTControlCharacters(component.render(78).join("\n"));
 	assert.match(view(), /Your objective/);
@@ -806,7 +827,7 @@ test("modal kit: context switch is visible, clears findings and never starts a c
   const modes = [];
   let calls = 0;
   const modal = new elevate.ElevateModal({ mode: "fullscreen", terminal: { rows: 40, columns: 120 }, requestRender() {} }, theme,
-    () => {}, () => calls++, () => calls++, () => {}, () => calls++, () => {}, (mode) => modes.push(mode));
+    () => {}, () => calls++, () => calls++, () => calls++, () => {}, (mode) => modes.push(mode));
   modal.setCompose("Preserve this objective");
   assert.match(modal.render(94).join("\n"), /Context: Messages/);
   modal.handleInput("\t"); modal.handleInput("\x1b[D"); modal.handleInput("\r");

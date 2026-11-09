@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildDir } from "./test-build.mjs";
+import { buildDir, sourceDir } from "./test-build.mjs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-const review = await import(pathToFileURL(join(buildDir, "review.js")).href);
-const ui = await import(pathToFileURL(join(buildDir, "review-modal.js")).href);
+const review = await import(pathToFileURL(join(sourceDir, "review.ts")).href);
+const ui = await import(pathToFileURL(join(sourceDir, "review-modal.ts")).href);
 const old = {
 	summary: "Old",
 	topics: [{ id: "topic-1", title: "Same title", explanation: "Old explanation", evidence: [] }],

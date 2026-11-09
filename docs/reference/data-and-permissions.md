@@ -94,13 +94,15 @@ See [feature guide](../features/architecture.md).
 
 ## Privacy and safety
 
-- **Overthink requests:** after a substantive Pi turn, Bro makes one additional provider call using Pi's active model and current session conversation projection (including exposed tool evidence), appending the current session's questions. Overthink never executes tool calls. It may still send tool descriptions copied from Pi's existing context to support cache reuse; a tool-use response is rejected without executing the tool. The provider may retain input under its policy. Results and questions are stored in private Pi session custom entries, not LLM turns; global questions use `bro-overthink-defaults.json` in the agent home. This cannot promise a cache hit or fixed incremental cost. Features → Overthink has an on/off switch (on by default). The viewer displays provider-reported input/cache-read/cache-write/output/reasoning tokens and USD cost when available; a reported cache-read value of zero may mean either a cache miss or unsupported caching. See [Overthink](../overthink.md).
+- **Copy Markdown:** `/bro copy` reads the last completed assistant reply from the current Pi session and lets you edit it in a temporary modal. Preview renders locally. Ctrl+C writes to the system clipboard, which other apps may read. No backend request, saved file, session record, or Pi message changes.
+
+- **Overthink requests:** after a substantive Pi turn, Bro makes one additional provider call using Pi's active model and current session conversation projection (including exposed tool evidence), appending the current session's questions and any saved `bro-preferences.md` (for tone and language only). Overthink never executes tool calls. It may still send tool descriptions copied from Pi's existing context to support cache reuse; a tool-use response is rejected without executing the tool. The provider may retain input under its policy. Results and questions are stored in private Pi session custom entries, not LLM turns; global questions use `bro-overthink-defaults.json` in the agent home. This cannot promise a cache hit or fixed incremental cost. Features → Overthink has an on/off switch (on by default). The viewer displays provider-reported input/cache-read/cache-write/output/reasoning tokens and USD cost when available; a reported cache-read value of zero may mean either a cache miss or unsupported caching. See [Overthink](../overthink.md).
 
 - **External requests**: Bro sends the latest completed assistant response,
   pasted text, extracted document text, extracted webpage text, or recent
   session conversation text (tool calls, tool results, reasoning, and images
   omitted) to the selected backend and its configured model provider.
-- **Elevate requests**: `/bro elevate` sends your objective, preferences, and all user/assistant text on the current branch by default, without a fixed history cap. Its visible Context switch can include tool-call arguments and text results (Full), potentially including sensitive file contents or command output. Both modes exclude hidden reasoning and image binaries. Only explicit Retry after a context-overload error trims older history; the UI discloses reduced context. Its optional rewrite call includes only approved findings. It makes fresh restricted calls through the BTW model setting, but a backend's restricted mode is not a universal file/network sandbox (Grok restrictions are prompt-only). It does not insert or submit anything to Pi unless you approve insertion. In the terminal, insertion can replace the draft Elevate was opened on, if it is unchanged; an explicit `/bro elevate <request>` requires an empty editor. See the [Elevate guide](../elevate.md).
+- **Elevate requests**: `/bro elevate` sends your objective, preferences, and all user/assistant text on the current branch by default, without a fixed history cap. Its visible Context switch can include tool-call arguments and text results (Full), potentially including sensitive file contents or command output. Both modes exclude hidden reasoning and image binaries. Only explicit Retry after a context-overload error trims older history; the UI discloses reduced context. Its optional rewrite call includes only approved findings. It makes fresh restricted calls through the BTW model setting, but a backend's restricted mode is not a universal file/network sandbox (Grok restrictions are prompt-only). Elevate never edits or submits Pi's main draft. The user may copy the revision and paste it manually. See the [Elevate guide](../elevate.md).
 - **Side conversation requests**: `/bro btw` sends your side questions and the
   seeded main-session conversation text (plus earlier turns when a native
   session is reseeded) to the selected backend. In full permission mode the
@@ -108,8 +110,8 @@ See [feature guide](../features/architecture.md).
 - **Grill Me requests**: `/bro grill-me` sends the user-supplied topic, their answers, the full private Grill Me transcript so far, preferences, and up to 8 recent main-session text turns (40,000 characters) to the BTW-selected provider. It runs **fresh** each turn in the current workspace, via the Guided Review *inspection execution path* (not the Guided Review UI or checkout). Claude, Muse and Pi use file-only tools; Codex and Grok use a read-only sandbox with shell; **Agy can still write inside the project**. The model is always told not to edit or run mutating commands, but that prompt is not enforced. Optional `/access full` explicitly uses a fresh, full-permission backend call and gives the backend unrestricted tools; it never happens automatically. Grill Me and BTW hold separate in-memory threads, and nothing enters the main agent unless the user inserts it into an empty editor. See [Grill Me](../grill-me.md).
 - **Guided Review requests**: PR identity/description, captured diff, relevant private discussion and preferences go to the selected backend, which can inspect captured files. Main-session context is not attached. Claude (`--restricted`, file tools only), Muse (write/shell/web disabled), and Pi (`read/grep/find/ls` only, in-process) use strict file-only inspection and are recommended for untrusted PRs. Codex and Grok inspect the captured checkout under a read-only sandbox; Agy's `--sandbox` still allows in-project writes. All three run shell commands and show an advisory. Prompt injection can still corrupt conclusions or reveal captured content to the provider; this is not a general confidentiality guarantee. See [Guided Review access and storage](../guided-review.md#access-privacy-and-storage).
 - **Preferences**: `bro-preferences.md` is sent with every explain, Show,
-  BTW, Elevate, and Guided Review request to the selected backend. It is never sent to the advisor or
-  to Pi's main model.
+  BTW, Elevate, Grill Me, Guided Review, and Overthink request. It is never sent to the advisor or
+  added to Pi's main conversation.
 - **Advisor requests**: `bro_advisor` sends the executor agent's system
   instructions, active tool list (excluding `bro_advisor`), ordered
   conversation history including tool calls and tool results (unlike Show,
@@ -123,15 +125,12 @@ See [feature guide](../features/architecture.md).
   instructions are not access enforcement.
 - **Context isolation**: Bro does not add explanations, BTW answers, or the
   steering brief to Pi's conversation history or main-agent context. BTW text
-  reaches the main editor only through `/insert` or `/insert-all`, and advisor
+  reaches the main conversation only after the user copies, pastes, and submits it, and advisor
   results appear as normal tool results in the executor's transcript.
 - **Saved reviews**: Guided Review records, questions, drafts and captured Git source persist under the host's `getAgentDir()/bro-reviews/`. No automatic cleanup or sync is provided; see [storage and removal](../guided-review.md#access-privacy-and-storage).
-- **Memory**: the latest explanation (for `/bro open`) and the BTW thread live
-  only in process memory and clear when you switch Pi sessions, reload
-  extensions, or quit Pi. Backend-native sessions can persist independently.
-  Standing advisor priorities are stored in `~/.pi/agent/bro-advisor.md`, and
-  the session steering brief is stored as session-scoped extension data
-  (`bro-advisor-steering`) in the session file.
+- **Private session continuity**: completed BTW and Grill Me turns, modes, drafts, the latest Simplify state and the last Show result are saved as Pi `custom` entries inside the current session file. They survive normal reload/restart and are never added to the main model or Advisor snapshot. A fork initially inherits earlier entries; later updates stay on its own branch. This is local disk storage, not a global memory store or an abrupt-crash guarantee. Backend-native sessions may persist independently.
+  Standing Advisor priorities are stored in `~/.pi/agent/bro-advisor.md`, and
+  the session steering brief uses another `custom` entry (`bro-advisor-steering`). Session entries remain readable to anyone with the session file; export/sharing may include them. The private boundary is model-context isolation, not encrypted storage or export redaction.
 - **File safety**: `/bro file` reads only regular files whose resolved path is
   inside Pi's current workspace, including after resolving symlinks. Bro's
   extractor does not modify them.

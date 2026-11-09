@@ -2,18 +2,73 @@
 
 All notable changes to pi-bro are documented here.
 
-## [0.31.1] - 2026-11-07
+## [0.36.1] - 2026-11-09
 
 ### Fixed
 
-- Use the active host model registry for Pi backend model identity, endpoint metadata and the model picker. A custom model newly written to disk remains unavailable until the host reloads it; no stale-catalog fallback.
-- Enforce an explicitly selected Claude Code or Codex subscription within each backend child: choose the existing CLI profile, remove conflicting API-credential overrides from the child alone, verify its login method, and prevent a silent API-billed fallback.
-- Stop active Bro backend attempts at session shutdown, new session and process exit without affecting native Pi settings or the parent login.
-- Add deterministic CLI, model-registry, two-home memory and process cleanup regression tests plus a version-pinned PiG-Agent 0.5.3 acceptance runbook.
+- Make the Pi child use the exact active host model registry, including custom endpoints and metadata, rather than preferring a separate freshly loaded model.
+- Keep the Pi model picker and Doctor aligned with the host's model catalog and authentication. Editing a model file without a host reload cannot create a selectable model.
+- Allow PiG-Agent to select each official Claude Code or Codex CLI subscription through existing `CLAUDE_CONFIG_DIR`/`CODEX_HOME`; filter conflicting API credentials in that child alone, check the reported login method before execution, and keep the normal parent account untouched. No new account store.
+- Add profile-routing, no-API-fallback, host-model, and two-home memory fixtures while retaining the newer real-host cleanup and session-restore behavior from 0.32–0.36.
 
 ### Qualification
 
-- Bro-side fixture tests do not prove a live subscription or PiG-Agent 0.5.3 TUI integration. Live endpoint, account and shell acceptance remain explicit gates in `docs/piG-agent-shell-qualification.md`.
+- Reconciled against pi-bro 0.36.0. Fixture success is not proof of PiG-Agent 0.5.3 interactive TUI or live account use. See `docs/piG-agent-shell-qualification.md`.
+
+## [0.36.0] - 2026-11-09
+
+### Added
+
+- `/bro copy` opens the last completed assistant reply as raw editable Markdown, with Ctrl+D Preview and Ctrl+C clipboard copy, without model calls or saved drafts.
+- Unedited copies preserve source text exactly. Edited copies use Pi Editor's text, with notice for normalized tabs and CRLF.
+- Copy and Simplify now share the same completed-reply extractor, keeping Simplify's trim.
+- Copy source, editor, clipboard, and modal regression tests; live Pi terminal/clipboard qualification remains open.
+
+## [0.35.1] - 2026-11-09
+
+### Highlights
+
+- Overthink assessments now hard-code plain, everyday words for a tired reader alongside the 2–3-sentence summary and 1–2-sentence per-question limits, preventing dense jargon compression.
+- Saved `bro-preferences.md` preferences now layer on top of Overthink to adjust tone or override the default answer language for prose, while keeping `NONE`, JSON keys (`summary`, `answers`), code, commands, paths, names, numbers, and sentence limits intact.
+- Unified `preferencesFile()` path resolution across reads, saves, deletes, and help display.
+
+## [0.35.0] - 2026-11-08
+
+### Changed
+
+- Overthink factory list now has four focused questions (Direction, Evidence, Risks, Next move), replacing seven overlapping questions. Existing saved global/session lists are unchanged until reset.
+- Structured checks return a short summary and a concise answer for **each configured question**, or `NONE` when nothing material needs attention. The strict materiality filter is inspired by Heads-up. One active Pi model call still covers all questions.
+- Overthink's modal now shows readable summary/question sections, a compact timestamp/model/status line and on-demand **U** token/cache/cost details, with content-sized rendering and scrolling. Old plain-text notes remain viewable; question snapshots remain tied to the assessment.
+- Global and session question editors now use **Ctrl+↑/↓** to reorder, not Alt/Option. All other editor controls and privacy boundaries remain unchanged.
+
+## [0.34.0] - 2026-11-07
+
+### Added
+
+- Guided Review can delete a saved PR review, its notes and captured source through a confirmed picker, offline PR target, or Overview action.
+- Deletion by PR target uses local records instead of GitHub; ambiguous bare PR numbers require a full URL. Resume and delete share the same picker and preserve saved titles.
+- Active in-process reviews block command deletion. Overview deletion holds the active lock, settles pending saves and cannot recreate the record on teardown. The storage helper validates review IDs and leaves sibling reviews and Pi settings untouched.
+- Offline storage and picker tests plus a manual test journey for confirmation, active writers and cleanup.
+- No automatic cleanup, new storage engine, live backend call or GitHub mutation.
+
+## [0.33.0] - 2026-11-07
+
+### Highlights
+
+- Feature discovery now starts from four human needs: understand what exists, explore what could exist, assess existing work, and guide the agent.
+- BTW and Grill Me use clipboard-only manual handoff. The old Insert commands no longer modify the main Pi editor; they point users to Copy instead.
+- Elevate copies the revised assignment without replacing the unsent main-editor draft. Obsolete insertion code and its tests are removed.
+- Built-in help, command completion, feature guides and developer checks align around common interaction meanings while retaining each feature's special actions.
+- The read-only `about_user` agent tool and `bro_advisor` tool are unchanged. Session recovery, Guided Review lifecycle, and Overthink/Architecture PRs remain separate work.
+
+## [0.32.0] - 2026-11-07
+
+### Highlights
+
+- BTW and Grill Me preserve completed private discussions, access choices and drafts across ordinary Pi reload/restart/resume through non-model-facing custom session entries.
+- Simplify restores its most recent source and explanation; Show restores the last rendered result and focus. Cleared state stays cleared.
+- Session branches inherit their prior private state but later edits remain separate. No global user memory database or automatic context injection.
+- Added session restore validation and test coverage. Recovery still depends on Pi saving its session entries; abrupt host crashes during an active call are not guaranteed.
 
 ## [0.31.0] - 2026-11-07
 

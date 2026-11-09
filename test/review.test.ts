@@ -76,10 +76,6 @@ console.log(JSON.stringify({base:{repo:{id:9,full_name:'other/repo'},sha:'a'.rep
 	}
 });
 
-test("review implementation is available", async () => {
-	const exists = await import(modulePath).catch(() => undefined);
-	assert.ok(exists, "review module must exist");
-});
 
 test("captures immutable source outside a dirty active workspace, preserves old-side evidence and distinct checkouts", async () => {
 	const { captureReview, readEvidence } = await import(sourcePath);
@@ -554,6 +550,34 @@ test("combined assessment validates findings, isolates bad references and versio
 			await saveReview(root, bad);
 			await assert.rejects(loadReview(root, record.id), /assessment|identity/);
 		}
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+
+test("deleting a saved review removes only its record and capture, with active-writer protection", async () => {
+	const { saveReview, deleteReview } = await import(modulePath);
+	const root = await mkdtemp(join(tmpdir(), "bro-review-delete-"));
+	const id = "d".repeat(64), other = "e".repeat(64);
+	try {
+		for (const key of [id, other]) {
+			await saveReview(root, { version: 1, id: key,
+				snapshot: { target: { repository: "a/b", number: 4, head: "abc", base: "def" },
+				mergeBase: "merge", gitDir: root, checkout: root, files: [], diff: "" },
+				turns: [], ui: newReviewView() } as any);
+			await mkdir(join(root, "source", key, "obsolete.incomplete-old"), { recursive: true });
+			await writeFile(join(root, "source", key, "obsolete.incomplete-old", "source.txt"), "captured");
+		}
+		await writeFile(join(root, "bro-settings.json"), "untouched");
+		await assert.rejects(deleteReview(root, "../escape"), /identity/i);
+		assert.equal((await readFile(join(root, id + ".json"), "utf8")).includes(id), true);
+		await deleteReview(root, id);
+		await assert.rejects(readFile(join(root, id + ".json"), "utf8"), /ENOENT/);
+		await assert.rejects(readFile(join(root, "source", id, "obsolete.incomplete-old", "source.txt"), "utf8"), /ENOENT/);
+		assert.ok((await readFile(join(root, other + ".json"), "utf8")).includes(other));
+		assert.equal(await readFile(join(root, "source", other, "obsolete.incomplete-old", "source.txt"), "utf8"), "captured");
+		assert.equal(await readFile(join(root, "bro-settings.json"), "utf8"), "untouched");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
