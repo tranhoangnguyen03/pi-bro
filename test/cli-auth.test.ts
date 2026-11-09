@@ -55,6 +55,10 @@ test("CLI status recognizes subscription but rejects API modes and unverified da
 
 
 test("Codex subscription accepts only the built-in OpenAI route in effective config", () => {
+  assert.equal(codexSubscriptionRouteProblem({ model_provider: null, model_providers: {} }), undefined,
+    "Codex defaults an omitted provider to the built-in OpenAI route");
+  assert.equal(codexSubscriptionRouteProblem({ model_providers: {} }), undefined,
+    "missing model_provider is equivalent to Codex's default");
   assert.equal(codexSubscriptionRouteProblem({ model_provider: "openai" }), undefined);
   assert.equal(codexSubscriptionRouteProblem({ model_provider: "openai",
     chatgpt_base_url: "https://chatgpt.com/backend-api/" }), undefined,
@@ -64,6 +68,7 @@ test("Codex subscription accepts only the built-in OpenAI route in effective con
   for (const config of [
     null,
     {},
+    { model_provider: "", model_providers: {} },
     { model_provider: "localfixture", model_providers: { localfixture: { env_key: "BRO_FIXTURE_API_KEY" } } },
     { model_provider: "openai", openai_base_url: "http://127.0.0.1:1234" },
     { model_provider: "openai", chatgpt_base_url: "https://other.example.invalid" },
@@ -114,7 +119,7 @@ exit 99
 test("Codex child uses selected CODEX_HOME, removes API override, and forces ChatGPT login", async () => {
   await withFakeExecutables({ codex: `#!/bin/sh
 if [ "$1" = "login" ]; then echo 'Logged in using ChatGPT' >&2; exit 0; fi
-if [ "$1" = "app-server" ]; then
+if [ "$1" = "-c" ] && [ "$3" = "app-server" ]; then
   while IFS= read -r line; do
     case "$line" in
       *'"method":"initialize"'*) echo '{"id":0,"result":{"userAgent":"fixture"}}';;
@@ -160,7 +165,7 @@ touch "$BIN_DIR/model-ran"
 test("Codex ChatGPT login with a custom env_key provider fails before any request", async () => {
   await withFakeExecutables({ codex: `#!/bin/sh
 if [ "$1" = "login" ]; then echo 'Logged in using ChatGPT'; exit 0; fi
-if [ "$1" = "app-server" ]; then
+if [ "$1" = "-c" ] && [ "$3" = "app-server" ]; then
   while IFS= read -r line; do
     case "$line" in
       *'"method":"initialize"'*) echo '{"id":0,"result":{"userAgent":"fixture"}}';;
@@ -186,7 +191,7 @@ test("Doctor follows subscription auth method and rejects Codex API-key login", 
   try {
   await withFakeExecutables({ codex: `#!/bin/sh
 if [ "$1" = "login" ]; then echo 'Logged in using an API key'; exit 0; fi
-if [ "$1" = "app-server" ]; then touch "$BIN_DIR/unexpected-app-server"; exit 92; fi
+if [ "$1" = "-c" ] && [ "$3" = "app-server" ]; then touch "$BIN_DIR/unexpected-app-server"; exit 92; fi
 exit 0
 ` }, async bin => {
     const settings = join(getAgentDir(), "bro-settings.json");
