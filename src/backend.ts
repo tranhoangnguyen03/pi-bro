@@ -627,7 +627,9 @@ async function inspectCodexSubscriptionRoute(
     try { child.stdin?.write(JSON.stringify(value) + "\n"); }
     catch { settle("Codex app-server could not accept the configuration query"); }
   };
-  child.stdin?.on("error", () => settle("Codex app-server closed before the configuration query completed"));
+  // An app-server may close its input pipe while its buffered response is
+  // still readable. The close race below decides whether the query succeeded.
+  child.stdin?.on("error", () => {});
   child.stdout?.setEncoding("utf8");
   child.stdout?.on("data", (chunk: string) => {
     if (decided || attempt.causeOf()) return;
