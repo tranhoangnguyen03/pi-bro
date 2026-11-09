@@ -615,6 +615,7 @@ const CODEX_INSPECTION_CATALOG = {
     slug: "bro-config-inspection-only",
     display_name: "Bro configuration inspection only",
     description: "Local offline catalog; never used for inference",
+    base_instructions: "Local configuration inspection only; never used for inference.",
     default_reasoning_level: "medium",
     supported_reasoning_levels: [{ effort: "medium", description: "medium" }],
     shell_type: "shell_command",
