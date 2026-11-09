@@ -107,7 +107,7 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PI
             expect("Bro backend answer in actual PiG terminal", ("BRO_PIG053_TERMINAL_RESULT",))
             write(b"\x1b")  # close explanation
             write(b"/bro remember-me\r")
-            expect("Remember Me modal in actual PiG terminal", ("Remember",))
+            expect("Remember Me modal in actual PiG terminal", ("Your memory or correction", "No matching personal memories."))
             write(b"\x1b")
             print("PASS: resize, keyboard input and Esc did not crash the TUI", flush=True)
         finally:
