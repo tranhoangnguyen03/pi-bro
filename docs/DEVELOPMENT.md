@@ -55,13 +55,15 @@ Production code lives in `src/` and is published as TypeScript source (no build 
 `src/backend.ts`'s `executePi` runs a real `AgentSession` inside this process instead of
 spawning a CLI. It is deliberately isolated from the host session:
 
-- **Model runtime bridge.** The host extension context exposes a `ModelRegistry`, not its owning
-  runtime, so the executor rebuilds `ModelRuntime.create({ authPath, modelsPath })` and copies
-  every host-registered provider (`getRegisteredProviderIds`/`getRegisteredNativeProvider`/
-  `getRegisteredProviderConfig`) plus runtime credentials (`setRuntimeApiKey`) when
-  `getProviderAuthStatus(provider).source === "runtime"`. `setPiHostContext(ctx)` publishes the
-  host registry; `/bro` and the advisor tool call it before any Pi feature runs.
-  `execute(..., host)` may also pass a context explicitly.
+- **Host-effective model bridge.** The host extension context exposes its `ModelRegistry`,
+  not its owning `ModelRuntime`. The Pi SDK requires a runtime for a separate child session;
+  Bro creates one with an inert in-memory credential store and no `models.json` file.
+  Model lookup, auth preflight, provider headers and model streaming delegate to the
+  **same host registry**. Bro never copies host keys or rebuilds provider definitions,
+  so an edit to `models.json` cannot pair a stale endpoint with a newly read key.
+  `setPiHostContext(ctx)` publishes that registry; feature commands and advisor do
+  this before running. Tests exercise A+key A after a same-host file edit and B+key B
+  after a fresh host. PiG-Agent owns model-source selection and installation.
 - **Physical models only.** A `pi-virtual` model routes to another model at request time and cannot
   be driven standalone, so it is rejected before session construction. Stored values are
   `<provider>/<id>`, split on the FIRST `/` only (model IDs may contain slashes).
