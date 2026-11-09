@@ -2,6 +2,14 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.35.1] - 2026-11-09
+
+### Highlights
+
+- Overthink assessments now hard-code plain, everyday words for a tired reader alongside the 2–3-sentence summary and 1–2-sentence per-question limits, preventing dense jargon compression.
+- Saved `bro-preferences.md` preferences now layer on top of Overthink to adjust tone or override the default answer language for prose, while keeping `NONE`, JSON keys (`summary`, `answers`), code, commands, paths, names, numbers, and sentence limits intact.
+- Unified `preferencesFile()` path resolution across reads, saves, deletes, and help display.
+
 ## [0.35.0] - 2026-11-08
 
 ### Changed

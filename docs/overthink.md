@@ -17,7 +17,7 @@ A new session starts with four questions:
 3. **Risks:** What material risks, unintended changes, or needless complexity have we introduced?
 4. **Next move:** What correction, decision, or next step would most improve the outcome?
 
-Bro still permits up to 32 custom questions and does **one same-model call for the entire list**. When nothing material is missed, the model should answer `NONE` and Overthink stays quiet. Otherwise it must return a brief 2–3-sentence summary followed by **one concise answer for each saved question**, in order. A question without a material concern can say so; it need not invent criticism.
+Bro still permits up to 32 custom questions and does **one same-model call for the entire list**. When nothing material is missed, the model should answer `NONE` and Overthink stays quiet. Otherwise it must return a brief 2–3-sentence summary followed by **one concise answer for each saved question**, in order, written in plain, everyday words for a tired reader. Saved [preferences](reference/settings.md#preferences) (`bro-preferences.md`) can adjust tone or answer language on top, without overriding the JSON format, sentence limits, plain-language brevity or review rules. A question without a material concern can say so; it need not invent criticism.
 
 **Existing saved global and per-session question lists do not change automatically.** To adopt the four new factory questions, reset the global defaults (Ctrl+D twice, Ctrl+S), then reset the session list (Ctrl+D twice, Ctrl+S). User-edited lists remain intact, even when they contain the former seven questions.
 
