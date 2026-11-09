@@ -54,3 +54,22 @@ jobs:
         run: |
           node .github/scripts/release-utils.mjs selftest
           node .github/scripts/release-utils.mjs validate
+
+  codex-subscription-route:
+    # Actual Codex CLI 0.165.0, fake local ChatGPT auth and custom API provider.
+    # The test has no live credentials, and the configured server must see zero requests.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.15.0'
+          cache: npm
+      - run: npm ci
+      - name: Install pinned official Codex CLI
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund @openai/codex@0.165.0
+      - name: Verify real Codex binary
+        run: ./node_modules/.bin/codex --version
+      - name: Prove explicit subscription cannot use custom env-key provider
+        run: BRO_REAL_CODEX_BIN="$PWD/node_modules/.bin/codex" node --experimental-transform-types --test test/codex-subscription-real.test.mjs
