@@ -128,6 +128,33 @@ test("real Codex 0.165.0 rejects custom env_key API provider despite ChatGPT log
     assert.deepEqual(calls, [],
       "default-profile inspection must not issue a model-discovery or inference request");
 
+    // A trusted project layer can override the default provider from CODEX_HOME.
+    // The guard must inspect the config resolved for the same cwd as codex exec,
+    // not just inspect the top-level config.toml in isolation.
+    await mkdir(join(cwd, ".git"));
+    await mkdir(join(cwd, ".codex"));
+    await writeFile(join(cwd, ".codex", "config.toml"),
+      'model_provider = "localfixture"\n');
+    await writeFile(join(profile, "config.toml"), [
+      'cli_auth_credentials_store = "file"',
+      `[projects.${JSON.stringify(cwd)}]`,
+      'trust_level = "trusted"',
+      '[model_providers.localfixture]',
+      'name = "Local fixture"',
+      `base_url = "http://127.0.0.1:${port}/v1"`,
+      'env_key = "BRO_FIXTURE_API_KEY"',
+      'wire_api = "responses"',
+      'requires_openai_auth = false',
+    ].join("\n") + "\n");
+    const projectOverride = await verifyCliSubscription("codex", resolved.env,
+      new AbortController().signal, 5_000, 15_000, cwd);
+    assert.equal(projectOverride?.status, "failure");
+    assert.match(projectOverride && "message" in projectOverride
+      ? projectOverride.message : "", /model_provider=.*localfixture/,
+      "project-effective provider must outrank implicit profile default");
+    assert.deepEqual(calls, [], "project-override rejection must not issue discovery requests");
+    await rm(join(cwd, ".codex"), { recursive: true, force: true });
+
     // Even the built-in provider may be pointed at a different endpoint.
     await writeFile(join(profile, "config.toml"), [
       'cli_auth_credentials_store = "file"',
