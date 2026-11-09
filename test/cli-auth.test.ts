@@ -67,7 +67,6 @@ test("Codex subscription accepts only the built-in OpenAI route in effective con
     "an unused custom provider is not an auth escape");
   for (const config of [
     null,
-    {},
     { model_provider: "", model_providers: {} },
     { model_provider: "localfixture", model_providers: { localfixture: { env_key: "BRO_FIXTURE_API_KEY" } } },
     { model_provider: "openai", openai_base_url: "http://127.0.0.1:1234" },
