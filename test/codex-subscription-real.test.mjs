@@ -109,6 +109,25 @@ test("real Codex 0.165.0 rejects custom env_key API provider despite ChatGPT log
     assert.equal(accepted, undefined, JSON.stringify(accepted));
     assert.deepEqual(calls, [], "subscription config inspection cannot make a provider request");
 
+    // Codex's ordinary default does NOT set model_provider at all. On 0.165.0
+    // app-server config/read returns model_provider:null and model_providers:{}.
+    // This is the common valid ChatGPT subscription profile.
+    await writeFile(join(profile, "config.toml"), [
+      'cli_auth_credentials_store = "file"',
+    ].join("\n") + "\n");
+    const implicit = await verifyCliSubscription("codex", resolved.env,
+      new AbortController().signal, 5_000, 15_000, cwd);
+    assert.equal(implicit, undefined,
+      "default Codex profile (no model_provider) must pass: " + JSON.stringify(implicit));
+    const defaultReport = await doctorReport({
+      getAllTools: () => [], getActiveTools: () => [],
+      exec: async () => ({ code: 0, killed: false, stdout: "codex-cli 0.165.0", stderr: "" }),
+    }, { cwd, sessionManager: { getBranch: () => [] } }, new AbortController().signal);
+    assert.match(defaultReport, /Bro is ready\./,
+      "installed Doctor must accept a normal default ChatGPT profile");
+    assert.deepEqual(calls, [],
+      "default-profile inspection must not issue a model-discovery or inference request");
+
     // Even the built-in provider may be pointed at a different endpoint.
     await writeFile(join(profile, "config.toml"), [
       'cli_auth_credentials_store = "file"',
