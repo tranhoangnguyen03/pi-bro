@@ -1,6 +1,6 @@
 # PiG-Agent shell qualification — issue #177
 
-**Status:** Bro-side candidate, **not** an accepted end-to-end PiG shell release. Tests that run fake backends cannot prove an authorized login or interactive terminal behavior.
+**Status:** Bro 0.36.1 candidate. Direct **PiG 0.5.3 TUI and RPC** checks passed with synthetic CLI input; the *installed PiG-Agent package*, a genuine model-provider answer, and live subscription accounts are **not yet qualified**.
 
 ## Exact inputs and responsibility
 
@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | PiG binary | 0.5.3 | Unchanged |
 | Node | 24.15.0 | Unchanged |
-| PiG-Agent PR #2 | `3f121638feaf9c8a551a2d7001481cd7d936a8c9` | Rebuild with reconciled Bro 0.36.1 |
+| PiG-Agent PR #2 | Initially `3f121638feaf9c8a551a2d7001481cd7d936a8c9`; later `eef7162241a8a65c1774043e172f90fe2d082110` | Rebuild with reconciled Bro 0.36.1 |
 | Bro | 0.29.0 at `ff6b260b10be8889809d4ea02108aceb826e4668` | Reconciled with main 0.36.0 at `55f050343ec9e48afc5b6768596326b5714c5278`; PR stages 0.36.1 |
 | Other extensions | Follow `shell/source-lock.json` in PiG-Agent PR #2 | Not changed by this PR |
 
@@ -33,7 +33,18 @@ Values are `inherit` (the default) or `subscription`. An unknown value fails, ra
 - Codex child removes `CODEX_API_KEY` and `OPENAI_API_KEY`, checks `codex login status` for ChatGPT login, and adds `-c 'forced_login_method="chatgpt"'` to the execution child. Codex's credential-store choice (e.g. `cli_auth_credentials_store`) still belongs to its selected `CODEX_HOME` profile.
 - A status check does **not** identify the human account by itself, prove that a request was sent, or verify subscription billing. The acceptance run must verify the effective account with non-secret CLI evidence and a genuine answer. Missing login or non-subscription login prevents the model request. No API-key fallback is attempted.
 
-**Lifecycle:** Cancellation uses existing bounded process-group termination. Bro retains main's tracked, awaited backend shutdown on session lifecycle. PiG must deliver shutdown/reload events to its Node extension worker and terminate that worker's children on hard exit. Real PiG reload and desktop exit are required checks, not an assumption based on unit cancellation.
+**Lifecycle:** Cancellation uses existing bounded process-group termination. Bro retains main's tracked, awaited backend shutdown on session lifecycle. The real PiG 0.5.3 RPC host test now confirms awaited reload cancellation and clean EOF with a synthetic child. Installed-shell hard exit and desktop exit are still **NOT RUN**; PiG-Agent owns its worker lifetime.
+
+## Verified direct PiG 0.5.3 host checks (not packaged shell)
+
+[GitHub Actions run 42568585956](https://github.com/tranhoangnguyen03/pi-bro/actions/runs/42568585956) ran on Linux x64 using PiG `0.5.3+1.4.0.74f46864`, Node `24.15.0`, and a downloaded PiG archive with SHA-256 `1e45e5e591a06d087587d5f09d2b6d61673a1e262cb2609e6189defffd5ae7ec`.
+
+- **PASS:** Real host RPC reload cancels an active fake CLI child, awaits teardown and accepts a fresh command. EOF terminates its child without a late result (2/2 host tests).
+- **PASS:** In an actual pseudo-terminal, `/bro config` shows Global/Features; `/bro text` opens Simplify and displays a completed fake Agy answer; `/bro remember-me` shows its private memory view; `/bro preferences` opens its editor; `/bro btw` opens its side-question composer and returns a **fresh** backend answer; keyboard input, resize and Esc work.
+- **PASS:** Full Bro CI at the same commit: 572/572 tests in the main job, Node 22/Linux, Node 24/macOS, and legacy PiG 0.3.0 lane.
+- **NOT RUN:** Packaged PiG-Agent application with Bro 0.36.1 pinned; a genuine API endpoint/model answer and actual billing method; two authorized accounts; clipboard transfer; all remaining advanced terminal journeys and hard-exit behavior.
+
+These tests load the extension from its source checkout in the **real PiG host**, not from a PiG-Agent installed release. A fake Agy CLI is not a subscription or provider request.
 
 ## Reproducible acceptance on the *packaged* shell
 
@@ -45,7 +56,7 @@ Build the exact PiG-Agent PR #2 source with the Bro PR head pinned. Install it i
 4. **Accounts:** With an already-authorized host Claude login, run with `CLAUDE_CONFIG_DIR` inherited and then with the shell-selected profile and `PI_BRO_CLAUDE_AUTH_SOURCE=subscription`. Confirm non-secret CLI account/method and actual answer. Repeat Codex with `CODEX_HOME` and `PI_BRO_CODEX_AUTH_SOURCE=subscription`. Test inherited API key collisions, missing/expired login, forced method and parent API env retention. For two distinct authorized accounts, test concurrent A/B routing; otherwise mark the second live account **NOT RUN**.
 5. **Isolation:** New sessions must not inherit another task's transcripts/side questions; an approved general Remember Me lesson stays available in A but not B. Inspect A and B settings, memory, session roots and model sources after concurrent use, reinstall and compatible rollback.
 
-**Fixtures:** `npm test` includes deterministic fake CLI source-routing, conflicting auth, no-fallback and process-stop tests plus host registry model identity. They are evidence of code paths only. Existing main's real Pi RPC lifecycle test and PiG 0.3.0 lane still do not qualify the packaged PiG 0.5.3 interactive TUI; run the actual PiG-Agent pinned shell.
+**Fixtures:** `npm test` includes deterministic fake CLI source-routing, conflicting auth, no-fallback and process-stop tests plus host registry model identity. The additional PiG 0.5.3 CI lane runs the real host and terminal with a synthetic Agy backend. Both checks remain distinct from an installed PiG-Agent release and from live subscription evidence.
 
 ## Specific PiG-Agent PR #2 work remaining
 
@@ -54,14 +65,15 @@ Build the exact PiG-Agent PR #2 source with the Bro PR head pinned. Install it i
 3. Update `shell/source-lock.json` to this PR's exact Bro commit and matching version; rebuild a native release with PiG 0.5.3/Node 24.15.0, then execute the matrix above. Do not treat the existing smoke command registration as TUI qualification.
 4. Verify that PiG reload and hard exit tear down the Node extension worker and its backends; if not, fix the PiG host lifetime owner rather than adding a second shell worker manager.
 
-## Qualification matrix (pending host execution)
+## Qualification matrix — actual observations
 
-| Journey | Fixture | Real PiG 0.5.3 / TUI | Authorized account |
-| --- | --- | --- | --- |
-| Explanation, settings, preferences, side question, Remember Me, advanced paths | Existing modal tests | **NOT RUN** | **NOT RUN** |
-| Cancellation, session shutdown and child group | Added fake child tests | **NOT RUN** | **NOT RUN** |
-| Host model object/endpoint selection | Added SDK fixture | **NOT RUN** | **NOT RUN** |
-| Claude/Codex subscription vs API collision | Added fake CLI tests | **NOT RUN** | **NOT RUN** |
-| Separate homes and new-session memory state | Existing storage rules; not a full shell test | **NOT RUN** | **NOT RUN** |
+| Journey | Fixture / CI | Direct PiG 0.5.3 host | Installed PiG-Agent shell | Authorized account |
+| --- | --- | --- | --- | --- |
+| Simplify/config/preferences/BTW/Remember Me, resize/keyboard/Esc | **PASS** | **PASS** (synthetic Agy TUI) | **NOT RUN** | **NOT RUN** |
+| Full scroll/clipboard, Guided Review, Advisor, Elevate, Grill Me, Show, Overthink, Architecture | Unit coverage varies | **NOT RUN** | **NOT RUN** | **NOT RUN** |
+| Reload cancellation and EOF process cleanup | **PASS** | **PASS** (RPC, 2/2) | **NOT RUN** | **NOT RUN** |
+| Host-selected Pi model identity and metadata | **PASS** | **NOT RUN** — actual custom endpoint | **NOT RUN** | **NOT RUN** |
+| Claude/Codex profile routing, billing-safe subscription choice | **PASS** — fake CLI | **NOT RUN** — real CLI | **NOT RUN** | **NOT RUN** |
+| Two isolated homes, fresh task and approved lesson | **PASS** — memory-root fixture | **NOT RUN** | **NOT RUN** | **NOT RUN** |
 
-A CI success for fixtures changes that column only. Record real outcomes and exact source/artifact pins before calling this integration accepted.
+A fixture PASS does not establish the installed shell, real account identity, or paid request. To close #177, pin Bro 0.36.1 in PiG-Agent PR #2, rebuild, complete the missing installed-shell and live checks and record their exact source/artifact versions.
