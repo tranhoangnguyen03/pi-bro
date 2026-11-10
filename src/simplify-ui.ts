@@ -5,7 +5,7 @@ import { copyToClipboard } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 import { BtwModal } from "./btw.ts";
 import { latestAssistant, simplify, type BroResult } from "./explain-modal.ts";
-import { openBroOverlay } from "./modal-kit.ts";
+import { openBroOverlay, startProgressClock } from "./modal-kit.ts";
 import { nextBroMode, type BroMode } from "./prompt.ts";
 import { readSettings } from "./settings.ts";
 import { extractDocumentText, extractWebPage, type BroSource } from "./sources.ts";
@@ -61,10 +61,11 @@ export async function openSimplifyWorkflow(
   await openBroOverlay<void>(ctx,(tui,theme,_keys,done)=>{
     let closed=false;
     let controller:AbortController|undefined;
+    let stopProgress:(()=>void)|undefined;
     let running=false;
-    const close=()=>{if(closed)return; closed=true;state.draft=modal.getComposerText();controller?.abort();done(undefined);};
+    const close=()=>{if(closed)return; closed=true;state.draft=modal.getComposerText();stopProgress?.();controller?.abort();done(undefined);};
     const modal=new BtwModal(tui,theme,close,submit,()=>{
-      closed=true;state.draft=modal.getComposerText();controller?.abort();
+      closed=true;state.draft=modal.getComposerText();stopProgress?.();controller?.abort();
     },{
       title:"Bro · simplify",
       commands:"",
@@ -85,14 +86,24 @@ export async function openSimplifyWorkflow(
       if(running||closed)return;
       const attempt=new AbortController();
       controller=attempt; running=true;
-      modal.setRunning(true);modal.setNotice("Simplifying…");
+      modal.setRunning(true);modal.setNotice("");
+      let phase=request.kind==="url" ? "Fetching page" : request.kind==="file" ? "Reading file"
+        : request.kind==="latest" ? "Getting latest reply" : "Preparing source";
+      const stop=startProgressClock(attempt.signal,seconds=>{
+        if(!closed&&controller===attempt)modal.setProgress(`${phase} · ${seconds}s`);
+      });
+      stopProgress=stop;
       const previous=state.result,previousView=state.view;
       try {
         const source=await resolveSource(ctx,request,attempt.signal,retained);
         if(closed||attempt.signal.aborted)return;
         const currentSettings=await readSettings();
+        phase="Waiting for explanation";
         const result=await simplify(source.text,attempt.signal,currentSettings,text=>{
-          if(!closed&&!attempt.signal.aborted)modal.setText(text);
+          if(!closed&&!attempt.signal.aborted){
+            phase="Receiving explanation";
+            modal.setText(text);
+          }
         },mode);
         if(closed||attempt.signal.aborted)return;
         state.result={source,...result};
@@ -111,6 +122,8 @@ export async function openSimplifyWorkflow(
           state.draft=submitted;
         }
       } finally {
+        stop();
+        if(stopProgress===stop)stopProgress=undefined;
         if(controller===attempt)controller=undefined;
         running=false;
         if(!closed)modal.setRunning(false);
