@@ -9,7 +9,7 @@ import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 import mammoth from "mammoth";
 import * as piTui from "@earendil-works/pi-tui";
-import { bro, backend, sources, buildDir, btw, explainModal, sourceDir } from "./test-build.mjs";
+import { bro, backend, sources, buildDir, btw, explainModal, settings, sourceDir } from "./test-build.mjs";
 
 test("Bro helpers, modals, advisor lifecycle and SDK restrictions", async (t) => {
 const documentFixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "documents");
@@ -668,6 +668,37 @@ await t.test("Grill backend failures restore submitted input without overwriting
 			assert.equal(thread.draft, draft || "submitted answer");
 		}
 	});
+});
+
+await t.test("Grill Me shows live waiting time and cancel leaves no partial turn", {timeout: 15_000}, async () => {
+  await withFakeAgy(`#!/usr/bin/env node
+setTimeout(() => console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"LATE"}})), 8000);
+`, async () => {
+    await settings.writeSettings({ backend:"agy", model:"test-model", effort:"default", mode:"balanced", showTurns:1, overrides:{} });
+    const thread = {topic:"Should we improve progress?",depth:"balanced",fullAccess:false,turns:[]};
+    let modal;
+    const ready = deferred();
+    const opened = bro.openGrillModal({
+      cwd:process.cwd(),sessionManager:{getBranch:()=>[]},
+      ui:{ custom:factory=>new Promise(resolve=>{
+        modal=factory({mode:"fullscreen",terminal:{rows:30,columns:100},requestRender(){}},fakeTheme,{},resolve);
+        ready.resolve();
+      }) },
+    }, thread, {start:true});
+    await ready.promise;
+    try {
+      const started=Date.now();
+      while(!/Waiting for next question · [1-9]\\d*s/.test(stripVTControlCharacters(modal.render(94).join("\\n")))){
+        if(Date.now()-started>7000) assert.fail("Grill progress heartbeat never appeared");
+        await new Promise(resolve=>setTimeout(resolve,40));
+      }
+      assert.deepEqual(thread.turns,[],"progress must not become a completed turn");
+    } finally {
+      modal.handleInput("\\x1b");
+      await opened;
+    }
+    assert.deepEqual(thread.turns,[],"cancellation must not save partial output");
+  });
 });
 
 await t.test("Grill cancellation preserves completed turns and submitted input across reopen", async () => {
