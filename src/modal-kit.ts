@@ -16,6 +16,27 @@ export type TuiLike = {
 
 export type NoticeTone = "info" | "success" | "warning" | "error";
 
+/** One-second UI heartbeat. It reports elapsed time, not proof of backend activity. */
+export function startProgressClock(signal: AbortSignal, onTick: (seconds: number) => void): () => void {
+  const startedAt = Date.now();
+  let stopped = false;
+  const tick = () => {
+    if (!stopped && !signal.aborted) onTick(Math.floor((Date.now() - startedAt) / 1000));
+  };
+  const timer = setInterval(tick, 1000);
+  timer.unref?.();
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+    signal.removeEventListener("abort", stop);
+  };
+  signal.addEventListener("abort", stop, { once: true });
+  if (signal.aborted) stop();
+  else tick();
+  return stop;
+}
+
 /**
  * Format a notice text with the semantic tone.
  * Strips raw terminal control characters from the message to prevent escape sequence injection.
