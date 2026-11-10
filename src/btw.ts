@@ -13,7 +13,7 @@ import {
 	selectionLabel,
 } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
-import { BRO_OVERLAY, broOverlayArea, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, startProgressClock, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, formatNotice, modalHeight, openBroOverlay, renderFrame, runningHint, Scroller, startProgressClock, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
 import { type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -340,14 +340,13 @@ export class BtwModal implements Focusable {
 				this.input.render(inner)[0] ?? "",
 			],
 			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
-			// Keep the active hint on one row. The frame wraps hints and takes those
-			// rows from the transcript; a long tool name must not make reading jump.
-			hints: this.running ? (() => {
-				const fullExit = " · Esc close (stops reply)";
-				const exit = inner - visibleWidth(fullExit) >= 8 ? fullExit : " · Esc close";
-				const statusWidth = Math.max(0, inner - visibleWidth(exit));
-				return truncateToWidth(this.progressText || "Bro is thinking…", statusWidth, "…") + exit;
-			})() : (this.appearance.idleHint ?? "Enter send · Esc close"),
+			// A tool label may be long. Preserve the elapsed seconds and Esc
+			// on one line; shorten only the stage so transcript height stays put.
+			hints: this.running
+				? runningHint(this.progressText || "Bro is thinking…", inner, [
+					" · Esc close (stops reply)", " · Esc close",
+				])
+				: (this.appearance.idleHint ?? "Enter send · Esc close"),
 		});
 	}
 
