@@ -1029,6 +1029,28 @@ test("modal kit: elevate starts discovery from the button and from Ctrl+S", asyn
 });
 
 
+test("BTW keeps one running hint row and a steady transcript at a narrow 60-column terminal", () => {
+  const tui = { mode: "fullscreen", terminal: { rows: 30, columns: 60 }, requestRender() {} };
+  const modal = new btw.BtwModal(tui, theme, () => {}, () => {}, () => {}, {});
+  modal.setRunning(true);
+  modal.setText(Array.from({length: 75}, (_, i) => "logline_" + i).join("\n\n"));
+  modal.scrollToEnd();
+  const layout = hostLayout(kit.BRO_OVERLAY, 60, 30);
+  const view = () => stripVTControlCharacters(modal.render(layout.width).join("\n"));
+  const before = view();
+  const rowsBefore = (before.match(/logline_\d+/g) ?? []).length;
+  assert.ok(rowsBefore > 0, "narrow layout must leave room to read the conversation");
+  for (const label of ["Waiting for backend · 2s", "Last tool: command_execution · 123456s", "Receiving answer · 123456s"]) {
+    modal.setProgress(label);
+    const rendered = view();
+    assert.match(rendered, /Esc close \(stops reply\)/, "Esc close must stay visible");
+    assert.equal((rendered.match(/logline_\d+/g) ?? []).length, rowsBefore,
+      "longer progress must not change the transcript's visible height");
+    for (const row of modal.render(layout.width)) assert.ok(visibleWidth(row) <= layout.width);
+  }
+  modal.dispose();
+});
+
 test("progress clock ticks while quiet and stops on completion or abort", (t) => {
   t.mock.timers.enable({ apis: ["setInterval", "Date"], now: 10000 });
   try {
