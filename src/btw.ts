@@ -503,9 +503,8 @@ export async function openBtwModal(
 						if (closed || turnController.signal.aborted) return;
 						// Activity labels are name/type-only at the backend boundary.
 						// Process every phase here, before the 75 ms text render throttle.
-						if (event.kind === "activity") stage = `Last tool: ${event.label}`;
-						else stage = "Receiving answer";
-						updateProgress();
+						const next = event.kind === "activity" ? `Last tool: ${event.label}` : "Receiving answer";
+						if (next !== stage) { stage = next; updateProgress(); }
 					};
 					const showRenderedText = (partial: string) => {
 						if (closed || turnController.signal.aborted) return;
