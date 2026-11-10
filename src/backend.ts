@@ -61,7 +61,7 @@ export type BackendSelection =
 	| { backend: "muse"; model: string; effort?: (typeof MUSE_EFFORTS)[number] }
 	| { backend: "pi"; model: string; effort?: (typeof PI_EFFORTS)[number] };
 export type BackendContinuation = { id: string };
-export type BackendProgress = { kind: "text"; text: string } | { kind: "activity"; label: string; timestamp: number };
+export type BackendProgress = { kind: "text"; text: string } | { kind: "activity"; label: string; timestamp: number; tool?: string };
 export type BackendOnProgress = (progress: BackendProgress) => void;
 
 /** BTW reports a tool name/type, not a command, argument, or assistant message.
@@ -407,7 +407,7 @@ async function executeArgvPrint(
 			if (isBtw) {
 				const parsed = parseBtwAgyLine(line);
 				if (parsed.conversationId) conversationId = parsed.conversationId;
-				if (parsed.activity) onProgress?.({ kind: "activity", label: parsed.activity, timestamp: Date.now() });
+				if (parsed.activity) onProgress?.({ kind: "activity", label: parsed.activity, timestamp: Date.now(), tool: parsed.activity });
 				if (parsed.error) throw new Error(parsed.error);
 				if (parsed.delta) {
 					partial += parsed.delta;
@@ -415,6 +415,11 @@ async function executeArgvPrint(
 				}
 				if (parsed.result !== undefined) final = parsed.result;
 			} else {
+				// Review-backed Grill receives tool events without changing review access.
+				if (inspect) {
+					const tool = parseBtwAgyLine(line).activity;
+					if (tool) onProgress?.({ kind: "activity", label: tool, timestamp: Date.now(), tool });
+				}
 				const parsed = parseExplainLine(line);
 				if (parsed.delta) {
 					partial += parsed.delta;
@@ -581,7 +586,12 @@ async function executeAdvisorStdin(
 			throw new Error("Agy emitted invalid stream-json output.");
 		}
 		const activity = advisorActivityFromEvent(event);
-		if (activity) onProgress?.({ kind: "activity", label: activity, timestamp: Date.now() });
+		if (activity) {
+			const step = event.step_update;
+			const tool = step?.step_type === "agent_response" || step?.step_type === "assistant"
+				? undefined : btwToolName(step?.tool_name);
+			onProgress?.({ kind: "activity", label: activity, timestamp: Date.now(), ...(tool ? { tool } : {}) });
+		}
 		if (event.event !== "result") return;
 		sawTerminal = true;
 		const result = event.result;
@@ -887,17 +897,18 @@ async function executeClaude(
 					onProgress?.({ kind: "text", text: partial });
 				}
 			}
-			if ((isAdvisor || isBtw) && topLevel && event.type === "assistant" && Array.isArray(event.message?.content)) {
+			if ((isAdvisor || isBtw || inspect) && topLevel && event.type === "assistant" && Array.isArray(event.message?.content)) {
 				for (const block of event.message.content as Array<{ type?: unknown; name?: unknown; text?: unknown }>) {
 					if (attempt.causeOf()) break;
-					if (isBtw && block?.type !== "tool_use") continue;
+					if ((isBtw || inspect) && block?.type !== "tool_use") continue;
+					const tool = block?.type === "tool_use" ? btwToolName(block.name) : undefined;
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
-							? (isBtw ? btwToolName(block.name) : block.name.trim())
+							? ((isBtw || inspect) ? tool : block.name.trim())
 							: block?.type === "text" && typeof block.text === "string"
 								? block.text.split("\n").find((text) => text.trim())?.trim()
 								: undefined;
-					if (label) onProgress?.({ kind: "activity", label, timestamp: Date.now() });
+					if (label) onProgress?.({ kind: "activity", label, timestamp: Date.now(), ...(tool ? { tool } : {}) });
 				}
 			}
 			if (event.type !== "result" || !topLevel) return;
@@ -1078,17 +1089,18 @@ async function executeGrok(
 				}
 				streamedSinceAssistant = false;
 			}
-			if ((isAdvisor || isBtw) && event.type === "assistant" && Array.isArray(message?.content)) {
+			if ((isAdvisor || isBtw || inspect) && event.type === "assistant" && Array.isArray(message?.content)) {
 				for (const block of message.content as Array<{ type?: unknown; name?: unknown; text?: unknown }>) {
 					if (attempt.causeOf()) break;
-					if (isBtw && block?.type !== "tool_use") continue;
+					if ((isBtw || inspect) && block?.type !== "tool_use") continue;
+					const tool = block?.type === "tool_use" ? btwToolName(block.name) : undefined;
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
-							? (isBtw ? btwToolName(block.name) : block.name.trim())
+							? ((isBtw || inspect) ? tool : block.name.trim())
 							: block?.type === "text" && typeof block.text === "string"
 								? block.text.split("\n").find((text) => text.trim())?.trim()
 								: undefined;
-					if (label) onProgress?.({ kind: "activity", label, timestamp: Date.now() });
+					if (label) onProgress?.({ kind: "activity", label, timestamp: Date.now(), ...(tool ? { tool } : {}) });
 				}
 			}
 			if (event.type !== "result") return;
@@ -1277,11 +1289,10 @@ async function executeCodex(
 				return;
 			}
 			const item = event.item;
-			if ((isAdvisor || isBtw) && (event.type === "item.started" || event.type === "item.completed")) {
-				const activity = isBtw
-					? (item?.type !== "agent_message" && item?.type !== "reasoning" ? btwToolName(item?.type) : undefined)
-					: codexActivityFromEvent(event);
-				if (activity) onProgress?.({ kind: "activity", label: activity, timestamp: Date.now() });
+			if ((isAdvisor || isBtw || inspect) && (event.type === "item.started" || event.type === "item.completed")) {
+				const tool = item?.type !== "agent_message" && item?.type !== "reasoning" ? btwToolName(item?.type) : undefined;
+				const activity = (isBtw || inspect) ? tool : codexActivityFromEvent(event);
+				if (activity) onProgress?.({ kind: "activity", label: activity, timestamp: Date.now(), ...(tool ? { tool } : {}) });
 			}
 			if (event.type === "item.completed" && item?.type === "agent_message") {
 				const text = extractCodexItemText(item);
@@ -1424,15 +1435,16 @@ async function executeMuse(
 			const runStream = payload?.run_stream;
 			const isRoot = rootRunId !== undefined && runStream?.kind === "run" && runStream.id === rootRunId;
 
-			if (isAdvisor || isBtw) {
+			if (isAdvisor || isBtw || inspect) {
 				if (envelope.payload_type === "tool.result") {
 					const facts = payload?.correlation_facts as { tool_name?: unknown } | undefined;
 					const toolName = typeof facts?.tool_name === "string" && facts.tool_name ? facts.tool_name : "tool";
 					const candidate = [payload?.text, payload?.command, payload?.path, payload?.file_path, payload?.query]
 						.find((v) => typeof v === "string" && v.trim());
 					const preview = typeof candidate === "string" ? candidate.replace(/\s+/g, " ").trim() : "";
-					const label = isBtw ? btwToolName(toolName) : `${toolName}${preview ? ` ${preview}` : ""}`;
-					if (label) onProgress?.({ kind: "activity", label, timestamp: Date.now() });
+					const tool = btwToolName(toolName);
+					const label = (isBtw || inspect) ? tool : `${toolName}${preview ? ` ${preview}` : ""}`;
+					if (label) onProgress?.({ kind: "activity", label, timestamp: Date.now(), ...(tool ? { tool } : {}) });
 				} else if (isAdvisor && envelope.payload_type === "task.lifecycle.status") {
 					const event = payload?.event as { message?: unknown } | undefined;
 					if (typeof event?.message === "string" && event.message.trim()) {
@@ -1891,8 +1903,9 @@ async function executePi(
 					onProgress?.({ kind: "text", text });
 				}
 			} else if (event.type === "tool_execution_start" && onProgress) {
-				const label = request.feature === "btw" ? btwToolName(event.toolName) : event.toolName;
-				if (label) onProgress({ kind: "activity", label, timestamp: Date.now() });
+				const tool = btwToolName(event.toolName);
+				const label = request.feature === "btw" || request.feature === "review" ? tool : event.toolName;
+				if (label) onProgress({ kind: "activity", label, timestamp: Date.now(), ...(tool ? { tool } : {}) });
 			}
 		});
 
