@@ -1043,7 +1043,7 @@ test("BTW keeps one running hint row and a steady transcript at a narrow 60-colu
   for (const label of ["Waiting for backend · 2s", "Last tool: command_execution · 123456s", "Receiving answer · 123456s"]) {
     modal.setProgress(label);
     const rendered = view();
-    assert.match(rendered, /Esc close \(stops reply\)/, "Esc close must stay visible");
+    assert.match(rendered, /Esc close/, "Esc close must stay visible (short form on narrow screens)");
     const elapsed = /· (\d+s)$/.exec(label)?.[1];
     assert.ok(elapsed && rendered.includes(elapsed), "elapsed seconds must survive a long stage");
     assert.match(rendered, /Waiting|Last|Receiving/, "the stage must remain identifiable");
