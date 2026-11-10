@@ -47,6 +47,8 @@ The old `/finish`, `/copy-all`, `/insert`, `/insert-all`, `/insert-last-message`
 
 Grill Me uses the **BTW model/backend/effort** selection from `/bro config`, but has its own independent thread. The header shows depth and effective access; `/help` keeps the footer short. Full access and Agy write risks remain visible in the header even when another notice is shown.
 
+While Bro works, the footer shows the current stage and elapsed seconds. When the backend reports tools, it shows only the tool name/type. The timer confirms the request is still pending, not that the backend is making progress. Progress disappears on completion or cancellation and never enters saved replies or copies.
+
 ## Access, privacy and limits
 
 - Inspection uses the Guided Review backend path in your current workspace. Claude, Muse and Pi have file-only tools. Codex and Grok have read-only sandboxes with shell access. **Agy inspection can still write project files.** No-edit prompts are not security controls.
