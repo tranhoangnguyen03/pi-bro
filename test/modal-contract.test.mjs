@@ -1027,3 +1027,57 @@ test("modal kit: elevate starts discovery from the button and from Ctrl+S", asyn
 	modal.handleInput("\r");
 	assert.deepEqual(started, ["the objective", "the objective"], "the [Discover gaps] button did not start discovery");
 });
+
+
+test("progress clock ticks while quiet and stops on completion or abort", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"], now: 10000 });
+  try {
+    const stopped = [];
+    const first = new AbortController();
+    const stop = kit.startProgressClock(first.signal, seconds => stopped.push(seconds));
+    assert.deepEqual(stopped, [0]);
+    t.mock.timers.tick(2100);
+    assert.deepEqual(stopped, [0, 1, 2], "elapsed seconds advance without backend output");
+    stop();
+    t.mock.timers.tick(2000);
+    assert.deepEqual(stopped, [0, 1, 2], "completed requests leave no active timer");
+
+    const cancelled = [];
+    const second = new AbortController();
+    kit.startProgressClock(second.signal, seconds => cancelled.push(seconds));
+    t.mock.timers.tick(1000);
+    second.abort();
+    t.mock.timers.tick(2000);
+    assert.deepEqual(cancelled, [0, 1], "cancel stops later UI updates");
+  } finally {
+    t.mock.timers.reset();
+  }
+});
+
+test("Show and Elevate progress remains in temporary hints, not result text", () => {
+  const tui = { mode: "fullscreen", terminal: { rows: 30, columns: 80 }, requestRender() {} };
+  const show = new explainModal.BroModal(tui, theme, () => {}, () => {}, () => {}, "again");
+  const view = modal => stripVTControlCharacters(modal.render(72).join("\n"));
+  show.setLoading("Drawing what happened…");
+  show.setProgress("Drawing what happened · 5s");
+  assert.match(view(show), /Drawing what happened · 5s/);
+  show.setStreaming("A valid response");
+  show.setProgress("Receiving output · 6s");
+  assert.match(view(show), /Receiving output · 6s/);
+  show.setResult("A valid response", true);
+  assert.doesNotMatch(view(show), /Receiving output · 6s/);
+  assert.equal(show.rawText, "A valid response");
+
+  const elevateModal = new elevate.ElevateModal(tui, theme, () => {}, () => {}, () => {}, () => {}, () => {});
+  elevateModal.setDiscovering("Improve a request");
+  elevateModal.setProgress("Discovering improvements · 8s");
+  assert.match(view(elevateModal), /Discovering improvements · 8s/);
+  elevateModal.setFailed("Test failure");
+  assert.doesNotMatch(view(elevateModal), /Discovering improvements · 8s/);
+  elevateModal.setUpgrading();
+  elevateModal.setProgress("Rewriting request · 9s");
+  assert.match(view(elevateModal), /Rewriting request · 9s/);
+  elevateModal.setReady("New assignment");
+  assert.doesNotMatch(view(elevateModal), /Rewriting request · 9s/);
+  elevateModal.dispose();
+});
