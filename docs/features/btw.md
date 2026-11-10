@@ -43,6 +43,12 @@ asked in.
   are at the bottom; scroll up to read earlier turns. The header shows the model and reasoning effort the latest
   turn used (`default` when the model's own effort applies) and the current
   mode.
+- While a turn runs, the bottom hint shows its current phase and elapsed time, even
+  when a backend has not started streaming the answer. When a backend reports tool
+  activity, the hint shows the latest tool name/type, not commands or private
+  output. Elapsed time means the request is still active, not that a specific
+  step is complete. These status hints are temporary: they are not copied or
+  stored with the conversation and disappear on completion or cancellation.
 - A turn is capped at 2 minutes in conversation-only mode and 10 minutes in
   full permission mode.
 - Bro saves its completed thread, mode and draft as private Pi session entries.
