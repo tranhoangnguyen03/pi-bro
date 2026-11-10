@@ -13,7 +13,7 @@ import {
 	selectionLabel,
 } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
-import { BRO_OVERLAY, broOverlayArea, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, startProgressClock, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
 import { type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -434,21 +434,22 @@ export async function openBtwModal(
 				const work: { pending?: BtwTurn; original?: BtwTurn } = { original: replaced };
 				activeTurn = work;
 				controller = turnController;
-				const startedAt = Date.now();
+				let elapsedSeconds = 0;
 				let stage = "Preparing request";
 				const updateProgress = () => {
 					if (!closed && controller === turnController && !turnController.signal.aborted)
-						modal.setProgress(`${stage} · ${Math.floor((Date.now() - startedAt) / 1000)}s`);
+						modal.setProgress(`${stage} · ${elapsedSeconds}s`);
 				};
-				const timer = setInterval(updateProgress, 1000);
-				timer.unref?.();
+				modal.setRunning(true);
+				const stopClock = startProgressClock(turnController.signal, seconds => {
+					elapsedSeconds = seconds;
+					updateProgress();
+				});
 				const stopProgress = () => {
-					clearInterval(timer);
+					stopClock();
 					if (stopActiveProgress === stopProgress) stopActiveProgress = undefined;
 				};
 				stopActiveProgress = stopProgress;
-				modal.setRunning(true);
-				updateProgress();
 
 				let settings: BroSettings;
 				let preferences: string;
