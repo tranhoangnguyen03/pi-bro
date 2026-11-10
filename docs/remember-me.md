@@ -37,6 +37,8 @@ Before the first model call, Bro identifies the selected model/backend, the capt
 
 Browsing and failed saves preserve the proposal. If the store changed after the proposal was reviewed, `/save` compares the original and current target (and related entries) and **does not save**. An explicit `/confirm-revision` approves against that exact new revision; if it changes again, another review is required. Durable drafts across restarts are not implemented.
 
+During a draft or revision, the footer shows the current stage and elapsed seconds even if the model is quiet. It does not show the raw draft JSON, and progress is not saved as a memory. Elapsed time means the call remains pending, not that the model has made progress.
+
 Esc closes the modal and cancels an active model call. The draft conversation is not durable; **approved saved memories are durable**. Saved entries survive Pi restarts and project changes.
 
 ## Agent access
