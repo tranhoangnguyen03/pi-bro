@@ -688,13 +688,13 @@ setTimeout(() => console.log(JSON.stringify({event:"result",result:{status:"SUCC
     await ready.promise;
     try {
       const started=Date.now();
-      while(!/Waiting for next question · [1-9]\\d*s/.test(stripVTControlCharacters(modal.render(94).join("\\n")))){
+      while(!/Waiting for next question · [1-9]\d*s/.test(stripVTControlCharacters(modal.render(94).join("\n")))){
         if(Date.now()-started>7000) assert.fail("Grill progress heartbeat never appeared");
         await new Promise(resolve=>setTimeout(resolve,40));
       }
       assert.deepEqual(thread.turns,[],"progress must not become a completed turn");
     } finally {
-      modal.handleInput("\\x1b");
+      modal.handleInput("\x1b");
       await opened;
     }
     assert.deepEqual(thread.turns,[],"cancellation must not save partial output");
