@@ -6,6 +6,8 @@ import {
 	Editor,
 	Markdown,
 	matchesKey,
+	truncateToWidth,
+	visibleWidth,
 	wrapTextWithAnsi,
 	type Component,
 	type EditorTheme,
@@ -591,10 +593,19 @@ export class BroModal implements Focusable {
 		return Boolean(this.modeLabel) && (this.kind === "loading" || this.kind === "streaming" || this.kind === "result");
 	}
 
-	private controls(): string {
+	private controls(innerWidth: number): string {
 		const mode = this.canSwitchMode() ? " · M mode" : "";
-		if (this.kind === "loading") return `${this.progressText ? this.progressText + " · " : ""}${mode ? "M mode · " : ""}Esc cancel`;
-		if (this.kind === "streaming") return `${this.progressText || "Simplifying…"} · ↑/↓ scroll${mode} · Esc cancel`;
+		if (this.kind === "loading" || this.kind === "streaming") {
+			// Keep the cancel action on one line even as phases and elapsed time grow.
+			// Hint wraps would otherwise steal a row from the content while reading.
+			const scroll = this.kind === "streaming" ? " · ↑/↓ scroll" : "";
+			let actions = `${scroll}${mode} · Esc cancel`;
+			if (visibleWidth(actions) > innerWidth - 8) actions = `${mode} · Esc cancel`;
+			if (visibleWidth(actions) > innerWidth - 8) actions = " · Esc cancel";
+			const budget = Math.max(0, innerWidth - visibleWidth(actions));
+			const phase = this.progressText || (this.kind === "loading" ? "Working…" : "Receiving output…");
+			return truncateToWidth(phase, budget, "…") + actions;
+		}
 		if (this.kind === "result") {
 			return `↑/↓ scroll · C copy${this.htmlPath ? " · O open diagram" : ""}${mode}${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
 		}
@@ -616,7 +627,7 @@ export class BroModal implements Focusable {
 			},
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
 			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
-			hints: this.controls(),
+			hints: this.controls(Math.max(1, width - 2)),
 		});
 	}
 
@@ -761,7 +772,7 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 				modal.setLoading(options.loadingText);
 				modal.setMode(mode);
 				modal.setPreferences(false);
-				let phase = options.loadingText ?? "Waiting for response";
+				const phase = options.loadingText ?? "Working";
 				const stop = startProgressClock(nextController.signal, seconds => {
 					if (!closed && controller === nextController) modal.setProgress(`${phase} · ${seconds}s`);
 				});
@@ -770,7 +781,8 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 				void options
 					.run(nextController.signal, source, (text) => {
 						if (closed || nextController.signal.aborted || controller !== nextController) return;
-						phase = "Receiving output";
+						// This callback may be a workflow stage (Architecture), not
+						// a streaming answer. The body owns the stage; keep the hint neutral.
 						modal.setStreaming(text);
 					}, mode)
 					.then((result) => {
