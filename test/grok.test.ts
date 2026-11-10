@@ -318,6 +318,24 @@ for (const access of ["restricted", "workspace-full"] as const) {
 	});
 }
 
+test("Grok BTW activity contains only tool names, not assistant text or tool arguments", async () => {
+  await withFakeGrok([
+    init(),
+    assistant([
+      { type: "text", text: "A normal assistant message" },
+      { type: "tool_use", name: "command_execution --private-key", input: { command: "secret" } },
+      { type: "thinking", thinking: "HIDDEN" },
+    ]),
+    success("Done"),
+  ].join("\n"), async () => {
+    const progress: BackendProgress[] = [];
+    const { outcome } = await run({ feature: "btw", access: "restricted", cwd: "workspace", prompt: "Side q" }, p => progress.push(p));
+    assert.equal(outcome.status, "success");
+    assert.deepEqual(progress.filter(p => p.kind === "activity").map(p => p.label), ["command_execution"]);
+    assert.doesNotMatch(JSON.stringify(progress.filter(p => p.kind === "activity")), /private-key|secret|A normal|HIDDEN/);
+  });
+});
+
 test("grok btw: resume passes --resume with the continuation id and keeps it", async () => {
 	await withFakeGrok([init("sess-1"), success("again").replace('"s1"', '"sess-1"')].join("\n"), async (binDir) => {
 		const { outcome } = await run({ feature: "btw", access: "restricted", cwd: "workspace", prompt: "Follow up", continuation: { id: "sess-1" } });
