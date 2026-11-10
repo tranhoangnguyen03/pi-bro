@@ -81,6 +81,8 @@ export type BackendRequest = {
 	access: BackendAccess;
 	cwd?: string; // required for workspace-full
 	continuation?: BackendContinuation;
+	/** Opt-in tool-only activity for Grill on the review path; Guided Review stays unchanged. */
+	reportReviewTools?: boolean;
 };
 
 export type BackendOutcome =
@@ -416,7 +418,7 @@ async function executeArgvPrint(
 				if (parsed.result !== undefined) final = parsed.result;
 			} else {
 				// Review-backed Grill receives tool events without changing review access.
-				if (inspect) {
+				if (inspect && request.reportReviewTools) {
 					const tool = parseBtwAgyLine(line).activity;
 					if (tool) onProgress?.({ kind: "activity", label: tool, timestamp: Date.now(), tool });
 				}
@@ -897,14 +899,14 @@ async function executeClaude(
 					onProgress?.({ kind: "text", text: partial });
 				}
 			}
-			if ((isAdvisor || isBtw || inspect) && topLevel && event.type === "assistant" && Array.isArray(event.message?.content)) {
+			if ((isAdvisor || isBtw || (inspect && request.reportReviewTools)) && topLevel && event.type === "assistant" && Array.isArray(event.message?.content)) {
 				for (const block of event.message.content as Array<{ type?: unknown; name?: unknown; text?: unknown }>) {
 					if (attempt.causeOf()) break;
-					if ((isBtw || inspect) && block?.type !== "tool_use") continue;
+					if ((isBtw || (inspect && request.reportReviewTools)) && block?.type !== "tool_use") continue;
 					const tool = block?.type === "tool_use" ? btwToolName(block.name) : undefined;
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
-							? ((isBtw || inspect) ? tool : block.name.trim())
+							? ((isBtw || (inspect && request.reportReviewTools)) ? tool : block.name.trim())
 							: block?.type === "text" && typeof block.text === "string"
 								? block.text.split("\n").find((text) => text.trim())?.trim()
 								: undefined;
@@ -1089,14 +1091,14 @@ async function executeGrok(
 				}
 				streamedSinceAssistant = false;
 			}
-			if ((isAdvisor || isBtw || inspect) && event.type === "assistant" && Array.isArray(message?.content)) {
+			if ((isAdvisor || isBtw || (inspect && request.reportReviewTools)) && event.type === "assistant" && Array.isArray(message?.content)) {
 				for (const block of message.content as Array<{ type?: unknown; name?: unknown; text?: unknown }>) {
 					if (attempt.causeOf()) break;
-					if ((isBtw || inspect) && block?.type !== "tool_use") continue;
+					if ((isBtw || (inspect && request.reportReviewTools)) && block?.type !== "tool_use") continue;
 					const tool = block?.type === "tool_use" ? btwToolName(block.name) : undefined;
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
-							? ((isBtw || inspect) ? tool : block.name.trim())
+							? ((isBtw || (inspect && request.reportReviewTools)) ? tool : block.name.trim())
 							: block?.type === "text" && typeof block.text === "string"
 								? block.text.split("\n").find((text) => text.trim())?.trim()
 								: undefined;
@@ -1289,9 +1291,9 @@ async function executeCodex(
 				return;
 			}
 			const item = event.item;
-			if ((isAdvisor || isBtw || inspect) && (event.type === "item.started" || event.type === "item.completed")) {
+			if ((isAdvisor || isBtw || (inspect && request.reportReviewTools)) && (event.type === "item.started" || event.type === "item.completed")) {
 				const tool = item?.type !== "agent_message" && item?.type !== "reasoning" ? btwToolName(item?.type) : undefined;
-				const activity = (isBtw || inspect) ? tool : codexActivityFromEvent(event);
+				const activity = (isBtw || (inspect && request.reportReviewTools)) ? tool : codexActivityFromEvent(event);
 				if (activity) onProgress?.({ kind: "activity", label: activity, timestamp: Date.now(), ...(tool ? { tool } : {}) });
 			}
 			if (event.type === "item.completed" && item?.type === "agent_message") {
@@ -1435,7 +1437,7 @@ async function executeMuse(
 			const runStream = payload?.run_stream;
 			const isRoot = rootRunId !== undefined && runStream?.kind === "run" && runStream.id === rootRunId;
 
-			if (isAdvisor || isBtw || inspect) {
+			if (isAdvisor || isBtw || (inspect && request.reportReviewTools)) {
 				if (envelope.payload_type === "tool.result") {
 					const facts = payload?.correlation_facts as { tool_name?: unknown } | undefined;
 					const toolName = typeof facts?.tool_name === "string" && facts.tool_name ? facts.tool_name : "tool";
@@ -1443,7 +1445,7 @@ async function executeMuse(
 						.find((v) => typeof v === "string" && v.trim());
 					const preview = typeof candidate === "string" ? candidate.replace(/\s+/g, " ").trim() : "";
 					const tool = btwToolName(toolName);
-					const label = (isBtw || inspect) ? tool : `${toolName}${preview ? ` ${preview}` : ""}`;
+					const label = (isBtw || (inspect && request.reportReviewTools)) ? tool : `${toolName}${preview ? ` ${preview}` : ""}`;
 					if (label) onProgress?.({ kind: "activity", label, timestamp: Date.now(), ...(tool ? { tool } : {}) });
 				} else if (isAdvisor && envelope.payload_type === "task.lifecycle.status") {
 					const event = payload?.event as { message?: unknown } | undefined;
@@ -1904,7 +1906,7 @@ async function executePi(
 				}
 			} else if (event.type === "tool_execution_start" && onProgress) {
 				const tool = btwToolName(event.toolName);
-				const label = request.feature === "btw" || request.feature === "review" ? tool : event.toolName;
+				const label = request.feature === "btw" || (request.feature === "review" && request.reportReviewTools) ? tool : event.toolName;
 				if (label) onProgress({ kind: "activity", label, timestamp: Date.now(), ...(tool ? { tool } : {}) });
 			}
 		});
