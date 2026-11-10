@@ -264,7 +264,8 @@ export function parseBtwAgyLine(line: string): { delta?: string; result?: string
 		throw new Error("Agy returned invalid streaming data.");
 	}
 	const conversationId = event.conversation_id ?? event.result?.conversation_id;
-	const tool = event.step_update?.step_type === "agent_response" ? undefined : btwToolName(event.step_update?.tool_name);
+	const stepType = event.step_update?.step_type;
+	const tool = stepType === "agent_response" || stepType === "assistant" ? undefined : btwToolName(event.step_update?.tool_name);
 	if (event.event === "step_update" && tool) {
 		return { activity: tool, conversationId };
 	}
