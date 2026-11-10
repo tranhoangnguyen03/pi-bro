@@ -701,6 +701,42 @@ setTimeout(() => console.log(JSON.stringify({event:"result",result:{status:"SUCC
   });
 });
 
+await t.test("Full-access Grill ignores advisor prose and shows genuine tool names only", {timeout: 15000}, async () => {
+  await withFakeAgy([
+    "#!/usr/bin/env node",
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"agent_response",text_delta:"Should we reconsider?"}}));',
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"tool_use",tool_name:"Read /private/token"}}));',
+    'setTimeout(() => console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"Done"}})),3000);',
+  ].join("\n"), async () => {
+    await settings.writeSettings({backend:"agy",model:"test",effort:"default",mode:"balanced",showTurns:1,overrides:{}});
+    const thread = {topic:"Review this choice",depth:"balanced",fullAccess:true,turns:[]};
+    let modal;
+    const ready = deferred();
+    const opened = bro.openGrillModal({
+      cwd:process.cwd(),sessionManager:{getBranch:()=>[]},
+      ui:{custom:factory=>new Promise(resolve=>{
+        modal=factory({mode:"fullscreen",terminal:{rows:30,columns:100},requestRender(){}},fakeTheme,{},resolve);
+        ready.resolve();
+      })},
+    },thread,{start:true});
+    await ready.promise;
+    try {
+      const started=Date.now();
+      const screen=()=>stripVTControlCharacters(modal.render(94).join("\n"));
+      while(!/Last tool: Read/.test(screen())){
+        assert.doesNotMatch(screen(),/Last tool: Should/, "advisor prose is not a tool");
+        if(Date.now()-started>5000)assert.fail("real tool activity was not shown");
+        await new Promise(resolve=>setTimeout(resolve,20));
+      }
+      assert.doesNotMatch(screen(),/\/private\/token|Last tool: Should/, "tool arguments and assistant prose stay out of the hint");
+    }finally{
+      modal.handleInput("\x1b");
+      await opened;
+    }
+    assert.deepEqual(thread.turns,[]);
+  });
+});
+
 await t.test("Grill cancellation preserves completed turns and submitted input across reopen", async () => {
 	const original = { question: "Topic", answer: "Why?" };
 	const thread = { topic: "Topic", depth: "balanced", fullAccess: false, turns: [original] };
