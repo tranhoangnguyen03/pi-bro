@@ -1044,6 +1044,9 @@ test("BTW keeps one running hint row and a steady transcript at a narrow 60-colu
     modal.setProgress(label);
     const rendered = view();
     assert.match(rendered, /Esc close \(stops reply\)/, "Esc close must stay visible");
+    const elapsed = /· (\d+s)$/.exec(label)?.[1];
+    assert.ok(elapsed && rendered.includes(elapsed), "elapsed seconds must survive a long stage");
+    assert.match(rendered, /Waiting|Last|Receiving/, "the stage must remain identifiable");
     assert.equal((rendered.match(/logline_\d+/g) ?? []).length, rowsBefore,
       "longer progress must not change the transcript's visible height");
     for (const row of modal.render(layout.width)) assert.ok(visibleWidth(row) <= layout.width);
@@ -1098,6 +1101,8 @@ test("Grill and shared result hints remain one row with long phases and narrow l
   for (const label of ["Waiting for next question · 2s","Last tool: extremely_long_command_execution_label · 123456s"]) {
     grill.setProgress(label);
     assert.match(renderedGrill(), /Esc close/);
+    assert.match(renderedGrill(), /Waiting|Last/, "the stage remains recognizable");
+    assert.ok(renderedGrill().includes(/· (\d+s)$/.exec(label)[1]), "Grill elapsed seconds are reserved");
     assert.equal((renderedGrill().match(/line_\d+/g)??[]).length,baseline);
   }
 
@@ -1109,6 +1114,8 @@ test("Grill and shared result hints remain one row with long phases and narrow l
   for (const label of ["Receiving output · 4s","Last tool: extremely_long_command_execution_label · 123456s"]) {
     show.setProgress(label);
     assert.match(renderedShow(), /Esc cancel/);
+    assert.match(renderedShow(), /Receiving|Last/, "the stage remains recognizable");
+    assert.ok(renderedShow().includes(/· (\d+s)$/.exec(label)[1]), "Show elapsed seconds are reserved");
     assert.equal((renderedShow().match(/line_\d+/g)??[]).length,bodyRows);
     for (const row of show.render(48)) assert.ok(visibleWidth(row) <= 48);
   }
