@@ -60,12 +60,19 @@ test("Agy separates advisor prose from genuine tool activity and exposes review 
     })),[{label:"Read /private/token",tool:"Read"},{label:"Should we reconsider this?",tool:undefined}],
       "advisor can retain prose, but only true tool events carry a tool field");
 
+    const guided: BackendProgress[] = [];
+    const unchanged = await execute({feature:"review",access:"restricted",cwd:binDir,prompt:"Inspect"},
+      {model:"test"},new AbortController().signal,p=>guided.push(p));
+    assert.equal(unchanged.status,"success");
+    assert.equal(guided.filter(p=>p.kind==="activity").length,0,
+      "Guided Review does not get newly added bare tool notices by default");
+
     const review: BackendProgress[] = [];
-    const b = await execute({feature:"review",access:"restricted",cwd:binDir,prompt:"Inspect"},
+    const b = await execute({feature:"review",access:"restricted",cwd:binDir,prompt:"Inspect",reportReviewTools:true},
       {model:"test"},new AbortController().signal,p=>review.push(p));
     assert.equal(b.status,"success");
     assert.deepEqual(review.filter(p=>p.kind==="activity").map(p=>p.tool),["Read"],
-      "restricted review-backed Grill receives real tool names");
+      "restricted review-backed Grill explicitly receives genuine tool names");
     assert.ok(review.some(p=>p.kind==="text" && p.text==="Should we reconsider this?"),
       "a review still streams assistant text as text");
   });
