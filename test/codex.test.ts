@@ -122,8 +122,15 @@ test("Codex review-backed Grill receives real tool names without arguments or as
     agentMsg("Should we reconsider this?"),
     turnCompleted,
   ].join("\n"), async binDir => {
+    const guided: BackendProgress[] = [];
+    const unchanged = await execute({feature:"review",access:"restricted",cwd:binDir,prompt:"Inspect"},
+      codex(),new AbortController().signal,p=>guided.push(p));
+    assert.equal(unchanged.status,"success");
+    assert.equal(guided.filter(p=>p.kind==="activity").length,0,
+      "Guided Review's default Codex progress must not change");
+
     const progress: BackendProgress[] = [];
-    const outcome = await execute({feature:"review",access:"restricted",cwd:binDir,prompt:"Inspect"},
+    const outcome = await execute({feature:"review",access:"restricted",cwd:binDir,prompt:"Inspect",reportReviewTools:true},
       codex(),new AbortController().signal,p=>progress.push(p));
     assert.equal(outcome.status,"success");
     assert.deepEqual(progress.filter(p=>p.kind==="activity").map(p=>({tool:p.tool,label:p.label})),
