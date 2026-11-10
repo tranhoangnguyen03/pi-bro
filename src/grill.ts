@@ -161,7 +161,7 @@ export async function openGrillModal(
           }
           phase = turn ? "Waiting for next question" : "Waiting for decision brief";
           const outcome = await executeBackend(
-            { ...grillExecution(thread.fullAccess), cwd: ctx.cwd, prompt },
+            { ...grillExecution(thread.fullAccess), ...(thread.fullAccess ? {} : { reportReviewTools: true }), cwd: ctx.cwd, prompt },
             selection, attempt.signal, (event) => {
               if (closed || attempt.signal.aborted) return;
               if (event.kind === "activity") {
