@@ -8,7 +8,7 @@ import {
 } from "./grill-engine.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel, capabilityBackend } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
-import { openBroOverlay } from "./modal-kit.ts";
+import { openBroOverlay, startProgressClock } from "./modal-kit.ts";
 import { errorMessage } from "./util.ts";
 
 /**
@@ -27,6 +27,7 @@ export async function openGrillModal(
     (tui, theme, _keys, done) => {
       let closed = false;
       let controller: AbortController | undefined;
+      let stopProgress: (() => void) | undefined;
       let composerTouched = false;
       let pendingTurn: GrillTurn | undefined;
       let pendingSummary: string | undefined;
@@ -54,6 +55,7 @@ export async function openGrillModal(
         if (closed) return;
         closed = true;
         saveDraft();
+        stopProgress?.();
         if (!controller) options.onChange?.();
         controller?.abort();
         done(undefined);
@@ -61,6 +63,7 @@ export async function openGrillModal(
       const modal = new BtwModal(tui, theme, close, submit, () => {
         closed = true;
         saveDraft();
+        stopProgress?.();
         if (!controller) options.onChange?.();
         controller?.abort();
       }, {
@@ -132,6 +135,11 @@ export async function openGrillModal(
         const attempt = new AbortController();
         controller = attempt;
         modal.setRunning(true);
+        let phase = turn ? "Preparing next question" : "Preparing decision brief";
+        const stop = startProgressClock(attempt.signal, seconds => {
+          if (!closed && controller === attempt) modal.setProgress(`${phase} · ${seconds}s`);
+        });
+        stopProgress = stop;
         if (turn) pendingReply = operation.reply;
         try {
           const prepared = await prepareRun(attempt.signal);
@@ -151,10 +159,18 @@ export async function openGrillModal(
             modal.setText(transcript());
             modal.scrollToEnd();
           }
+          phase = turn ? "Waiting for next question" : "Waiting for decision brief";
           const outcome = await executeBackend(
             { ...grillExecution(thread.fullAccess), cwd: ctx.cwd, prompt },
             selection, attempt.signal, (event) => {
-              if (closed || attempt.signal.aborted || event.kind !== "text") return;
+              if (closed || attempt.signal.aborted) return;
+              if (event.kind === "activity") {
+                // Tool type/name only; omit command arguments and private output.
+                const tool = event.label.trim().split(/\s+/)[0]?.slice(0, 30);
+                if (tool) phase = `Last tool: ${tool}`;
+                return;
+              }
+              phase = turn ? "Receiving next question" : "Receiving decision brief";
               if (turn) pendingTurn!.answer = event.text;
               else pendingSummary = event.text;
               modal.setText(transcript());
@@ -178,6 +194,8 @@ export async function openGrillModal(
             if (turn && !modal.getComposerText().trim()) modal.setComposerText(operation.reply);
           }
         } finally {
+          stop();
+          if (stopProgress === stop) stopProgress = undefined;
           pendingTurn = undefined;
           pendingSummary = undefined;
           pendingReply = undefined;
