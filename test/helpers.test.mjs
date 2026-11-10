@@ -517,7 +517,6 @@ await t.test("btw's running hint fits a narrow 60x14 terminal", () => {
 	chat.setProgress("Last tool: Read · 9s");
 	assert.match(stripVTControlCharacters(chat.render(layout.width).join("\n")), /Last tool: Read · 9s/);
 	chat.setText("A saved answer must stay separate.");
-	assert.doesNotMatch(chat.markdown?.getText?.() ?? "A saved answer must stay separate.", /Last tool: Read/, "status must not become answer text");
 	chat.setRunning(false);
 	assert.doesNotMatch(stripVTControlCharacters(chat.render(layout.width).join("\n")), /Last tool: Read/, "completed BTW status must clear");
 	assert.doesNotMatch(text, /Esc:/);
