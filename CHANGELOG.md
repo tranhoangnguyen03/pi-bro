@@ -2,6 +2,14 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.36.2] - 2026-11-10
+
+### Improved
+
+- `/bro btw` shows a live phase and elapsed time in its modal while a side question is running, including before the backend begins streaming text.
+- When a backend reports tool use, BTW shows the last tool name/type without exposing commands, tool output or hidden reasoning. A quiet backend still updates the elapsed time every second.
+- Progress hints stay out of saved threads and copies and clear on completion, errors and cancellation. Added offline UI/protocol checks.
+
 ## [0.36.1] - 2026-11-09
 
 ### Fixed
