@@ -2,6 +2,14 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.36.3] - 2026-11-10
+
+### Improved
+
+- Add simple, live elapsed-time hints for Grill Me interviews and decision briefs, Remember Me proposal drafting, Elevate discovery and rewrites, and Simplify/Show. The shared result modal also shows time for other long-running tasks.
+- Status distinguishes preparation, waiting and receiving output when known. It never guesses completion or displays hidden reasoning or raw tool output.
+- Stop status timers on completion and cancellation; do not store progress with replies, saved memories, or clipboard output. Add quiet-backend, cleanup and constrained-terminal regression coverage.
+
 ## [0.36.2] - 2026-11-10
 
 ### Improved
