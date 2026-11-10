@@ -514,6 +514,12 @@ await t.test("btw's running hint fits a narrow 60x14 terminal", () => {
 	assert.ok(lines.length <= layout.maxHeight, `${lines.length} rows > ${layout.maxHeight}`);
 	assert.match(lines.at(-1), /└/);
 	assert.match(text, /Bro is thinking… · Esc close \(stops reply\)/);
+	chat.setProgress("Last tool: Read · 9s");
+	assert.match(stripVTControlCharacters(chat.render(layout.width).join("\n")), /Last tool: Read · 9s/);
+	chat.setText("A saved answer must stay separate.");
+	assert.doesNotMatch(chat.markdown?.getText?.() ?? "A saved answer must stay separate.", /Last tool: Read/, "status must not become answer text");
+	chat.setRunning(false);
+	assert.doesNotMatch(stripVTControlCharacters(chat.render(layout.width).join("\n")), /Last tool: Read/, "completed BTW status must clear");
 	assert.doesNotMatch(text, /Esc:/);
 });
 
@@ -888,6 +894,7 @@ await t.test("BTW argument, composer command, and thread transcript parsing", ()
 	assert.match(freshParsed.invalid ?? "", /\/clear/);
 	assert.deepEqual(parseBtwAgyLine('{"event":"init","conversation_id":"c1"}'), { conversationId: "c1" });
 	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"hi"}}'), { delta: "hi", conversationId: undefined });
+	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"tool_use","tool_name":"Read"}}'), { activity: "Read", conversationId: undefined });
 	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"SUCCESS","response":"done","conversation_id":"c1"}}'), { result: "done", conversationId: "c1" });
 	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
 	assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "clipboard", all: false });
