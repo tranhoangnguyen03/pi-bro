@@ -44,6 +44,33 @@ test("BTW adapter tool labels contain only a safe name/type, never tool argument
   assert.equal(btwToolName({ command: "secret" }), undefined);
 });
 
+test("Agy separates advisor prose from genuine tool activity and exposes review tools", async () => {
+  await withFakeAgy([
+    "#!/usr/bin/env node",
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"tool_use",tool_name:"Read /private/token"}}));',
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"agent_response",text_delta:"Should we reconsider this?"}}));',
+    'console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"Final response"}}));',
+  ].join("\n"), async binDir => {
+    const advisor: BackendProgress[] = [];
+    const a = await execute({feature:"advisor",access:"workspace-full",cwd:binDir,prompt:"Inspect"},
+      {model:"test"},new AbortController().signal,p=>advisor.push(p));
+    assert.equal(a.status,"success");
+    assert.deepEqual(advisor.filter(p=>p.kind==="activity").map(p=>({
+      label:p.label,tool:p.tool
+    })),[{label:"Read /private/token",tool:"Read"},{label:"Should we reconsider this?",tool:undefined}],
+      "advisor can retain prose, but only true tool events carry a tool field");
+
+    const review: BackendProgress[] = [];
+    const b = await execute({feature:"review",access:"restricted",cwd:binDir,prompt:"Inspect"},
+      {model:"test"},new AbortController().signal,p=>review.push(p));
+    assert.equal(b.status,"success");
+    assert.deepEqual(review.filter(p=>p.kind==="activity").map(p=>p.tool),["Read"],
+      "restricted review-backed Grill receives real tool names");
+    assert.ok(review.some(p=>p.kind==="text" && p.text==="Should we reconsider this?"),
+      "a review still streams assistant text as text");
+  });
+});
+
 test("shared text throttle keeps the latest update and releases pending callbacks", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const signal = new AbortController();
