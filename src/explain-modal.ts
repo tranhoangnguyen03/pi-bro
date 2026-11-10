@@ -6,8 +6,6 @@ import {
 	Editor,
 	Markdown,
 	matchesKey,
-	truncateToWidth,
-	visibleWidth,
 	wrapTextWithAnsi,
 	type Component,
 	type EditorTheme,
