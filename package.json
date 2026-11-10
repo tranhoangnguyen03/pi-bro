@@ -137,9 +137,9 @@
     "typescript": "6.0.3"
   },
   "dependencies": {
-    "defuddle": "0.19.4",
-    "linkedom": "0.18.13",
+    "defuddle": "0.19.6",
+    "linkedom": "0.18.15",
     "mammoth": "^1.13.0",
-    "unpdf": "^1.8.1"
+    "unpdf": "^2.1.0"
   }
 }
