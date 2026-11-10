@@ -37,6 +37,19 @@ export function startProgressClock(signal: AbortSignal, onTick: (seconds: number
   return stop;
 }
 
+/** Keep elapsed time and cancellation visible while trimming only the phase.
+ * Each action variant must end with the same short cancel control, longest first. */
+export function runningHint(progress: string, innerWidth: number, actions: readonly string[]): string {
+	const match = /^(.*?)( · [0-9]+s)$/.exec(progress);
+	const stage = match ? match[1] : progress;
+	const elapsed = match ? match[2] : "";
+	const action = actions.find((value) =>
+		visibleWidth(value) + visibleWidth(elapsed) + 5 <= innerWidth
+	) ?? actions.at(-1) ?? "";
+	const stageWidth = Math.max(0, innerWidth - visibleWidth(elapsed) - visibleWidth(action));
+	return truncateToWidth(stage, stageWidth, "…") + elapsed + action;
+}
+
 /**
  * Format a notice text with the semantic tone.
  * Strips raw terminal control characters from the message to prevent escape sequence injection.
