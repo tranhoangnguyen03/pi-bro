@@ -289,6 +289,24 @@ test("claude btw conversation-only: persisted session, tool-less, workspace cwd,
 	});
 });
 
+test("Claude BTW reports tool names only, not tool arguments or assistant prose", async () => {
+  await withFakeClaude([
+    init("sess-1"),
+    assistant([
+      { type: "text", text: "User-facing prose must not become an activity label" },
+      { type: "thinking", thinking: "SECRET REASONING" },
+      { type: "tool_use", name: "Read /private/credential.txt", input: { file_path: "/private/credential.txt" } },
+    ]),
+    successIn("Done", "sess-1"),
+  ].join("\n"), async () => {
+    const progress: BackendProgress[] = [];
+    const { outcome } = await runClaudeBtw({ access: "restricted" }, p => progress.push(p));
+    assert.equal(outcome.status, "success");
+    assert.deepEqual(progress.filter(p => p.kind === "activity").map(p => p.label), ["Read"]);
+    assert.doesNotMatch(JSON.stringify(progress), /credential|User-facing prose|SECRET REASONING/);
+  });
+});
+
 test("claude btw full permission resumes the same session with workspace tools", async () => {
 	await withFakeClaude([init("sess-1"), successIn("Edited", "sess-1")].join("\n"), async (binDir) => {
 		const { outcome } = await runClaudeBtw({ access: "workspace-full", continuation: { id: "sess-1" } });
