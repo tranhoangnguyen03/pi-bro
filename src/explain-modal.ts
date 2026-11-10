@@ -38,7 +38,7 @@ import {
 } from "./settings.ts";
 import { openShowHtml, stripShowDiagramFence } from "./show.ts";
 import type { BroSource } from "./sources.ts";
-import { BRO_OVERLAY, broOverlayArea, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, startProgressClock, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, runningHint, Scroller, startProgressClock, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
 import { hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 import { latestCompletedAssistantText } from "./last-assistant.ts";
@@ -596,15 +596,13 @@ export class BroModal implements Focusable {
 	private controls(innerWidth: number): string {
 		const mode = this.canSwitchMode() ? " · M mode" : "";
 		if (this.kind === "loading" || this.kind === "streaming") {
-			// Keep the cancel action on one line even as phases and elapsed time grow.
-			// Hint wraps would otherwise steal a row from the content while reading.
+			// The elapsed seconds and Esc matter more than a long stage name.
+			// Keep one hint row so the body never jumps as that stage changes.
 			const scroll = this.kind === "streaming" ? " · ↑/↓ scroll" : "";
-			let actions = `${scroll}${mode} · Esc cancel`;
-			if (visibleWidth(actions) > innerWidth - 8) actions = `${mode} · Esc cancel`;
-			if (visibleWidth(actions) > innerWidth - 8) actions = " · Esc cancel";
-			const budget = Math.max(0, innerWidth - visibleWidth(actions));
 			const phase = this.progressText || (this.kind === "loading" ? "Working…" : "Receiving output…");
-			return truncateToWidth(phase, budget, "…") + actions;
+			return runningHint(phase, innerWidth, [
+				`${scroll}${mode} · Esc cancel`, `${mode} · Esc cancel`, " · Esc cancel",
+			]);
 		}
 		if (this.kind === "result") {
 			return `↑/↓ scroll · C copy${this.htmlPath ? " · O open diagram" : ""}${mode}${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
