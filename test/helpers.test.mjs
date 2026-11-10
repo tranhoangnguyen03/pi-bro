@@ -908,6 +908,36 @@ await t.test("Doctor model probe shares isolated CLI cleanup on success, error, 
   assert.equal(existsSync(workingDir), false, "cancellation must clean up scratch space");
 });
 
+await t.test("BTW keeps backend phase order when throttled text renders after a tool event", async () => {
+  await withFakeAgy([
+    "#!/usr/bin/env node",
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"agent_response",text_delta:"partial"}}));',
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"tool_use",tool_name:"Read /private/path"}}));',
+    'setTimeout(() => console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"final"}})), 400);',
+  ].join("\n"), async () => {
+    const phases = [];
+    const rendered = [];
+    let stage = "Waiting for backend";
+    const done = btw.runBtwTurn("Side question", {model:"test"}, {
+      full:false, cwd:process.cwd(),
+    }, new AbortController().signal, event => {
+      stage = event.kind === "activity" ? "Last tool: " + event.label : "Receiving answer";
+      phases.push(stage);
+    }, text => {
+      rendered.push(text); // Rendering may lag, but must never touch stage.
+    });
+    const start = Date.now();
+    while (!rendered.length) {
+      if (Date.now() - start > 5000) assert.fail("throttled text did not render");
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(phases, ["Receiving answer", "Last tool: Read"]);
+    assert.equal(rendered.at(-1), "partial");
+    assert.equal(stage, "Last tool: Read", "delayed text must not undo the newer tool phase");
+    assert.equal((await done).text, "final");
+  });
+});
+
 await t.test("BTW argument, composer command, and thread transcript parsing", () => {
 	assert.deepEqual(parseBtwArguments("plain question"), { question: "plain question" });
 	assert.deepEqual(parseBtwArguments(""), { question: "" });
@@ -925,6 +955,8 @@ await t.test("BTW argument, composer command, and thread transcript parsing", ()
 	assert.deepEqual(parseBtwAgyLine('{"event":"init","conversation_id":"c1"}'), { conversationId: "c1" });
 	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"hi"}}'), { delta: "hi", conversationId: undefined });
 	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"tool_use","tool_name":"Read"}}'), { activity: "Read", conversationId: undefined });
+	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"tool_use","tool_name":"Read /private/path"}}'), { activity: "Read", conversationId: undefined });
+	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"Visible reply","tool_name":"Not_a_tool /private"}}'), { delta: "Visible reply", conversationId: undefined }, "assistant text must not be reported as tool activity");
 	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"SUCCESS","response":"done","conversation_id":"c1"}}'), { result: "done", conversationId: "c1" });
 	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
 	assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "clipboard", all: false });
