@@ -16,6 +16,40 @@ export type TuiLike = {
 
 export type NoticeTone = "info" | "success" | "warning" | "error";
 
+/** One-second UI heartbeat. It reports elapsed time, not proof of backend activity. */
+export function startProgressClock(signal: AbortSignal, onTick: (seconds: number) => void): () => void {
+  const startedAt = Date.now();
+  let stopped = false;
+  const tick = () => {
+    if (!stopped && !signal.aborted) onTick(Math.floor((Date.now() - startedAt) / 1000));
+  };
+  const timer = setInterval(tick, 1000);
+  timer.unref?.();
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+    signal.removeEventListener("abort", stop);
+  };
+  signal.addEventListener("abort", stop, { once: true });
+  if (signal.aborted) stop();
+  else tick();
+  return stop;
+}
+
+/** Keep elapsed time and cancellation visible while trimming only the phase.
+ * Each action variant must end with the same short cancel control, longest first. */
+export function runningHint(progress: string, innerWidth: number, actions: readonly string[], minStageWidth = 11): string {
+	const match = /^(.*?)( · [0-9]+s)$/.exec(progress);
+	const stage = match ? match[1] : progress;
+	const elapsed = match ? match[2] : "";
+	const action = actions.find((value) =>
+		visibleWidth(value) + visibleWidth(elapsed) + minStageWidth <= innerWidth
+	) ?? actions.at(-1) ?? "";
+	const stageWidth = Math.max(0, innerWidth - visibleWidth(elapsed) - visibleWidth(action));
+	return truncateToWidth(stage, stageWidth, "…") + elapsed + action;
+}
+
 /**
  * Format a notice text with the semantic tone.
  * Strips raw terminal control characters from the message to prevent escape sequence injection.

@@ -180,3 +180,29 @@ test("Pi selection keeps the configured physical model without an Agy fallback (
   assert.deepEqual(selection,{backend:"pi",model:physicalModel});
   assert.deepEqual(sharedBackend.piToolAllowlist("explain","restricted"),{tools:[]});
 });
+
+
+test("Remember Me shows live waiting time without saving transient progress", async () => {
+  const script = [
+    "#!/usr/bin/env node",
+    "setTimeout(() => {",
+    "  console.log(JSON.stringify({ event:'result', result:{ status:'SUCCESS', response:'LATE' } }));",
+    "}, 8000);",
+  ].join("\n");
+  await withFakeExecutable("agy", script, async () => {
+    await settings.writeSettings({backend:"agy",model:"test-agy-model",effort:"default",mode:"balanced",showTurns:1,overrides:{}});
+    const before=JSON.stringify((await readMemoryStore()).entries);
+    const modal=await mountedModal();
+    try {
+      modal.submit("A memory to check progress without saving.");
+      await until(() => /Waiting for proposal · [1-9]\d*s/.test(modal.component.render(100).join("\n")),
+        "live memory proposal heartbeat", modal);
+      assert.doesNotMatch(modal.component.markdown.text, /Waiting for proposal · [1-9]\d*s/,
+        "temporary progress must not become a memory proposal");
+    } finally {
+      await modal.close();
+    }
+    assert.equal(JSON.stringify((await readMemoryStore()).entries), before,
+      "cancelling an in-flight draft must not change approved memories");
+  });
+});

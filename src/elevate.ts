@@ -7,7 +7,7 @@ import {
   selectedFindings, stripElevateFence, captureElevateContext, isElevateContextOverflow,
   reduceElevateContext, elevateDisplayText, type ElevateContextMode, type ElevateDiscovery, type ElevateInput,
 } from "./elevate-engine.ts";
-import { BRO_OVERLAY, broOverlayArea, buttonLabels, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, wrapButtons, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, buttonLabels, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, startProgressClock, wrapButtons, type Area, type Theme, type TuiLike } from "./modal-kit.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel } from "./settings.ts";
 import { type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
@@ -32,6 +32,7 @@ export class ElevateModal implements Focusable {
   private rawArea: Area | undefined;
   private editorArea: Area = { top: 0, left: 0, width: 0, height: 0 };
   private stage: Stage = "compose";
+  private progressText = "";
   private zone: Zone = "editor";
   private notice = "";
   private model = "";
@@ -97,6 +98,11 @@ export class ElevateModal implements Focusable {
   get currentSelection(): ReadonlySet<number> { return this.accepted; }
   setModel(value: string): void { this.model = value; if (!this.disposed) this.tui.requestRender(); }
   setNotice(value: string): void { if (!this.disposed) { this.notice = value; this.tui.requestRender(); } }
+  setProgress(value: string): void {
+    if (this.disposed || (this.stage !== "discovering" && this.stage !== "upgrading")) return;
+    this.progressText = value;
+    this.tui.requestRender();
+  }
 
   // Every state setter is inert after disposal: a late backend result must never touch an
   // unmounted component.
@@ -107,6 +113,7 @@ export class ElevateModal implements Focusable {
     this.discovery = undefined;
     this.accepted.clear();
     this.stage = "discovering";
+    this.progressText = "";
     // Waiting stages have no zones; focusing actions keeps Page/wheel scrolling reachable.
     this.zone = "actions";
     this.notice = "";
@@ -131,9 +138,9 @@ export class ElevateModal implements Focusable {
     this.syncEditorFocus();
     this.drawFromTop();
   }
-  setUpgrading(): void { if (this.disposed) return; this.stage = "upgrading"; this.zone = "actions"; this.notice = ""; this.syncEditorFocus(); this.drawFromTop(); }
-  setReady(value: string): void { if (this.disposed) return; this.stage = "ready"; this.revised = value.trim(); this.notice = ""; this.zone = "actions"; this.action = 0; this.syncEditorFocus(); this.drawFromTop(); }
-  setFailed(message: string): void { if (this.disposed) return; this.stage = "failed"; this.notice = message; this.zone = "actions"; this.action = 0; this.syncEditorFocus(); this.drawFromTop(); }
+  setUpgrading(): void { if (this.disposed) return; this.stage = "upgrading"; this.progressText = ""; this.zone = "actions"; this.notice = ""; this.syncEditorFocus(); this.drawFromTop(); }
+  setReady(value: string): void { if (this.disposed) return; this.stage = "ready"; this.progressText = ""; this.revised = value.trim(); this.notice = ""; this.zone = "actions"; this.action = 0; this.syncEditorFocus(); this.drawFromTop(); }
+  setFailed(message: string): void { if (this.disposed) return; this.stage = "failed"; this.progressText = ""; this.notice = message; this.zone = "actions"; this.action = 0; this.syncEditorFocus(); this.drawFromTop(); }
   /** Back to the objective for editing, keeping what the user already wrote. */
   setCompose(objective?: string): void {
     if (this.disposed) return;
@@ -387,7 +394,7 @@ export class ElevateModal implements Focusable {
       : this.stage === "review" ? "↑↓ move · Space/Enter toggle · Tab actions · Ctrl+C copy · Esc cancel"
       : this.stage === "ready" ? "↑↓ scroll · Ctrl+C copy · Esc close"
       : this.stage === "failed" ? "Ctrl+C copy · Esc close"
-      : "Thinking… · Esc cancel";
+      : `${this.progressText || "Thinking…"} · Esc cancel`;
     return renderFrame(this.theme, width, height, {
       header: () => this.theme.fg("accent", this.theme.bold("Bro · elevate"))
         + this.theme.fg("dim", ` · ${this.contextMode === "messages" ? "Messages" : "Full"}${this.contextReduced ? " (reduced)" : ""}`)
@@ -457,6 +464,7 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
   await openBroOverlay<void>(ctx, (tui, theme, _keybindings, done) => {
     let closed = false;
     let controller: AbortController | undefined;
+    let stopProgress: (() => void) | undefined;
     let original = initialObjective;
     let contextMessages = captureElevateContext(branch, "messages");
     let reduced = false;
@@ -468,6 +476,7 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
     const close = () => {
       if (closed) return;
       closed = true;
+      stopProgress?.();
       controller?.abort();
       done(undefined);
     };
@@ -496,18 +505,30 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
       controller = run;
       pending = { kind: "discover" };
       modal.setDiscovering(original);
+      let phase = "Preparing discovery";
+      const stop = startProgressClock(run.signal, seconds => {
+        if (!closed && controller === run) modal.setProgress(`${phase} · ${seconds}s`);
+      });
+      stopProgress = stop;
       try {
         const [settings, preferences] = await Promise.all([readSettings(), readPreferences()]);
         if (closed || run.signal.aborted) return;
         input.preferences = preferences;
         const selection = selectionForCapability(settings, "btw");
         modal.setModel(selectionLabel(selection));
-        const raw = await runBackendText(buildElevateDiscoveryPrompt(input), selection, run.signal);
+        phase = "Discovering improvements";
+        const raw = await runBackendText(buildElevateDiscoveryPrompt(input), selection, run.signal, () => {
+          phase = "Receiving findings";
+        });
         if (closed || run.signal.aborted) return;
         modal.setDiscovery(parseElevateDiscovery(raw));
       } catch (error) {
         if (!closed && !run.signal.aborted) fail(error);
-      } finally { if (controller === run) controller = undefined; }
+      } finally {
+        stop();
+        if (stopProgress === stop) stopProgress = undefined;
+        if (controller === run) controller = undefined;
+      }
     }
 
     async function upgrade(indexes: ReadonlySet<number>): Promise<void> {
@@ -519,6 +540,11 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
       input.context = contextText();
       reduceOnRetry = false;
       modal.setUpgrading();
+      let phase = "Preparing rewrite";
+      const stop = startProgressClock(run.signal, seconds => {
+        if (!closed && controller === run) modal.setProgress(`${phase} · ${seconds}s`);
+      });
+      stopProgress = stop;
       try {
         const settings = await readSettings();
         if (closed || run.signal.aborted) return;
@@ -531,7 +557,10 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
         const approved = selectedFindings(discovery, indexes);
         const selection = selectionForCapability(settings, "btw");
         modal.setModel(selectionLabel(selection));
-        const revised = await runBackendText(buildElevateUpgradePrompt(input, approved), selection, run.signal);
+        phase = "Rewriting request";
+        const revised = await runBackendText(buildElevateUpgradePrompt(input, approved), selection, run.signal, () => {
+          phase = "Receiving revision";
+        });
         if (closed || run.signal.aborted) return;
         if (!revised.trim()) throw new Error("Bro returned an empty request. Retry.");
         // Validate after stripping: a fence containing only whitespace is still empty output, and
@@ -541,7 +570,11 @@ export async function openElevateModal(ctx: ExtensionCommandContext, request = "
         modal.setReady(cleaned);
       } catch (error) {
         if (!closed && !run.signal.aborted) fail(error);
-      } finally { if (controller === run) controller = undefined; }
+      } finally {
+        stop();
+        if (stopProgress === stop) stopProgress = undefined;
+        if (controller === run) controller = undefined;
+      }
     }
 
     /** Retry whichever call failed, with the objective and approvals the user already chose. */

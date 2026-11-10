@@ -36,7 +36,7 @@ import {
 } from "./settings.ts";
 import { openShowHtml, stripShowDiagramFence } from "./show.ts";
 import type { BroSource } from "./sources.ts";
-import { BRO_OVERLAY, broOverlayArea, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, runningHint, Scroller, startProgressClock, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
 import { hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 import { latestCompletedAssistantText } from "./last-assistant.ts";
@@ -477,6 +477,7 @@ export class BroModal implements Focusable {
 	private modelLabel = "";
 	private noticeText = "";
 	private noticeTone: NoticeTone = "info";
+	private progressText = "";
 	private rawArea: Area | undefined;
 	private readonly scroller = new Scroller(() => {
 		this.noticeText = "";
@@ -528,6 +529,12 @@ export class BroModal implements Focusable {
 		this.tui.requestRender();
 	}
 
+	setProgress(value: string): void {
+		if (this.disposed || (this.kind !== "loading" && this.kind !== "streaming")) return;
+		this.progressText = value;
+		this.tui.requestRender();
+	}
+
 	setHtmlPath(path: string): void {
 		this.htmlPath = path;
 		this.tui.requestRender();
@@ -563,6 +570,7 @@ export class BroModal implements Focusable {
 		noticeTone: NoticeTone = "info",
 	): void {
 		this.kind = kind;
+		if (kind !== "streaming") this.progressText = "";
 		if (kind !== "result") this.htmlPath = "";
 		this.rawText = rawText;
 		this.copyable = copyable;
@@ -583,10 +591,17 @@ export class BroModal implements Focusable {
 		return Boolean(this.modeLabel) && (this.kind === "loading" || this.kind === "streaming" || this.kind === "result");
 	}
 
-	private controls(): string {
+	private controls(innerWidth: number): string {
 		const mode = this.canSwitchMode() ? " · M mode" : "";
-		if (this.kind === "loading") return mode ? "M mode · Esc cancel" : "Esc cancel";
-		if (this.kind === "streaming") return `Simplifying… · ↑/↓ scroll${mode} · Esc cancel`;
+		if (this.kind === "loading" || this.kind === "streaming") {
+			// The elapsed seconds and Esc matter more than a long stage name.
+			// Keep one hint row so the body never jumps as that stage changes.
+			const scroll = this.kind === "streaming" ? " · ↑/↓ scroll" : "";
+			const phase = this.progressText || (this.kind === "loading" ? "Working…" : "Receiving output…");
+			return runningHint(phase, innerWidth, [
+				`${scroll}${mode} · Esc cancel`, `${mode} · Esc cancel`, " · Esc cancel",
+			], 12);
+		}
 		if (this.kind === "result") {
 			return `↑/↓ scroll · C copy${this.htmlPath ? " · O open diagram" : ""}${mode}${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
 		}
@@ -608,7 +623,7 @@ export class BroModal implements Focusable {
 			},
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
 			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
-			hints: this.controls(),
+			hints: this.controls(Math.max(1, width - 2)),
 		});
 	}
 
@@ -700,6 +715,7 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 		(tui, theme, _keybindings, done) => {
 			let closed = false;
 			let controller: AbortController | undefined;
+			let stopProgress: (() => void) | undefined;
 			let current = options.result;
 			let inFlightMode: BroMode | undefined;
 			let execute: (source?: BroSource, mode?: BroMode, notice?: string, noticeTone?: NoticeTone) => void = () => {};
@@ -707,6 +723,7 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 			const close = () => {
 				if (closed) return;
 				closed = true;
+				stopProgress?.();
 				controller?.abort();
 				done(undefined);
 			};
@@ -718,6 +735,7 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 				() => execute(current?.source, current?.mode),
 				() => {
 					closed = true;
+					stopProgress?.();
 					controller?.abort();
 				},
 				options.retryLabel ?? "simplify again",
@@ -726,6 +744,7 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 					const from = inFlightMode ?? current?.mode;
 					if (!from || !current?.source || closed) return;
 					const next = nextBroMode(from);
+					stopProgress?.();
 					controller?.abort();
 					controller = undefined;
 					execute(current.source, next, `Mode: ${next} (not saved)`);
@@ -749,10 +768,17 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 				modal.setLoading(options.loadingText);
 				modal.setMode(mode);
 				modal.setPreferences(false);
+				const phase = options.loadingText ?? "Working";
+				const stop = startProgressClock(nextController.signal, seconds => {
+					if (!closed && controller === nextController) modal.setProgress(`${phase} · ${seconds}s`);
+				});
+				stopProgress = stop;
 
 				void options
 					.run(nextController.signal, source, (text) => {
 						if (closed || nextController.signal.aborted || controller !== nextController) return;
+						// This callback may be a workflow stage (Architecture), not
+						// a streaming answer. The body owns the stage; keep the hint neutral.
 						modal.setStreaming(text);
 					}, mode)
 					.then((result) => {
@@ -773,6 +799,8 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 						}
 					})
 					.finally(() => {
+						stop();
+						if (stopProgress === stop) stopProgress = undefined;
 						if (controller === nextController) {
 							controller = undefined;
 							inFlightMode = undefined;

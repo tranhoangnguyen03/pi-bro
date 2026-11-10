@@ -2,7 +2,7 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { execute as executeBackend } from "./backend.ts";
 import { BtwModal, formatBtwTranscript } from "./btw.ts";
-import { openBroOverlay } from "./modal-kit.ts";
+import { openBroOverlay, startProgressClock } from "./modal-kit.ts";
 import { captureShowTranscript } from "./show.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel } from "./settings.ts";
 import {
@@ -43,6 +43,7 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
   await openBroOverlay<void>(ctx, (tui, theme, _keys, done) => {
     let closed = false;
     let controller: AbortController | undefined;
+    let stopProgress: (() => void) | undefined;
     let busy = false;
     let proposal: RememberProposal | undefined;
     let transcript: RememberTurn[] = [];
@@ -54,8 +55,8 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
     let browserText = "";
     let selectedBackend = openingSelection.backend ?? "agy";
     let selectedModel = selectionLabel(openingSelection);
-    const close = () => { if (closed) return; closed = true; controller?.abort(); done(undefined); };
-    const modal = new BtwModal(tui, theme, close, submit, () => { closed = true; controller?.abort(); }, {
+    const close = () => { if (closed) return; closed = true; stopProgress?.(); controller?.abort(); done(undefined); };
+    const modal = new BtwModal(tui, theme, close, submit, () => { closed = true; stopProgress?.(); controller?.abort(); }, {
       title:"Bro · remember-me", commands:"", inputLabel:"Your memory or correction",
       idleHint:"Enter discuss · /save approve · /context show · /help",
     });
@@ -165,6 +166,11 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
       busy=true;
       const attempt=new AbortController();
       controller=attempt; modal.setRunning(true);
+      let phase = "Reading saved memories";
+      const stop = startProgressClock(attempt.signal, seconds => {
+        if (!closed && controller === attempt) modal.setProgress(`${phase} · ${seconds}s`);
+      });
+      stopProgress = stop;
       try {
         store=await readMemoryStore();
         const [settings,preferences]=await Promise.all([readSettings(),readPreferences()]);
@@ -177,9 +183,12 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
         });
         const pending:RememberTurn={user:input,bro:"Drafting…"};
         transcript.push(pending); show();
+        phase = "Waiting for proposal";
         const result=await executeBackend({
           feature:"explain",access:"restricted",cwd:ctx.cwd,prompt
-        },selection,attempt.signal);
+        },selection,attempt.signal,event=>{
+          if (!closed && !attempt.signal.aborted && event.kind === "text") phase = "Receiving proposal";
+        });
         if(closed||attempt.signal.aborted)return;
         if(result.status!=="success")throw new Error(result.message);
         const parsed=parseRememberResult(result.text);
@@ -206,6 +215,8 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
           show();
         }
       } finally {
+        stop();
+        if (stopProgress === stop) stopProgress = undefined;
         if(controller===attempt)controller=undefined;
         busy=false; if(!closed)modal.setRunning(false);
       }

@@ -41,6 +41,8 @@ The **Context: Messages** button toggles to **Context: Full**. Use Tab to focus 
 1. **Discover:** “Given my objective, what would a skilled expert know, question, investigate, or test that I haven't accounted for?” Bro looks across **altitude** (right problem), **depth** (evidence, methods, tests), and **range** (useful ideas from other fields). It offers up to **five** non-overlapping suggestions, with a reason and an expert action for each. It can also report **zero** suggestions.
 2. **Upgrade:** “Rewrite my request using only the insights I approve. Keep my outcome, constraints, and scope. Improve the quality of the work, not the amount of work.” Bro returns the improved assignment for **you to review**.
 
+Discovery and rewrite show a live elapsed-time status in the modal footer, even when the selected backend has not begun replying. The footer is not part of the proposed assignment and clears on completion or cancellation.
+
 The flow is **Discover → Select → Upgrade → Copy**. It typically makes **two model calls** (discovery and rewrite); if Bro finds no useful changes, it makes only the discovery call and keeps the original request.
 
 ## Example: before and after

@@ -133,6 +133,33 @@ test("muse explain: restricted fresh argv, prompt file mode 0600, scratch cwd, t
 	);
 });
 
+test("Muse BTW reports tool name only, not paths, output, or status prose", async () => {
+  await withFakeMuse([
+    cmdAccepted(),
+    runLinked(),
+    line({ payload_type: "tool.result", payload: {
+      correlation_facts: { tool_name: "read_file /private/path" },
+      path: "/private/path",
+      text: "SECRET TOOL OUTPUT",
+      run_stream: { kind: "run", id: "run-1" },
+    }}),
+    line({ payload_type: "task.lifecycle.status", payload: {
+      event: {message: "Internal status prose"}, run_stream: {kind:"run",id:"run-1"},
+    }}),
+    outputDelta("Answer"),
+    termCompleted("Answer"),
+  ].join("\n"), async (binDir) => {
+    const progress: BackendProgress[] = [];
+    const outcome = await execute(
+      {feature:"btw",access:"restricted",prompt:"Side q",cwd:binDir},
+      muse(), new AbortController().signal, p => progress.push(p),
+    );
+    assert.equal(outcome.status, "success");
+    assert.deepEqual(progress.filter(p => p.kind === "activity").map(p => p.label), ["read_file"]);
+    assert.doesNotMatch(JSON.stringify(progress.filter(p => p.kind === "activity")), /private|SECRET|Internal/);
+  });
+});
+
 test("muse advisor: workspace-full fresh argv in workspace cwd, activity progress", async () => {
 	await withFakeMuse(
 		[

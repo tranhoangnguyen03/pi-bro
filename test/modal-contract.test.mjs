@@ -1027,3 +1027,152 @@ test("modal kit: elevate starts discovery from the button and from Ctrl+S", asyn
 	modal.handleInput("\r");
 	assert.deepEqual(started, ["the objective", "the objective"], "the [Discover gaps] button did not start discovery");
 });
+
+
+test("BTW keeps one running hint row and a steady transcript at a narrow 60-column terminal", () => {
+  const tui = { mode: "fullscreen", terminal: { rows: 30, columns: 60 }, requestRender() {} };
+  const modal = new btw.BtwModal(tui, theme, () => {}, () => {}, () => {}, {});
+  modal.setRunning(true);
+  modal.setText(Array.from({length: 75}, (_, i) => "logline_" + i).join("\n\n"));
+  modal.scrollToEnd();
+  const layout = hostLayout(kit.BRO_OVERLAY, 60, 30);
+  const view = () => stripVTControlCharacters(modal.render(layout.width).join("\n"));
+  const before = view();
+  const rowsBefore = (before.match(/logline_\d+/g) ?? []).length;
+  assert.ok(rowsBefore > 0, "narrow layout must leave room to read the conversation");
+  for (const label of ["Waiting for backend · 2s", "Last tool: command_execution · 123456s", "Receiving answer · 123456s"]) {
+    modal.setProgress(label);
+    const rendered = view();
+    assert.match(rendered, /Esc close/, "Esc close must stay visible (short form on narrow screens)");
+    const elapsed = /· (\d+s)$/.exec(label)?.[1];
+    assert.ok(elapsed && rendered.includes(elapsed), "elapsed seconds must survive a long stage");
+    assert.match(rendered, /Waiting|Last|Receiving/, "the stage must remain identifiable");
+    assert.equal((rendered.match(/logline_\d+/g) ?? []).length, rowsBefore,
+      "longer progress must not change the transcript's visible height");
+    for (const row of modal.render(layout.width)) assert.ok(visibleWidth(row) <= layout.width);
+  }
+  modal.dispose();
+});
+
+test("Architecture-style stage callbacks keep the shared result footer neutral and one row", async () => {
+  let emitStage, finish;
+  const hold = new Promise(resolve => { finish = resolve; });
+  const mounted = await mount(ctx => explainModal.showBroModal(ctx, {
+    loadingText: "Documenting the current project…",
+    run: async (_signal, _source, onProgress) => {
+      emitStage = onProgress;
+      await hold;
+      return {text:"Architecture generated."};
+    },
+  }), "fullscreen", 60, 30);
+  try {
+    const layout = hostLayout(mounted.overlay, 60, 30);
+    const view = () => stripVTControlCharacters(mounted.component.render(layout.width).join("\n"));
+    for (const stage of [
+      "Reading the project and preparing a safe source copy…",
+      "Tracing the repository structure and important flows…",
+      "Drafting architecture documentation…",
+      "Checking and rendering architecture documents…",
+    ]) {
+      emitStage(stage);
+      assert.match(view(), /Documenting|Esc cancel/, "the request is still running");
+      assert.doesNotMatch(view(), /Receiving output/, "stage callbacks are not streamed-answer events");
+      assert.match(view(), /Esc cancel/);
+      const lines = mounted.component.render(layout.width);
+      for (const row of lines) assert.ok(visibleWidth(row) <= layout.width);
+    }
+  } finally {
+    mounted.component.handleInput("\x1b");
+    finish();
+    await mounted.closed;
+  }
+});
+
+test("Grill and shared result hints remain one row with long phases and narrow layouts", () => {
+  const tui = {mode:"fullscreen",terminal:{rows:30,columns:60},requestRender(){}};
+  const transcript = Array.from({length:60},(_,i)=>"line_" + i).join("\n\n");
+  const grill = new btw.BtwModal(tui,theme,()=>{},()=>{},()=>{},{title:"Bro · grill-me",commands:""});
+  grill.setCustomMode("balanced · FULL (prompt-only no-edits)");
+  grill.setText(transcript);
+  grill.setRunning(true);
+  grill.scrollToEnd();
+  const renderedGrill = () => stripVTControlCharacters(grill.render(48).join("\n"));
+  const baseline = (renderedGrill().match(/line_\d+/g)??[]).length;
+  for (const label of ["Waiting for next question · 2s","Last tool: extremely_long_command_execution_label · 123456s"]) {
+    grill.setProgress(label);
+    assert.match(renderedGrill(), /Esc close/);
+    assert.match(renderedGrill(), /Waiting|Last/, "the stage remains recognizable");
+    assert.ok(renderedGrill().includes(/· (\d+s)$/.exec(label)[1]), "Grill elapsed seconds are reserved");
+    assert.equal((renderedGrill().match(/line_\d+/g)??[]).length,baseline);
+  }
+
+  const show = new explainModal.BroModal(tui,theme,()=>{},()=>{},()=>{},"again");
+  show.setStreaming(transcript);
+  show.setMode("balanced");
+  const renderedShow = () => stripVTControlCharacters(show.render(48).join("\n"));
+  const bodyRows = (renderedShow().match(/line_\d+/g)??[]).length;
+  for (const label of ["Receiving output · 4s","Last tool: extremely_long_command_execution_label · 123456s"]) {
+    show.setProgress(label);
+    assert.match(renderedShow(), /Esc cancel/);
+    assert.match(renderedShow(), /Receiving|Last/, "the stage remains recognizable");
+    assert.ok(renderedShow().includes(/· (\d+s)$/.exec(label)[1]), "Show elapsed seconds are reserved");
+    assert.equal((renderedShow().match(/line_\d+/g)??[]).length,bodyRows);
+    for (const row of show.render(48)) assert.ok(visibleWidth(row) <= 48);
+  }
+  grill.dispose();
+  show.dispose();
+});
+
+test("progress clock ticks while quiet and stops on completion or abort", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"], now: 10000 });
+  try {
+    const stopped = [];
+    const first = new AbortController();
+    const stop = kit.startProgressClock(first.signal, seconds => stopped.push(seconds));
+    assert.deepEqual(stopped, [0]);
+    t.mock.timers.tick(1000);
+    t.mock.timers.tick(1000);
+    assert.deepEqual(stopped, [0, 1, 2], "elapsed seconds advance without backend output");
+    stop();
+    t.mock.timers.tick(2000);
+    assert.deepEqual(stopped, [0, 1, 2], "completed requests leave no active timer");
+
+    const cancelled = [];
+    const second = new AbortController();
+    kit.startProgressClock(second.signal, seconds => cancelled.push(seconds));
+    t.mock.timers.tick(1000);
+    second.abort();
+    t.mock.timers.tick(2000);
+    assert.deepEqual(cancelled, [0, 1], "cancel stops later UI updates");
+  } finally {
+    t.mock.timers.reset();
+  }
+});
+
+test("Show and Elevate progress remains in temporary hints, not result text", () => {
+  const tui = { mode: "fullscreen", terminal: { rows: 30, columns: 80 }, requestRender() {} };
+  const show = new explainModal.BroModal(tui, theme, () => {}, () => {}, () => {}, "again");
+  const view = modal => stripVTControlCharacters(modal.render(72).join("\n"));
+  show.setLoading("Drawing what happened…");
+  show.setProgress("Drawing what happened · 5s");
+  assert.match(view(show), /Drawing what happened · 5s/);
+  show.setStreaming("A valid response");
+  show.setProgress("Receiving output · 6s");
+  assert.match(view(show), /Receiving output · 6s/);
+  show.setResult("A valid response", true);
+  assert.doesNotMatch(view(show), /Receiving output · 6s/);
+  assert.equal(show.rawText, "A valid response");
+
+  const elevateModal = new elevate.ElevateModal(tui, theme, () => {}, () => {}, () => {}, () => {}, () => {});
+  elevateModal.setDiscovering("Improve a request");
+  elevateModal.setProgress("Discovering improvements · 8s");
+  assert.match(view(elevateModal), /Discovering improvements · 8s/);
+  elevateModal.setFailed("Test failure");
+  assert.doesNotMatch(view(elevateModal), /Discovering improvements · 8s/);
+  elevateModal.setUpgrading();
+  elevateModal.setProgress("Rewriting request · 9s");
+  assert.match(view(elevateModal), /Rewriting request · 9s/);
+  elevateModal.setReady("New assignment");
+  assert.doesNotMatch(view(elevateModal), /Rewriting request · 9s/);
+  elevateModal.dispose();
+});

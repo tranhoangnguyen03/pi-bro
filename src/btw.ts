@@ -13,7 +13,7 @@ import {
 	selectionLabel,
 } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
-import { BRO_OVERLAY, broOverlayArea, formatNotice, modalHeight, openBroOverlay, renderFrame, Scroller, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
+import { BRO_OVERLAY, broOverlayArea, formatNotice, modalHeight, openBroOverlay, renderFrame, runningHint, Scroller, startProgressClock, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
 import { type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 
@@ -139,12 +139,15 @@ export async function runBtwTurn(
 	options: { full: boolean; cwd: string; conversationId?: string },
 	signal: AbortSignal,
 	onProgress?: (event: BackendProgress) => void,
+	onRenderedText?: (text: string) => void,
 ): Promise<{ text: string; conversationId?: string; expiredContinuation?: true }> {
-	const textProgress = textProgressThrottle(signal, (text) => onProgress?.({ kind: "text", text }));
+	// Phases use backend event order. Only expensive transcript rendering is delayed.
+	// Otherwise an old throttled text update can replace a newer tool status.
+	const textProgress = textProgressThrottle(signal, onRenderedText);
 	const receive = (event: BackendProgress) => {
 		if (signal.aborted) return;
-		if (event.kind === "activity") onProgress?.(event);
-		else textProgress.receive?.(event);
+		onProgress?.(event);
+		if (event.kind === "text") textProgress.receive?.(event);
 	};
 
 	try {
@@ -337,7 +340,13 @@ export class BtwModal implements Focusable {
 				this.input.render(inner)[0] ?? "",
 			],
 			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
-			hints: this.running ? `${this.progressText || "Bro is thinking…"} · Esc close (stops reply)` : (this.appearance.idleHint ?? "Enter send · Esc close"),
+			// A tool label may be long. Preserve the elapsed seconds and Esc
+			// on one line; shorten only the stage so transcript height stays put.
+			hints: this.running
+				? runningHint(this.progressText || "Bro is thinking…", inner, [
+					" · Esc close (stops reply)", " · Esc close",
+				])
+				: (this.appearance.idleHint ?? "Enter send · Esc close"),
 		});
 	}
 
@@ -424,21 +433,22 @@ export async function openBtwModal(
 				const work: { pending?: BtwTurn; original?: BtwTurn } = { original: replaced };
 				activeTurn = work;
 				controller = turnController;
-				const startedAt = Date.now();
+				let elapsedSeconds = 0;
 				let stage = "Preparing request";
 				const updateProgress = () => {
 					if (!closed && controller === turnController && !turnController.signal.aborted)
-						modal.setProgress(`${stage} · ${Math.floor((Date.now() - startedAt) / 1000)}s`);
+						modal.setProgress(`${stage} · ${elapsedSeconds}s`);
 				};
-				const timer = setInterval(updateProgress, 1000);
-				timer.unref?.();
+				modal.setRunning(true);
+				const stopClock = startProgressClock(turnController.signal, seconds => {
+					elapsedSeconds = seconds;
+					updateProgress();
+				});
 				const stopProgress = () => {
-					clearInterval(timer);
+					stopClock();
 					if (stopActiveProgress === stopProgress) stopActiveProgress = undefined;
 				};
 				stopActiveProgress = stopProgress;
-				modal.setRunning(true);
-				updateProgress();
 
 				let settings: BroSettings;
 				let preferences: string;
@@ -491,16 +501,15 @@ export async function openBtwModal(
 					updateProgress();
 					const showBackendProgress = (event: BackendProgress) => {
 						if (closed || turnController.signal.aborted) return;
-						if (event.kind === "activity") {
-							// Tool names/types only, never commands, tool results, or hidden reasoning.
-							const label = event.label.trim().split(/\s+/)[0]?.slice(0, 30);
-							if (label) stage = `Last tool: ${label}`;
-						} else {
-							stage = "Receiving answer";
-							pending.answer = event.text;
-							modal.setText(transcript());
-						}
-						updateProgress();
+						// Activity labels are name/type-only at the backend boundary.
+						// Process every phase here, before the 75 ms text render throttle.
+						const next = event.kind === "activity" ? `Last tool: ${event.label}` : "Receiving answer";
+						if (next !== stage) { stage = next; updateProgress(); }
+					};
+					const showRenderedText = (partial: string) => {
+						if (closed || turnController.signal.aborted) return;
+						pending.answer = partial;
+						modal.setText(transcript());
 					};
 					let result = await runBtwTurn(
 						buildBtwPrompt(context, question, { full, history, preferences }),
@@ -508,6 +517,7 @@ export async function openBtwModal(
 						{ full, cwd: ctx.cwd, conversationId },
 						turnController.signal,
 						showBackendProgress,
+						showRenderedText,
 					);
 					if (closed || turnController.signal.aborted) return;
 					if (result.expiredContinuation) {
@@ -524,6 +534,7 @@ export async function openBtwModal(
 							{ full, cwd: ctx.cwd },
 							turnController.signal,
 							showBackendProgress,
+							showRenderedText,
 						);
 						result = reseeded;
 					}

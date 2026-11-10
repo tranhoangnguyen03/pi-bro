@@ -9,7 +9,7 @@ import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 import mammoth from "mammoth";
 import * as piTui from "@earendil-works/pi-tui";
-import { bro, backend, sources, buildDir, btw, explainModal, sourceDir } from "./test-build.mjs";
+import { bro, backend, sources, buildDir, btw, explainModal, settings, sourceDir } from "./test-build.mjs";
 
 test("Bro helpers, modals, advisor lifecycle and SDK restrictions", async (t) => {
 const documentFixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "documents");
@@ -670,6 +670,73 @@ await t.test("Grill backend failures restore submitted input without overwriting
 	});
 });
 
+await t.test("Grill Me shows live waiting time and cancel leaves no partial turn", {timeout: 15_000}, async () => {
+  await withFakeAgy(`#!/usr/bin/env node
+setTimeout(() => console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"LATE"}})), 8000);
+`, async () => {
+    await settings.writeSettings({ backend:"agy", model:"test-model", effort:"default", mode:"balanced", showTurns:1, overrides:{} });
+    const thread = {topic:"Should we improve progress?",depth:"balanced",fullAccess:false,turns:[]};
+    let modal;
+    const ready = deferred();
+    const opened = bro.openGrillModal({
+      cwd:process.cwd(),sessionManager:{getBranch:()=>[]},
+      ui:{ custom:factory=>new Promise(resolve=>{
+        modal=factory({mode:"fullscreen",terminal:{rows:30,columns:100},requestRender(){}},fakeTheme,{},resolve);
+        ready.resolve();
+      }) },
+    }, thread, {start:true});
+    await ready.promise;
+    try {
+      const started=Date.now();
+      while(!/Waiting for next question · [1-9]\d*s/.test(stripVTControlCharacters(modal.render(94).join("\n")))){
+        if(Date.now()-started>7000) assert.fail("Grill progress heartbeat never appeared");
+        await new Promise(resolve=>setTimeout(resolve,40));
+      }
+      assert.deepEqual(thread.turns,[],"progress must not become a completed turn");
+    } finally {
+      modal.handleInput("\x1b");
+      await opened;
+    }
+    assert.deepEqual(thread.turns,[],"cancellation must not save partial output");
+  });
+});
+
+await t.test("Full-access Grill ignores advisor prose and shows genuine tool names only", {timeout: 15000}, async () => {
+  await withFakeAgy([
+    "#!/usr/bin/env node",
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"agent_response",text_delta:"Should we reconsider?"}}));',
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"tool_use",tool_name:"Read /private/token"}}));',
+    'setTimeout(() => console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"Done"}})),3000);',
+  ].join("\n"), async () => {
+    await settings.writeSettings({backend:"agy",model:"test",effort:"default",mode:"balanced",showTurns:1,overrides:{}});
+    const thread = {topic:"Review this choice",depth:"balanced",fullAccess:true,turns:[]};
+    let modal;
+    const ready = deferred();
+    const opened = bro.openGrillModal({
+      cwd:process.cwd(),sessionManager:{getBranch:()=>[]},
+      ui:{custom:factory=>new Promise(resolve=>{
+        modal=factory({mode:"fullscreen",terminal:{rows:30,columns:100},requestRender(){}},fakeTheme,{},resolve);
+        ready.resolve();
+      })},
+    },thread,{start:true});
+    await ready.promise;
+    try {
+      const started=Date.now();
+      const screen=()=>stripVTControlCharacters(modal.render(94).join("\n"));
+      while(!/Last tool: Read/.test(screen())){
+        assert.doesNotMatch(screen(),/Last tool: Should/, "advisor prose is not a tool");
+        if(Date.now()-started>5000)assert.fail("real tool activity was not shown");
+        await new Promise(resolve=>setTimeout(resolve,20));
+      }
+      assert.doesNotMatch(screen(),/\/private\/token|Last tool: Should/, "tool arguments and assistant prose stay out of the hint");
+    }finally{
+      modal.handleInput("\x1b");
+      await opened;
+    }
+    assert.deepEqual(thread.turns,[]);
+  });
+});
+
 await t.test("Grill cancellation preserves completed turns and submitted input across reopen", async () => {
 	const original = { question: "Topic", answer: "Why?" };
 	const thread = { topic: "Topic", depth: "balanced", fullAccess: false, turns: [original] };
@@ -877,6 +944,36 @@ await t.test("Doctor model probe shares isolated CLI cleanup on success, error, 
   assert.equal(existsSync(workingDir), false, "cancellation must clean up scratch space");
 });
 
+await t.test("BTW keeps backend phase order when throttled text renders after a tool event", async () => {
+  await withFakeAgy([
+    "#!/usr/bin/env node",
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"agent_response",text_delta:"partial"}}));',
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"tool_use",tool_name:"Read /private/path"}}));',
+    'setTimeout(() => console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"final"}})), 400);',
+  ].join("\n"), async () => {
+    const phases = [];
+    const rendered = [];
+    let stage = "Waiting for backend";
+    const done = btw.runBtwTurn("Side question", {model:"test"}, {
+      full:false, cwd:process.cwd(),
+    }, new AbortController().signal, event => {
+      stage = event.kind === "activity" ? "Last tool: " + event.label : "Receiving answer";
+      phases.push(stage);
+    }, text => {
+      rendered.push(text); // Rendering may lag, but must never touch stage.
+    });
+    const start = Date.now();
+    while (!rendered.length) {
+      if (Date.now() - start > 5000) assert.fail("throttled text did not render");
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(phases, ["Receiving answer", "Last tool: Read"]);
+    assert.equal(rendered.at(-1), "partial");
+    assert.equal(stage, "Last tool: Read", "delayed text must not undo the newer tool phase");
+    assert.equal((await done).text, "final");
+  });
+});
+
 await t.test("BTW argument, composer command, and thread transcript parsing", () => {
 	assert.deepEqual(parseBtwArguments("plain question"), { question: "plain question" });
 	assert.deepEqual(parseBtwArguments(""), { question: "" });
@@ -894,6 +991,9 @@ await t.test("BTW argument, composer command, and thread transcript parsing", ()
 	assert.deepEqual(parseBtwAgyLine('{"event":"init","conversation_id":"c1"}'), { conversationId: "c1" });
 	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"hi"}}'), { delta: "hi", conversationId: undefined });
 	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"tool_use","tool_name":"Read"}}'), { activity: "Read", conversationId: undefined });
+	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"tool_use","tool_name":"Read /private/path"}}'), { activity: "Read", conversationId: undefined });
+	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"Visible reply","tool_name":"Not_a_tool /private"}}'), { delta: "Visible reply", conversationId: undefined }, "assistant text must not be reported as tool activity");
+	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"assistant","tool_name":"Not_a_tool /private"}}'), { conversationId: undefined }, "assistant metadata must not be reported as tool activity");
 	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"SUCCESS","response":"done","conversation_id":"c1"}}'), { result: "done", conversationId: "c1" });
 	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
 	assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "clipboard", all: false });

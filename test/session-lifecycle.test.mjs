@@ -77,6 +77,45 @@ test("session_tree changes live Bro thread and resets write comparisons", async 
   assert.equal(appended.length, 1, "switching to existing history must not write");
 });
 
+test("BTW modal keeps latest tool phase after earlier throttled text renders", { timeout: 15000 }, async () => {
+  await withFakeExecutable("agy", [
+    "#!/usr/bin/env node",
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"agent_response",text_delta:"partial"}}));',
+    'console.log(JSON.stringify({event:"step_update",step_update:{step_type:"tool_use",tool_name:"Read /private/path"}}));',
+    'setTimeout(() => console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"final"}})), 1000);',
+  ].join("\n"), async () => {
+    await settings.writeSettings({ backend:"agy", model:"test-model", effort:"default", mode:"balanced", showTurns:1, overrides:{} });
+    const thread = { turns:[], full:false, backend:"agy" };
+    let modal;
+    let mounted;
+    const ready = new Promise(resolve => { mounted = resolve; });
+    const ctx = {
+      cwd: process.cwd(), sessionManager: { getBranch: () => [] },
+      ui: { custom(factory) {
+        return new Promise(resolve => {
+          modal = factory(makeTui(), theme, {}, resolve);
+          mounted();
+        });
+      }},
+    };
+    const opened = btw.openBtwModal(ctx, { thread, initialQuestion:"Does status remain ordered?" });
+    await ready;
+    try {
+      const start = Date.now();
+      while (thread.turns.at(-1)?.answer !== "partial") {
+        if (Date.now() - start > 7000) assert.fail("throttled text did not reach the modal");
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      const screen = stripVTControlCharacters(modal.render(94).join("\n"));
+      assert.match(screen, /Last tool: Read/, "a tool event after text must remain the current status");
+      assert.doesNotMatch(screen, /\/private\/path/, "tool arguments must stay out of progress");
+    } finally {
+      modal.handleInput("\x1b");
+      await opened;
+    }
+  });
+});
+
 test("closing an in-flight BTW reply removes it before reopen and preserves completed history", { timeout: 20000 }, async () => {
   await withFakeExecutable("agy", `#!/usr/bin/env node
 const fs = require("node:fs"), path = require("node:path");

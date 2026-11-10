@@ -137,3 +137,22 @@ test("a later typed command is not overwritten by a failing request",async()=>{
    assert.equal(instance.modal.getComposerText(),"/text typed after submission");
  }finally{await instance.close();}
 });
+
+
+test("Simplify shows elapsed time before a quiet backend replies and clears on cancel",async()=>{
+ const script=[
+   "#!/usr/bin/env node",
+   "setTimeout(()=>console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'LATE'}})),8000);"
+ ].join("\n");
+ await withFakeExecutable("agy",script,async()=>{
+   await settings.writeSettings({backend:"agy",model:"test-plain",effort:"default",mode:"balanced",showTurns:1,overrides:{}});
+   const {open}=await commandHost();
+   const instance=await open("text A deliberately quiet request");
+   try{
+     await until(()=>/Waiting for explanation · [1-9]\d*s/.test(instance.modal.render(100).join("\n")),
+       "Simplify elapsed-time status",instance.modal);
+     assert.doesNotMatch(instance.modal.markdown.text,/Waiting for explanation · [1-9]\d*s/,
+       "progress stays out of the answer");
+   }finally{await instance.close();}
+ });
+});

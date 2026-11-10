@@ -94,6 +94,51 @@ test("codex explain: restricted fresh argv, stdin prompt, scratch cwd, text-only
 	);
 });
 
+test("Codex BTW reports item type only, excluding command and assistant prose from activity", async () => {
+  await withFakeCodex([
+    threadStarted("th-btw"),
+    turnStarted,
+    line({type:"item.started",item:{id:"cmd-1",type:"command_execution",command:"cat /private/file"}}),
+    line({type:"item.completed",item:{id:"r-1",type:"reasoning",text:"SECRET"}}),
+    agentMsg("Final user-facing answer"),
+    turnCompleted,
+  ].join("\n"), async (binDir) => {
+    const progress: BackendProgress[] = [];
+    const outcome = await execute(
+      { feature: "btw", access: "restricted", prompt: "Side q", cwd: binDir },
+      codex(), new AbortController().signal, p => progress.push(p),
+    );
+    assert.equal(outcome.status, "success");
+    assert.deepEqual(progress.filter(p => p.kind === "activity").map(p => p.label), ["command_execution"]);
+    assert.doesNotMatch(JSON.stringify(progress.filter(p => p.kind === "activity")), /private|SECRET|Final user-facing/);
+  });
+});
+
+test("Codex review-backed Grill receives real tool names without arguments or assistant prose", async () => {
+  await withFakeCodex([
+    threadStarted("th-review"),
+    turnStarted,
+    line({type:"item.started",item:{id:"cmd",type:"command_execution",command:"cat /private/token"}}),
+    agentMsg("Should we reconsider this?"),
+    turnCompleted,
+  ].join("\n"), async binDir => {
+    const guided: BackendProgress[] = [];
+    const unchanged = await execute({feature:"review",access:"restricted",cwd:binDir,prompt:"Inspect"},
+      codex(),new AbortController().signal,p=>guided.push(p));
+    assert.equal(unchanged.status,"success");
+    assert.equal(guided.filter(p=>p.kind==="activity").length,0,
+      "Guided Review's default Codex progress must not change");
+
+    const progress: BackendProgress[] = [];
+    const outcome = await execute({feature:"review",access:"restricted",cwd:binDir,prompt:"Inspect",reportReviewTools:true},
+      codex(),new AbortController().signal,p=>progress.push(p));
+    assert.equal(outcome.status,"success");
+    assert.deepEqual(progress.filter(p=>p.kind==="activity").map(p=>({tool:p.tool,label:p.label})),
+      [{tool:"command_execution",label:"command_execution"}]);
+    assert.doesNotMatch(JSON.stringify(progress.filter(p=>p.kind==="activity")),/private|Should/);
+  });
+});
+
 test("codex advisor: workspace-full fresh argv in workspace cwd, activity-only progress", async () => {
 	await withFakeCodex(
 		[
