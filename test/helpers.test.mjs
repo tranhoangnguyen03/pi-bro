@@ -957,6 +957,7 @@ await t.test("BTW argument, composer command, and thread transcript parsing", ()
 	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"tool_use","tool_name":"Read"}}'), { activity: "Read", conversationId: undefined });
 	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"tool_use","tool_name":"Read /private/path"}}'), { activity: "Read", conversationId: undefined });
 	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"Visible reply","tool_name":"Not_a_tool /private"}}'), { delta: "Visible reply", conversationId: undefined }, "assistant text must not be reported as tool activity");
+	assert.deepEqual(parseBtwAgyLine('{"event":"step_update","step_update":{"step_type":"assistant","tool_name":"Not_a_tool /private"}}'), { conversationId: undefined }, "assistant metadata must not be reported as tool activity");
 	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"SUCCESS","response":"done","conversation_id":"c1"}}'), { result: "done", conversationId: "c1" });
 	assert.deepEqual(parseBtwAgyLine('{"event":"result","result":{"status":"ERROR","error":"quota"}}'), { error: "quota", conversationId: undefined });
 	assert.deepEqual(parseBtwComposerCommand("/copy"), { kind: "clipboard", all: false });
