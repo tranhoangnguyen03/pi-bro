@@ -600,7 +600,7 @@ export class BroModal implements Focusable {
 			const phase = this.progressText || (this.kind === "loading" ? "Working…" : "Receiving output…");
 			return runningHint(phase, innerWidth, [
 				`${scroll}${mode} · Esc cancel`, `${mode} · Esc cancel`, " · Esc cancel",
-			]);
+			], 12);
 		}
 		if (this.kind === "result") {
 			return `↑/↓ scroll · C copy${this.htmlPath ? " · O open diagram" : ""}${mode}${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
