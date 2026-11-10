@@ -165,9 +165,9 @@ export async function openGrillModal(
             selection, attempt.signal, (event) => {
               if (closed || attempt.signal.aborted) return;
               if (event.kind === "activity") {
-                // Tool type/name only; omit command arguments and private output.
-                const tool = event.label.trim().split(/\s+/)[0]?.slice(0, 30);
-                if (tool) phase = `Last tool: ${tool}`;
+                // Advisor activity may be prose; only structured tool events
+                // qualify as a tool status. The adapter owns name filtering.
+                if (event.tool) phase = `Last tool: ${event.tool}`;
                 return;
               }
               phase = turn ? "Receiving next question" : "Receiving decision brief";
