@@ -1051,6 +1051,71 @@ test("BTW keeps one running hint row and a steady transcript at a narrow 60-colu
   modal.dispose();
 });
 
+test("Architecture-style stage callbacks keep the shared result footer neutral and one row", async () => {
+  let emitStage, finish;
+  const hold = new Promise(resolve => { finish = resolve; });
+  const mounted = await mount(ctx => explainModal.showBroModal(ctx, {
+    loadingText: "Documenting the current project…",
+    run: async (_signal, _source, onProgress) => {
+      emitStage = onProgress;
+      await hold;
+      return {text:"Architecture generated."};
+    },
+  }), "fullscreen", 60, 30);
+  try {
+    const layout = hostLayout(mounted.overlay, 60, 30);
+    const view = () => stripVTControlCharacters(mounted.component.render(layout.width).join("\n"));
+    for (const stage of [
+      "Reading the project and preparing a safe source copy…",
+      "Tracing the repository structure and important flows…",
+      "Drafting architecture documentation…",
+      "Checking and rendering architecture documents…",
+    ]) {
+      emitStage(stage);
+      assert.match(view(), /Documenting|Esc cancel/, "the request is still running");
+      assert.doesNotMatch(view(), /Receiving output/, "stage callbacks are not streamed-answer events");
+      assert.match(view(), /Esc cancel/);
+      const lines = mounted.component.render(layout.width);
+      for (const row of lines) assert.ok(visibleWidth(row) <= layout.width);
+    }
+  } finally {
+    mounted.component.handleInput("\x1b");
+    finish();
+    await mounted.closed;
+  }
+});
+
+test("Grill and shared result hints remain one row with long phases and narrow layouts", () => {
+  const tui = {mode:"fullscreen",terminal:{rows:30,columns:60},requestRender(){}};
+  const transcript = Array.from({length:60},(_,i)=>"line_" + i).join("\n\n");
+  const grill = new btw.BtwModal(tui,theme,()=>{},()=>{},()=>{},{title:"Bro · grill-me",commands:""});
+  grill.setCustomMode("balanced · FULL (prompt-only no-edits)");
+  grill.setText(transcript);
+  grill.setRunning(true);
+  grill.scrollToEnd();
+  const renderedGrill = () => stripVTControlCharacters(grill.render(48).join("\n"));
+  const baseline = (renderedGrill().match(/line_\d+/g)??[]).length;
+  for (const label of ["Waiting for next question · 2s","Last tool: extremely_long_command_execution_label · 123456s"]) {
+    grill.setProgress(label);
+    assert.match(renderedGrill(), /Esc close/);
+    assert.equal((renderedGrill().match(/line_\d+/g)??[]).length,baseline);
+  }
+
+  const show = new explainModal.BroModal(tui,theme,()=>{},()=>{},()=>{},"again");
+  show.setStreaming(transcript);
+  show.setMode("balanced");
+  const renderedShow = () => stripVTControlCharacters(show.render(48).join("\n"));
+  const bodyRows = (renderedShow().match(/line_\d+/g)??[]).length;
+  for (const label of ["Receiving output · 4s","Last tool: extremely_long_command_execution_label · 123456s"]) {
+    show.setProgress(label);
+    assert.match(renderedShow(), /Esc cancel/);
+    assert.equal((renderedShow().match(/line_\d+/g)??[]).length,bodyRows);
+    for (const row of show.render(48)) assert.ok(visibleWidth(row) <= 48);
+  }
+  grill.dispose();
+  show.dispose();
+});
+
 test("progress clock ticks while quiet and stops on completion or abort", (t) => {
   t.mock.timers.enable({ apis: ["setInterval", "Date"], now: 10000 });
   try {
