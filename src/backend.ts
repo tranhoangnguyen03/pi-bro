@@ -2,6 +2,7 @@ import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { codexSubscriptionRouteProblem, isSubscriptionStatus, resolveCliChildAuth, type CliAuthBackend } from "./cli-auth.ts";
 import {
 	createAgentSession,
@@ -62,6 +63,17 @@ export type BackendSelection =
 export type BackendContinuation = { id: string };
 export type BackendProgress = { kind: "text"; text: string } | { kind: "activity"; label: string; timestamp: number };
 export type BackendOnProgress = (progress: BackendProgress) => void;
+
+/** BTW reports a tool name/type, not a command, argument, or assistant message.
+ * All six adapters use this extraction before events cross into the UI. */
+export function btwToolName(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	// Restrict to the initial identifier. Agy may supply "Read /path" (or
+	// "Read(/path)"); neither should expose the path in a status hint.
+	return /^[A-Za-z_][A-Za-z0-9_.-]*/.exec(
+		stripVTControlCharacters(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").trim(),
+	)?.[0];
+}
 
 export type BackendRequest = {
 	feature: BackendFeature;
@@ -252,8 +264,9 @@ export function parseBtwAgyLine(line: string): { delta?: string; result?: string
 		throw new Error("Agy returned invalid streaming data.");
 	}
 	const conversationId = event.conversation_id ?? event.result?.conversation_id;
-	if (event.event === "step_update" && typeof event.step_update?.tool_name === "string" && event.step_update.tool_name.trim()) {
-		return { activity: event.step_update.tool_name.trim(), conversationId };
+	const tool = event.step_update?.step_type === "agent_response" ? undefined : btwToolName(event.step_update?.tool_name);
+	if (event.event === "step_update" && tool) {
+		return { activity: tool, conversationId };
 	}
 	if (event.event === "step_update" && event.step_update?.step_type === "agent_response" && typeof event.step_update.text_delta === "string") {
 		return { delta: event.step_update.text_delta, conversationId };
@@ -879,7 +892,7 @@ async function executeClaude(
 					if (isBtw && block?.type !== "tool_use") continue;
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
-							? block.name.trim()
+							? (isBtw ? btwToolName(block.name) : block.name.trim())
 							: block?.type === "text" && typeof block.text === "string"
 								? block.text.split("\n").find((text) => text.trim())?.trim()
 								: undefined;
@@ -1070,7 +1083,7 @@ async function executeGrok(
 					if (isBtw && block?.type !== "tool_use") continue;
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
-							? block.name.trim()
+							? (isBtw ? btwToolName(block.name) : block.name.trim())
 							: block?.type === "text" && typeof block.text === "string"
 								? block.text.split("\n").find((text) => text.trim())?.trim()
 								: undefined;
@@ -1265,7 +1278,7 @@ async function executeCodex(
 			const item = event.item;
 			if ((isAdvisor || isBtw) && (event.type === "item.started" || event.type === "item.completed")) {
 				const activity = isBtw
-					? (typeof item?.type === "string" && item.type !== "agent_message" && item.type !== "reasoning" ? item.type : undefined)
+					? (item?.type !== "agent_message" && item?.type !== "reasoning" ? btwToolName(item?.type) : undefined)
 					: codexActivityFromEvent(event);
 				if (activity) onProgress?.({ kind: "activity", label: activity, timestamp: Date.now() });
 			}
@@ -1417,8 +1430,8 @@ async function executeMuse(
 					const candidate = [payload?.text, payload?.command, payload?.path, payload?.file_path, payload?.query]
 						.find((v) => typeof v === "string" && v.trim());
 					const preview = typeof candidate === "string" ? candidate.replace(/\s+/g, " ").trim() : "";
-					const label = isBtw ? toolName : `${toolName}${preview ? ` ${preview}` : ""}`;
-					onProgress?.({ kind: "activity", label, timestamp: Date.now() });
+					const label = isBtw ? btwToolName(toolName) : `${toolName}${preview ? ` ${preview}` : ""}`;
+					if (label) onProgress?.({ kind: "activity", label, timestamp: Date.now() });
 				} else if (isAdvisor && envelope.payload_type === "task.lifecycle.status") {
 					const event = payload?.event as { message?: unknown } | undefined;
 					if (typeof event?.message === "string" && event.message.trim()) {
@@ -1877,7 +1890,8 @@ async function executePi(
 					onProgress?.({ kind: "text", text });
 				}
 			} else if (event.type === "tool_execution_start" && onProgress) {
-				onProgress({ kind: "activity", label: event.toolName, timestamp: Date.now() });
+				const label = request.feature === "btw" ? btwToolName(event.toolName) : event.toolName;
+				if (label) onProgress({ kind: "activity", label, timestamp: Date.now() });
 			}
 		});
 
