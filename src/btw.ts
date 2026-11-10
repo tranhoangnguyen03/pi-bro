@@ -1,7 +1,7 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Input, Markdown, matchesKey, wrapTextWithAnsi, type Focusable } from "@earendil-works/pi-tui";
-import { execute as executeBackend, textProgressThrottle, type BackendSelection } from "./backend.ts";
+import { execute as executeBackend, textProgressThrottle, type BackendProgress, type BackendSelection } from "./backend.ts";
 import { buildBtwPrompt } from "./prompt.ts";
 import {
 	type BackendName,
@@ -138,9 +138,14 @@ export async function runBtwTurn(
 	selection: BackendSelection,
 	options: { full: boolean; cwd: string; conversationId?: string },
 	signal: AbortSignal,
-	onProgress?: (text: string) => void,
+	onProgress?: (event: BackendProgress) => void,
 ): Promise<{ text: string; conversationId?: string; expiredContinuation?: true }> {
-	const progress = textProgressThrottle(signal, onProgress);
+	const textProgress = textProgressThrottle(signal, (text) => onProgress?.({ kind: "text", text }));
+	const receive = (event: BackendProgress) => {
+		if (signal.aborted) return;
+		if (event.kind === "activity") onProgress?.(event);
+		else textProgress.receive?.(event);
+	};
 
 	try {
 		const outcome = await executeBackend(
@@ -153,13 +158,13 @@ export async function runBtwTurn(
 			},
 			selection,
 			signal,
-			progress.receive,
+			receive,
 		);
 		if (outcome.status === "success") return { text: outcome.text, conversationId: outcome.continuation?.id };
 		if (outcome.continuationExpired) return { text: "", expiredContinuation: true };
 		throw new Error(outcome.message);
 	} finally {
-		progress.dispose();
+		textProgress.dispose();
 	}
 }
 
@@ -179,6 +184,7 @@ export class BtwModal implements Focusable {
 		{ followEnd: true },
 	);
 	private running = false;
+	private progressText = "";
 	private full = false;
 	private model = "";
 	private customMode = "";
@@ -243,6 +249,14 @@ export class BtwModal implements Focusable {
 
 	setRunning(running: boolean): void {
 		this.running = running;
+		if (!running) this.progressText = "";
+		this.tui.requestRender();
+	}
+
+	/** Ephemeral in-flight status; never enters the thread or clipboard. */
+	setProgress(text: string): void {
+		if (this.disposed || !this.running) return;
+		this.progressText = text;
 		this.tui.requestRender();
 	}
 
@@ -323,7 +337,7 @@ export class BtwModal implements Focusable {
 				this.input.render(inner)[0] ?? "",
 			],
 			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
-			hints: this.running ? "Bro is thinking… · Esc close (stops reply)" : (this.appearance.idleHint ?? "Enter send · Esc close"),
+			hints: this.running ? `${this.progressText || "Bro is thinking…"} · Esc close (stops reply)` : (this.appearance.idleHint ?? "Enter send · Esc close"),
 		});
 	}
 
@@ -345,6 +359,7 @@ export async function openBtwModal(
 		(tui, theme, _keybindings, done) => {
 			let closed = false;
 			let controller: AbortController | undefined;
+			let stopActiveProgress: (() => void) | undefined;
 			let activeTurn: { pending?: BtwTurn; original?: BtwTurn } | undefined;
 			// Discard an unfinished reply immediately on close, before another modal can
 			// reuse the same thread. A cancelled retry restores the completed old turn.
@@ -381,6 +396,7 @@ export async function openBtwModal(
 				if (closed) return;
 				closed = true;
 				saveDraft();
+				stopActiveProgress?.();
 				controller?.abort();
 				discardUnfinished();
 				options.onChange?.();
@@ -391,6 +407,7 @@ export async function openBtwModal(
 				if (closed) return; // Close already saved and cleaned this thread.
 				closed = true;
 				saveDraft();
+				stopActiveProgress?.();
 				controller?.abort();
 				discardUnfinished();
 				options.onChange?.();
@@ -407,7 +424,21 @@ export async function openBtwModal(
 				const work: { pending?: BtwTurn; original?: BtwTurn } = { original: replaced };
 				activeTurn = work;
 				controller = turnController;
+				const startedAt = Date.now();
+				let stage = "Preparing request";
+				const updateProgress = () => {
+					if (!closed && controller === turnController && !turnController.signal.aborted)
+						modal.setProgress(`${stage} · ${Math.floor((Date.now() - startedAt) / 1000)}s`);
+				};
+				const timer = setInterval(updateProgress, 1000);
+				timer.unref?.();
+				const stopProgress = () => {
+					clearInterval(timer);
+					if (stopActiveProgress === stopProgress) stopActiveProgress = undefined;
+				};
+				stopActiveProgress = stopProgress;
 				modal.setRunning(true);
+				updateProgress();
 
 				let settings: BroSettings;
 				let preferences: string;
@@ -415,6 +446,7 @@ export async function openBtwModal(
 					settings = await readSettings();
 					preferences = await readPreferences();
 				} catch (error) {
+					stopProgress();
 					if (activeTurn === work) discardUnfinished();
 					if (!closed && !replaced && !options.initialQuestion) modal.setComposerText(question);
 					if (controller === turnController) controller = undefined;
@@ -423,6 +455,7 @@ export async function openBtwModal(
 				}
 				// Do not restore a cancelled retry twice after close/dispose.
 				if (closed || turnController.signal.aborted) {
+					stopProgress();
 					if (activeTurn === work) discardUnfinished();
 					if (controller === turnController) controller = undefined;
 					return;
@@ -454,16 +487,27 @@ export async function openBtwModal(
 					thread.model = selectionLabel(selection);
 					thread.preferences = Boolean(preferences);
 					modal.setModel(btwHeaderLabel(thread));
+					stage = "Waiting for backend";
+					updateProgress();
+					const showBackendProgress = (event: BackendProgress) => {
+						if (closed || turnController.signal.aborted) return;
+						if (event.kind === "activity") {
+							// Tool names/types only, never commands, tool results, or hidden reasoning.
+							const label = event.label.trim().split(/\s+/)[0]?.slice(0, 30);
+							if (label) stage = `Last tool: ${label}`;
+						} else {
+							stage = "Receiving answer";
+							pending.answer = event.text;
+							modal.setText(transcript());
+						}
+						updateProgress();
+					};
 					let result = await runBtwTurn(
 						buildBtwPrompt(context, question, { full, history, preferences }),
 						selection,
 						{ full, cwd: ctx.cwd, conversationId },
 						turnController.signal,
-						(partial) => {
-							if (closed || turnController.signal.aborted) return;
-							pending.answer = partial;
-							modal.setText(transcript());
-						},
+						showBackendProgress,
 					);
 					if (closed || turnController.signal.aborted) return;
 					if (result.expiredContinuation) {
@@ -471,17 +515,15 @@ export async function openBtwModal(
 						// transcript AND its captured main-session context (the local `context` is undefined
 						// whenever a continuation existed), and run once more so nothing is silently lost.
 						thread.conversationId = undefined;
+						stage = "Restoring side thread";
+						updateProgress();
 						modal.setNotice("Side thread expired — reseeded from the transcript and session context.", "warning");
 						const reseeded = await runBtwTurn(
 							buildBtwPrompt(thread.context, question, { full, history: formatBtwTranscript(thread.turns.slice(0, -1)), preferences }),
 							selection,
 							{ full, cwd: ctx.cwd },
 							turnController.signal,
-							(partial) => {
-								if (closed || turnController.signal.aborted) return;
-								pending.answer = partial;
-								modal.setText(transcript());
-							},
+							showBackendProgress,
 						);
 						result = reseeded;
 					}
@@ -496,6 +538,7 @@ export async function openBtwModal(
 					pending.answer = `_${errorMessage(error)}_`;
 					modal.setNotice(errorMessage(error), "error");
 				} finally {
+					stopProgress();
 					if (controller === turnController) controller = undefined;
 					if (activeTurn === work) {
 						if (closed || turnController.signal.aborted) discardUnfinished();

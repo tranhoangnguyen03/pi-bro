@@ -221,7 +221,7 @@ export function beginAttempt(child: ChildProcess, signal: AbortSignal, deadlineM
 type AgyEvent = {
 	event?: string;
 	conversation_id?: string;
-	step_update?: { step_type?: string; text_delta?: unknown };
+	step_update?: { step_type?: string; text_delta?: unknown; tool_name?: unknown };
 	result?: { status?: string; response?: unknown; error?: unknown; conversation_id?: string };
 };
 
@@ -244,7 +244,7 @@ function parseExplainLine(line: string): { delta?: string; result?: string } {
 	return {};
 }
 
-export function parseBtwAgyLine(line: string): { delta?: string; result?: string; conversationId?: string; error?: string } {
+export function parseBtwAgyLine(line: string): { delta?: string; result?: string; conversationId?: string; error?: string; activity?: string } {
 	let event: AgyEvent;
 	try {
 		event = JSON.parse(line) as AgyEvent;
@@ -252,6 +252,9 @@ export function parseBtwAgyLine(line: string): { delta?: string; result?: string
 		throw new Error("Agy returned invalid streaming data.");
 	}
 	const conversationId = event.conversation_id ?? event.result?.conversation_id;
+	if (event.event === "step_update" && typeof event.step_update?.tool_name === "string" && event.step_update.tool_name.trim()) {
+		return { activity: event.step_update.tool_name.trim(), conversationId };
+	}
 	if (event.event === "step_update" && event.step_update?.step_type === "agent_response" && typeof event.step_update.text_delta === "string") {
 		return { delta: event.step_update.text_delta, conversationId };
 	}
@@ -390,6 +393,7 @@ async function executeArgvPrint(
 			if (isBtw) {
 				const parsed = parseBtwAgyLine(line);
 				if (parsed.conversationId) conversationId = parsed.conversationId;
+				if (parsed.activity) onProgress?.({ kind: "activity", label: parsed.activity, timestamp: Date.now() });
 				if (parsed.error) throw new Error(parsed.error);
 				if (parsed.delta) {
 					partial += parsed.delta;
@@ -869,9 +873,10 @@ async function executeClaude(
 					onProgress?.({ kind: "text", text: partial });
 				}
 			}
-			if (isAdvisor && topLevel && event.type === "assistant" && Array.isArray(event.message?.content)) {
+			if ((isAdvisor || isBtw) && topLevel && event.type === "assistant" && Array.isArray(event.message?.content)) {
 				for (const block of event.message.content as Array<{ type?: unknown; name?: unknown; text?: unknown }>) {
 					if (attempt.causeOf()) break;
+					if (isBtw && block?.type !== "tool_use") continue;
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
 							? block.name.trim()
@@ -1059,9 +1064,10 @@ async function executeGrok(
 				}
 				streamedSinceAssistant = false;
 			}
-			if (isAdvisor && event.type === "assistant" && Array.isArray(message?.content)) {
+			if ((isAdvisor || isBtw) && event.type === "assistant" && Array.isArray(message?.content)) {
 				for (const block of message.content as Array<{ type?: unknown; name?: unknown; text?: unknown }>) {
 					if (attempt.causeOf()) break;
+					if (isBtw && block?.type !== "tool_use") continue;
 					const label =
 						block?.type === "tool_use" && typeof block.name === "string"
 							? block.name.trim()
@@ -1257,8 +1263,10 @@ async function executeCodex(
 				return;
 			}
 			const item = event.item;
-			if (isAdvisor && (event.type === "item.started" || event.type === "item.completed")) {
-				const activity = codexActivityFromEvent(event);
+			if ((isAdvisor || isBtw) && (event.type === "item.started" || event.type === "item.completed")) {
+				const activity = isBtw
+					? (typeof item?.type === "string" && item.type !== "agent_message" && item.type !== "reasoning" ? item.type : undefined)
+					: codexActivityFromEvent(event);
 				if (activity) onProgress?.({ kind: "activity", label: activity, timestamp: Date.now() });
 			}
 			if (event.type === "item.completed" && item?.type === "agent_message") {
@@ -1402,22 +1410,23 @@ async function executeMuse(
 			const runStream = payload?.run_stream;
 			const isRoot = rootRunId !== undefined && runStream?.kind === "run" && runStream.id === rootRunId;
 
-			if (isAdvisor) {
+			if (isAdvisor || isBtw) {
 				if (envelope.payload_type === "tool.result") {
 					const facts = payload?.correlation_facts as { tool_name?: unknown } | undefined;
 					const toolName = typeof facts?.tool_name === "string" && facts.tool_name ? facts.tool_name : "tool";
 					const candidate = [payload?.text, payload?.command, payload?.path, payload?.file_path, payload?.query]
 						.find((v) => typeof v === "string" && v.trim());
 					const preview = typeof candidate === "string" ? candidate.replace(/\s+/g, " ").trim() : "";
-					const label = `${toolName}${preview ? ` ${preview}` : ""}`;
+					const label = isBtw ? toolName : `${toolName}${preview ? ` ${preview}` : ""}`;
 					onProgress?.({ kind: "activity", label, timestamp: Date.now() });
-				} else if (envelope.payload_type === "task.lifecycle.status") {
+				} else if (isAdvisor && envelope.payload_type === "task.lifecycle.status") {
 					const event = payload?.event as { message?: unknown } | undefined;
 					if (typeof event?.message === "string" && event.message.trim()) {
 						onProgress?.({ kind: "activity", label: event.message.trim(), timestamp: Date.now() });
 					}
 				}
-			} else if (isRoot && envelope.payload_type === "run.output.delta") {
+			}
+			if (!isAdvisor && isRoot && envelope.payload_type === "run.output.delta") {
 				if (typeof payload?.text === "string" && payload.text) {
 					partial += payload.text;
 					onProgress?.({ kind: "text", text: partial });

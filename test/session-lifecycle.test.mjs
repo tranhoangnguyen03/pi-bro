@@ -87,6 +87,7 @@ if (prompt.includes("NEXT CLEAN QUESTION")) {
   console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"CLEAN ANSWER",conversation_id:"conv-2"}}));
 } else {
   console.log(JSON.stringify({event:"init",conversation_id:"conv-1"}));
+  console.log(JSON.stringify({event:"step_update",step_update:{step_type:"tool_use",tool_name:"Read"}}));
   setTimeout(() => console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"TOO LATE"}})), 12000);
 }
 `, async bin => {
@@ -124,6 +125,7 @@ if (prompt.includes("NEXT CLEAN QUESTION")) {
     modal.handleInput("\r");
     await until(() => thread.turns.length === 2, "pending placeholder");
     assert.equal(thread.turns[1].answer, "…");
+    await until(() => /Last tool: Read · [1-9]\d*s/.test(stripVTControlCharacters(modal.render(94).join("\n"))), "BTW activity and elapsed-time heartbeat");
     modal.handleInput("\x1b");
     await run.finished;
     assert.deepEqual(thread.turns, [prior], "aborted placeholder removed synchronously on close");
