@@ -1,6 +1,6 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Input, Markdown, matchesKey, wrapTextWithAnsi, type Focusable } from "@earendil-works/pi-tui";
+import { Input, Markdown, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Focusable } from "@earendil-works/pi-tui";
 import { execute as executeBackend, textProgressThrottle, type BackendProgress, type BackendSelection } from "./backend.ts";
 import { buildBtwPrompt } from "./prompt.ts";
 import {
@@ -139,12 +139,15 @@ export async function runBtwTurn(
 	options: { full: boolean; cwd: string; conversationId?: string },
 	signal: AbortSignal,
 	onProgress?: (event: BackendProgress) => void,
+	onRenderedText?: (text: string) => void,
 ): Promise<{ text: string; conversationId?: string; expiredContinuation?: true }> {
-	const textProgress = textProgressThrottle(signal, (text) => onProgress?.({ kind: "text", text }));
+	// Phases use backend event order. Only expensive transcript rendering is delayed.
+	// Otherwise an old throttled text update can replace a newer tool status.
+	const textProgress = textProgressThrottle(signal, onRenderedText);
 	const receive = (event: BackendProgress) => {
 		if (signal.aborted) return;
-		if (event.kind === "activity") onProgress?.(event);
-		else textProgress.receive?.(event);
+		onProgress?.(event);
+		if (event.kind === "text") textProgress.receive?.(event);
 	};
 
 	try {
@@ -337,7 +340,14 @@ export class BtwModal implements Focusable {
 				this.input.render(inner)[0] ?? "",
 			],
 			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
-			hints: this.running ? `${this.progressText || "Bro is thinking…"} · Esc close (stops reply)` : (this.appearance.idleHint ?? "Enter send · Esc close"),
+			// Keep the active hint on one row. The frame wraps hints and takes those
+			// rows from the transcript; a long tool name must not make reading jump.
+			hints: this.running ? (() => {
+				const fullExit = " · Esc close (stops reply)";
+				const exit = inner - visibleWidth(fullExit) >= 8 ? fullExit : " · Esc close";
+				const statusWidth = Math.max(0, inner - visibleWidth(exit));
+				return truncateToWidth(this.progressText || "Bro is thinking…", statusWidth, "…") + exit;
+			})() : (this.appearance.idleHint ?? "Enter send · Esc close"),
 		});
 	}
 
@@ -491,16 +501,16 @@ export async function openBtwModal(
 					updateProgress();
 					const showBackendProgress = (event: BackendProgress) => {
 						if (closed || turnController.signal.aborted) return;
-						if (event.kind === "activity") {
-							// Tool names/types only, never commands, tool results, or hidden reasoning.
-							const label = event.label.trim().split(/\s+/)[0]?.slice(0, 30);
-							if (label) stage = `Last tool: ${label}`;
-						} else {
-							stage = "Receiving answer";
-							pending.answer = event.text;
-							modal.setText(transcript());
-						}
+						// Activity labels are name/type-only at the backend boundary.
+						// Process every phase here, before the 75 ms text render throttle.
+						if (event.kind === "activity") stage = `Last tool: ${event.label}`;
+						else stage = "Receiving answer";
 						updateProgress();
+					};
+					const showRenderedText = (partial: string) => {
+						if (closed || turnController.signal.aborted) return;
+						pending.answer = partial;
+						modal.setText(transcript());
 					};
 					let result = await runBtwTurn(
 						buildBtwPrompt(context, question, { full, history, preferences }),
@@ -508,6 +518,7 @@ export async function openBtwModal(
 						{ full, cwd: ctx.cwd, conversationId },
 						turnController.signal,
 						showBackendProgress,
+						showRenderedText,
 					);
 					if (closed || turnController.signal.aborted) return;
 					if (result.expiredContinuation) {
@@ -524,6 +535,7 @@ export async function openBtwModal(
 							{ full, cwd: ctx.cwd },
 							turnController.signal,
 							showBackendProgress,
+							showRenderedText,
 						);
 						result = reseeded;
 					}
