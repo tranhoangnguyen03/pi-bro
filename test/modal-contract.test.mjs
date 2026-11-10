@@ -1036,7 +1036,8 @@ test("progress clock ticks while quiet and stops on completion or abort", (t) =>
     const first = new AbortController();
     const stop = kit.startProgressClock(first.signal, seconds => stopped.push(seconds));
     assert.deepEqual(stopped, [0]);
-    t.mock.timers.tick(2100);
+    t.mock.timers.tick(1000);
+    t.mock.timers.tick(1000);
     assert.deepEqual(stopped, [0, 1, 2], "elapsed seconds advance without backend output");
     stop();
     t.mock.timers.tick(2000);
