@@ -18,6 +18,7 @@ import {
 	agySelection,
 	backendDeadlineMs,
 	beginAttempt,
+	btwToolName,
 	bridgePiRuntimeForCatalog,
 	execute,
 	frameStdoutLines,
@@ -31,6 +32,17 @@ import {
 } from "../src/backend.ts";
 
 const withFakeAgy = (script: string, run: (binDir: string) => Promise<void>) => withFakeExecutable("agy", script, run);
+
+test("BTW adapter tool labels contain only a safe name/type, never tool arguments", () => {
+  assert.equal(btwToolName("Read /private/sensitive.txt"), "Read");
+  assert.equal(btwToolName("command_execution --token SECRET"), "command_execution");
+  assert.equal(btwToolName("Read(/private/sensitive.txt)"), "Read");
+  assert.equal(btwToolName("functions.shell {secret}"), "functions.shell");
+  assert.equal(btwToolName("Read:/private/sensitive.txt"), "Read");
+  assert.equal(btwToolName("\u001b[31mRead\u001b[0m secret"), "Read");
+  assert.equal(btwToolName(""), undefined);
+  assert.equal(btwToolName({ command: "secret" }), undefined);
+});
 
 test("shared text throttle keeps the latest update and releases pending callbacks", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
