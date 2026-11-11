@@ -102,6 +102,6 @@ test("aborted warm Agy turn closes its process before another side thread starts
       selection, new AbortController().signal);
     assert.equal(followUp.status, "success");
     if (followUp.status === "success") assert.equal(followUp.text, "turn 1");
-    assert.equal((await readFile(join(cwd, "starts.log"), "utf8")).trim().split("\\n").length, 2);
+    assert.equal((await readFile(join(cwd, "starts.log"), "utf8")).trim().split("\n").length, 2);
   });
 });
