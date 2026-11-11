@@ -22,7 +22,7 @@ reader.on("line", line => {
  if (request.event !== "user") process.exit(3);
  turns++;
  if (request.message.content === "block") return;
- console.log(JSON.stringify({event:"init",conversation_id:"warm-c1"}));
+ if (turns === 1) console.log(JSON.stringify({event:"init",conversation_id:"warm-c1"}));
  console.log(JSON.stringify({event:"step_update",step_update:{step_type:"agent_response",text_delta:"part-" + turns}}));
  console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"turn " + turns,conversation_id:"warm-c1"}}));
 });
