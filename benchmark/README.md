@@ -87,3 +87,45 @@ npm run benchmark:report -- --track show
 ```
 
 Show results live in `benchmark/.work/show/`.
+
+## Codex app-server smoke/latency probe (issue #194)
+
+This is an **isolated experiment**, not the production Bro adapter. It tests whether
+one Codex app-server can handle sequential model turns. CI uses a fake Codex executable
+and never contacts a model.
+
+Dry run (no CLI process):
+
+```sh
+node --experimental-transform-types benchmark/codex-app-server-probe.ts --model YOUR_MODEL
+```
+
+Real model invocation (explicit opt-in; may use account quota):
+
+```sh
+PI_BRO_CODEX_AUTH_SOURCE=subscription CODEX_HOME="$HOME/.codex" \
+  node --experimental-transform-types benchmark/codex-app-server-probe.ts \
+  --model YOUR_MODEL --turns 3 --cwd /path/to/workspace --run
+```
+
+In subscription mode, the probe asks the **same app-server process** for effective
+`config/read` and `account/read` before starting the thread and before **every** turn.
+It rejects effective custom providers, endpoint redirects and non-ChatGPT logins.
+It never silently switches to API billing. Inherited authentication permits custom
+providers and skips subscription-only checks.
+
+One thread, one turn at a time, `approvalPolicy: never` and read-only sandbox.
+Prompts are fixed synthetic text. The Codex runtime may still read workspace files:
+choose an empty or harmless workspace for this check. The output contains only timings,
+model name, auth source and coarse status, not prompts, answers, tokens or stderr.
+
+A success requires a `turn/completed` event with `completed` status and a completed
+agent-message item; partial text or a successful start RPC alone never counts.
+The runner stops on failure, never retries model work, limits each run to 2–10 turns,
+and closes the app-server at the end.
+
+Compare against the legacy CLI benchmark in PR #195 using an integrated checkout
+that contains both tools, with identical model, effort, cwd and auth source.
+That is needed before claiming any speed gain. Native resume, active-turn
+account changes, full workspace permissions and installed-CLI compatibility
+need further qualification before production integration.
