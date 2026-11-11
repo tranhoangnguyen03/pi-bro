@@ -177,8 +177,12 @@ export class CodexAppServerProbe {
     this.active = undefined;
     clearTimeout(active.timer);
     const result = active.completion;
+    if (this.accountChanged) {
+      active.reject(brief("Codex subscription changed during a turn"));
+      return;
+    }
     if (result.id !== active.id || result.status !== "completed" ||
-        !active.finalText?.trim() || this.accountChanged) {
+        !active.finalText?.trim()) {
       active.reject(brief("Codex app-server turn failed or omitted its final answer"));
       return;
     }
