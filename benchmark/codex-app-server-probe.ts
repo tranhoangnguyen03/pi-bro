@@ -5,7 +5,6 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { performance } from "node:perf_hooks";
-import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { codexSubscriptionRouteProblem, resolveCliChildAuth } from "../src/cli-auth.ts";
