@@ -500,7 +500,7 @@ async function retireWarmAgy(worker: WarmAgyWorker): Promise<void> {
   await worker.closed;
 }
 
-async function stopWarmAgyBtw(): Promise<void> {
+export async function stopWarmAgyBtw(): Promise<void> {
   if (warmAgyBtw) await retireWarmAgy(warmAgyBtw);
 }
 
