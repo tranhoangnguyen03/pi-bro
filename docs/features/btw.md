@@ -64,7 +64,7 @@ Developers can opt in to issue [#194](https://github.com/tranhoangnguyen03/pi-br
 PI_BRO_AGY_WARM_BTW=1 pi
 ```
 
-Only **Agy BTW** uses the warm process; Explain, Show, Advisor, and Guided Review keep their existing one-shot paths. With the flag on, Bro sends each BTW turn over a single `--input-format stream-json --output-format stream-json` process until the native conversation is cleared, model/access/workspace changes, cancellation, failure, or shutdown. Turn completion follows Agy's `result` event (the process remains running). The process closes after 90 seconds idle and has a 20-minute maximum lifetime; a later turn can resume from its native conversation id in a new process.
+Only **Agy BTW** uses the warm process; Explain, Show, Advisor, and Guided Review keep their existing one-shot paths. With the flag on, Bro sends each BTW turn over a single `--input-format stream-json --output-format stream-json` process until the native conversation is cleared, model/access/workspace changes, cancellation, failure, or shutdown. Turn completion follows Agy's `result` event (the process remains running). Pi session starts and tree navigation also close the worker to avoid reusing warmed state from a different branch. The process closes after 90 seconds idle and has a 20-minute maximum lifetime; a later turn can resume from its native conversation id in a new process.
 
 The opt-in is **off by default** while we compare timings and test installed Agy versions. If you encounter a protocol issue, launch without the flag to use the existing process-per-turn adapter. No backend or authentication fallback is automatic. Note that Agy's sandbox is not a strict file-only boundary; access behavior is unchanged from the ordinary Agy BTW adapter.
 
