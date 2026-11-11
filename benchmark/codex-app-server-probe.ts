@@ -58,6 +58,7 @@ export class CodexAppServerProbe {
   private active?: ActiveTurn;
   private stopped = false;
   private accountChanged = false;
+  private accountVerified = false;
 
   constructor(options: { command?: string; cwd: string; env: NodeJS.ProcessEnv; subscription: boolean }) {
     this.cwd = options.cwd;
@@ -70,6 +71,8 @@ export class CodexAppServerProbe {
     this.child.stdin?.on("error", () => this.failAll("Codex app-server stdin failed"));
     // Always consume stderr, but never collect or echo data which may include secrets.
     this.child.stderr?.resume();
+    this.child.stdout?.on("error", () => this.failAll("Codex app-server stdout failed"));
+    this.child.stderr?.on("error", () => this.failAll("Codex app-server stderr failed"));
     this.child.once("error", () => this.failAll("Codex app-server could not start"));
     this.closed = new Promise(done => {
       this.child.once("close", () => {
@@ -138,7 +141,7 @@ export class CodexAppServerProbe {
     const params = object(msg.params);
     if (method === "account/updated" && this.subscription) {
       const mode = params.authMode;
-      if (mode !== "chatgpt") {
+      if (this.accountVerified && mode !== "chatgpt") {
         this.accountChanged = true;
         if (this.active) {
           clearTimeout(this.active.timer);
@@ -228,6 +231,7 @@ export class CodexAppServerProbe {
     if (valueOf(account, "account", "type") !== "chatgpt") {
       throw brief("Codex app-server did not confirm ChatGPT subscription login");
     }
+    this.accountVerified = true;
     return round(performance.now() - began);
   }
 
@@ -288,16 +292,21 @@ export class CodexAppServerProbe {
   async close(): Promise<void> {
     this.failAll("Codex app-server probe closed");
     this.signalProcess("SIGTERM");
-    const finished = await Promise.race([
-      this.closed.then(() => true),
-      new Promise<boolean>(done => setTimeout(() => done(false), 1500)),
-    ]);
-    if (!finished) {
-      this.signalProcess("SIGKILL");
-      await Promise.race([
-        this.closed,
-        new Promise<void>(done => setTimeout(done, 500)),
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const finished = await Promise.race([
+        this.closed.then(() => true),
+        new Promise<boolean>(done => { timer = setTimeout(() => done(false), 1500); }),
       ]);
+      if (!finished) {
+        this.signalProcess("SIGKILL");
+        await Promise.race([
+          this.closed,
+          new Promise<void>(done => { timer = setTimeout(done, 500); }),
+        ]);
+      }
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 }
@@ -310,6 +319,9 @@ export async function runProbe(options: {
   const start = performance.now();
   const client = new CodexAppServerProbe(options);
   const timings: TurnTiming[] = [];
+  const stop = () => { void client.close(); };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
   try {
     await client.initialize();
     const startedMs = round(performance.now() - start);
@@ -325,6 +337,8 @@ export async function runProbe(options: {
       model: options.model, effort: options.effort ?? null, startupAndHandshakeMs: startedMs,
       turns: timings, processReused: timings.length > 1 };
   } finally {
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
     await client.close();
   }
 }
