@@ -501,7 +501,12 @@ async function retireWarmAgy(worker: WarmAgyWorker): Promise<void> {
 }
 
 export async function stopWarmAgyBtw(): Promise<void> {
-  if (warmAgyBtw) await retireWarmAgy(warmAgyBtw);
+  const worker = warmAgyBtw;
+  if (!worker) return;
+  // Session navigation and shutdown are user-initiated cancellation, not a
+  // backend/protocol failure, even if they interrupt an active warm turn.
+  if (worker.pending && !worker.forcedOutcome) worker.forcedOutcome = { status: "cancelled", message: "Canceled." };
+  await retireWarmAgy(worker);
 }
 
 async function executeWarmAgyBtw(
