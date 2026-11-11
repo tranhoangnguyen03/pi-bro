@@ -237,6 +237,9 @@ export class CodexAppServerProbe {
     if (valueOf(account, "account", "type") !== "chatgpt") {
       throw brief("Codex app-server did not confirm ChatGPT subscription login");
     }
+    // An account/updated notice can arrive while these RPCs are in flight.
+    // Checking only before the RPCs would allow one more paid turn on a changed account.
+    if (this.accountChanged) throw brief("Codex subscription changed during validation");
     this.accountVerified = true;
     return round(performance.now() - began);
   }
@@ -259,6 +262,7 @@ export class CodexAppServerProbe {
     if (this.active) throw brief("A Codex app-server turn is already active");
     const requestedAt = performance.now();
     const preflightMs = await this.validateSubscription();
+    if (this.accountChanged) throw brief("Codex subscription changed before model execution");
     const startedAt = performance.now();
     let active!: ActiveTurn;
     const completion = new Promise<TurnTiming>((resolveTurn, rejectTurn) => {
