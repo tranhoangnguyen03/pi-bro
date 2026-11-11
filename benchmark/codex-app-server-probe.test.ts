@@ -21,6 +21,7 @@ rl.on("line", line => {
   fs.appendFileSync(output, method + "\n");
   if (method === "initialize") {
     send({ id: request.id, result: { userAgent: "codex_test" } });
+    send({ method: "account/updated", params: { authMode: null } });
     return;
   }
   if (method === "config/read") {
@@ -58,6 +59,9 @@ rl.on("line", line => {
       threadId: "thread-123", turn: { id: turnId,
         status: process.env.FAKE_TURN === "failed" ? "failed" : "completed" },
     } });
+    if (count === 1 && process.env.FAKE_CHANGE_ACCOUNT === "yes") {
+      send({ method: "account/updated", params: { authMode: "apikey" } });
+    }
   }
 });
 `;
@@ -125,5 +129,15 @@ test("Codex app-server probe fails visibly when no terminal event arrives", asyn
   await mockProbe({ FAKE_TURN: "hang" }, async cwd => {
     await assert.rejects(runProbe({ cwd, model: "test", turns: 2,
       env: process.env, subscription: false, deadlineMs: 80 }), /timed out/);
+  });
+});
+
+
+test("Codex app-server probe stops before the next paid turn after subscription account changes", async () => {
+  await mockProbe({ FAKE_CHANGE_ACCOUNT: "yes" }, async cwd => {
+    await assert.rejects(runProbe({ cwd, model: "test", turns: 2,
+      env: process.env, subscription: true }), /subscription changed/);
+    const received = await calls(cwd);
+    assert.equal(received.filter(x => x === "turn/start").length, 1);
   });
 });
