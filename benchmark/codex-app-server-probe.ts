@@ -29,6 +29,7 @@ export type TurnTiming = {
   firstEventMs: number | null;
   firstTextMs: number | null;
   turnMs: number;
+  totalMs: number; // includes per-turn subscription validation, for a like-for-like CLI comparison
 };
 
 function object(value: unknown): Json {
@@ -186,6 +187,7 @@ export class CodexAppServerProbe {
       firstEventMs: active.firstEventMs ?? null,
       firstTextMs: active.firstTextMs ?? null,
       turnMs: round(performance.now() - active.startedAt),
+      totalMs: round(performance.now() - active.startedAt),
     });
   }
 
@@ -251,6 +253,7 @@ export class CodexAppServerProbe {
   async runTurn(threadId: string, model: string, prompt: string, effort?: string,
     deadlineMs = DEFAULT_TURN_DEADLINE_MS): Promise<TurnTiming> {
     if (this.active) throw brief("A Codex app-server turn is already active");
+    const requestedAt = performance.now();
     const preflightMs = await this.validateSubscription();
     const startedAt = performance.now();
     let active!: ActiveTurn;
@@ -275,7 +278,7 @@ export class CodexAppServerProbe {
       if (typeof turnId !== "string" || !turnId) throw brief("Codex did not acknowledge a turn id");
       active.id = turnId;
       this.tryFinishTurn();
-      return { ...(await completion), preflightMs };
+      return { ...(await completion), preflightMs, totalMs: round(performance.now() - requestedAt) };
     } catch (error) {
       if (this.active === active) this.active = undefined;
       clearTimeout(active.timer);
