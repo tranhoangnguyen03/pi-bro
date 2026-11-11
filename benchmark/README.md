@@ -87,3 +87,32 @@ npm run benchmark:report -- --track show
 ```
 
 Show results live in `benchmark/.work/show/`.
+
+## External backend latency baseline (manual)
+
+Track [issue #194](https://github.com/tranhoangnguyen03/pi-bro/issues/194).
+This is a separate benchmark from the prompt-quality matrix.
+
+Run an **unpaid** CLI-version startup proxy first:
+
+```sh
+node --experimental-transform-types benchmark/backend-latency.ts --backend agy --model gemini-3.7-flash
+```
+
+After checking the chosen CLI account and model, deliberately authorize **three real BTW turns**:
+
+```sh
+node --experimental-transform-types benchmark/backend-latency.ts --backend agy --model gemini-3.7-flash --turns 3 --run
+```
+
+Replace `agy` with `claude` or `codex` and choose a model supported by that CLI. To measure explicit subscriptions, launch the command with the same `PI_BRO_CLAUDE_AUTH_SOURCE=subscription` or `PI_BRO_CODEX_AUTH_SOURCE=subscription` and profile environment variables as the Pi/PiG host. The runner calls the same subscription preflight as Bro, then measures real calls; no credential is printed. Do not include an unrelated profile or working directory in comparisons.
+
+The runner reports:
+- `versionStartupProxyMs`: wall time for **`--version` only**, not the full model process or model readiness;
+- `preflightMs`: a standalone explicit-subscription check, where selected; execution will run its own check again, just like production;
+- `firstEventMs`: first backend progress event (may represent a tool or text);
+- `firstTextMs`: first text progress event (some CLIs emit text only at the end);
+- `totalMs`: full per-turn invocation time, **including** process startup and per-turn checks;
+- `nativeContinuation`: whether each successful turn yielded a native continuation ID.
+
+The benchmark **does not** yet isolate model startup versus provider queue/network latency; claims of seconds saved require a matched before/after comparison. Keep backend, model, effort, auth source, prompt, and cwd identical; compare median first-turn and repeat-turn results over several runs. The runner never auto-retries and stops after a failed turn. Its prompts are fixed synthetic text and outputs are not saved; only timings, model names, and coarse status appear on stdout. Inspect logs before sharing them. Only the explicit `--run` flag can incur model usage; at most ten turns are allowed per run. CI and `npm test` do not execute this live runner.
