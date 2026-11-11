@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { withFakeExecutable } from "../test/test-fake-exec.ts";
+import { withFakeExecutables } from "../test/test-fake-exec.ts";
 import { runProbe } from "./codex-app-server-probe.ts";
 
 const mock = String.raw`#!/usr/bin/env node
@@ -64,7 +64,7 @@ rl.on("line", line => {
 
 async function mockProbe(extra: Record<string, string>,
   run: (cwd: string) => Promise<void>): Promise<void> {
-  await withFakeExecutable("codex", mock, async cwd => {
+  await withFakeExecutables({ codex: mock }, async cwd => {
     await run(cwd);
   }, { env: extra });
 }
