@@ -87,3 +87,21 @@ test("opt-in warm Agy timeout tears down the worker, and legacy explain stays un
     assert.equal((await readFile(join(cwd, "starts.log"), "utf8")).trim().split("\n").length, 3);
   });
 });
+
+
+test("aborted warm Agy turn closes its process before another side thread starts", async () => {
+  await withWarmFake(async cwd => {
+    const selection = { model: "test" };
+    const controller = new AbortController();
+    const pending = execute({ feature: "btw", access: "restricted", cwd, prompt: "block" },
+      selection, controller.signal, undefined, { deadlineMs: 10_000, killEscalationMs: 75 });
+    setTimeout(() => controller.abort(), 40);
+    const aborted = await pending;
+    assert.equal(aborted.status, "cancelled");
+    const followUp = await execute({ feature: "btw", access: "restricted", cwd, prompt: "fresh" },
+      selection, new AbortController().signal);
+    assert.equal(followUp.status, "success");
+    if (followUp.status === "success") assert.equal(followUp.text, "turn 1");
+    assert.equal((await readFile(join(cwd, "starts.log"), "utf8")).trim().split("\\n").length, 2);
+  });
+});
