@@ -2276,8 +2276,8 @@ export async function stopActiveBackendExecutions(): Promise<void> {
 	const active = [...activeBackendExecutions];
 	for (const [controller] of active) controller.abort();
 	const finished = await Promise.allSettled(active.map(([, result]) => result));
-	for (const result of finished) if (result.status === "rejected") throw result.reason;
 	await stopWarmAgyBtw();
+	for (const result of finished) if (result.status === "rejected") throw result.reason;
 }
 
 export function execute(
