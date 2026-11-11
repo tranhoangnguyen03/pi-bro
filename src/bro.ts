@@ -8,7 +8,7 @@ import {
 	resolveBtwThread,
 } from "./btw.ts";
 import { doctorReport, showBroConfigModal } from "./doctor.ts";
-import { setPiHostContext, stopActiveBackendExecutions } from "./backend.ts";
+import { setPiHostContext, stopActiveBackendExecutions, stopWarmAgyBtw } from "./backend.ts";
 import { openElevateModal } from "./elevate.ts";
 import { openArchitectureDocs } from "./architecture.ts";
 import { openGrillModal } from "./grill.ts";
@@ -165,8 +165,8 @@ export default async function bro(pi: ExtensionAPI) {
 		if (reviews.status === "rejected") throw reviews.reason;
 		if (backends.status === "rejected") throw backends.reason;
 	});
-	pi.on("session_start", async (_event, ctx) => { restore(ctx); });
-	pi.on("session_tree", async (_event, ctx) => { restore(ctx); });
+	pi.on("session_start", async (_event, ctx) => { await stopWarmAgyBtw(); restore(ctx); });
+	pi.on("session_tree", async (_event, ctx) => { await stopWarmAgyBtw(); restore(ctx); });
 
 	registerAdvisorTool(pi);
 	registerAboutUserTool(pi);
