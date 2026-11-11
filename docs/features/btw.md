@@ -55,3 +55,17 @@ asked in.
   Reloading or continuing the same session restores them. `/tree` restores the selected branch's state, and an aborted reply is discarded rather than saved as `…`. Reopening unchanged state adds no new disk entry. A new session starts fresh;
   a fork initially inherits the shared history then changes independently. Changing the BTW backend starts a fresh
   thread; native session IDs never cross backends.
+
+## Experimental warm Agy BTW worker
+
+Developers can opt in to issue [#194](https://github.com/tranhoangnguyen03/pi-bro/issues/194)'s persistent Agy transport:
+
+```sh
+PI_BRO_AGY_WARM_BTW=1 pi
+```
+
+Only **Agy BTW** uses the warm process; Explain, Show, Advisor, and Guided Review keep their existing one-shot paths. With the flag on, Bro sends each BTW turn over a single `--input-format stream-json --output-format stream-json` process until the native conversation is cleared, model/access/workspace changes, cancellation, failure, or shutdown. Turn completion follows Agy's `result` event (the process remains running). Pi session starts and tree navigation also close the worker to avoid reusing warmed state from a different branch. The process closes after 90 seconds idle and has a 20-minute maximum lifetime; a later turn can resume from its native conversation id in a new process.
+
+The opt-in is **off by default** while we compare timings and test installed Agy versions. If you encounter a protocol issue, launch without the flag to use the existing process-per-turn adapter. No backend or authentication fallback is automatic. Note that Agy's sandbox is not a strict file-only boundary; access behavior is unchanged from the ordinary Agy BTW adapter.
+
+Run the comparison in `benchmark/backend-latency.ts` on the same CLI/model/cwd with and without the flag. Offline tests cover native turn reuse, new-thread isolation, timeout cleanup, and the untouched Explain path. A real installed-CLI check remains required before making this the default.

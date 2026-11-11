@@ -448,6 +448,216 @@ async function executeArgvPrint(
 	}
 }
 
+// Experimental Agy warm BTW transport. One process handles many turns on stdin.
+// Native result events (not child exit) end each turn. All other Agy features retain
+// their existing, isolated one-shot behavior. This is opt-in until measured in #194.
+const AGY_WARM_IDLE_MS = 90_000;
+const AGY_WARM_MAX_LIFETIME_MS = 20 * 60_000;
+
+type WarmAgyPending = {
+  resolve: (outcome: BackendOutcome) => void;
+  progress?: BackendOnProgress;
+  signal: AbortSignal;
+  abort: () => void;
+  timeout: ReturnType<typeof setTimeout>;
+  partial: string;
+  conversationId?: string;
+  requestedId?: string;
+};
+type WarmAgyWorker = {
+  key: string;
+  conversationId?: string;
+  child: ChildProcess;
+  attempt: Attempt;
+  diagnostics: { stderr: string; processError?: Error };
+  controller: AbortController;
+  scratch?: string;
+  pending?: WarmAgyPending;
+  forcedOutcome?: BackendOutcome;
+  idleTimer?: ReturnType<typeof setTimeout>;
+  closed: Promise<void>;
+};
+let warmAgyBtw: WarmAgyWorker | undefined;
+
+function resolveWarmTurn(worker: WarmAgyWorker, outcome: BackendOutcome, keepWarm: boolean): void {
+  const turn = worker.pending;
+  if (!turn) return;
+  worker.pending = undefined;
+  clearTimeout(turn.timeout);
+  turn.signal.removeEventListener("abort", turn.abort);
+  turn.resolve(outcome);
+  if (keepWarm && warmAgyBtw === worker) {
+    worker.idleTimer = setTimeout(() => { void retireWarmAgy(worker); }, AGY_WARM_IDLE_MS);
+    worker.idleTimer.unref?.();
+  }
+}
+
+async function retireWarmAgy(worker: WarmAgyWorker): Promise<void> {
+  if (warmAgyBtw === worker) warmAgyBtw = undefined;
+  if (worker.idleTimer) clearTimeout(worker.idleTimer);
+  // Uses beginAttempt's POSIX process-group teardown and bounded escalation.
+  worker.controller.abort();
+  await worker.closed;
+}
+
+export async function stopWarmAgyBtw(): Promise<void> {
+  const worker = warmAgyBtw;
+  if (!worker) return;
+  // Session navigation and shutdown are user-initiated cancellation, not a
+  // backend/protocol failure, even if they interrupt an active warm turn.
+  if (worker.pending && !worker.forcedOutcome) worker.forcedOutcome = { status: "cancelled", message: "Canceled." };
+  await retireWarmAgy(worker);
+}
+
+async function executeWarmAgyBtw(
+  request: BackendRequest,
+  selection: AgySelection,
+  signal: AbortSignal,
+  onProgress: BackendOnProgress | undefined,
+  killEscalationMs: number,
+  deadlineMs: number,
+): Promise<BackendOutcome> {
+  if (signal.aborted) return { status: "cancelled", message: "Canceled." };
+  const key = JSON.stringify([request.cwd, request.access, selection.model, selection.effort ?? null]);
+  let worker = warmAgyBtw;
+  if (worker?.pending) {
+    // Never interleave two calls on one stdin stream or kill an unrelated active turn.
+    return { status: "failure", message: "Agy's warm side conversation is busy; retry after the current turn." };
+  }
+  if (worker && (worker.key !== key ||
+      !request.continuation || worker.conversationId !== request.continuation.id)) {
+    await retireWarmAgy(worker);
+    worker = undefined;
+  }
+  if (!worker) {
+    const scratch = request.access === "restricted" ? await mkdtemp(join(tmpdir(), "pi-bro-warm-")) : undefined;
+    if (signal.aborted) {
+      if (scratch) await rm(scratch, { recursive: true, force: true });
+      return { status: "cancelled", message: "Canceled." };
+    }
+    const controller = new AbortController();
+    const { child, attempt, diagnostics } = startCliAttempt("agy", [
+      ...(request.access === "workspace-full" ? ["--dangerously-skip-permissions"] : ["--sandbox"]),
+      "--disable-slash-commands",
+      "--output-format", "stream-json",
+      "--input-format", "stream-json",
+      "--model", selection.model,
+      ...(selection.effort ? ["--effort", selection.effort] : []),
+      "--print-timeout", request.access === "workspace-full" ? "10m" : "2m",
+      ...(request.continuation ? ["--conversation", request.continuation.id] : []),
+    ], { cwd: scratch ?? request.cwd, stdio: ["pipe", "pipe", "pipe"] },
+    controller.signal, AGY_WARM_MAX_LIFETIME_MS, killEscalationMs);
+
+    // We install listeners before writing the first prompt, so no result can be
+    // lost between process creation and the first turn.
+    const fresh = {
+      key, conversationId: request.continuation?.id, child, attempt, diagnostics, controller, scratch,
+      closed: Promise.resolve(),
+    } as WarmAgyWorker;
+    child.stdin?.on("error", () => {
+      if (!fresh.forcedOutcome && fresh.pending) {
+        fresh.forcedOutcome = { status: "failure", message: withDoctor("Agy warm stdin closed before the turn completed.") };
+        void retireWarmAgy(fresh);
+      }
+    });
+    const finishFraming = frameStdoutLines(child, attempt, "Agy", line => {
+      const turn = fresh.pending;
+      if (!turn) return;
+      const event = parseBtwAgyLine(line);
+      if (event.conversationId) turn.conversationId = event.conversationId;
+      if (event.activity) turn.progress?.({
+        kind: "activity", label: event.activity, timestamp: Date.now(), tool: event.activity,
+      });
+      if (event.delta) {
+        turn.partial += event.delta;
+        turn.progress?.({ kind: "text", text: turn.partial });
+      }
+      if (event.error) {
+        fresh.forcedOutcome = {
+          status: "failure", message: withDoctor("Agy warm turn failed: " + event.error),
+          ...(turn.partial ? { partialText: turn.partial } : {}),
+        };
+        void retireWarmAgy(fresh);
+      } else if (event.result !== undefined) {
+        const id = turn.conversationId;
+        if (turn.requestedId && id !== turn.requestedId) {
+          fresh.forcedOutcome = {
+            status: "failure", continuationExpired: true,
+            message: withDoctor("Agy warm conversation id changed unexpectedly; the side thread must be reseeded."),
+          };
+          void retireWarmAgy(fresh);
+          return;
+        }
+        if (!event.result.trim()) {
+          fresh.forcedOutcome = { status: "failure", message: withDoctor("Agy warm turn returned no final text.") };
+          void retireWarmAgy(fresh);
+          return;
+        }
+        fresh.conversationId = id;
+        resolveWarmTurn(fresh, {
+          status: "success", text: event.result.trim(), ...(id ? { continuation: { id } } : {}),
+        }, Boolean(id));
+        if (!id) void retireWarmAgy(fresh);
+      }
+    });
+    fresh.closed = attempt.closed.then(async ({ code, exitSignal }) => {
+      const protocolError = finishFraming();
+      attempt.dispose();
+      if (fresh.idleTimer) clearTimeout(fresh.idleTimer);
+      if (warmAgyBtw === fresh) warmAgyBtw = undefined;
+      if (fresh.pending) {
+        const stopped = fresh.forcedOutcome ??
+          (fresh.attempt.causeOf() === "timeout"
+            ? { status: "timeout" as const, message: "Agy warm worker exceeded its lifetime." }
+            : { status: "failure" as const, message: withDoctor(
+                protocolError ?? (diagnostics.processError
+                  ? processStartMessage(diagnostics.processError as NodeJS.ErrnoException)
+                  : "Agy warm worker stopped before its terminal result" +
+                    (exitSignal ? " (" + exitSignal + ")" : " (exit " + code + ")") + "."),
+              ) });
+        resolveWarmTurn(fresh, stopped, false);
+      }
+      if (scratch) await rm(scratch, { recursive: true, force: true });
+    });
+    warmAgyBtw = fresh;
+    worker = fresh;
+  }
+
+  if (worker.idleTimer) clearTimeout(worker.idleTimer);
+  return new Promise<BackendOutcome>(resolve => {
+    const running = worker!;
+    const abort = () => {
+      if (!running.pending || running.forcedOutcome) return;
+      running.forcedOutcome = { status: "cancelled", message: "Canceled.",
+        ...(running.pending.partial ? { partialText: running.pending.partial } : {}) };
+      void retireWarmAgy(running);
+    };
+    const timeout = setTimeout(() => {
+      if (!running.pending || running.forcedOutcome) return;
+      running.forcedOutcome = { status: "timeout", message: "Agy timed out during the side conversation.",
+        ...(running.pending.partial ? { partialText: running.pending.partial } : {}) };
+      void retireWarmAgy(running);
+    }, deadlineMs);
+    timeout.unref?.();
+    running.pending = { resolve, progress: onProgress, signal, abort, timeout, partial: "",
+      requestedId: request.continuation?.id, conversationId: request.continuation?.id };
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) { abort(); return; }
+    try {
+      running.child.stdin?.write(JSON.stringify({ event: "user", message: { content: request.prompt } }) + "\n",
+        error => {
+          if (error && running.pending && !running.forcedOutcome) {
+            running.forcedOutcome = { status: "failure", message: withDoctor("Agy could not accept the warm turn.") };
+            void retireWarmAgy(running);
+          }
+        });
+    } catch {
+      running.forcedOutcome = { status: "failure", message: withDoctor("Agy warm stdin was unavailable.") };
+      void retireWarmAgy(running);
+    }
+  });
+}
+
 // Guards only against a single runaway line with no newline (a protocol break, not a real
 // response size) -- real NDJSON lines across all backends are far smaller than this.
 export const MAX_STDOUT_LINE_CHARS = 2_000_000;
@@ -2056,6 +2266,9 @@ async function executeOnce(
 	if (request.feature === "advisor") {
 		return executeAdvisorStdin(request, selection, signal, onProgress, killEscalationMs, deadlineMs);
 	}
+	if (request.feature === "btw" && process.env.PI_BRO_AGY_WARM_BTW === "1") {
+		return executeWarmAgyBtw(request, selection, signal, onProgress, killEscalationMs, deadlineMs);
+	}
 	return executeArgvPrint(request, selection, signal, onProgress, killEscalationMs, deadlineMs);
 }
 
@@ -2068,6 +2281,7 @@ export async function stopActiveBackendExecutions(): Promise<void> {
 	const active = [...activeBackendExecutions];
 	for (const [controller] of active) controller.abort();
 	const finished = await Promise.allSettled(active.map(([, result]) => result));
+	await stopWarmAgyBtw();
 	for (const result of finished) if (result.status === "rejected") throw result.reason;
 }
 
