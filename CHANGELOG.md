@@ -2,6 +2,14 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.36.4] - 2026-11-11
+
+### Experimental
+
+- Add an **opt-in**, process-reusing Agy backend for BTW (`PI_BRO_AGY_WARM_BTW=1`), using the official continuous stdin stream-json protocol. It is disabled by default pending live installed-CLI and latency qualification.
+- A matching side-thread turn reuses the same process. Model, access, workspace, or conversation changes start a new worker. Cancel, timeout, idle expiry, process failure and Pi shutdown retire it; existing Explain, Show, Guided Review and Advisor CLI paths remain unchanged.
+- Add offline turn reuse, reset, timeout, and unchanged Explain regression tests. Track timing validation and other backends under issue #194.
+
 ## [0.36.3] - 2026-11-10
 
 ### Improved
