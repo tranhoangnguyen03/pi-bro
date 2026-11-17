@@ -76,6 +76,12 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
    };
    try{
      await writeFile(preferencesPath,"PREF_MARKER: Prefer plain Vietnamese.");
+     const empty=await open("");
+     await pause(50);
+     assert.match(empty.modal.markdown.text,/Simplify · Commands/);
+     assert.match(empty.modal.render(110).join("\n"),/\/simplify runs again/);
+     assert.equal((await callList()).length,0,"opening empty Bro must not invoke model");
+     await empty.close();
      const first=await open("text First source");
      await until(()=>first.modal.markdown.text.includes("Explained in simple words"),"initial explanation",first.modal);
      const firstArgs=(await callList())[0];
@@ -100,10 +106,28 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
      assert.equal((await callList()).length,2);
      await first.close();
 
-     const reopen=await open("simplify");
+     const reopen=await open("");
+     await pause(50);
      assert.match(reopen.modal.markdown.text,/Explained in simple words/);
      assert.equal((await callList()).length,2,"restoring must not invoke model");
+     reopen.modal.setComposerText("/help");reopen.modal.handleInput("\r");
+     assert.match(reopen.modal.markdown.text,/Simplify · Commands/);
+     let closed=false;
+     void reopen.run.then(()=>{closed=true;});
+     reopen.modal.setComposerText("/text unfinished draft");
+     reopen.modal.handleInput("\x1b");
+     await pause(50);
+     assert.equal(closed,false,"Esc from help must keep the modal open");
+     assert.match(reopen.modal.markdown.text,/Explained in simple words/);
+     assert.equal(reopen.modal.getComposerText(),"/text unfinished draft","back preserves the draft");
+     assert.equal((await callList()).length,2,"back must not invoke the model");
+     reopen.modal.clearComposer();
      await reopen.close();
+     assert.equal(closed,true,"Esc from the result closes the modal");
+     const fromHelp=await open("simplify");
+     assert.match(fromHelp.modal.markdown.text,/Explained in simple words/,"reopening shows the saved result");
+     assert.equal((await callList()).length,2);
+     await fromHelp.close();
 
      const legacy=await open("open");
      assert.match(legacy.modal.rawText,/Explained in simple words/);

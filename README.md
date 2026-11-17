@@ -46,7 +46,7 @@ For a first success, type this in Pi after setting up a backend:
 
 | After that | What happens |
 | --- | --- |
-| `/bro` | Explains the agent's latest completed reply (requires one) |
+| `/bro` | Shows the saved explanation, or help if none exists. Run `/simplify` inside to explain the latest reply again. |
 | `/bro copy` | Edit and preview the raw Markdown of the last assistant reply before copying |
 | `/bro btw What is a race condition?` | Asks a private side question |
 | `/bro show` | Draws the current session's recent conversation, if any |

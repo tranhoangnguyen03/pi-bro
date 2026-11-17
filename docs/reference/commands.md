@@ -6,12 +6,12 @@
 
 | Source | Command | What Bro does |
 | --- | --- | --- |
-| Latest assistant reply | `/bro` | Opens Simplify and explains the latest completed reply without inserting the result into Pi's conversation. |
+| Latest assistant reply | `/simplify` inside `/bro` | Explains the latest completed reply without inserting the result into Pi's conversation. Opening `/bro` itself shows the saved explanation, or help if none exists. |
 | Pasted text | `/bro text <text>` | Explains text supplied directly in the command. |
-| Local document | `/bro file <path>` | Extracts text from a workspace-local Markdown, text, PDF, or DOCX file. |
+| Local document | `/bro file <path>` | Extracts text from a local Markdown, text, PDF, or DOCX file. |
 | Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
 | Recent session turns | `/bro show` | Draws the last turns' conversation text as shapes instead of prose (tool calls, tool results, reasoning, and images are omitted). |
-| Any of the above, auto-detected | `/bro <input>` | Routes a lone URL to the webpage reader, an existing workspace file with a supported extension to the document reader, and anything else to pasted text. |
+| Any of the above, auto-detected | `/bro <input>` | Routes a lone URL to the webpage reader, an existing local file with a supported extension to the document reader, and anything else to pasted text. |
 
 Pressing **R** simplifies the captured source again in the mode shown, and
 **M** re-simplifies it in the next mode. These commands capture a
@@ -26,12 +26,12 @@ Typing `/bro ` displays ten task-level suggestions: `simplify`, `show`, `btw`, `
 
 | Command | Description |
 | --- | --- |
-| `/bro` | Open Simplify and explain the latest completed assistant reply. |
+| `/bro` | Show the saved explanation, or help if none exists. No model call; run `/simplify` inside to explain the latest reply again. |
 | `/bro simplify` | Reopen the last Simplify screen within this Pi session, without a new model call. |
 | `/bro copy` | Edit and preview the latest completed assistant reply as raw Markdown. Ctrl+D switches views; Ctrl+C copies Markdown; F1 opens Help. No backend call or saved draft. Native Pi `/copy` copies immediately. [Guide](../features/copy.md). |
 | `/bro text <text>` | Explain pasted text. |
-| `/bro <input>` | Explain it directly: a lone URL runs the webpage reader, an existing workspace file with a supported extension runs the document reader, and anything else is pasted text. A quoted path with spaces is routed too when the file exists. |
-| `/bro file <path>` | Explain a workspace-local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
+| `/bro <input>` | Explain it directly: a lone URL runs the webpage reader, an existing local file with a supported extension runs the document reader, and anything else is pasted text. A quoted path with spaces is routed too when the file exists. |
+| `/bro file <path>` | Explain a local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |
 | `/bro open` | Legacy compatibility shortcut to the last result. No `/open` command inside Simplify. |
 | `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |

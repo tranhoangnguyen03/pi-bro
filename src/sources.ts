@@ -1,5 +1,5 @@
 import { readFile, stat, realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve, extname, sep } from "node:path";
+import { resolve, extname } from "node:path";
 import { request as httpRequest, type IncomingMessage, type ClientRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { lookup } from "node:dns/promises";
@@ -28,18 +28,11 @@ export async function extractDocumentText(input: string, cwd: string, signal?: A
 	if (!requested) throw new Error("Use /bro file <path>.");
 	if (signal?.aborted) throw new Error("Canceled.");
 
-	let root: string;
 	let path: string;
 	try {
-		root = await realpath(cwd);
 		path = await realpath(resolve(cwd, requested));
 	} catch (error) {
 		throw fileError(requested, error);
-	}
-
-	const fromRoot = relative(root, path);
-	if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-		throw new Error("Bro can read only files inside the current workspace.");
 	}
 
 	let info;
@@ -86,14 +79,9 @@ export async function extractDocumentText(input: string, cwd: string, signal?: A
 	return text;
 }
 
-export async function isWorkspaceFile(input: string, cwd: string): Promise<boolean> {
-	// ponytail: duplicates extractDocumentText's workspace guard rather than sharing its error semantics.
+export async function isDocumentFile(input: string, cwd: string): Promise<boolean> {
 	try {
 		const path = await realpath(resolve(cwd, input));
-		const fromRoot = relative(await realpath(cwd), path);
-		if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-			return false;
-		}
 		const info = await stat(path);
 		return info.isFile() && SNIFFABLE_FILE_EXTENSIONS.has(extname(path).toLowerCase());
 	} catch {

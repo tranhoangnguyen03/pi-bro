@@ -381,10 +381,10 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 
 ## Explain and show
 
-- \`/bro\` — open Simplify and explain the latest completed assistant reply
+- \`/bro\` — read the saved explanation, or help if none exists; /simplify inside runs again
 - \`/bro simplify\` — reopen the current Simplify screen without another model call
 - \`/bro text [text]\` — explain pasted text, or the latest reply when text is omitted
-- \`/bro file <path>\` — explain a workspace \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\` file
+- \`/bro file <path>\` — explain a local \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\` file
 - \`/bro url <url>\` — explain one public webpage
 - \`/bro <input>\` — a lone URL, an existing supported file, or anything else as pasted text
 - Inside Simplify: \`/simplify\`, \`/text <text>\`, \`/file <path>\`, \`/url <url>\`, \`/copy\`, \`/clear\`, \`/help\`. **M** changes the mode and re-explains; **R** retries. One source at a time, no chat thread.\n- \`/bro open\` — legacy last-result view (retained for compatibility)

@@ -128,7 +128,7 @@ output=$(
 		printf '%s\n' '{"id":"bro-open-empty","type":"prompt","message":"/bro open"}'
 		printf '%s\n' '{"id":"bro-help","type":"prompt","message":"/bro help"}'
 		printf '%s\n' '{"id":"bro-doctor","type":"prompt","message":"/bro doctor"}'
-		printf '%s\n' '{"id":"bro-default","type":"prompt","message":"/bro"}'
+		printf '%s\n' '{"id":"bro-default","type":"prompt","message":"/bro text"}'
 		printf '%s\n' '{"id":"bro-open-first","type":"prompt","message":"/bro open"}'
 		printf '{"id":"bro-file","type":"prompt","message":"/bro file %s"}\n' "$document_file"
 		printf '%s\n' '{"id":"bro-open-file","type":"prompt","message":"/bro open"}'
@@ -287,7 +287,7 @@ missing_output=$(
 		printf '%s\n' '{"id":"missing-model","type":"prompt","message":"/bro model gemini-3.7-flash"}'
 		printf '%s\n' '{"id":"missing-effort","type":"prompt","message":"/bro effort low"}'
 		printf '%s\n' '{"id":"missing-route-url","type":"prompt","message":"/bro https://user:secret@example.com/doc"}'
-		printf '%s\n' '{"id":"missing-latest","type":"prompt","message":"/bro"}'
+		printf '%s\n' '{"id":"missing-latest","type":"prompt","message":"/bro text"}'
 		printf '%s\n' '{"id":"missing-help","type":"prompt","message":"/bro help"}'
 	} | PATH="$test_dir:$PATH" BRO_AGY_FAILURE=1 PI_CODING_AGENT_DIR="$missing_config" "$pi_bin" --offline --mode rpc --session "$missing_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts"
 )
@@ -328,7 +328,7 @@ broken_output=$(
 		printf '%s\n' '{"id":"broken-settings-doctor","type":"prompt","message":"/bro doctor"}'
 		node -e 'console.log(JSON.stringify({type:"smoke-write",path:process.argv[1],text:JSON.stringify({model:"gemini-3.7-flash",effort:"low"})})); console.log(JSON.stringify({type:"smoke-write",path:process.argv[2],text:"x".repeat(4001)}))' "$broken_settings" "$broken_preferences"
 		printf '%s\n' '{"id":"broken-preferences-doctor","type":"prompt","message":"/bro doctor"}'
-		printf '%s\n' '{"id":"broken-preferences-latest","type":"prompt","message":"/bro"}'
+		printf '%s\n' '{"id":"broken-preferences-latest","type":"prompt","message":"/bro text"}'
 	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$broken_config" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$broken_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts" 2>&1
 )
 
@@ -393,7 +393,7 @@ touch "$override_args_file"
 
 override_output=$(
 	{
-		printf '%s\n' '{"id":"override-explain","type":"prompt","message":"/bro"}'
+		printf '%s\n' '{"id":"override-explain","type":"prompt","message":"/bro text"}'
 		printf '%s\n' '{"id":"override-show","type":"prompt","message":"/bro show"}'
 	} | PATH="$test_dir/override-bin:$PATH" PI_CODING_AGENT_DIR="$override_config" OVERRIDE_ARGS="$override_args_file" "$pi_bin" --offline --mode rpc --session "$override_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts"
 )

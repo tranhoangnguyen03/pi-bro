@@ -46,7 +46,7 @@ import {
 } from "./show.ts";
 import {
 	type BroSource,
-	isWorkspaceFile,
+	isDocumentFile,
 	looksLikeWebUrl,
 } from "./sources.ts";
 import { hasBroCustomUi } from "./ui-capabilities.ts";
@@ -209,7 +209,7 @@ export default async function bro(pi: ExtensionAPI) {
 				action = quoted || !/\s/.test(candidate)
 					? looksLikeWebUrl(candidate)
 						? "url"
-						: (await isWorkspaceFile(candidate, ctx.cwd))
+						: (await isDocumentFile(candidate, ctx.cwd))
 							? "file"
 							: "text"
 					: "text";
@@ -223,7 +223,9 @@ export default async function bro(pi: ExtensionAPI) {
 					ctx.ui.notify(`Use /bro ${action} <${action === "file" ? "path" : "url"}>.`, "warning");
 					return;
 				}
-				const initial = !action || (action === "text" && !value)
+				const initial = !action
+					? {kind:"resume" as const}
+					: action === "text" && !value
 					? {kind:"latest" as const}
 					: {kind:action as "text" | "file" | "url", input:value};
 				try {

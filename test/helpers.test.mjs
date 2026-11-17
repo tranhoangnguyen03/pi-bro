@@ -13,7 +13,7 @@ import { bro, backend, sources, buildDir, btw, explainModal, settings, sourceDir
 
 test("Bro helpers, modals, advisor lifecycle and SDK restrictions", async (t) => {
 const documentFixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "documents");
-const { isWorkspaceFile } = sources;
+const { isDocumentFile } = sources;
 const {
 	advisorFlagErrorHint,
 	agyFailureMessage,
@@ -1327,23 +1327,18 @@ await t.test("Document text extraction: formats, failure boundaries, containment
 			/Use \/bro file <path>\./
 		);
 
-		// Quoting and workspace containment (preserving existing regressions)
+		// Quoted paths and files outside the workspace.
 		await writeFile(join(root, "spaced notes.txt"), "spaced text");
 		assert.equal(await extractDocumentText('"spaced notes.txt"', root), "spaced text");
 		assert.equal(await extractDocumentText("'spaced notes.txt'", root), "spaced text");
 
 		await writeFile(join(outside, "secret.txt"), "outside");
 		const relativeOutside = relative(root, join(outside, "secret.txt"));
-		await assert.rejects(
-			extractDocumentText(relativeOutside, root),
-			/Bro can read only files inside the current workspace\./
-		);
+		assert.equal(await extractDocumentText(relativeOutside, root), "outside");
+		assert.equal(await extractDocumentText(join(outside, "secret.txt"), root), "outside");
 
 		await symlink(join(outside, "secret.txt"), join(root, "linked.txt"));
-		await assert.rejects(
-			extractDocumentText("linked.txt", root),
-			/Bro can read only files inside the current workspace\./
-		);
+		assert.equal(await extractDocumentText("linked.txt", root), "outside");
 
 		// Cancellation: pre-aborted signal (on both existing and missing paths)
 		const preAborted = new AbortController();
@@ -1387,17 +1382,18 @@ await t.test("Document text extraction: formats, failure boundaries, containment
 			mammoth.extractRawText = origMammothExtract;
 		}
 
-		// isWorkspaceFile sniffing helper table-driven tests
-		assert.equal(await isWorkspaceFile("notes.md", root), true);
-		assert.equal(await isWorkspaceFile("sample.pdf", root), true);
-		assert.equal(await isWorkspaceFile("sample.docx", root), true);
+		// Supported document detection, including external paths and symlinks.
+		assert.equal(await isDocumentFile("notes.md", root), true);
+		assert.equal(await isDocumentFile("sample.pdf", root), true);
+		assert.equal(await isDocumentFile("sample.docx", root), true);
 		await writeFile(join(root, "CAPITAL.DOCX"), "docx content");
-		assert.equal(await isWorkspaceFile("CAPITAL.DOCX", root), true);
-		assert.equal(await isWorkspaceFile("unsupported.csv", root), false);
-		assert.equal(await isWorkspaceFile("directory.pdf", root), false);
-		assert.equal(await isWorkspaceFile(relativeOutside, root), false);
-		assert.equal(await isWorkspaceFile("missing.docx", root), false);
-		assert.equal(await isWorkspaceFile("linked.txt", root), false);
+		assert.equal(await isDocumentFile("CAPITAL.DOCX", root), true);
+		assert.equal(await isDocumentFile("unsupported.csv", root), false);
+		assert.equal(await isDocumentFile("directory.pdf", root), false);
+		assert.equal(await isDocumentFile(relativeOutside, root), true);
+		assert.equal(await isDocumentFile(join(outside, "secret.txt"), root), true);
+		assert.equal(await isDocumentFile("missing.docx", root), false);
+		assert.equal(await isDocumentFile("linked.txt", root), true);
 	} finally {
 		mammoth.extractRawText = origMammothExtract;
 		await rm(root, { recursive: true, force: true });
@@ -2746,14 +2742,15 @@ await t.test("Simplify modal keeps M/R and restoration without changing default 
     assert.match(screen(),/SIMPLIFIED ANSWER/);
     assert.equal((await prompts()).length,3,"resume never invokes a model");
     modal.setComposerText("/clear");modal.handleInput("\r");
-    assert.match(screen(),/Use \/simplify/);
+    assert.match(screen(),/Simplify · Commands/);
     modal.setComposerText("/help");modal.handleInput("\r");
     assert.match(screen(),/Simplify · Commands/);
     modal.setComposerText("/simplify");modal.handleInput("\r");
     await settled(4,"balanced");
     modal.handleInput("\x1b");await closed;
     closed=command.handler("",ctx);
-    await settled(5,"balanced");
+    assert.match(screen(),/SIMPLIFIED ANSWER/);
+    assert.equal((await prompts()).length,4,"bare /bro restores without a model call");
     modal.handleInput("\x1b");await closed;
   }finally{
     process.env.PATH=previousPath;

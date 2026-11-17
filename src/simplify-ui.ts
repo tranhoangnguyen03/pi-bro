@@ -58,6 +58,8 @@ export async function openSimplifyWorkflow(
     return;
   }
 
+  if (initial.kind === "resume") state.view = state.result ? "result" : "help";
+
   await openBroOverlay<void>(ctx,(tui,theme,_keys,done)=>{
     let closed=false;
     let controller:AbortController|undefined;
@@ -69,15 +71,15 @@ export async function openSimplifyWorkflow(
     },{
       title:"Bro · simplify",
       commands:"",
-      inputLabel:"Simplify command",
-      idleHint:"Enter run · M change mode · R retry · /copy · /help · Esc close",
+      inputLabel:"Simplify command · /simplify runs again on the latest reply",
+      idleHint:"Enter run · M change mode · R retry · /copy · /help · Esc back from help / close",
     });
     const display=()=>{
       modal.setCustomMode(state.result?.mode ? state.result.mode+(state.result.preferences ? " · prefs" : "") : "one source · one explanation");
       modal.setModel(state.result?.model ?? "");
       if(state.view==="help")modal.setText(SIMPLIFY_MODAL_HELP);
       else if(state.view==="result"&&state.result)modal.setText((state.result.source.label ? "**Source:** "+stripVTControlCharacters(state.result.source.label).replace(/[\r\n]/g," ")+"\n\n---\n\n" : "")+state.result.text);
-      else modal.setText("## Simplify\n\nUse /simplify for the latest reply, /text, /file or /url for another source. Type /help for all commands.");
+      else modal.setText(SIMPLIFY_MODAL_HELP);
       // Notices describe the currently shown state, not an earlier request.
       modal.setNotice(state.error ?? "",state.error ? "error" : "info");
       modal.scrollToEnd();
@@ -154,6 +156,9 @@ export async function openSimplifyWorkflow(
       void run(action,undefined,undefined,raw);
     }
     modal.onKey=(data:string)=>{
+      if(!running && state.view==="help" && state.result && matchesKey(data,"escape")){
+        state.view="result";state.error=undefined;display();return true;
+      }
       if(running||modal.getComposerText().trim())return false;
       if(matchesKey(data,"m")||matchesKey(data,"shift+m")){retry(true);return Boolean(state.result);}
       if(matchesKey(data,"r")||matchesKey(data,"shift+r")){retry();return Boolean(state.result);}
