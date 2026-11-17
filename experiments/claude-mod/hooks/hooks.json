@@ -1,0 +1,6 @@
+{
+  "description": "Private simplification of the last completed main assistant reply",
+  "modules": [
+    "./register.js"
+  ]
+}

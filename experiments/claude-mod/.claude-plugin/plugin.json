@@ -1,0 +1,8 @@
+{
+  "name": "bro-simplify-experimental",
+  "version": "0.2.0",
+  "description": "Experimental /bro simplify with native Claude, Agy, Codex, Pi CLI and /bro config",
+  "author": {
+    "name": "pi-bro contributors"
+  }
+}
