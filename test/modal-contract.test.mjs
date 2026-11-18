@@ -16,6 +16,7 @@ import { rm } from "node:fs/promises";
 const load = (name) => import(pathToFileURL(join(sourceDir, name)).href);
 const kit = await load("modal-kit.ts");
 const { CopyModal } = await load("copy.ts");
+const { openSimplifyWorkflow } = await load("simplify-ui.ts");
 const { openGuidedReview } = await load("review-ui.ts");
 const { newReviewView } = await load("review-modal.ts");
 const { saveReview } = await load("review.ts");
@@ -120,6 +121,27 @@ const SURFACES = [
 	{ name: "explain result", scrolls: true, mouse: true, open: (ctx) => explainModal.showBroModal(ctx, { result: { text: long, model: "m" } }) },
 	{ name: "explain loading", mouse: true, open: (ctx) => explainModal.showBroModal(ctx, { run: () => new Promise(() => {}) }) },
 	{ name: "help", scrolls: true, mouse: true, open: (ctx) => explainModal.showBroModal(ctx, { text: explainModal.helpText(), kind: "help", copyable: true }) },
+	{
+		name: "simplify help",
+		scrolls: true,
+		mouse: true,
+		minRows: 24,
+		fullShows: [/Simplify · Commands/, /\/simplify/],
+		open: (ctx) => openSimplifyWorkflow(ctx, {}, { kind: "resume" }),
+	},
+	{
+		name: "simplify result",
+		scrolls: true,
+		mouse: true,
+		minRows: 24,
+		fullShows: [/Paragraph 0 of a long answer/],
+		open: (ctx) =>
+			openSimplifyWorkflow(
+				ctx,
+				{ result: { source: { text: "src", label: "Latest assistant reply" }, text: long, mode: "balanced" } },
+				{ kind: "resume" },
+			),
+	},
 	{
 		name: "btw with a long thread and a notice",
 		scrolls: true,
@@ -232,7 +254,7 @@ for (const surface of SURFACES) {
 				// The surface's own header shows a scroller indicator only when the body overflows, so use
 				// that to decide whether wheel scrolling can be proven at this size.
 				const overflow = /↑\d+ ↓\d+/.test(stripVTControlCharacters(lines[1] ?? ""));
-				if (surface.scrolls && overflow && /Paragraph|Bro help|##|\/bro|Finding|Requirement/.test(stripVTControlCharacters(lines.slice(2, -2).join("\n")))) {
+				if (surface.scrolls && overflow && /Paragraph|Bro help|##|\/bro|Simplify · Commands|Finding|Requirement/.test(stripVTControlCharacters(lines.slice(2, -2).join("\n")))) {
 					// Raw SGR wheel (Pi 0.84, regular mode): down from the top, or up from a view that starts at the end.
 					const view = () => stripVTControlCharacters(component.render(layout.width).join("\n"));
 					const before = view();

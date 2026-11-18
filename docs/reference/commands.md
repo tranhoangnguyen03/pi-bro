@@ -6,7 +6,7 @@
 
 | Source | Command | What Bro does |
 | --- | --- | --- |
-| Latest assistant reply | `/simplify` inside `/bro` | Explains the latest completed reply without inserting the result into Pi's conversation. Opening `/bro` itself shows the saved explanation, or help if none exists. |
+| Latest assistant reply | `/simplify` inside `/bro`, or `/bro text` | Explains the latest completed reply without inserting the result into Pi's conversation. Opening `/bro` itself shows the saved explanation, or help if none exists. |
 | Pasted text | `/bro text <text>` | Explains text supplied directly in the command. |
 | Local document | `/bro file <path>` | Extracts text from a local Markdown, text, PDF, or DOCX file. |
 | Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
@@ -29,7 +29,7 @@ Typing `/bro ` displays ten task-level suggestions: `simplify`, `show`, `btw`, `
 | `/bro` | Show the saved explanation, or help if none exists. No model call; run `/simplify` inside to explain the latest reply again. |
 | `/bro simplify` | Reopen the last Simplify screen within this Pi session, without a new model call. |
 | `/bro copy` | Edit and preview the latest completed assistant reply as raw Markdown. Ctrl+D switches views; Ctrl+C copies Markdown; F1 opens Help. No backend call or saved draft. Native Pi `/copy` copies immediately. [Guide](../features/copy.md). |
-| `/bro text <text>` | Explain pasted text. |
+| `/bro text [text]` | Explain pasted text, or the latest completed assistant reply when text is omitted. |
 | `/bro <input>` | Explain it directly: a lone URL runs the webpage reader, an existing local file with a supported extension runs the document reader, and anything else is pasted text. A quoted path with spaces is routed too when the file exists. |
 | `/bro file <path>` | Explain a local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
 | `/bro url <url>` | Explain one public, text-based webpage. |

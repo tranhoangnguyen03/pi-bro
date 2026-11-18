@@ -65,7 +65,8 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
    "const fs=require('node:fs');const path=require('node:path');",
    "const a=process.argv.slice(2);",
    "fs.appendFileSync(path.join(process.env.BIN_DIR,'calls.jsonl'),JSON.stringify(a)+'\\n');",
-   "console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Explained in simple words'}}));",
+   "const lines=Array.from({length:40},(_,i)=>'Line '+(i+1)+': Explained in simple words').join('\\n\\n');",
+   "console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:lines}}));",
  ].join("\n");
  await withFakeExecutable("agy",body,async binDir=>{
    await settings.writeSettings({backend:"agy",model:"test-plain",effort:"default",mode:"balanced",showTurns:1,overrides:{}});
@@ -108,7 +109,7 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
 
      const reopen=await open("");
      await pause(50);
-     assert.match(reopen.modal.markdown.text,/Explained in simple words/);
+     assert.match(reopen.modal.render(110).join("\n"),/Line 1: Explained in simple words/,"reopen starts at the top");
      assert.equal((await callList()).length,2,"restoring must not invoke model");
      reopen.modal.setComposerText("/help");reopen.modal.handleInput("\r");
      assert.match(reopen.modal.markdown.text,/Simplify · Commands/);
@@ -118,7 +119,7 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
      reopen.modal.handleInput("\x1b");
      await pause(50);
      assert.equal(closed,false,"Esc from help must keep the modal open");
-     assert.match(reopen.modal.markdown.text,/Explained in simple words/);
+     assert.match(reopen.modal.render(110).join("\n"),/Line 1: Explained in simple words/,"Esc from help returns to the top");
      assert.equal(reopen.modal.getComposerText(),"/text unfinished draft","back preserves the draft");
      assert.equal((await callList()).length,2,"back must not invoke the model");
      reopen.modal.clearComposer();
@@ -141,7 +142,11 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
      await until(()=>oversize.modal.notice.includes("4,001"),"oversize prefs error",oversize.modal);
      assert.equal(oversize.modal.getComposerText(),"/text Test oversize");
      assert.equal((await callList()).length,2,"invalid preferences stop backend invocation");
+     oversize.modal.clearComposer();
      await oversize.close();
+     const afterDismissedError=await open("");
+     assert.equal(afterDismissedError.modal.notice,"","clearing failed draft before close clears stale error on reopen");
+     await afterDismissedError.close();
    }finally{
      await rm(preferencesPath,{force:true});
    }

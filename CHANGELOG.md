@@ -2,17 +2,18 @@
 
 All notable changes to pi-bro are documented here.
 
-## [0.36.4] - 2026-11-17
+## [0.37.0] - 2026-11-18
 
 ### Highlights
 
-- Open `/bro` or `/bro simplify` to read the saved explanation, or help if none exists, without a model call.
+- Open `/bro` or `/bro simplify` to read the saved explanation, or help if none exists, without a model call, starting at the top of the view.
 - Press Esc from Simplify help to return to the saved explanation without losing your unfinished input.
 - Explain supported local documents outside the workspace using relative paths, absolute paths or symlinks.
 
 ### Breaking
 
 - Bare `/bro` no longer generates an explanation of the latest assistant reply. Open `/bro`, then run `/simplify` inside, or use `/bro text` without text to generate it directly. Headless callers must use `/bro text` instead of `/bro`.
+- Replaced the exported `isWorkspaceFile` helper with `isDocumentFile`.
 
 ## [0.36.3] - 2026-11-10
 

@@ -58,16 +58,20 @@ export async function openSimplifyWorkflow(
     return;
   }
 
-  if (initial.kind === "resume") state.view = state.result ? "result" : "help";
+  if (initial.kind === "resume") {
+    state.view = state.result ? "result" : "help";
+    if (!state.draft?.trim()) state.error = undefined;
+  }
 
   await openBroOverlay<void>(ctx,(tui,theme,_keys,done)=>{
     let closed=false;
     let controller:AbortController|undefined;
     let stopProgress:(()=>void)|undefined;
     let running=false;
-    const close=()=>{if(closed)return; closed=true;state.draft=modal.getComposerText();stopProgress?.();controller?.abort();done(undefined);};
+    const syncDraft=()=>{const draft=modal.getComposerText();state.draft=draft;if(!draft.trim())state.error=undefined;};
+    const close=()=>{if(closed)return; closed=true;syncDraft();stopProgress?.();controller?.abort();done(undefined);};
     const modal=new BtwModal(tui,theme,close,submit,()=>{
-      closed=true;state.draft=modal.getComposerText();stopProgress?.();controller?.abort();
+      if(!closed){closed=true;syncDraft();stopProgress?.();controller?.abort();}
     },{
       title:"Bro · simplify",
       commands:"",
@@ -77,12 +81,14 @@ export async function openSimplifyWorkflow(
     const display=()=>{
       modal.setCustomMode(state.result?.mode ? state.result.mode+(state.result.preferences ? " · prefs" : "") : "one source · one explanation");
       modal.setModel(state.result?.model ?? "");
-      if(state.view==="help")modal.setText(SIMPLIFY_MODAL_HELP);
-      else if(state.view==="result"&&state.result)modal.setText((state.result.source.label ? "**Source:** "+stripVTControlCharacters(state.result.source.label).replace(/[\r\n]/g," ")+"\n\n---\n\n" : "")+state.result.text);
-      else modal.setText(SIMPLIFY_MODAL_HELP);
+      modal.setText(
+        state.view==="result"&&state.result
+          ? (state.result.source.label ? "**Source:** "+stripVTControlCharacters(state.result.source.label).replace(/[\r\n]/g," ")+"\n\n---\n\n" : "")+state.result.text
+          : SIMPLIFY_MODAL_HELP,
+      );
       // Notices describe the currently shown state, not an earlier request.
       modal.setNotice(state.error ?? "",state.error ? "error" : "info");
-      modal.scrollToEnd();
+      modal.scrollToStart();
     };
     const run=async (request:SimplifyStart|SimplifyAction, retained?:BroSource, mode?:BroMode, submitted?:string)=>{
       if(running||closed)return;
