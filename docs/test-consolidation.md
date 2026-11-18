@@ -69,7 +69,7 @@ hardcoded cursor loops (8, 9, 10, 11 down arrows).
 In `helpers.test.mjs`, all remaining loose top-level assertions (terminal mouse
 reporting, CLI usage, BTW parsing, web address/URL validation, webpage
 extraction, show turn extraction, Show HTML sandboxing, show argument parsing,
-document extraction symlink containment) are enclosed in named sequential
+document extraction through symlinks) are enclosed in named sequential
 `await t.test(...)` subtests, and the registered `bro_advisor` tool integration
 block is elevated to a top-level subtest.
 

@@ -46,7 +46,7 @@ import {
 } from "./show.ts";
 import {
 	type BroSource,
-	isWorkspaceFile,
+	isDocumentFile,
 	looksLikeWebUrl,
 } from "./sources.ts";
 import { hasBroCustomUi } from "./ui-capabilities.ts";
@@ -189,13 +189,6 @@ export default async function bro(pi: ExtensionAPI) {
 			let action = parts[0] ?? "";
 			let value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
 
-			if (action === "simplify") {
-				if (value) { ctx.ui.notify("Use /bro simplify to reopen the last Simplify view; use /text, /file or /url inside it.", "warning"); return; }
-				try { await openSimplifyWorkflow(ctx, simplifyState, {kind:"resume"}); saveSimplify(); if (simplifyState.result) remember(simplifyState.result); }
-				catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
-				return;
-			}
-
 			// Removed commands must never fall through to a paid text explanation.
 			if (action === "model" || action === "effort") {
 				ctx.ui.notify(`/bro ${action} was removed. Use /bro config to choose the shared default and per-capability ${action}; use /bro text <text> to explain text.`, "warning");
@@ -209,7 +202,7 @@ export default async function bro(pi: ExtensionAPI) {
 				action = quoted || !/\s/.test(candidate)
 					? looksLikeWebUrl(candidate)
 						? "url"
-						: (await isWorkspaceFile(candidate, ctx.cwd))
+						: (await isDocumentFile(candidate, ctx.cwd))
 							? "file"
 							: "text"
 					: "text";
@@ -218,12 +211,18 @@ export default async function bro(pi: ExtensionAPI) {
 
 			// Source operations open the same single-purpose Simplify modal, not separate
 			// top-level workflows. Old /bro text|file|url commands remain valid aliases.
-			if (!action || action === "text" || action === "file" || action === "url") {
+			if (!action || action === "simplify" || action === "text" || action === "file" || action === "url") {
+				if (action === "simplify" && value) {
+					ctx.ui.notify("Use /bro simplify to reopen the last Simplify view; use /text, /file or /url inside it.", "warning");
+					return;
+				}
 				if ((action === "file" || action === "url") && !value) {
 					ctx.ui.notify(`Use /bro ${action} <${action === "file" ? "path" : "url"}>.`, "warning");
 					return;
 				}
-				const initial = !action || (action === "text" && !value)
+				const initial = !action || action === "simplify"
+					? {kind:"resume" as const}
+					: action === "text" && !value
 					? {kind:"latest" as const}
 					: {kind:action as "text" | "file" | "url", input:value};
 				try {
@@ -501,7 +500,7 @@ export default async function bro(pi: ExtensionAPI) {
 				}
 				if (!lastResult) {
 					await showBroModal(ctx, {
-						text: "# Nothing to open yet\n\nUse `/bro text <text>`, run `/bro` after an assistant response, use `/bro file <path>`, use `/bro url <url>`, or run `/bro show` to draw recent turns.",
+						text: "# Nothing to open yet\n\nUse `/bro text <text>`, run `/bro text` (or `/simplify` inside `/bro`) after an assistant response, use `/bro file <path>`, use `/bro url <url>`, or run `/bro show` to draw recent turns.",
 						kind: "empty",
 					});
 					return;

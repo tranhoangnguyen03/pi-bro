@@ -19,7 +19,6 @@ Problems in pi-bro's own code, for example:
 
 - `/bro url` reaching local, private or reserved network addresses, or
   sending cookies or credentials.
-- `/bro file` reading outside the current workspace.
 - Bro sending data to a backend that the docs say it does not send.
 - Bro's own files (settings, preferences, saved reviews, temp files) being
   written with unsafe permissions or outside their documented locations.

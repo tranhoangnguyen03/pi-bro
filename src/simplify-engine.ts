@@ -28,10 +28,10 @@ export const SIMPLIFY_MODAL_HELP = [
   "- \`/simplify\` — explain the latest completed assistant reply",
   "- \`/url <url>\` — explain a public webpage",
   "- \`/text <text>\` — explain pasted text",
-  "- \`/file <path>\` — explain a workspace document",
+  "- \`/file <path>\` — explain a local document (any readable path)",
   "- \`/copy\` — copy the current explanation",
   "- \`/clear\` — clear the explanation and source",
   "- \`/help\` — show these commands",
   "",
-  "With an empty composer, **M** changes explanation mode and re-explains the captured source; **R** retries. Both keep the backend configured for Explain. **Esc** closes; /bro simplify reopens this view in the current Pi session.",
+  "With an empty composer, **M** changes explanation mode and re-explains the captured source; **R** retries. Both keep the backend configured for Explain. **Esc** returns from help to your saved explanation; if there is none, or you are already reading it, **Esc** closes. /bro simplify reopens this view in the current Pi session.",
 ].join("\n");

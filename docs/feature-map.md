@@ -1,6 +1,6 @@
 # Choose Bro by what you need
 
-These are **human intentions**, not modes. Run any feature directly. Bare `/bro` still explains the latest answer.
+These are **human intentions**, not modes. Run any feature directly. Bare `/bro` shows the saved explanation, or help if none exists, without a model call. Run `/simplify` inside to explain the latest completed assistant reply.
 
 | I need to… | Feature | What will I get? |
 | --- | --- | --- |

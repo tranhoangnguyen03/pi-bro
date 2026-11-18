@@ -2,6 +2,8 @@
 
 [Docs home](../README.md) · [All commands](../reference/commands.md) · [Safety and permissions](../reference/data-and-permissions.md)
 
+Opening `/bro` or `/bro simplify` shows your saved explanation, or command help if none exists. It does not call the model. Run `/simplify` inside the modal to explain the latest completed assistant reply again.
+
 ## Explanation modes
 
 Bro treats quoted source as data and asks the model to ignore embedded
@@ -31,7 +33,7 @@ next mode without saving it:
   the mode saved by `/bro mode`; pressing it again while Bro is working skips
   ahead
 - **O**: Open the diagram (an HTML layout or a rendered sequence diagram) when a show reply contains one
-- **Esc**: Close the modal, or cancel while Bro is working
+- **Esc**: From `/help`, return to the saved explanation without rerunning it. If there is no saved explanation, or you are already reading it, close the modal. While Bro is working, cancel and close.
 
 The modal header shows the model and reasoning effort the explanation or
 drawing used (`default` when the model's own effort applies), followed by the
@@ -56,7 +58,7 @@ to simplify the same captured text again.
 
 ## Explain a document
 
-Use a path relative to Pi's current workspace, or an absolute path inside it:
+Use a relative or absolute path, including files outside Pi's current workspace. Symlinks are followed; normal OS file permissions apply:
 
 ```text
 /bro file "docs/incident review.pdf"

@@ -229,6 +229,12 @@ export class BtwModal implements Focusable {
 		this.tui.requestRender();
 	}
 
+	/** Start at the top of a static or single-document view. */
+	scrollToStart(): void {
+		this.scroller.toStart();
+		this.tui.requestRender();
+	}
+
 	/** Show the newest text and keep following it while a reply streams. */
 	scrollToEnd(): void {
 		this.scroller.toEnd();

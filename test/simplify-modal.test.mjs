@@ -65,7 +65,8 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
    "const fs=require('node:fs');const path=require('node:path');",
    "const a=process.argv.slice(2);",
    "fs.appendFileSync(path.join(process.env.BIN_DIR,'calls.jsonl'),JSON.stringify(a)+'\\n');",
-   "console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Explained in simple words'}}));",
+   "const lines=Array.from({length:40},(_,i)=>'Line '+(i+1)+': Explained in simple words').join('\\n\\n');",
+   "console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:lines}}));",
  ].join("\n");
  await withFakeExecutable("agy",body,async binDir=>{
    await settings.writeSettings({backend:"agy",model:"test-plain",effort:"default",mode:"balanced",showTurns:1,overrides:{}});
@@ -76,6 +77,12 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
    };
    try{
      await writeFile(preferencesPath,"PREF_MARKER: Prefer plain Vietnamese.");
+     const empty=await open("");
+     await pause(50);
+     assert.match(empty.modal.markdown.text,/Simplify · Commands/);
+     assert.match(empty.modal.render(110).join("\n"),/\/simplify runs again/);
+     assert.equal((await callList()).length,0,"opening empty Bro must not invoke model");
+     await empty.close();
      const first=await open("text First source");
      await until(()=>first.modal.markdown.text.includes("Explained in simple words"),"initial explanation",first.modal);
      const firstArgs=(await callList())[0];
@@ -100,10 +107,28 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
      assert.equal((await callList()).length,2);
      await first.close();
 
-     const reopen=await open("simplify");
-     assert.match(reopen.modal.markdown.text,/Explained in simple words/);
+     const reopen=await open("");
+     await pause(50);
+     assert.match(reopen.modal.render(110).join("\n"),/Line 1: Explained in simple words/,"reopen starts at the top");
      assert.equal((await callList()).length,2,"restoring must not invoke model");
+     reopen.modal.setComposerText("/help");reopen.modal.handleInput("\r");
+     assert.match(reopen.modal.markdown.text,/Simplify · Commands/);
+     let closed=false;
+     void reopen.run.then(()=>{closed=true;});
+     reopen.modal.setComposerText("/text unfinished draft");
+     reopen.modal.handleInput("\x1b");
+     await pause(50);
+     assert.equal(closed,false,"Esc from help must keep the modal open");
+     assert.match(reopen.modal.render(110).join("\n"),/Line 1: Explained in simple words/,"Esc from help returns to the top");
+     assert.equal(reopen.modal.getComposerText(),"/text unfinished draft","back preserves the draft");
+     assert.equal((await callList()).length,2,"back must not invoke the model");
+     reopen.modal.clearComposer();
      await reopen.close();
+     assert.equal(closed,true,"Esc from the result closes the modal");
+     const fromHelp=await open("simplify");
+     assert.match(fromHelp.modal.markdown.text,/Explained in simple words/,"reopening shows the saved result");
+     assert.equal((await callList()).length,2);
+     await fromHelp.close();
 
      const legacy=await open("open");
      assert.match(legacy.modal.rawText,/Explained in simple words/);
@@ -117,7 +142,11 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
      await until(()=>oversize.modal.notice.includes("4,001"),"oversize prefs error",oversize.modal);
      assert.equal(oversize.modal.getComposerText(),"/text Test oversize");
      assert.equal((await callList()).length,2,"invalid preferences stop backend invocation");
+     oversize.modal.clearComposer();
      await oversize.close();
+     const afterDismissedError=await open("");
+     assert.equal(afterDismissedError.modal.notice,"","clearing failed draft before close clears stale error on reopen");
+     await afterDismissedError.close();
    }finally{
      await rm(preferencesPath,{force:true});
    }

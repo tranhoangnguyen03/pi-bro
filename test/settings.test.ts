@@ -10,7 +10,7 @@ import test from "node:test";
 const repoDir = dirname(dirname(fileURLToPath(import.meta.url)));
 // @ts-ignore Shared JavaScript test harness; compiled Bro intentionally exposes dynamic test types.
 import { bro, backend } from "./test-build.mjs";
-test('Simplify is discoverable, while bare /bro and /bro simplify have distinct behavior', async () => {
+test('Simplify is discoverable, and both opening commands avoid model calls in headless mode', async () => {
  let command: any;
  await bro.default({on() {},appendEntry() {}, registerTool() {},registerCommand(_name: string,def: any){command=def;}});
  assert.ok(command.getArgumentCompletions("simpl").some((item: any)=>item.value==="simplify"));
@@ -18,7 +18,7 @@ test('Simplify is discoverable, while bare /bro and /bro simplify have distinct 
  const rpc={mode:"rpc",cwd:process.cwd(),waitForIdle:async()=>{},sessionManager:{getBranch:()=>[]},
   ui:{notify:(message:string)=>notices.push(message)}};
  await command.handler("",rpc);
- assert.ok(notices.some(x=>x.includes("No completed assistant reply")));
+ assert.ok(notices.some(x=>x.includes("interactive view")));
  notices.length=0;
  await command.handler("simplify",rpc);
  assert.ok(notices.some(x=>x.includes("interactive view")), "resume never starts a model in headless mode");
