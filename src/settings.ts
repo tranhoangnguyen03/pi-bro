@@ -11,6 +11,7 @@ import {
 	CODEX_EFFORTS,
 	MUSE_EFFORTS,
 	PI_EFFORTS,
+	piPhysicalModel,
 } from "./backend.ts";
 import { type BroMode, DEFAULT_BRO_MODE, MAX_PREFERENCES_CHARS, parseBroMode } from "./prompt.ts";
 import { errorMessage, isRecord } from "./util.ts";
@@ -508,12 +509,13 @@ export async function ensureSettingsFile(): Promise<void> {
 	await mkdir(getAgentDir(), { recursive: true });
 	try {
 		const envModel = process.env.PI_BRO_MODEL?.trim();
-		const activeModel = getPiHostContext()?.model;
-		// Honor the explicit Agy bootstrap override; otherwise reuse the host's selected physical model.
+		const host = getPiHostContext();
+		const active = host?.model;
+		// PiG can report a placeholder when no model is configured; only bootstrap from a catalog model.
 		const pair: ModelEffortPair = envModel
 			? { model: envModel, effort: "default" }
-			: activeModel && activeModel.api !== "pi-virtual"
-				? { backend: "pi", model: piModelValue(activeModel.provider, activeModel.id), effort: "default" }
+			: active && piPhysicalModel(host?.modelRegistry, active.provider, active.id)
+				? { backend: "pi", model: piModelValue(active.provider, active.id), effort: "default" }
 				: { model: "gemini-3.7-flash", effort: "low" };
 		const initial: BroSettings = {
 			...pair,

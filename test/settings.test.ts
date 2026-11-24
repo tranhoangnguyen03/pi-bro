@@ -136,7 +136,10 @@ test("fresh settings use the physical Pi model, keep the explicit Agy override, 
 	const read = () => JSON.parse(readFileSync(file, "utf8"));
 	process.env.PI_CODING_AGENT_DIR = tempDir;
 	delete process.env.PI_BRO_MODEL;
-	const setModel = (active: typeof model) => setPiHostContext({ model: active } as Parameters<typeof setPiHostContext>[0]);
+	const setModel = (active: typeof model, inCatalog = true) => setPiHostContext({
+		model: active,
+		modelRegistry: { find: () => inCatalog ? active : undefined },
+	} as unknown as Parameters<typeof setPiHostContext>[0]);
 	try {
 		setModel(model);
 		await bro.readSettings();
@@ -154,6 +157,10 @@ test("fresh settings use the physical Pi model, keep the explicit Agy override, 
 		rmSync(file);
 		delete process.env.PI_BRO_MODEL;
 		setModel({ ...model, api: "pi-virtual" });
+		await bro.ensureSettingsFile();
+		assert.deepEqual(read().default, { backend: "agy", model: "gemini-3.7-flash", effort: "low" });
+		rmSync(file);
+		setModel({ provider: "unknown", id: "unknown", api: "openai-completions" }, false);
 		await bro.ensureSettingsFile();
 		assert.deepEqual(read().default, { backend: "agy", model: "gemini-3.7-flash", effort: "low" });
 	} finally {
