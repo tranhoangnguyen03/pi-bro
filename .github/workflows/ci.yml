@@ -73,4 +73,4 @@ jobs:
       - name: Verify real Codex binary
         run: ./node_modules/.bin/codex --version
       - name: Prove explicit subscription cannot use custom env-key provider
-        run: BRO_REAL_CODEX_BIN="$PWD/node_modules/.bin/codex" node --experimental-transform-types --test test/codex-subscription-real.test.mjs
+        run: BRO_REAL_CODEX_BIN="$PWD/node_modules/.bin/codex" node --experimental-transform-types --test test/qualification/codex-subscription-real.mjs

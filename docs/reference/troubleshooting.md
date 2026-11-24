@@ -42,7 +42,7 @@ tool before giving it to Bro.
   blocked, paginated, and media-first pages are not supported.
 - Direct webpage fetching does not currently use `HTTP_PROXY`, `HTTPS_PROXY`,
   or other proxy environment variables.
-- `/bro elevate` is pre-execution only. It does not validate expert claims, run source research or keep a persistent thread. Invalid discovery JSON can be retried with the [Retry] button; if it recurs, choose another BTW backend/model in `/bro config`. See [Elevate](../elevate.md).
+- `/bro elevate` is pre-execution only. It does not validate expert claims, run source research or keep a persistent thread. Invalid discovery JSON can be retried with the [Retry] button; if it recurs, choose another BTW backend/model in `/bro config`. See [Elevate](../features/elevate.md).
 - `/bro btw` threads are saved in the Pi session file and restored on reload/restart. With the Pi backend, the native side session is memory-only, so the first turn after a restart reseeds it from the saved transcript and shows an expiry notice.
 - The Agy advisor requires Agy CLI `>=1.1.15`.
 - Show captures only the conversation text of what already happened in the
@@ -53,7 +53,7 @@ tool before giving it to Bro.
   headless session with no display reports the failure instead of opening
   anything.
 - Explain keeps only the latest result in memory and does not export directly to files. Guided Review separately persists review records and captured source.
-- Guided Review is local-Pi interactive only, keeps its captured revision on reopen, and does not publish, review a branch or fetch later PR changes. See [review recovery and limits](../guided-review.md#if-something-goes-wrong).
+- Guided Review is local-Pi interactive only, keeps its captured revision on reopen, and does not publish, review a branch or fetch later PR changes. See [review recovery and limits](../features/guided-review.md#if-something-goes-wrong).
 - Bro temporarily captures mouse input while its modal is open so mouse-wheel
   and trackpad scrolling work in regular and fullscreen modes. Native mouse
   selection may be unavailable or visually extend outside the Bro window;

@@ -28,11 +28,11 @@ See [Explanation modes](features/explain.md#explanation-modes).
 
 ## Guided Review
 
-See [Guided Review](guided-review.md#guided-review).
+See [Guided Review](features/guided-review.md#guided-review).
 
 ## Bro Elevate — improve a task before sending it
 
-See [Elevate: Discover → Select → Upgrade](elevate.md). Elevate does not execute a task or send it to the main agent. It helps find gaps, lets you approve suggestions, then offers a revised request. Elevate never edits your Pi draft; copy and paste the revision if you wish.
+See [Elevate: Discover → Select → Upgrade](features/elevate.md). Elevate does not execute a task or send it to the main agent. It helps find gaps, lets you approve suggestions, then offers a revised request. Elevate never edits your Pi draft; copy and paste the revision if you wish.
 
 ## Bro btw (side conversation)
 

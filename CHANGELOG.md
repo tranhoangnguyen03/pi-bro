@@ -2,6 +2,15 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.37.1] - 2026-11-24
+
+### Improved
+
+- New Bro settings use the active physical Pi model when one is selected, with no extra CLI required. Existing settings and the initial `PI_BRO_MODEL` Agy override are unchanged.
+- Overthink makes automatic checks only after explicit opt-in. Previously saved on/off choices, questions, notes and manual checks are unchanged.
+- Publish the feature map, group feature guides under `docs/features/`, and keep pointers at the old paths. Check links in both the source docs and the npm package.
+- Discover offline tests automatically; keep real-CLI and PiG qualification in their separate CI lanes. Update Doctor's Advisor compatibility to Pi 1.3.0.
+
 ## [0.37.0] - 2026-11-18
 
 ### Highlights

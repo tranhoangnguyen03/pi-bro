@@ -6,6 +6,7 @@ import {
 	type BackendSelection,
 	agySelection,
 	CLAUDE_EFFORTS,
+	getPiHostContext,
 	GROK_EFFORTS,
 	CODEX_EFFORTS,
 	MUSE_EFFORTS,
@@ -507,10 +508,15 @@ export async function ensureSettingsFile(): Promise<void> {
 	await mkdir(getAgentDir(), { recursive: true });
 	try {
 		const envModel = process.env.PI_BRO_MODEL?.trim();
-		const defaultModel = envModel || "gemini-3.7-flash";
+		const activeModel = getPiHostContext()?.model;
+		// Honor the explicit Agy bootstrap override; otherwise reuse the host's selected physical model.
+		const pair: ModelEffortPair = envModel
+			? { model: envModel, effort: "default" }
+			: activeModel && activeModel.api !== "pi-virtual"
+				? { backend: "pi", model: piModelValue(activeModel.provider, activeModel.id), effort: "default" }
+				: { model: "gemini-3.7-flash", effort: "low" };
 		const initial: BroSettings = {
-			model: defaultModel,
-			effort: envModel ? "default" : "low",
+			...pair,
 			mode: DEFAULT_BRO_MODE,
 			showTurns: DEFAULT_SHOW_TURNS,
 			overrides: {},

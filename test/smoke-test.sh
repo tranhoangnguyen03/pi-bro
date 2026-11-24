@@ -50,6 +50,8 @@ pi_bin="$test_dir/pi-rpc"
 
 
 mkdir "$config_dir"
+# These RPC scenarios exercise the fake Agy adapter, not first-run Pi model selection.
+printf '%s\n' '{"version":2,"default":{"backend":"agy","model":"gemini-3.7-flash","effort":"low"}}' > "$settings_file"
 printf 'PREFERENCES_MARKER\n' > "$preferences_file"
 # The legacy template is no longer read; the fake agy fails if its marker ever reaches a prompt.
 printf 'LEGACY_MARKER\n\n{{response}}\n' > "$legacy_prompt_file"

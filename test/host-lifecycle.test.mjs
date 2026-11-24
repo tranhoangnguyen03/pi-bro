@@ -68,6 +68,7 @@ export default function (pi: any) {
 `);
   const agentDir = join(root, "agent");
   await mkdir(agentDir);
+  await writeFile(join(agentDir, "bro-settings.json"), JSON.stringify({ model: "gemini-3.7-flash", effort: "low" }));
   // Pi does not create a session file for extension-only commands by default.
   // This fixture starts with a real session so custom results are durable.
   const sessionFile = join(root, "session.jsonl");

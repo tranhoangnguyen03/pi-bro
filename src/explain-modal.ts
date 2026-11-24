@@ -401,21 +401,21 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 - \`/bro guided-review <PR number or URL>\` — assess captured PR code in local interactive Pi (requires Git and authenticated gh).
 - Reviews save automatically. Reopen without a model call; bare \`/bro guided-review\` lists saved reviews.\n- \`/bro guided-review delete [PR number or URL]\` — delete one local saved review with confirmation; Overview also offers Delete review.
 - Enter opens items or activates focused actions. Tab changes focus; Esc goes back, then closes from Contents. Close saves; Stop and close cancels active work first.
-- Copy finding goes to the clipboard, not GitHub. Regenerate reuses captured source. For untrusted PRs, choose file-only Claude/Muse/Pi; Codex/Grok offer sandboxed shell, while Agy may write captured files. Bro warns when shell is allowed. See docs/guided-review.md.
+- Copy finding goes to the clipboard, not GitHub. Regenerate reuses captured source. For untrusted PRs, choose file-only Claude/Muse/Pi; Codex/Grok offer sandboxed shell, while Agy may write captured files. Bro warns when shell is allowed. See docs/features/guided-review.md.
 
 ## Elevate
 
 - \`/bro elevate [request]\` — improve a task before sending it. Ctrl+Shift+E uses the draft. Choose Messages/Full context; Space/Enter ticks findings; Tab focuses actions.
 - Enter adds a line; Ctrl+S or Ctrl+Enter discovers gaps. Use labelled buttons for actions.
-- Shares BTW settings; see docs/elevate.md.
+- Shares BTW settings; see docs/features/elevate.md.
 
 ## Grill Me (experimental)
 
-- \`/bro grill-me [topic]\` — private decision interview. Use /consolidate, /copy or /help. Full-access risk: docs/grill-me.md.
+- \`/bro grill-me [topic]\` — private decision interview. Use /consolidate, /copy or /help. Full-access risk: docs/features/grill-me.md.
 
 ## Overthink
 
-- \`/bro overthink\` — view private automatic second-look notes without a model call. Ctrl+R retries; Ctrl+E edits session questions; Ctrl+C copies. Uses the active Pi model. Turn off or edit defaults in \`/bro config\` → Features → Overthink. See docs/overthink.md.
+- \`/bro overthink\` — view private second-look notes without a model call. Ctrl+R checks now; Ctrl+E edits session questions; Ctrl+C copies. Enable automatic checks in \`/bro config\` → Features → Overthink. See docs/features/overthink.md.
 
 ## Side conversation
 

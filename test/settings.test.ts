@@ -125,22 +125,43 @@ test("explicit save migrates legacy settings to version 2", () => {
 	});
 });
 
-test("ensureSettingsFile initializes clean version 2 settings on disk", async () => {
+test("fresh settings use the physical Pi model, keep the explicit Agy override, and never rewrite existing choices", async () => {
 	const tempDir = mkdtempSync(join(tmpdir(), "pi-bro-settings-init-"));
+	const { getPiHostContext, setPiHostContext } = await import("../src/backend.ts");
+	const originalHost = getPiHostContext();
 	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	const originalModel = process.env.PI_BRO_MODEL;
+	const file = join(tempDir, "bro-settings.json");
+	const model = { provider: "custom", id: "model/with-slash", api: "openai-completions" };
+	const read = () => JSON.parse(readFileSync(file, "utf8"));
 	process.env.PI_CODING_AGENT_DIR = tempDir;
+	delete process.env.PI_BRO_MODEL;
+	const setModel = (active: typeof model) => setPiHostContext({ model: active } as Parameters<typeof setPiHostContext>[0]);
 	try {
+		setModel(model);
+		await bro.readSettings();
+		const raw = read();
+		assert.deepEqual(raw, {
+			version: 2, default: { backend: "pi", model: "custom/model/with-slash", effort: "default" },
+			mode: "balanced", showTurns: 1,
+		});
+		process.env.PI_BRO_MODEL = "gemini-pinned";
 		await bro.ensureSettingsFile();
-		const raw = JSON.parse(readFileSync(join(tempDir, "bro-settings.json"), "utf8"));
-		assert.equal(raw.version, 2);
-		assert.equal(raw.default.backend, "agy");
-		assert.equal(raw.default.effort, "low");
-		assert.equal(raw.mode, "balanced");
-		assert.equal(raw.showTurns, 1);
-		assert.deepEqual(raw.overrides, undefined);
+		assert.deepEqual(read(), raw);
+		rmSync(file);
+		await bro.ensureSettingsFile();
+		assert.deepEqual(read().default, { backend: "agy", model: "gemini-pinned", effort: "default" });
+		rmSync(file);
+		delete process.env.PI_BRO_MODEL;
+		setModel({ ...model, api: "pi-virtual" });
+		await bro.ensureSettingsFile();
+		assert.deepEqual(read().default, { backend: "agy", model: "gemini-3.7-flash", effort: "low" });
 	} finally {
+		setPiHostContext(originalHost);
 		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		if (originalModel === undefined) delete process.env.PI_BRO_MODEL;
+		else process.env.PI_BRO_MODEL = originalModel;
 		rmSync(tempDir, { recursive: true, force: true });
 	}
 });

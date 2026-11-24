@@ -1516,6 +1516,7 @@ async function executeMuse(
 // pattern's thinking level, which createAgentSession cannot recover on its own, and
 // `isProjectTrusted` decides whether the workspace's `.pi/settings.json` may apply.
 export type PiHostContext = Pick<ExtensionContext, "modelRegistry" | "scopedModels"> & {
+	model?: ExtensionContext["model"];
 	isProjectTrusted?: () => boolean;
 };
 

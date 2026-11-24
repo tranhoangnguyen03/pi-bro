@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const pig = process.env.BRO_HOST_TEST_BIN;
 
 function makeService(answer) {

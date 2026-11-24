@@ -4,7 +4,7 @@ Pi-bro helps you understand agent replies, ask side questions, and review work w
 
 ## 1. Install
 
-You need **Pi**, Node.js 22.19.0 or later, and one supported backend already installed and signed in (Agy, Claude, Grok, Codex, or Muse) — or the built-in **Pi** backend, which uses your Pi session's own models and needs no extra CLI. See [requirements](../README.md#requirements).
+You need **Pi** and Node.js 22.19.0 or later. Select a physical model in Pi to use Bro without another CLI. On first use, Bro saves that model as its default. If none is selected, Bro starts with the Agy preset; choose a backend in `/bro config`. See [requirements](../README.md#requirements).
 
 ```sh
 pi install npm:pi-bro

@@ -133,7 +133,7 @@ export function createOverthinkViewer(
         };
         if (help) {
           [
-            "Overthink checks settled substantial work using the same Pi model.",
+            "Overthink uses the active Pi model. Enable automatic checks in /bro config → Features → Overthink.",
             "It stays private and only notifies about consequential new concerns.",
             "",
             "Ctrl+R  Retry with the current session",
@@ -154,7 +154,7 @@ export function createOverthinkViewer(
           if (busy) {
             add("Checking the current Pi session…");
           } else if (!note) {
-            add("No assessment yet. Bro checks after substantial work; Ctrl+R checks now.");
+            add("No assessment yet. Ctrl+R checks now.");
           } else if (!note.text) {
             add("No material concerns found in the last check.");
           } else if (note.assessment) {
