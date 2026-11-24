@@ -2,6 +2,18 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.38.0] - 2026-11-24
+
+### Highlights
+
+- Use one Simplify window to read a plain-language explanation or draw recent conversation turns with `/show`. `/bro` reopens the latest result without calling a model.
+- Retry or copy either result from the same window. Browser diagrams can be rebuilt from the saved result without another model call.
+
+### Breaking
+
+- Use `/bro simplify show|text|file|url …` in place of `/bro show|text|file|url …`, and `/bro simplify latest` in place of `/bro text` without arguments. Those direct commands also work headless.
+- Use `/bro` or `/bro simplify` instead of `/bro open`. Pick an explicit source command instead of passing a path, URL, or text directly to `/bro`. Retired shortcuts give migration instructions and do not call a model.
+
 ## [0.37.1] - 2026-11-24
 
 ### Improved

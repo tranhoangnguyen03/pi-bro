@@ -23,11 +23,35 @@ test("restore last private state from the active branch, including cleared threa
   const restored = restorePrivateBroState(branch);
   assert.deepEqual(restored.btw, {turns:[],full:true}, "clear/mode is the latest state, not the previous transcript");
   assert.deepEqual(restored.grill, grill);
-  assert.deepEqual(restored.simplify, simplify);
-  assert.equal(restored.lastResult?.text, "diagram");
-  assert.equal(restored.lastShowSteering, "1 question");
+  assert.deepEqual(restored.simplify.result, { source: { text: "Conversation" }, text: "diagram", showSteering: "1 question" });
+  assert.deepEqual(restorePrivateBroState(branch.slice(0, 3)).simplify, simplify);
   assert.deepEqual(restorePrivateBroState(branch.slice(0, 1)).btw, btw, "forks inherit their own branch only");
   assert.deepEqual(restorePrivateBroState([]), {simplify:{}}, "a new session inherits nothing");
+});
+
+test("legacy unsteered Show restores without trusting its temp path; clearing stays cleared", () => {
+  const legacy = custom(LAST_RESULT_SESSION_ENTRY, {
+    result: { source: { text: "Conversation" }, text: "Diagram", htmlPath: "/tmp/stale.html" }, steering: "",
+  });
+  assert.deepEqual(restorePrivateBroState([
+    custom(SIMPLIFY_SESSION_ENTRY, { state: { ...simplify, draft: "/text draft" } }), legacy,
+  ]).simplify, {
+    result: { source: { text: "Conversation" }, text: "Diagram", showSteering: "" }, view: "result", draft: "/text draft",
+  });
+  const cleared = custom(SIMPLIFY_SESSION_ENTRY, { state: { view: "empty" } });
+  assert.deepEqual(restorePrivateBroState([legacy, cleared]).simplify, { view: "empty" });
+  assert.deepEqual(restorePrivateBroState([cleared, custom(LAST_RESULT_SESSION_ENTRY, { result: simplify.result })]).simplify, { view: "empty" });
+});
+
+test("a legacy Explain retry replaces its original result without discarding the draft", () => {
+  const snapshot = custom(SIMPLIFY_SESSION_ENTRY, { state: { ...simplify, draft: "/text draft" } });
+  const duplicate = custom(LAST_RESULT_SESSION_ENTRY, { result: simplify.result });
+  const retried = { ...simplify.result, text: "Retried explanation", mode: "faithful" };
+  const retry = custom(LAST_RESULT_SESSION_ENTRY, { result: retried });
+  assert.equal(privateSessionEntrySnapshots([snapshot, duplicate]).has(SIMPLIFY_SESSION_ENTRY), true);
+  assert.deepEqual(restorePrivateBroState([snapshot, duplicate, retry]).simplify,
+    { view: "result", result: retried, draft: "/text draft" });
+  assert.equal(privateSessionEntrySnapshots([snapshot, duplicate, retry]).has(SIMPLIFY_SESSION_ENTRY), false);
 });
 
 test("latest invalid state does not resurrect stale private content", () => {

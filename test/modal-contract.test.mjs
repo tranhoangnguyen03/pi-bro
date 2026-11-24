@@ -16,6 +16,7 @@ import { rm } from "node:fs/promises";
 const load = (name) => import(pathToFileURL(join(sourceDir, name)).href);
 const kit = await load("modal-kit.ts");
 const { CopyModal } = await load("copy.ts");
+const { ComposerModal } = await load("composer-modal.ts");
 const { openSimplifyWorkflow } = await load("simplify-ui.ts");
 const { openGuidedReview } = await load("review-ui.ts");
 const { newReviewView } = await load("review-modal.ts");
@@ -118,8 +119,8 @@ const elevateStage = (stage) => (ctx) =>
 	);
 
 const SURFACES = [
-	{ name: "explain result", scrolls: true, mouse: true, open: (ctx) => explainModal.showBroModal(ctx, { result: { text: long, model: "m" } }) },
-	{ name: "explain loading", mouse: true, open: (ctx) => explainModal.showBroModal(ctx, { run: () => new Promise(() => {}) }) },
+	{ name: "shared result", scrolls: true, mouse: true, open: (ctx) => explainModal.showBroModal(ctx, { result: { text: long, model: "m" } }) },
+	{ name: "shared result loading", mouse: true, open: (ctx) => explainModal.showBroModal(ctx, { run: () => new Promise(() => {}) }) },
 	{ name: "help", scrolls: true, mouse: true, open: (ctx) => explainModal.showBroModal(ctx, { text: explainModal.helpText(), kind: "help", copyable: true }) },
 	{
 		name: "simplify help",
@@ -127,7 +128,7 @@ const SURFACES = [
 		mouse: true,
 		minRows: 24,
 		fullShows: [/Simplify · Commands/, /\/simplify/],
-		open: (ctx) => openSimplifyWorkflow(ctx, {}, { kind: "resume" }),
+		open: (ctx) => openSimplifyWorkflow(ctx, {}),
 	},
 	{
 		name: "simplify result",
@@ -135,12 +136,9 @@ const SURFACES = [
 		mouse: true,
 		minRows: 24,
 		fullShows: [/Paragraph 0 of a long answer/],
-		open: (ctx) =>
-			openSimplifyWorkflow(
-				ctx,
-				{ result: { source: { text: "src", label: "Latest assistant reply" }, text: long, mode: "balanced" } },
-				{ kind: "resume" },
-			),
+		open: (ctx) => openSimplifyWorkflow(ctx, {
+			result: { source: { text: "src", label: "Latest assistant reply" }, text: long, mode: "balanced" },
+		}),
 	},
 	{
 		name: "btw with a long thread and a notice",
@@ -1053,7 +1051,7 @@ test("modal kit: elevate starts discovery from the button and from Ctrl+S", asyn
 
 test("BTW keeps one running hint row and a steady transcript at a narrow 60-column terminal", () => {
   const tui = { mode: "fullscreen", terminal: { rows: 30, columns: 60 }, requestRender() {} };
-  const modal = new btw.BtwModal(tui, theme, () => {}, () => {}, () => {}, {});
+  const modal = new ComposerModal(tui, theme, () => {}, () => {}, () => {});
   modal.setRunning(true);
   modal.setText(Array.from({length: 75}, (_, i) => "logline_" + i).join("\n\n"));
   modal.scrollToEnd();
@@ -1081,7 +1079,7 @@ test("Architecture-style stage callbacks keep the shared result footer neutral a
   const hold = new Promise(resolve => { finish = resolve; });
   const mounted = await mount(ctx => explainModal.showBroModal(ctx, {
     loadingText: "Documenting the current project…",
-    run: async (_signal, _source, onProgress) => {
+    run: async (_signal, onProgress) => {
       emitStage = onProgress;
       await hold;
       return {text:"Architecture generated."};
@@ -1113,7 +1111,7 @@ test("Architecture-style stage callbacks keep the shared result footer neutral a
 test("Grill and shared result hints remain one row with long phases and narrow layouts", () => {
   const tui = {mode:"fullscreen",terminal:{rows:30,columns:60},requestRender(){}};
   const transcript = Array.from({length:60},(_,i)=>"line_" + i).join("\n\n");
-  const grill = new btw.BtwModal(tui,theme,()=>{},()=>{},()=>{},{title:"Bro · grill-me",commands:""});
+  const grill = new ComposerModal(tui,theme,()=>{},()=>{},()=>{},{title:"Bro · grill-me"});
   grill.setCustomMode("balanced · FULL (prompt-only no-edits)");
   grill.setText(transcript);
   grill.setRunning(true);
@@ -1130,7 +1128,6 @@ test("Grill and shared result hints remain one row with long phases and narrow l
 
   const show = new explainModal.BroModal(tui,theme,()=>{},()=>{},()=>{},"again");
   show.setStreaming(transcript);
-  show.setMode("balanced");
   const renderedShow = () => stripVTControlCharacters(show.render(48).join("\n"));
   const bodyRows = (renderedShow().match(/line_\d+/g)??[]).length;
   for (const label of ["Receiving output · 4s","Last tool: extremely_long_command_execution_label · 123456s"]) {

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ADVISOR_STEERING_FILE, ADVISOR_TOOL_NAME, registerAdvisorTool } from "./advisor.ts";
 import {
@@ -16,19 +17,16 @@ import { openCopyModal } from "./copy.ts";
 import { registerOverthink } from "./overthink.ts";
 import { openRememberModal } from "./remember.ts";
 import { openSimplifyWorkflow, type SimplifyState } from "./simplify-ui.ts";
+import { parseSimplifyRequest, SIMPLIFY_INPUTS } from "./simplify-engine.ts";
 import { registerAboutUserTool } from "./remember-tool.ts";
 import { parseGrillArguments, type GrillThread } from "./grill-engine.ts";
 import {
-	type BroResult,
-	type ModalResult,
 	helpText,
-	latestAssistant,
 	showAdvisorSteerModal,
 	showBroModal,
 	showPreferencesModal,
-	simplify,
 } from "./explain-modal.ts";
-import { BRO_MODES, type BroMode, parseBroMode } from "./prompt.ts";
+import { BRO_MODES, parseBroMode } from "./prompt.ts";
 import { openGuidedReview, stopGuidedReviews } from "./review-ui.ts";
 import {
 	type BroSettings,
@@ -37,20 +35,9 @@ import {
 	readSettings,
 	writeSettings,
 } from "./settings.ts";
-import {
-	captureShowTranscript,
-	parseShowArguments,
-	runShowExplanation,
-	showDiagramPath,
-} from "./show.ts";
-import {
-	type BroSource,
-	isDocumentFile,
-	looksLikeWebUrl,
-} from "./sources.ts";
 import { hasBroCustomUi } from "./ui-capabilities.ts";
-import { errorMessage, unquote, withDoctor } from "./util.ts";
-import { BTW_SESSION_ENTRY, GRILL_SESSION_ENTRY, SIMPLIFY_SESSION_ENTRY, LAST_RESULT_SESSION_ENTRY, restorePrivateBroState, privateSessionEntrySnapshots } from "./session-state.ts";
+import { errorMessage, withDoctor } from "./util.ts";
+import { BTW_SESSION_ENTRY, GRILL_SESSION_ENTRY, SIMPLIFY_SESSION_ENTRY, restorePrivateBroState } from "./session-state.ts";
 
 export * from "./util.ts";
 export * from "./ui-capabilities.ts";
@@ -77,14 +64,9 @@ export * from "./copy.ts";
 
 const COMMANDS = [
 	{ value: "architecture", label: "architecture", description: "Document this repository in docs/architecture/ with diagrams and an offline map" },
-	{ value: "simplify", label: "simplify", description: "Reopen the last Simplify screen without a new model call" },
+	{ value: "simplify", label: "simplify", description: "Understand one source in plain words or as a diagram" },
 	{ value: "copy", label: "copy", description: "Edit, preview and copy the last assistant reply as Markdown — no model call" },
-	{ value: "text", label: "text", description: "Explain pasted text, or the latest reply when text is omitted" },
-	{ value: "file", label: "file", description: "Explain a local document" },
-	{ value: "url", label: "url", description: "Explain a public webpage" },
-	{ value: "open", label: "open", description: "Reopen the last explanation" },
 	{ value: "doctor", label: "doctor", description: "Check whether Bro is ready" },
-	{ value: "show", label: "show", description: "Need to see how recent turns fit together? Get a visual outline or diagram" },
 	{ value: "mode", label: "mode", description: "View or choose explanation mode (brief, balanced, faithful)" },
 	{ value: "preferences", label: "preferences", description: "Want Bro to follow your style? Edit saved response preferences" },
 	{ value: "guided-review", label: "guided-review", description: "Need to assess a PR? Get source-backed findings and saved private questions" },
@@ -99,16 +81,14 @@ const COMMANDS = [
 	{ value: "help", label: "help", description: "Learn what Bro does and what it can access" },
 ];
 const KNOWN_ACTIONS = new Set(COMMANDS.map((command) => command.value));
-/** Only capability-level commands appear by default; all existing commands remain discoverable by prefix. */
+/** Top-level discovery lists Simplify once, not each source command. */
 export const FEATURED_BRO_COMMANDS = [
-  "simplify","show","btw","guided-review","architecture","elevate","grill-me","remember-me","overthink","config",
+	"simplify", "btw", "guided-review", "architecture", "elevate", "grill-me", "remember-me", "overthink", "config",
 ] as const;
 const FEATURED_COMMANDS = new Set<string>(FEATURED_BRO_COMMANDS);
 
 export default async function bro(pi: ExtensionAPI) {
-	let lastResult: ModalResult | undefined;
 	let simplifyState: SimplifyState = {};
-	let lastShowSteering: string | undefined;
 	let btwThread: BtwThread | undefined;
 	let grillThread: GrillThread | undefined;
 	let savedSnapshots = new Map<string, string>();
@@ -120,17 +100,6 @@ export default async function bro(pi: ExtensionAPI) {
 		if (savedSnapshots.get(type) === serialized) return;
 		pi.appendEntry(type, data);
 		savedSnapshots.set(type, serialized);
-	};
-	const remember = (result: ModalResult, showSteering?: string) => {
-		if (result.source) {
-			lastResult = result;
-			lastShowSteering = showSteering;
-			appendChanged(LAST_RESULT_SESSION_ENTRY, { result, steering: showSteering });
-		}
-	};
-	const saveSimplify = () => {
-		if (!savedSnapshots.has(SIMPLIFY_SESSION_ENTRY) && !simplifyState.result && !simplifyState.draft) return;
-		appendChanged(SIMPLIFY_SESSION_ENTRY, { state: simplifyState });
 	};
 	const saveBtw = () => {
 		if (!btwThread) return;
@@ -146,11 +115,8 @@ export default async function bro(pi: ExtensionAPI) {
 		appendChanged(GRILL_SESSION_ENTRY, { thread: grillThread });
 	};
 	const restore = (ctx: ExtensionContext) => {
-		const branch = ctx.sessionManager.getBranch();
-		const restored = restorePrivateBroState(branch);
-		savedSnapshots = privateSessionEntrySnapshots(branch);
-		lastResult = restored.lastResult;
-		lastShowSteering = restored.lastShowSteering;
+		savedSnapshots = new Map();
+		const restored = restorePrivateBroState(ctx.sessionManager.getBranch(), savedSnapshots);
 		simplifyState = restored.simplify;
 		btwThread = restored.btw;
 		grillThread = restored.grill;
@@ -174,9 +140,14 @@ export default async function bro(pi: ExtensionAPI) {
 	pi.registerCommand("bro", {
 		description: "Explain text, documents, and webpages; draw session turns; open a side conversation; configure Bro and the executor's advisor tool",
 		getArgumentCompletions: (prefix) => {
-			const normalized = prefix.trim().toLowerCase();
-			const matches = COMMANDS.filter((command) =>
-        normalized ? command.value.startsWith(normalized) : FEATURED_COMMANDS.has(command.value));
+			const normalized = prefix.trimStart().toLowerCase();
+			const nested = /^simplify\s+(\S*)$/.exec(normalized);
+			if (nested) {
+				const matches = SIMPLIFY_INPUTS.filter(input => input.startsWith(nested[1]!));
+				return matches.length ? matches.map(input => ({ value: `simplify ${input}`, label: input })) : null;
+			}
+			const matches = COMMANDS.filter(command =>
+				normalized.trim() ? command.value.startsWith(normalized.trim()) : FEATURED_COMMANDS.has(command.value));
 			return matches.length ? matches : null;
 		},
 		handler: async (args, ctx) => {
@@ -185,49 +156,43 @@ export default async function bro(pi: ExtensionAPI) {
 			const raw = args.trim();
 			const normalized = raw.toLowerCase();
 			const parts = normalized ? normalized.split(/\s+/) : [];
-			let action = parts[0] ?? "";
-			let value = raw.slice(raw.split(/\s+/, 1)[0]?.length ?? 0).trim();
+			const action = parts[0] ?? "";
+			const value = raw.slice(action.length).trim();
 
-			// Removed commands must never fall through to a paid text explanation.
 			if (action === "model" || action === "effort") {
-				ctx.ui.notify(`/bro ${action} was removed. Use /bro config to choose the shared default and per-capability ${action}; use /bro text <text> to explain text.`, "warning");
+				ctx.ui.notify(`/bro ${action} was removed. Use /bro config to choose the shared default and per-capability ${action}.`, "warning");
+				return;
+			}
+			if (action && !KNOWN_ACTIONS.has(action)) {
+				const replacement = action === "open" ? "/bro simplify"
+					: action === "text" && !value ? "/bro simplify latest"
+					: action === "text" ? "/bro simplify text <text>"
+					: action === "file" ? "/bro simplify file <path>"
+					: action === "url" ? "/bro simplify url <url>"
+					: action === "show" ? "/bro simplify show [n-turns] [query]" : undefined;
+				ctx.ui.notify(replacement ? `/bro ${action} moved. Use ${replacement}.`
+					: "Unknown Bro command. Use /bro help, or /bro simplify text <text> to explain pasted text.", "warning");
 				return;
 			}
 
-			// An unknown first word means the whole input is the source: route it by shape.
-			if (action && !KNOWN_ACTIONS.has(action)) {
-				const candidate = unquote(raw);
-				const quoted = candidate !== raw;
-				action = quoted || !/\s/.test(candidate)
-					? looksLikeWebUrl(candidate)
-						? "url"
-						: (await isDocumentFile(candidate, ctx.cwd))
-							? "file"
-							: "text"
-					: "text";
-				value = raw;
-			}
-
-			// Source operations open the same single-purpose Simplify modal, not separate
-			// top-level workflows. Old /bro text|file|url commands remain valid aliases.
-			if (!action || action === "simplify" || action === "text" || action === "file" || action === "url") {
-				if (action === "simplify" && value) {
-					ctx.ui.notify("Use /bro simplify to reopen the last Simplify view; use /text, /file or /url inside it.", "warning");
-					return;
-				}
-				if ((action === "file" || action === "url") && !value) {
-					ctx.ui.notify(`Use /bro ${action} <${action === "file" ? "path" : "url"}>.`, "warning");
-					return;
-				}
-				const initial = !action || action === "simplify"
-					? {kind:"resume" as const}
-					: action === "text" && !value
-					? {kind:"latest" as const}
-					: {kind:action as "text" | "file" | "url", input:value};
+			if (!action || action === "simplify") {
+				const input = value.split(/\s+/, 1)[0] ?? "";
+				const initial = input ? parseSimplifyRequest(input.toLowerCase(), value.slice(input.length).trim()) : undefined;
+				if (initial?.kind === "invalid") { ctx.ui.notify(initial.message, "warning"); return; }
+				const state = simplifyState;
+				const hadResult = Boolean(state.result);
+				const headlessRun = initial && !hasBroCustomUi(ctx);
 				try {
-					await openSimplifyWorkflow(ctx, simplifyState, initial);
-					saveSimplify();
-					if (simplifyState.result) remember(simplifyState.result);
+					await openSimplifyWorkflow(ctx, state, initial, initial ? (initial.kind === "latest" ? "/simplify" : `/${value}`) : undefined);
+					if (simplifyState === state && (savedSnapshots.has(SIMPLIFY_SESSION_ENTRY) || hadResult || state.result || state.draft)) {
+						appendChanged(SIMPLIFY_SESSION_ENTRY, { state });
+						if (headlessRun) {
+							const file = ctx.sessionManager.getSessionFile?.();
+							if (!file || !existsSync(file)) {
+								ctx.ui.notify("Simplify finished, but Pi has no saved session file. The result is only in memory. To keep headless results, reopen a saved Pi session before running Simplify.", "warning");
+							}
+						}
+					}
 				} catch (error) { ctx.ui.notify(withDoctor(error), "error"); }
 				return;
 			}
@@ -236,44 +201,6 @@ export default async function bro(pi: ExtensionAPI) {
 				if (value) { ctx.ui.notify("Use /bro copy without arguments to edit the last reply.", "warning"); return; }
 				try { await openCopyModal(ctx); }
 				catch (error) { ctx.ui.notify("Bro Copy: " + errorMessage(error), "error"); }
-				return;
-			}
-
-			if (action === "show") {
-				const { requested, steering, invalid } = parseShowArguments(value);
-				if (invalid) {
-					ctx.ui.notify("Use /bro show [n-turns] [query].", "warning");
-					return;
-				}
-				const runShow = async (
-					signal: AbortSignal,
-					source?: BroSource,
-					onProgress?: (text: string) => void,
-				): Promise<ModalResult> => {
-					const captured =
-						source ?? captureShowTranscript(ctx, requested ? Number(requested) : (await readSettings()).showTurns);
-					if (!captured) {
-						return { text: "**Nothing to show yet**\n\nThis session has no conversation turns to draw. Run something first, then press **R**." };
-					}
-					let result: Awaited<ReturnType<typeof runShowExplanation>>;
-					try {
-						result = await runShowExplanation(captured.text, steering, signal, await readSettings(), onProgress);
-					} catch (error) {
-						throw new Error(withDoctor(error));
-					}
-					const htmlPath = await showDiagramPath(result.text, (message) => ctx.ui.notify(message, "warning"));
-					return { source: captured, ...result, ...(htmlPath ? { htmlPath } : {}) };
-				};
-				try {
-					await showBroModal(ctx, {
-						loadingText: "Drawing what happened…",
-						retryLabel: "show again",
-						run: runShow,
-						onResult: (result) => remember(result, steering),
-					});
-				} catch (error) {
-					ctx.ui.notify(withDoctor(error), "error");
-				}
 				return;
 			}
 
@@ -467,71 +394,6 @@ export default async function bro(pi: ExtensionAPI) {
 				}
 				await showBroModal(ctx, { text: helpText(settings, settingsError, preferences), kind: "help", copyable: true });
 				return;
-			}
-
-			const run = async (
-				signal: AbortSignal,
-				source?: BroSource,
-				onProgress?: (text: string) => void,
-				mode?: BroMode,
-			): Promise<BroResult> => {
-				let target = source ?? (action === "text" && value ? { text: value } : undefined);
-				if (!target) {
-					await ctx.waitForIdle();
-					target = latestAssistant(ctx);
-				}
-				if (!target) throw new Error("No completed assistant response found.");
-				try {
-					const settings = await readSettings();
-					return {
-						source: target,
-						...(await simplify(target.text, signal, settings, onProgress, mode)),
-					};
-				} catch (error) {
-					throw new Error(withDoctor(error));
-				}
-			};
-
-			if (action === "open") {
-				if (parts.length !== 1) {
-					ctx.ui.notify("Use /bro open.", "warning");
-					return;
-				}
-				if (!lastResult) {
-					await showBroModal(ctx, {
-						text: "# Nothing to open yet\n\nUse `/bro text <text>`, run `/bro text` (or `/simplify` inside `/bro`) after an assistant response, use `/bro file <path>`, use `/bro url <url>`, or run `/bro show` to draw recent turns.",
-						kind: "empty",
-					});
-					return;
-				}
-
-				const steering = lastShowSteering;
-				if (steering !== undefined) {
-					// Temp files may have been cleaned by the OS or another Bro session.
-					if (ctx.mode === "tui") lastResult.htmlPath = await showDiagramPath(lastResult.text, (message) => ctx.ui.notify(message, "warning"));
-				}
-				await showBroModal(ctx, {
-					result: lastResult,
-					loadingText: steering !== undefined ? "Drawing what happened…" : undefined,
-					retryLabel: steering !== undefined ? "show again" : undefined,
-					run: steering === undefined ? run : async (signal, source, onProgress) => {
-						if (!source) throw new Error("No captured Show source.");
-						const result = await runShowExplanation(source.text, steering, signal, await readSettings(), onProgress);
-						const htmlPath = await showDiagramPath(result.text, (message) => ctx.ui.notify(message, "warning"));
-						return { source, ...result, ...(htmlPath ? { htmlPath } : {}) };
-					},
-					onResult: (result) => remember(result, steering),
-				});
-				return;
-			}
-
-			try {
-				await showBroModal(ctx, {
-					run,
-					onResult: remember,
-				});
-			} catch (error) {
-				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 			}
 		},
 	});

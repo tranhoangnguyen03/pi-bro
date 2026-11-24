@@ -20,7 +20,7 @@
 
 [![A complex PDF before Bro](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-before.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-before.png)
 
-**After `/bro file <path>`**
+**After `/bro simplify file <path>`**
 
 [![The PDF explained in the Bro modal](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-after.png)](https://raw.githubusercontent.com/tranhoangnguyen03/pi-bro/main/docs/images/bro-file-after.png)
 

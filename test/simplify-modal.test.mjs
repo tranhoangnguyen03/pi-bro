@@ -83,7 +83,7 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
      assert.match(empty.modal.render(110).join("\n"),/\/simplify runs again/);
      assert.equal((await callList()).length,0,"opening empty Bro must not invoke model");
      await empty.close();
-     const first=await open("text First source");
+     const first=await open("simplify text First source");
      await until(()=>first.modal.markdown.text.includes("Explained in simple words"),"initial explanation",first.modal);
      const firstArgs=(await callList())[0];
      const sentPrompt=firstArgs[firstArgs.indexOf("--print")+1];
@@ -130,11 +130,6 @@ test("failed source command stays editable, stale notices clear, and prefs/open 
      assert.equal((await callList()).length,2);
      await fromHelp.close();
 
-     const legacy=await open("open");
-     assert.match(legacy.modal.rawText,/Explained in simple words/);
-     assert.match(legacy.modal.render(100).join("\n"),/prefs/,"legacy open retains preference indication");
-     await legacy.close();
-
      await writeFile(preferencesPath,"x".repeat(4001));
      const oversize=await open("simplify");
      oversize.modal.setComposerText("/text Test oversize");
@@ -176,7 +171,7 @@ test("Simplify shows elapsed time before a quiet backend replies and clears on c
  await withFakeExecutable("agy",script,async()=>{
    await settings.writeSettings({backend:"agy",model:"test-plain",effort:"default",mode:"balanced",showTurns:1,overrides:{}});
    const {open}=await commandHost();
-   const instance=await open("text A deliberately quiet request");
+   const instance=await open("simplify text A deliberately quiet request");
    try{
      await until(()=>/Waiting for explanation · [1-9]\d*s/.test(instance.modal.render(100).join("\n")),
        "Simplify elapsed-time status",instance.modal);

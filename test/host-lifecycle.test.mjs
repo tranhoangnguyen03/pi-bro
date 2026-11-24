@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -21,7 +21,7 @@ async function until(predicate, label, timeoutMs = 8000) {
   assert.fail(`Timed out waiting for ${label}`);
 }
 
-async function startHost(root) {
+async function startHost(root, { fresh = false } = {}) {
   const bin = join(root, "bin");
   await mkdir(bin);
   const agy = join(bin, "agy");
@@ -72,13 +72,13 @@ export default function (pi: any) {
   // Pi does not create a session file for extension-only commands by default.
   // This fixture starts with a real session so custom results are durable.
   const sessionFile = join(root, "session.jsonl");
-  await writeFile(sessionFile, JSON.stringify({
+  if (!fresh) await writeFile(sessionFile, JSON.stringify({
     type: "session", version: 3, id: "00000000-0000-7000-8000-000000000071",
     timestamp: new Date().toISOString(), cwd: repo,
   }) + "\n");
   const args = ["--mode", "rpc", "--offline", "--no-extensions", "-e", join(repo, "src", "bro.ts"),
     "-e", probe, "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-mcp",
-    "--no-themes", "--session", sessionFile];
+    "--no-themes", ...(fresh ? [] : ["--session", sessionFile])];
   const child = spawn(hostBinary, args, {
     cwd: repo,
     env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PIG_CODING_AGENT_DIR: agentDir,
@@ -148,7 +148,7 @@ test("real Pi RPC reload awaits Bro cancellation, then accepts new work", { time
   let host;
   try {
     host = await startHost(root);
-    const first = host.send("/bro text HOST_FIRST_MARKER");
+    const first = host.send("/bro simplify text HOST_FIRST_MARKER");
     await until(() => existsSync(join(root, "started-first")), "first CLI start");
     const args = await readFile(join(root, "agy-argv"), "utf8");
     assert.match(args, /(?:^|\s)--sandbox(?:\s|$)/, "restricted Explain must request the Agy sandbox");
@@ -160,17 +160,40 @@ test("real Pi RPC reload awaits Bro cancellation, then accepts new work", { time
       "reload must await the old extension's actual process cleanup");
     assert.equal((await first).success, true, host.output());
     assert.equal(existsSync(join(root, "late-result")), false);
-    const second = await host.send("/bro text HOST_SECOND_MARKER");
+    const second = await host.send("/bro simplify text HOST_SECOND_MARKER");
     assert.equal(second.success, true, host.output());
     assert.equal(second.data?.disposition, "handled");
     assert.equal(existsSync(join(root, "second-started")), true);
+    assert.doesNotMatch(host.output(), /The result is only in memory/, "the resumed session already has a file");
     const session = (await readFile(join(root, "session.jsonl"), "utf8"))
       .split("\n").filter(Boolean).map(JSON.parse);
-    assert.ok(session.some(entry => entry.type === "custom" && entry.customType === "bro-last-result"
-      && JSON.stringify(entry.data).includes("FRESH_RESULT")),
+    assert.ok(session.some(entry => entry.type === "custom" && entry.customType === "bro-simplify-state"
+      && entry.data?.state?.result?.text === "FRESH_RESULT"),
     "the replacement Bro command must save its result in the real Pi session");
     host.child.stdin.end();
     assert.equal((await host.closed).code, 0, host.output());
+  } finally { await cleanup(root, host); }
+});
+
+// Lazy file creation here is the native Pi contract, not a cross-host lifecycle requirement.
+test("fresh Pi RPC explains privately and warns before the in-memory result is lost", { timeout: 25_000, skip: process.platform === "win32" || Boolean(process.env.BRO_HOST_TEST_BIN) }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "bro-host-fresh-"));
+  let host;
+  try {
+    host = await startHost(root, { fresh: true });
+    const response = await host.send("/bro simplify text HOST_SECOND_MARKER");
+    assert.equal(response.success, true, host.output());
+    assert.equal(existsSync(join(root, "second-started")), true);
+    assert.match(host.output(), /The result is only in memory/);
+    const resultEvents = host.output().split("\n").filter(line => line.includes("FRESH_RESULT"));
+    assert.ok(resultEvents.every(line => {
+      const event = JSON.parse(line);
+      return event.type === "entry_appended" && event.entry?.customType === "bro-simplify-state";
+    }), "the result may appear in a private RPC entry event, not as a reply or notification");
+    host.child.stdin.end();
+    assert.equal((await host.closed).code, 0, host.output());
+    assert.ok(!(await readdir(join(root, "agent"), { recursive: true })).some(path => path.endsWith(".jsonl")),
+      "a fresh host does not write a conversation for a Simplify-only run");
   } finally { await cleanup(root, host); }
 });
 
@@ -181,7 +204,7 @@ test("real Pi RPC EOF invokes graceful Bro cleanup", { timeout: 25_000, skip: pr
     host = await startHost(root);
     // PiG 0.5.3 may close RPC without acknowledging an interrupted extension command.
     // EOF's contract is process cleanup, not delivery of that pending acknowledgement.
-    void host.send("/bro text HOST_FIRST_MARKER").catch(() => {});
+    void host.send("/bro simplify text HOST_FIRST_MARKER").catch(() => {});
     await until(() => existsSync(join(root, "started-first")), "active CLI before EOF");
     host.child.stdin.end();
     const exit = await Promise.race([host.closed,

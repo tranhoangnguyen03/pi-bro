@@ -4,14 +4,11 @@
 
 ## Bro show
 
-Where the explanation modes rewrite dense prose in simpler words, `/bro show`
-changes the form: it draws what you and the assistant said in the last few
+Inside [Simplify](explain.md), run `/show` to understand recent conversation as a diagram or outline instead of a plain-language explanation. It draws what you and the assistant said in the last few
 session turns as a shape instead of paragraphs. Capture keeps only user and
 assistant conversation text, including every intermediate assistant message in
 a turn — tool calls, tool results, reasoning, and images never leave the
-session. It runs the same backend-specific model call and shows the result
-in the same modal, never touching your conversation. `/bro show` uses its own
-draw prompt; the explanation modes do not affect it. Your
+session. The drawing replaces the previous Simplify result without touching your conversation. Show keeps its own backend settings and draw prompt; explanation modes do not affect it. Your
 [preferences](../reference/settings.md#preferences) can change only its wording and language, never
 which shapes it draws or its rules.
 
@@ -33,29 +30,27 @@ one Mermaid `sequenceDiagram`. The modal keeps its source visible with
 `[Diagram saved — press O to render]`; **O** opens a page that draws it with
 the Mermaid copy bundled in Bro. Any other Mermaid stays plain text.
 
-Pressing **R** redraws the same captured turns; running `/bro show` again
-captures the latest turns afresh. `/bro show <n-turns>` overrides the default turn
-count for a single run.
+Pressing **R** redraws the same captured turns; running `/show` again captures recent turns afresh. `/show <n-turns>` overrides the default turn count. Outside the modal, the direct form is `/bro simplify show [n-turns] [query]`.
 
 Add a query to steer what the shapes focus on, either after a turn count or on
-its own: `/bro show what changed in the auth flow`, or `/bro show 3 what
+its own: `/show what changed in the auth flow`, or `/show 3 what
 changed in the auth flow`. The query is used as a lens on the captured turns,
 not as additional evidence, and its casing is preserved as typed. Pressing
 **R** retries with the same turn count and query.
 
 Any leading whitespace-delimited word that looks like a number is treated as the
-requested turn count: for example, `/bro show 3 what changed` captures 3 turns
-and steers on "what changed", while `/bro show 404 handler` parses "404" as the
+requested turn count: for example, `/show 3 what changed` captures 3 turns
+and steers on "what changed", while `/show 404 handler` parses "404" as the
 turn count and "handler" as the steering query. To steer on a phrase that starts
 with digits while choosing a turn count, specify the turn count explicitly
-first: `/bro show 1 404 handler` captures 1 turn and steers on "404 handler".
+first: `/show 1 404 handler` captures 1 turn and steers on "404 handler".
 If the first word is not a number, the whole input is treated as the steering
 query using the saved `showTurns` default.
 
 ### A slow session-create, traced
 
 The agent followed a two-second delay from the handler down to the worker.
-`/bro show` drew the chain:
+`/show` drew the chain:
 
 ```text
 handleCreateSession(req)
@@ -70,8 +65,7 @@ handleCreateSession(req)
 
 ### The shape of code before it exists
 
-A design discussion agreed on the data model ahead of implementation. `/bro
-show` kept just the shape:
+A design discussion agreed on the data model ahead of implementation. `/show` kept just the shape:
 
 ```typescript
 interface Item { id: ItemId; parentId: ItemId | null }

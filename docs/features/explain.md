@@ -2,7 +2,7 @@
 
 [Docs home](../README.md) · [All commands](../reference/commands.md) · [Safety and permissions](../reference/data-and-permissions.md)
 
-Opening `/bro` or `/bro simplify` shows your saved explanation, or command help if none exists. It does not call the model. Run `/simplify` inside the modal to explain the latest completed assistant reply again.
+**Simplify** turns one source into something easier to understand, in plain words or as a [diagram of recent conversation](show.md#bro-show). Opening `/bro` or `/bro simplify` shows your saved result, or command help if none exists. It does not call the model. Run `/simplify` inside the modal (or `/bro simplify latest` directly) to explain the latest completed assistant reply.
 
 ## Explanation modes
 
@@ -25,20 +25,18 @@ next mode without saving it:
 - **Mouse wheel / trackpad**: Scroll in regular or fullscreen mode
 - **↑ / ↓**: Scroll in any mode
 - **PgUp / PgDn**: Scroll a page at a time (also in btw)
-- **C**: Copy the complete explanation
-- **R**: Simplify the captured source again in the mode shown, or run the
-  current Doctor check again
-- **M**: Re-simplify the captured source in the next mode (brief → balanced →
-  faithful → brief). It applies to this explanation only and does not change
-  the mode saved by `/bro mode`; pressing it again while Bro is working skips
-  ahead
-- **O**: Open the diagram (an HTML layout or a rendered sequence diagram) when a show reply contains one
-- **Esc**: From `/help`, return to the saved explanation without rerunning it. If there is no saved explanation, or you are already reading it, close the modal. While Bro is working, cancel and close.
+- **C** or `/copy`: Copy the complete result
+- **R**: Retry the same captured source
+- **M**: Re-simplify the captured source in the next mode (brief → balanced → faithful → brief), without changing the saved default
+- **O**: Open the browser diagram when a `/show` result has one
+- **Esc**: Return from help to the saved result, or close (and cancel any active request)
+
+Use the single-letter shortcuts with the composer empty.
 
 The modal header shows the model and reasoning effort the explanation or
 drawing used (`default` when the model's own effort applies), followed by the
 explanation mode, and `prefs` when your [preferences](../reference/settings.md#preferences) shaped the
-result; `/bro open` keeps the original labels, mode, and tag.
+result; reopening Simplify keeps the original labels, mode, and tag.
 
 Bro temporarily captures mouse input while its modal is open. Native mouse
 selection may be unavailable or visually extend outside the modal depending on
@@ -49,25 +47,23 @@ your terminal mode; press **C** to copy the complete explanation reliably.
 Paste text directly after the command:
 
 ```text
-/bro text OAuth refresh tokens are rotated after every successful use.
+/bro simplify text OAuth refresh tokens are rotated after every successful use.
 ```
 
-Bro explains the pasted text instead of the latest assistant reply. With no text
-after `/bro text`, it falls back to the latest completed reply. Press **R**
-to simplify the same captured text again.
+Inside Simplify, use `/text <text>` for the same action. Press **R** to simplify the same captured text again.
 
 ## Explain a document
 
 Use a relative or absolute path, including files outside Pi's current workspace. Symlinks are followed; normal OS file permissions apply:
 
 ```text
-/bro file "docs/incident review.pdf"
+/bro simplify file "docs/incident review.pdf"
 ```
 
 Paths may contain spaces; matching single or double quotes are also accepted.
 Bro extracts text locally, then sends that text through the same explanation
 flow used by `/bro`. Pressing **R** retries the extracted snapshot; running a
-new `/bro file <path>` command reads the file again.
+new `/file <path>` command inside Simplify (or `/bro simplify file <path>` directly) reads it again.
 
 Files are limited to 10 MiB and 100,000 extracted characters. Scanned PDFs are
 not supported because Bro does not perform OCR.
@@ -77,13 +73,13 @@ not supported because Bro does not perform OCR.
 Pass one public HTTP or HTTPS page:
 
 ```text
-/bro url https://example.com/complicated-article
+/bro simplify url https://example.com/complicated-article
 ```
 
 Bro fetches the page, extracts its main readable text locally, and sends only
 that text through the existing explanation flow. The completed modal shows the
 final website and page title. Pressing **R** retries the captured page without
-fetching again; running a new `/bro url <url>` command fetches a fresh copy.
+fetching again; running `/url <url>` inside Simplify fetches a fresh copy.
 
 The first version is intentionally limited to one public, text-based page. It
 does not use browser cookies, sign in, run page JavaScript, bypass paywalls or
@@ -91,4 +87,4 @@ bot protection, load complete discussion threads, follow pagination, or
 understand images and video. Pages that depend on those features may fail.
 
 If Bro cannot read a page, copy its content into a `.txt` or `.md` file, or save
-it as a PDF, then use `/bro file <path>`.
+it as a PDF, then use `/bro simplify file <path>`.

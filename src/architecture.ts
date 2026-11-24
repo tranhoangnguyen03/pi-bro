@@ -136,7 +136,7 @@ export async function openArchitectureDocs(ctx: ExtensionCommandContext, focus: 
     await showBroModal(ctx, {
       loadingText: "Documenting the current project…",
       retryLabel: "build docs again",
-      run: (signal, _source, progress) => {
+      run: (signal, progress) => {
         running = generateArchitecture(ctx, focus, signal, progress);
         return running;
       },

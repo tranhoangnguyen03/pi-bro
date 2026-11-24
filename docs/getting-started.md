@@ -23,7 +23,7 @@ Restart Pi (or run `/reload`). Then run:
 Copy this complete command into Pi:
 
 ```text
-/bro text A request limit means a service allows only a certain number of calls in a given time.
+/bro simplify text A request limit means a service allows only a certain number of calls in a given time.
 ```
 
 **Expected:** A Bro window opens and explains the sentence in simpler words. The exact answer depends on the backend. Use the arrow keys to scroll, **C** to copy, or **Esc** to close. Bro doesn't insert this result into your main agent's context.
@@ -36,9 +36,9 @@ This step makes a **real model call**, which may use your backend account's quot
 | --- | --- |
 | Understand the last agent answer | Open `/bro`, then run `/simplify` inside |
 | Ask a side question | `/bro btw What is a race condition?` |
-| Visualize what we discussed | `/bro show` (after at least one user turn) |
-| Explain a local file | `/bro file docs/my-report.md` (**replace with an existing path**) |
-| Explain an actual public webpage | `/bro url https://your-public-page.example` (**replace with a real URL**) |
+| Visualize what we discussed | `/bro simplify show` (after at least one user turn) |
+| Explain a local file | `/bro simplify file docs/my-report.md` (**replace with an existing path**) |
+| Explain an actual public webpage | `/bro simplify url https://your-public-page.example` (**replace with a real URL**) |
 
 See the [docs home](README.md) for detailed workflows.
 

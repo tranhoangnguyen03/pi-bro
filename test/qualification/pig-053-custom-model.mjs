@@ -90,7 +90,7 @@ async function runHost(agent, workspace, session, expectedText, afterFirstReply)
     const sendBroRequest = async (id) => {
       const response = new Promise(resolve => pending.set(id, resolve));
       child.stdin.write(JSON.stringify({ id, type: "prompt",
-        message: "/bro text Explain the test request from this agent." }) + "\n");
+        message: "/bro simplify text Explain the test request from this agent." }) + "\n");
       const result = await withDeadline(response, 25_000,
         () => "RPC timeout: " + logs + "\n" + stdout);
       assert.equal(result.success, true, "RPC command error: " + JSON.stringify(result) + "\n" + logs);
@@ -105,8 +105,8 @@ async function runHost(agent, workspace, session, expectedText, afterFirstReply)
     assert.equal(exit.code, 0, "host did not exit cleanly: " + logs);
     const sessionText = await readFile(session, "utf8");
     const entries = sessionText.split("\n").filter(Boolean).map(JSON.parse);
-    assert.ok(entries.some(e => e.type === "custom" && e.customType === "bro-last-result" &&
-      JSON.stringify(e.data).includes(expectedText)),
+    assert.ok(entries.some(e => e.type === "custom" && e.customType === "bro-simplify-state" &&
+      e.data?.state?.result?.text?.includes(expectedText)),
       "Bro must retain the backend's actual result, not just the original prompt: " +
       sessionText.slice(-2800) + "\n" + logs);
   } finally {

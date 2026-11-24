@@ -25,7 +25,7 @@ export const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 export async function extractDocumentText(input: string, cwd: string, signal?: AbortSignal): Promise<string> {
 	const requested = unquote(input.trim());
-	if (!requested) throw new Error("Use /bro file <path>.");
+	if (!requested) throw new Error("Use /bro simplify file <path>.");
 	if (signal?.aborted) throw new Error("Canceled.");
 
 	let path: string;
@@ -143,13 +143,13 @@ export function isPublicWebAddress(address: string): boolean {
 
 export function parseWebUrl(input: string): URL {
 	const requested = unquote(input.trim());
-	if (!requested) throw new Error("Use /bro url <url>.");
+	if (!requested) throw new Error("Use /bro simplify url <url>.");
 
 	let url: URL;
 	try {
 		url = new URL(requested);
 	} catch {
-		throw new Error("That is not a valid URL. Use /bro url https://example.com/article.");
+		throw new Error("That is not a valid URL. Use /bro simplify url https://example.com/article.");
 	}
 	if (url.protocol !== "http:" && url.protocol !== "https:") {
 		throw new Error("Bro can read only public HTTP or HTTPS webpages.");

@@ -13,6 +13,11 @@ test("Show reopen restores diagrams and retries Show; Explain still retries Expl
 	const bin = join(buildDir, "bin"); mkdirSync(bin);
 	const calls = join(buildDir, "calls.jsonl");
 	const fail = join(buildDir, "fail");
+	const openedPath = join(buildDir, "opened-path");
+	if (process.platform !== "win32") {
+		writeFileSync(join(bin, process.platform === "darwin" ? "open" : "xdg-open"),
+			`#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(openedPath)}, process.argv[2]);\n`, { mode: 0o755 });
+	}
 	writeFileSync(join(bin, "agy"), `#!/usr/bin/env node
 const fs=require('node:fs');
 fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(process.argv.slice(2))+ '\\n');
@@ -36,7 +41,7 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Di
 		await new Promise<void>((resolve, reject) => {
 			const deadline = Date.now() + 5000;
 			const poll = () => {
-				if (modal.kind === "result" || modal.kind === "error") return resolve();
+				if (!modal.running) return resolve();
 				if (Date.now() > deadline) return reject(new Error("modal did not settle"));
 				setTimeout(poll, 10);
 			}; poll();
@@ -44,17 +49,23 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Di
 	};
 	try {
 		await registerBro({ on() {}, appendEntry() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
-		await command.handler("show 1 Keep My Steering", ctx);
+		await command.handler("simplify show 1 Keep My Steering", ctx);
+		assert.equal(Boolean(modal), false, "headless Show must not mount a viewer");
 		ctx.mode = "tui";
-		await command.handler("open", ctx);
+		await command.handler("simplify", ctx);
 		assert.equal(prompts().length, 1, "reopening must not call the backend");
 		assert.match(rendered(), /O open diagram/);
-		assert.match(rendered(), /R show again/);
+		assert.match(rendered(), /R retry/);
+		assert.doesNotMatch(rendered(), /M change mode/);
 		modal.dispose();
 		rmSync(showHtmlDirectory(), { recursive: true, force: true });
-		await command.handler("open", ctx);
+		await command.handler("simplify", ctx);
 		assert.match(rendered(), /O open diagram/);
 		assert.ok(readdirSync(showHtmlDirectory()).some((name: string) => name.endsWith(".html")));
+		if (process.platform !== "win32") {
+			modal.handleInput("o");
+			assert.match(readFileSync(readFileSync(openedPath, "utf8"), "utf8"), /<div>layout<\/div>/);
+		}
 		ctx.sessionManager.getBranch = () => [];
 		modal.handleInput("r"); await settled();
 		assert.match(prompts()[1], /Quoted session transcript as a JSON string/);
@@ -63,17 +74,19 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Di
 		writeFileSync(fail, "fail");
 		modal.handleInput("r"); await settled();
 		assert.match(rendered(), /Retry failed/);
-		assert.ok(modal.htmlPath, "failed retry retains the diagram path");
+		assert.match(rendered(), /O open diagram/, "failed retry retains the diagram");
 		modal.dispose(); rmSync(fail);
 		rmSync(showHtmlDirectory(), { recursive: true, force: true });
 		writeFileSync(showHtmlDirectory(), "not a directory");
-		await command.handler("open", ctx);
+		await command.handler("simplify", ctx);
 		assert.doesNotMatch(rendered(), /O open diagram/);
 		assert.equal(prompts().length, 3, "artifact recovery does not call a backend");
 		modal.dispose(); rmSync(showHtmlDirectory());
 		ctx.mode = "rpc";
-		await command.handler("text EXPLAIN_SOURCE", ctx);
-		ctx.mode = "tui"; await command.handler("open", ctx);
+		await command.handler("simplify text EXPLAIN_SOURCE", ctx);
+		ctx.mode = "tui"; await command.handler("simplify", ctx);
+		assert.match(rendered(), /M change mode/);
+		assert.doesNotMatch(rendered(), /O open diagram/, "an explanation replaces the last Show view");
 		modal.handleInput("r"); await settled();
 		assert.match(prompts().at(-1), /EXPLAIN_SOURCE/);
 		assert.doesNotMatch(prompts().at(-1), /Quoted session transcript as a JSON string/);
@@ -115,22 +128,23 @@ console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'Dr
 	const header = () => modal.render(140)[1];
 	const settled = async () => {
 		const deadline = Date.now() + 5000;
-		while (modal.kind !== "result" && modal.kind !== "error") {
+		while (modal.running) {
 			if (Date.now() > deadline) throw new Error("modal did not settle");
 			await new Promise((resolve) => setTimeout(resolve, 10));
 		}
 	};
 	try {
 		await registerBro({ on() {}, appendEntry() {}, registerTool() {}, registerCommand(_name: string, def: any) { command = def; } });
-		await command.handler("show 1", ctx); await settled();
+		await command.handler("simplify", ctx);
+		modal.setComposerText("/show 1"); modal.handleInput("\r"); await settled();
 		assert.ok(prompts()[0].includes(JSON.stringify("SHOW_PREFS_MARKER")), "Show prompts carry preferences");
 		assert.match(header(), / · prefs/, "the initial Show result carries the tag");
 		assert.doesNotMatch(header(), /balanced|brief|faithful/, "Show has no mode");
 		modal.dispose();
 
 		rmSync(preferences);
-		await command.handler("open", ctx);
-		assert.match(header(), / · prefs/, "/bro open restores the stored tag");
+		await command.handler("simplify", ctx);
+		assert.match(header(), / · prefs/, "Simplify restores the stored Show tag");
 		assert.equal(prompts().length, 1, "reopening makes no backend call");
 		writeFileSync(fail, "fail");
 		modal.handleInput("r"); await settled();

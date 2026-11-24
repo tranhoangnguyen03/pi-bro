@@ -11,18 +11,18 @@ those are historical records.
 
 Production code lives in `src/` and is published as TypeScript source (no build step):
 
-- **`session-state.ts`** — restores private per-branch BTW, Grill, Simplify and last-result state from Pi custom session entries, excluded from the main model context. The same restore runs on `session_start` and `session_tree`; saved-entry fingerprints prevent redundant appends on unchanged reopen/close.
+- **`session-state.ts`** — restores private per-branch BTW, Grill and Simplify state from Pi custom session entries. Reads legacy Show entries into the unified Simplify result; new runs write only the unified snapshot. The same restore runs on `session_start` and `session_tree`; saved-entry fingerprints prevent redundant appends on unchanged reopen/close.
 - **`bro.ts`** — the Pi extension entry point, `/bro` command routing and completion, session lifecycle wiring, and barrel re-exports.
 - **`overthink.ts`, `overthink-state.ts`, `overthink-questions-ui.ts`** — automatic same-model review of settled Pi work; private session custom entries plus global defaults; shared question editor and latest-notes viewer. Never use Bro's separate SDK/CLI backend for this cache-sensitive feature. The request retains session context (which may include tool definitions) but runs no tools; an unexpected toolUse stop reason is rejected. Agent-end events collect substantive-work evidence; only `agent_settled` (supported from Pi 1.3) schedules automatic checks. Session-position markers ignore private custom entries, while later model messages, compaction and context edits mark notes as stale. The settings-read generation token is captured before the asynchronous read. Automatic checks require an explicit opt-in stored with global default questions, separate from Bro's model selection.
 - **`architecture.ts`** — `/bro architecture` orchestration: staged project, explicit bundled skill, restricted source inspection using the existing review execution contract, guarded import and progress.
 - **`resources/architecture-docs/`** — architecture-writing references, read-only inventory, offline graph renderer and output checker; packaged with Bro. The pipeline validates source/target hashes and restricts imported files to `docs/architecture/`. No persistent repo memory or new backend selection.
 - **`doctor.ts`** — `/bro doctor` diagnostics, CLI version/auth probes, Agy model catalog/usage parsing, and `/bro config` modal launch wiring.
-- **`show.ts`** — `/bro show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid diagram page generation, and show execution. Keep the vendored Mermaid bundle for now: loading it only when rendering already avoids startup cost, and a remote dependency would break offline rendering. Revisit package size with the Simplify/Show work if a smaller offline sequence renderer preserves supported behavior.
+- **`show.ts`** — `/show` transcript capture, argument parsing, CSP-guarded HTML/Mermaid page generation, and model call. The vendored Mermaid bundle loads only when rendering a sequence diagram and works offline.
 - **`advisor.ts`** — the `bro_advisor` tool registration, context snapshot builder, session/durable steering state, and progress orchestration.
-- **`btw.ts`** — the `/bro btw` side conversation thread state, native continuation/reseed policy, composer command parsing, and `BtwModal`.
+- **`btw.ts`** — `/bro btw` side-conversation state, native continuation/reseed policy, and composer commands. **`composer-modal.ts`** is the shared Markdown reader and input used by BTW, Simplify, Grill Me, and Remember Me.
 - **`elevate-engine.ts`** — independent discovery and rewrite prompts, strict discovery JSON parser, user selection and scope guards.
 - **`elevate.ts`** — `/bro elevate` UI, draft capture, context filtering, backend calls, cancellation and copy-only handoff.
-- **`explain-modal.ts`** — `BroModal` (explain/show/doctor/help result overlay), `simplify`, `createTextEditorModal` (`/bro preferences` and `/bro advisor-steer` editors), and `/bro help` text.
+- **`simplify-engine.ts`**, **`simplify-ui.ts`** — source commands and the single-result explanation/diagram workflow. **`explain-modal.ts`** — explanation model call, shared result viewer for Doctor, Help and Architecture, and the preferences/advisor steering editors.
 - **`review.ts`** — Guided Review schema/validation, atomic records, guide replacement and prompt construction.
 - **`review-source.ts`** — explicit GitHub identity through `gh`, managed Git capture and protected blob evidence reads.
 - **`review-ui.ts`** — acquisition, backend execution, streaming/cancellation, serialized saves, evidence hydration and host UI lifecycle.
@@ -215,8 +215,7 @@ acquisition uses `renderFrame` with `REVIEW_ACQUIRE_OVERLAY` (centered 70% width
   while nonblank preferences add a guarded block. Benchmark manifests freeze
   the measured prompts; unit tests do not freeze their wording.
 - An explanation's mode and preferences tag belong to its result: **M** and
-  **R** re-run with the mode and re-read preferences, and `/bro open` restores
-  both without a backend call. Only `/bro mode` and `/bro config` write the
+  **R** re-run with the mode and re-read preferences. Opening `/bro` restores the latest result with the original mode and preferences tag, without a backend call. Only `/bro mode` and `/bro config` write the
   saved mode. A result without a built-in mode (Show, Doctor) offers no **M**.
 - A native BTW session remembers earlier prompts, so a change to preferences
   (like an Agy access change) drops it and reseeds a fresh one with the
@@ -293,7 +292,7 @@ does not depend on sleeps. `smoke-rpc.test.ts` checks this with a delayed fake h
 `show-html.test.ts` checks generated HTML's restrictive content policy.
 
 Config interactions are also exercised with a fake TUI/persistence harness, and
-the explain modal's **M**/**R**/`/bro open` flow runs through the real `/bro`
+the Simplify modal's **M**/**R**/reopen flow runs through the real `/bro`
 command against a fake `agy`; neither is live terminal verification. Use [TESTING.md](TESTING.md) for real
 modal interaction, including the BTW composer.
 

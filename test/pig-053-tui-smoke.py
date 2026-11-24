@@ -113,7 +113,7 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS","response":"BRO_PI
             os.kill(pid, signal.SIGWINCH)
             write(b"\x1b[B")  # move selection
             write(b"\x1b")  # leave config
-            write(b"/bro text Explain this synthetic input\r")
+            write(b"/bro simplify text Explain this synthetic input\r")
             expect("Bro backend answer in actual PiG terminal", ("BRO_PIG053_TERMINAL_RESULT",))
             write(b"/copy\r")
             expect("Simplify clipboard confirmation", ("Explanation copied.",))

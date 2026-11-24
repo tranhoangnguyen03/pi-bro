@@ -39,17 +39,16 @@ GitHub, use `pi install git:github.com/tranhoangnguyen03/pi-bro`.
 On first use, Bro picks the active physical Pi model if one is selected. No extra CLI is needed. Existing Bro settings stay as they are. Try this in Pi:
 
 ```text
-/bro text A request limit means a service allows only a certain number of calls in a given time.
+/bro simplify text A request limit means a service allows only a certain number of calls in a given time.
 ```
 
 **Expected:** Bro opens a separate window and explains that sentence in plain words. Close with **Esc**. Nothing is sent to your main agent's conversation. The exact words depend on your selected model.
 
 | After that | What happens |
 | --- | --- |
-| `/bro` | Shows the saved explanation, or help if none exists. Run `/simplify` inside to explain the latest reply again. |
+| `/bro` | Opens Simplify and shows the saved result or help. Run `/simplify` inside to explain the latest reply or `/show` to draw recent conversation turns. |
 | `/bro copy` | Edit and preview the raw Markdown of the last assistant reply before copying |
 | `/bro btw What is a race condition?` | Asks a private side question |
-| `/bro show` | Draws the current session's recent conversation, if any |
 | `/bro architecture` | Creates or refreshes `docs/architecture/` for this project |
 | `/bro grill-me Should agents talk freely to each other?` | Questions your assumptions privately, one at a time |
 | `/bro overthink` | Get a private second look with Ctrl+R; automatic checks are opt-in |
@@ -62,8 +61,7 @@ File and webpage examples need your own real path or URL; see [how to explain th
 | Command | What you get |
 | --- | --- |
 | `/bro copy` | **[Copy Markdown](docs/features/copy.md).** Edit, preview and copy the last completed reply as Markdown, without a model call or saved file. |
-| `/bro`, `/bro text`, `/bro file`, `/bro url` | **[Explain](docs/features/explain.md).** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
-| `/bro show` | **[Show](docs/features/show.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
+| `/bro`, `/bro simplify` | **Simplify.** Understand one source at a time: [plain-language explanations](docs/features/explain.md) of replies, text, files, or webpages, or [diagrams of recent turns](docs/features/show.md#bro-show) with `/show` inside the same window. |
 | `/bro architecture [focus]` | **[Architecture Docs](docs/features/architecture.md).** Inspects the project and writes Markdown, diagrams and an offline interactive `architecture.html` under `docs/architecture/`. Uses BTW model settings. |
 | `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/features/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
 | `/bro remember-me [thought]` | **[Remember Me](docs/features/remember-me.md).** Privately clarify and approve short personal memories with unfoldable background. Agents can call `about_user` to read summaries and expand IDs. |
@@ -121,7 +119,7 @@ which may keep it under their own policies. Paths below are under
 
 Session-scoped Bro entries live **inside Pi's session file**. They stay out of the model's conversation, but are not secret from someone who can read, back up, export, or share that file. Check the session content before sharing it; this feature does not encrypt or redact exports.
 
-`/bro url` also connects straight to the website, which sees your IP address.
+`/bro simplify url` also connects straight to the website, which sees your IP address.
 Bro runs each CLI as you, with your environment. It never reads or copies an
 external CLI's provider credentials, but a CLI signs in its own way, which can
 include API keys set in your environment. The built-in **Pi** backend is the
@@ -150,11 +148,11 @@ and [Privacy and safety](docs/reference/data-and-permissions.md#privacy-and-safe
 - Documents: `.md`, `.markdown`, `.txt`, `.pdf`, `.docx` only, no OCR, up to 10 MiB.
   → Run OCR elsewhere first.
 - Webpages: one public HTML page; no logins, paywalls, page JavaScript or
-  proxy settings. → Save the page as PDF or text and use `/bro file`.
+  proxy settings. → Save the page as PDF or text and use `/bro simplify file`.
 - No fallback: if the chosen backend, model or effort fails, Bro shows that
   backend's error instead of switching. → Run `/bro doctor`.
 - Elevate runs fresh restricted calls through the BTW model setting. Restricted does not always mean sandboxed; see [access and retention](docs/reference/data-and-permissions.md). The shortcut may not work in all terminals: use `/bro elevate` instead.
-- BTW, Grill Me and the latest explanation/Show result use private session entries; they survive normal Pi reload/resume. A new session starts fresh and later fork changes stay separate. Abrupt crashes during active calls are not guaranteed.
+- BTW, Grill Me and Simplify's latest result use private session entries; they survive normal Pi reload/resume. A new session starts fresh and later fork changes stay separate. Abrupt crashes during active calls are not guaranteed.
 - Guided Review runs in local interactive Pi only and does not post to
   GitHub.
 

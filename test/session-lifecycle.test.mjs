@@ -77,6 +77,44 @@ test("session_tree changes live Bro thread and resets write comparisons", async 
   assert.equal(appended.length, 1, "switching to existing history must not write");
 });
 
+test("clearing a restored legacy Show writes a new snapshot even when a prior clear matches", async () => {
+  const clear = { state: { view: "empty", draft: "" } };
+  const branch = [
+    custom(bro.SIMPLIFY_SESSION_ENTRY, clear),
+    custom(bro.LAST_RESULT_SESSION_ENTRY, { result: { text: "LEGACY_DIAGRAM", source: { text: "original" } }, steering: "" }),
+  ];
+  const hooks = new Map();
+  let command;
+  let view;
+  await bro.default({
+    on(name, callback) { if (!hooks.has(name)) hooks.set(name, callback); },
+    registerTool() {},
+    registerCommand(_name, def) { command = def; },
+    appendEntry(type, data) { branch.push(custom(type, JSON.parse(JSON.stringify(data)))); },
+  });
+  const ctx = {
+    mode: "tui", hasUI: true, cwd: process.cwd(),
+    sessionManager: { getBranch: () => branch },
+    ui: {
+      notify() {},
+      custom: factory => new Promise(resolve => {
+        const modal = factory(makeTui(), theme, {}, resolve);
+        view = stripVTControlCharacters(modal.render(94).join("\n"));
+        modal.setComposerText("/clear");
+        modal.handleInput("\r");
+        modal.handleInput("\x1b");
+      }),
+    },
+  };
+  await hooks.get("session_start")({}, ctx);
+  await command.handler("simplify", ctx);
+  assert.match(view, /LEGACY_DIAGRAM/);
+  assert.deepEqual(branch.slice(2), [custom(bro.SIMPLIFY_SESSION_ENTRY, clear)], "clear must win on disk, not just in the modal");
+  await hooks.get("session_start")({}, ctx);
+  await command.handler("simplify", ctx);
+  assert.doesNotMatch(view, /LEGACY_DIAGRAM/, "the legacy diagram must stay cleared after replay");
+});
+
 test("BTW modal keeps latest tool phase after earlier throttled text renders", { timeout: 15000 }, async () => {
   await withFakeExecutable("agy", [
     "#!/usr/bin/env node",
