@@ -23,7 +23,7 @@ export const ADVISOR_TOOL_NAME = "bro_advisor";
 // setStatus() key for mirroring live advisor progress to the footer/status bar -- see the execute()
 // handler below for why this fallback surface exists alongside onUpdate's tool-card renderResult.
 export const ADVISOR_STATUS_BAR_KEY = "bro-advisor";
-export const ADVISOR_COMPATIBILITY = "Pi >=0.84.2; Agy >=1.1.15";
+export const ADVISOR_COMPATIBILITY = "Pi >=1.3.0; Agy >=1.1.15";
 export const ADVISOR_STEERING_FILE = join(getAgentDir(), "bro-advisor.md");
 const MAX_ADVISOR_STEERING_FILE_BYTES = 64 * 1024;
 

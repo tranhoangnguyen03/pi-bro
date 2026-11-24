@@ -26,9 +26,10 @@ export function markdownIndex(content) {
 
 export async function checkDocs(root) {
  const errs=[],seen=[];
- const docs=['README.md','CONTRIBUTING.md','SECURITY.md','docs/README.md','docs/getting-started.md','docs/user-guide.md','docs/guided-review.md','docs/elevate.md','docs/pig-compatibility.md','docs/DEVELOPMENT.md','docs/TESTING.md','docs/examples.md'];
- for (const directory of ['docs/features','docs/reference']) {
-  for(const name of await readdir(join(root,directory)))if(name.endsWith('.md'))docs.push(directory+'/'+name);
+ const docs=['README.md','CONTRIBUTING.md','SECURITY.md'];
+ for (const entry of await readdir(join(root,'docs'),{recursive:true,withFileTypes:true})) {
+  const path=relative(root,join(entry.parentPath,entry.name)).split(sep).join('/');
+  if(entry.isFile()&&extname(path)==='.md'&&!path.startsWith('docs/plans/'))docs.push(path);
  }
  const parsed=new Map();
  for(const file of docs){const text=await readFile(join(root,file),'utf8'); const index=markdownIndex(text); parsed.set(file,index); seen.push(file); if(index.h1Count!==1)errs.push(`${file}: expected exactly one top-level # heading; got ${index.h1Count}`);}
@@ -59,7 +60,7 @@ export async function checkDocs(root) {
   for(const cmd of values)if(!new RegExp('\\/bro\\s+'+cmd+'\\b').test(reference))errs.push(`docs/reference/commands.md: undocumented registered subcommand /bro ${cmd}`);
  }
  const pkg=JSON.parse(await readFile(join(root,'package.json'),'utf8'));
- for(const file of ['docs/README.md','docs/getting-started.md','docs/user-guide.md','docs/guided-review.md','docs/elevate.md','docs/examples.md','docs/features','docs/reference'])if(!pkg.files?.includes(file))errs.push(`package.json: user docs missing from npm files list: ${file}`);
+ for(const file of ['docs/README.md','docs/getting-started.md','docs/user-guide.md','docs/feature-map.md','docs/examples.md','docs/features','docs/reference'])if(!pkg.files?.includes(file))errs.push(`package.json: user docs missing from npm files list: ${file}`);
  const readme=await readFile(join(root,'README.md'),'utf8');
  if(!readme.includes('/bro text A request limit means'))errs.push('README.md: expected a fully runnable first-use example');
  if(readme.includes('/bro file docs/report.pdf'))errs.push('README.md: unmarked placeholder in first-use commands');

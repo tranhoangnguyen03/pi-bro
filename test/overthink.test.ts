@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
@@ -93,19 +93,18 @@ test("global defaults: persisted list and reset source remain independent", asyn
   const dir = await mkdtemp(join(tmpdir(), "bro-overthink-"));
   try {
     assert.deepEqual(await readGlobalQuestions(dir), FACTORY_QUESTIONS);
-    assert.equal(await readAutomaticChecks(dir), true);
-    await writeAutomaticChecks(false, dir);
     assert.equal(await readAutomaticChecks(dir), false);
-    await writeGlobalQuestions(["Changed direction?", "Risk?"], dir);
-    assert.deepEqual(await readGlobalQuestions(dir), ["Changed direction?", "Risk?"]);
-    assert.equal(await readAutomaticChecks(dir), false, "editing questions must preserve enabled state");
-    const disk = JSON.parse(await readFile(join(dir, "bro-overthink-defaults.json"), "utf8"));
-    assert.equal(disk.version, 1);
+    const file = join(dir, "bro-overthink-defaults.json");
+    await writeFile(file, JSON.stringify({ version: 1, questions: ["Legacy question?"] }));
+    assert.equal(await readAutomaticChecks(dir), false, "an old question list is not consent to automatic calls");
+    assert.deepEqual(await readGlobalQuestions(dir), ["Legacy question?"]);
+    await writeAutomaticChecks(true, dir);
+    assert.deepEqual(await readGlobalQuestions(dir), ["Legacy question?"], "toggling checks preserves questions");
     await writeGlobalQuestions([], dir);
     assert.deepEqual(await readGlobalQuestions(dir), []);
-    await writeAutomaticChecks(true, dir);
-    assert.equal(await readAutomaticChecks(dir), true);
-    assert.deepEqual(await readGlobalQuestions(dir), [], "toggling automatic checks must preserve questions");
+    assert.equal(await readAutomaticChecks(dir), true, "editing questions preserves explicit opt-in");
+    await writeAutomaticChecks(false, dir);
+    assert.equal(await readAutomaticChecks(dir), false);
     assert.equal(FACTORY_QUESTIONS.length, 4);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
@@ -211,11 +210,18 @@ test("same Pi model is called once, report is stored privately, and a new turn c
   await writeFile(join(process.env.PI_CODING_AGENT_DIR!, "bro-preferences.md"), "Explain simply; no forced analogies.\n", "utf8");
   await callbacks.session_start({}, ctx);
   assert.equal(resolveOverthinkSession(entries).questions?.length, FACTORY_QUESTIONS.length);
-  assert.equal(await readAutomaticChecks(), true, "clean fixture must start with automatic checks on");
-  await callbacks.agent_end({ messages: [
+  const substantialWork = { messages: [
     { role: "toolResult" }, { role: "toolResult" }, { role: "toolResult" },
     { role: "assistant", stopReason: "stop" },
-  ] }, ctx);
+  ] };
+  assert.equal(await readAutomaticChecks(), false);
+  await callbacks.agent_end(substantialWork, ctx);
+  await callbacks.agent_settled({ aborted: false }, ctx);
+  assert.equal(requests.length, 0, "no automatic request before opt-in");
+  await writeAutomaticChecks(true);
+  assert.equal(await readAutomaticChecks(), true);
+  await callbacks.agent_start({}, ctx);
+  await callbacks.agent_end(substantialWork, ctx);
   assert.equal(requests.length, 0, "agent_end is not yet safe to review");
   // Pi may open another agent loop as part of a queued continuation. The next
   // agent_start must invalidate an older check without losing work evidence.

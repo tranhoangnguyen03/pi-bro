@@ -33,7 +33,6 @@ import { openGuidedReview, stopGuidedReviews } from "./review-ui.ts";
 import {
 	type BroSettings,
 	capabilityBackend,
-	ensureSettingsFile,
 	readPreferences,
 	readSettings,
 	writeSettings,
@@ -552,7 +551,4 @@ export default async function bro(pi: ExtensionAPI) {
 			},
 		});
 	} catch { /* /bro still works; the command is the supported path to Elevate */ }
-
-	// Keep the command available even when Bro cannot create its settings file; Doctor can then explain the problem.
-	await ensureSettingsFile().catch(() => undefined);
 }

@@ -16,11 +16,11 @@ Start with what you want to do. The [README](../README.md) explains the product,
 - [Visualize a conversation](features/show.md#bro-show) — Show diagrams.
 - [Document a repository's architecture](features/architecture.md) — create or refresh Markdown, diagrams and an offline HTML map.
 - [Ask a private side question](features/btw.md#bro-btw-side-conversation) — BTW.
-- [Remember personal context for agents](remember-me.md) — approved short memories, expandable background and the read-only `about_user` tool.
-- [Review work quietly with Overthink](overthink.md) — automatic same-model second look with editable session questions.
-- [Get grilled on a decision](grill-me.md) — one question at a time in a private modal, then copy a decision brief.
-- [Improve a request before sending it](elevate.md) — Elevate: discover expert gaps, choose improvements, rewrite the task.
-- [Investigate a PR](guided-review.md) — Guided Review.
+- [Remember personal context for agents](features/remember-me.md) — approved short memories, expandable background and the read-only `about_user` tool.
+- [Review work quietly with Overthink](features/overthink.md) — same-model second look with editable questions and optional automatic checks.
+- [Get grilled on a decision](features/grill-me.md) — one question at a time in a private modal, then copy a decision brief.
+- [Improve a request before sending it](features/elevate.md) — Elevate: discover expert gaps, choose improvements, rewrite the task.
+- [Investigate a PR](features/guided-review.md) — Guided Review.
 - [Get an agent's second opinion](features/advisor.md#bro-advisor) — Advisor; review its permissions first.
 
 ## I need to set up or fix something
@@ -32,7 +32,7 @@ Start with what you want to do. The [README](../README.md) explains the product,
 
 ## For contributors
 
-- [Contributing](../CONTRIBUTING.md), [code map](DEVELOPMENT.md), [manual testing](TESTING.md), and [security reports](../SECURITY.md).
-- [Presentation standard](PUBLIC-PRESENTATION.md), [test evidence](test-consolidation.md), [prompt benchmarks](../benchmark/README.md), and [historical plans](plans/).
+- [Contributing](https://github.com/tranhoangnguyen03/pi-bro/blob/main/CONTRIBUTING.md), [code map](https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/DEVELOPMENT.md), [manual testing](https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/TESTING.md), and [security reports](https://github.com/tranhoangnguyen03/pi-bro/blob/main/SECURITY.md).
+- [Presentation standard](https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/PUBLIC-PRESENTATION.md), [test evidence](https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/test-consolidation.md), [prompt benchmarks](https://github.com/tranhoangnguyen03/pi-bro/tree/main/benchmark), and [historical plans](https://github.com/tranhoangnguyen03/pi-bro/tree/main/docs/plans).
 
 The topic pages and references above document shipped behavior. [Old user-guide links](user-guide.md) still work as pointers. Historical plans may describe work that did not ship.

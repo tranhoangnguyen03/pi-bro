@@ -6,10 +6,12 @@ import {
 	type BackendSelection,
 	agySelection,
 	CLAUDE_EFFORTS,
+	getPiHostContext,
 	GROK_EFFORTS,
 	CODEX_EFFORTS,
 	MUSE_EFFORTS,
 	PI_EFFORTS,
+	piPhysicalModel,
 } from "./backend.ts";
 import { type BroMode, DEFAULT_BRO_MODE, MAX_PREFERENCES_CHARS, parseBroMode } from "./prompt.ts";
 import { errorMessage, isRecord } from "./util.ts";
@@ -507,10 +509,16 @@ export async function ensureSettingsFile(): Promise<void> {
 	await mkdir(getAgentDir(), { recursive: true });
 	try {
 		const envModel = process.env.PI_BRO_MODEL?.trim();
-		const defaultModel = envModel || "gemini-3.7-flash";
+		const host = getPiHostContext();
+		const active = host?.model;
+		// PiG can report a placeholder when no model is configured; only bootstrap from a catalog model.
+		const pair: ModelEffortPair = envModel
+			? { model: envModel, effort: "default" }
+			: active && piPhysicalModel(host?.modelRegistry, active.provider, active.id)
+				? { backend: "pi", model: piModelValue(active.provider, active.id), effort: "default" }
+				: { model: "gemini-3.7-flash", effort: "low" };
 		const initial: BroSettings = {
-			model: defaultModel,
-			effort: envModel ? "default" : "low",
+			...pair,
 			mode: DEFAULT_BRO_MODE,
 			showTurns: DEFAULT_SHOW_TURNS,
 			overrides: {},

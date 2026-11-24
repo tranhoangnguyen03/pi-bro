@@ -48,7 +48,7 @@ existing editing pages. The old `/bro doctor`, `/bro preferences` and
 
 Architecture Docs inherits the **BTW** backend/model/effort selection. It uses a fresh restricted file-inspection call and does not alter the BTW thread. See [Architecture Docs](../features/architecture.md).
 
-Elevate inherits the **BTW** backend/model/effort selection. There is no separate Elevate setting in this release. See the [Elevate guide](../elevate.md).
+Elevate inherits the **BTW** backend/model/effort selection. There is no separate Elevate setting in this release. See the [Elevate guide](../features/elevate.md).
 
 Settings live in this user-editable file, created when the extension loads
 (under `$PI_CODING_AGENT_DIR` instead when that is set):
@@ -71,7 +71,7 @@ Settings live in this user-editable file, created when the extension loads
 }
 ```
 
-Bro reads the file again before each request, so manual edits apply next time.
+Bro reads the file again before each request, so manual edits apply next time. If the file is missing, Bro saves the active physical Pi model as the default, with effort `default`. If Pi has no active model or is using a virtual model, Bro starts with the Agy preset shown above; use `/bro config` to choose another backend or a physical Pi model.
 
 - Each selection is one atomic backend/model/effort choice. An override pins
   its own complete selection and ignores the shared default, even when it
@@ -89,7 +89,7 @@ Bro reads the file again before each request, so manual edits apply next time.
 - `mode` is `brief`, `balanced` (the default), or `faithful`. `showTurns` is
   the default number of turns `/bro show` draws (default 1); `/bro show
   <n-turns>` overrides it for one run.
-- `PI_BRO_MODEL` picks the initial Agy model only when Bro creates a missing
+- `PI_BRO_MODEL` explicitly selects Agy and its model when Bro creates a missing
   settings file, for example `PI_BRO_MODEL=gemini-3.7-flash-low pi`.
 - Older flat settings files (root `model`/`effort`) still load and mean Agy.
 
@@ -161,7 +161,7 @@ another backend's authentication.
 `/bro doctor` applies the same explicit subscription checks as execution. A passing
 check establishes the tested login method and route, **not** a successful live
 answer, human account identity or subscription billing. See the
-[implementation notes](../DEVELOPMENT.md#official-cli-subscription-policy) for
+[implementation notes](https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/DEVELOPMENT.md#official-cli-subscription-policy) for
 Codex's inspection-only catalog and the [PiG qualification guide](../piG-agent-shell-qualification.md#codex-provider-route-regression-and-diagnostic-parity)
 for the versioned real-CLI/local-server evidence.
 
@@ -219,4 +219,4 @@ read. Move what you want to keep into `/bro preferences`, and choose
 
 ## Remember Me
 
-`/bro remember-me` manages approved personal memories in `bro-memories.json` in the same user agent directory. Each entry has a stable ID, a scan-first short statement, and optional scope, exceptions, uncertainty and source context in an expanded view. The agent-facing `about_user` tool reads them on demand. `/bro preferences` remains a separate legacy file; no automatic migration or duplicate injection occurs. See [Remember Me](../remember-me.md).
+`/bro remember-me` manages approved personal memories in `bro-memories.json` in the same user agent directory. Each entry has a stable ID, a scan-first short statement, and optional scope, exceptions, uncertainty and source context in an expanded view. The agent-facing `about_user` tool reads them on demand. `/bro preferences` remains a separate legacy file; no automatic migration or duplicate injection occurs. See [Remember Me](../features/remember-me.md).

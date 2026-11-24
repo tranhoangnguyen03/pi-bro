@@ -8,9 +8,9 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { execute, verifyCliSubscription } from "../src/backend.ts";
-import { resolveCliChildAuth } from "../src/cli-auth.ts";
-import { doctorReport } from "../src/doctor.ts";
+import { execute, verifyCliSubscription } from "../../src/backend.ts";
+import { resolveCliChildAuth } from "../../src/cli-auth.ts";
+import { doctorReport } from "../../src/doctor.ts";
 
 const codex = process.env.BRO_REAL_CODEX_BIN;
 

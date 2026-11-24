@@ -11,7 +11,7 @@ agent's context.
 
 `pi-bro` is an extension for [Pi](https://github.com/earendil-works/pi), a
 terminal coding agent. Bro opens its answers in a separate window and runs
-them through an AI coding CLI you already have and are signed in to, so your
+them through Pi's model or a supported AI coding CLI, so your
 main agent's conversation stays clean. Before you install, see
 [what leaves your machine](#what-leaves-your-machine).
 
@@ -36,7 +36,7 @@ GitHub, use `pi install git:github.com/tranhoangnguyen03/pi-bro`.
 
 ## Try it
 
-For a first success, type this in Pi after setting up a backend:
+On first use, Bro picks the active physical Pi model if one is selected. No extra CLI is needed. Existing Bro settings stay as they are. Try this in Pi:
 
 ```text
 /bro text A request limit means a service allows only a certain number of calls in a given time.
@@ -52,7 +52,7 @@ For a first success, type this in Pi after setting up a backend:
 | `/bro show` | Draws the current session's recent conversation, if any |
 | `/bro architecture` | Creates or refreshes `docs/architecture/` for this project |
 | `/bro grill-me Should agents talk freely to each other?` | Questions your assumptions privately, one at a time |
-| `/bro overthink` | Views private automatic second-look notes; Ctrl+R forces a new check |
+| `/bro overthink` | Get a private second look with Ctrl+R; automatic checks are opt-in |
 | `/bro elevate Improve how we search company documents` | Find expert gaps before giving Pi a task |
 
 File and webpage examples need your own real path or URL; see [how to explain them](docs/features/explain.md#explain-a-document). For a step-by-step first run, see [Getting started](docs/getting-started.md).
@@ -65,20 +65,20 @@ File and webpage examples need your own real path or URL; see [how to explain th
 | `/bro`, `/bro text`, `/bro file`, `/bro url` | **[Explain](docs/features/explain.md).** A plain-language version of the agent's last reply, pasted text, a PDF/DOCX/Markdown file, or a public webpage. Three modes: `brief`, `balanced`, `faithful`. |
 | `/bro show` | **[Show](docs/features/show.md#bro-show).** The last few turns drawn as a shape (call tree, file tree, diff, pseudocode, a sequence diagram, or an HTML layout) instead of prose. |
 | `/bro architecture [focus]` | **[Architecture Docs](docs/features/architecture.md).** Inspects the project and writes Markdown, diagrams and an offline interactive `architecture.html` under `docs/architecture/`. Uses BTW model settings. |
-| `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
-| `/bro remember-me [thought]` | **[Remember Me](docs/remember-me.md).** Privately clarify and approve short personal memories with unfoldable background. Agents can call `about_user` to read summaries and expand IDs. |
-| `/bro overthink` | **[Overthink](docs/overthink.md).** Quietly checks meaningful work with the active Pi model; four factory questions, a short summary and one response per editable question. Automatic checks can be switched off in config. No separate backend. |
-| `/bro grill-me` | **[Grill Me](docs/grill-me.md) (experimental).** A private, opinionated decision interview: light, balanced or exhaustive; one question per round; `/consolidate` drafts a brief without ending the interview; `/copy` returns the latest reply or decision brief to the clipboard. Uses BTW model settings; read-only restrictions vary by backend. |
+| `/bro elevate` or **Ctrl+Shift+E** | **[Elevate](docs/features/elevate.md).** Discover missing expert considerations, select useful improvements, and rewrite your task without submitting it. Shares BTW backend settings. |
+| `/bro remember-me [thought]` | **[Remember Me](docs/features/remember-me.md).** Privately clarify and approve short personal memories with unfoldable background. Agents can call `about_user` to read summaries and expand IDs. |
+| `/bro overthink` | **[Overthink](docs/features/overthink.md).** Get a second look from the active Pi model, with four editable questions. Use Ctrl+R to check now; enable automatic checks in config if you want them. |
+| `/bro grill-me` | **[Grill Me](docs/features/grill-me.md) (experimental).** A private, opinionated decision interview: light, balanced or exhaustive; one question per round; `/consolidate` drafts a brief without ending the interview; `/copy` returns the latest reply or decision brief to the clipboard. Uses BTW model settings; read-only restrictions vary by backend. |
 | `/bro btw` | **[Side questions](docs/features/btw.md#bro-btw-side-conversation).** A separate conversation seeded with recent context, so you can ask without interrupting the agent. ⚠️ [Full-permission mode](#what-leaves-your-machine) can edit files. |
-| `/bro guided-review <PR>` | **[Guided Review](docs/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Claude, Muse, or Pi is recommended for untrusted PRs. |
+| `/bro guided-review <PR>` | **[Guided Review](docs/features/guided-review.md).** An explanation and quality assessment of a GitHub PR, with ranked findings, source evidence and private questions. Claude, Muse, or Pi is recommended for untrusted PRs. |
 | `/bro guided-review delete [PR]` | Choose a saved review and explicitly delete its record, questions and captured source after confirmation. No automatic cleanup. |
 | `bro_advisor` tool | **[Second opinion](docs/features/advisor.md#bro-advisor).** A tool your agent can call mid-task; a fresh backend process reviews the session snapshot, can inspect the workspace when needed, and returns advice to the agent. ⚠️ [Runs with permissions bypassed](#what-leaves-your-machine). |
 | `/bro config`, `/bro preferences` | **[Settings](docs/reference/settings.md#settings) and [preferences](docs/user-guide.md#preferences).** Pick the backend, model and effort per feature, and tell Bro how you like answers. |
 
 For help by task, start with the **[four human-intent states](docs/feature-map.md)** or the **[docs home](docs/README.md)**; see the [command reference](docs/reference/commands.md) for syntax.
-**Elevate, in practice:** Bro points out expert questions or tests you may have missed before you ask Pi to do the work. Review the suggestions, approve only what matters, then edit or submit the resulting request yourself. See the [walkthrough](docs/elevate.md) for limits, privacy, and copy-only handoff.
+**Elevate, in practice:** Bro points out expert questions or tests you may have missed before you ask Pi to do the work. Review the suggestions, approve only what matters, then edit or submit the resulting request yourself. See the [walkthrough](docs/features/elevate.md) for limits, privacy, and copy-only handoff.
 
-Guided Review has its own [guide](docs/guided-review.md).
+Guided Review has its own [guide](docs/features/guided-review.md).
 
 ## Requirements
 
@@ -89,7 +89,7 @@ Guided Review has its own [guide](docs/guided-review.md).
 
 | Backend | CLI | Notes |
 | --- | --- | --- |
-| [Google Antigravity](https://antigravity.google/docs/cli-install) | `agy` | Default for new settings. Needs `>=1.1.15`. Guided Review uses `--sandbox`, which restricts shell commands but still allows writes inside the project. |
+| [Google Antigravity](https://antigravity.google/docs/cli-install) | `agy` | Used for new settings if no physical Pi model is selected. Needs `>=1.1.15`. Guided Review uses `--sandbox`, which restricts shell commands but still allows writes inside the project. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `claude` | Works for every feature; strict file-only inspection for Guided Review. |
 | [Grok Build](https://docs.x.ai/build/overview) | `grok` | Guided Review uses its read-only sandbox (shell-enabled). |
 | [Codex CLI](https://github.com/openai/codex) | `codex` | Guided Review uses its read-only sandbox (shell-enabled). |
@@ -176,9 +176,7 @@ npm test        # offline: uses fake backend CLIs, never calls a model
 pi --tui-mode fullscreen -e ./src/bro.ts
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), the [code map](docs/DEVELOPMENT.md)
-and the [docs index](docs/README.md). Report security problems privately as
-described in [SECURITY.md](SECURITY.md).
+See the [contribution and security guides](docs/README.md#for-contributors).
 
 ## License
 

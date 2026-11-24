@@ -121,13 +121,13 @@ export function globalQuestionsFile(dir = getAgentDir()): string {
   return join(dir, OVERTHINK_DEFAULTS_FILE);
 }
 export type OverthinkGlobal = { questions: string[]; automatic: boolean };
-/** Missing flag defaults to on, including files written before the on/off switch existed. */
+/** Only an explicitly saved true enables automatic requests. */
 export async function readGlobalOverthink(dir = getAgentDir()): Promise<OverthinkGlobal> {
   const file = globalQuestionsFile(dir);
   let info;
   try { info = await lstat(file); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { questions: [...FACTORY_QUESTIONS], automatic: true };
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { questions: [...FACTORY_QUESTIONS], automatic: false };
     throw error;
   }
   if (!info.isFile() || info.isSymbolicLink() || info.size > 32768) throw new Error("Unsafe or oversized Overthink defaults file: " + file);
@@ -136,7 +136,7 @@ export async function readGlobalOverthink(dir = getAgentDir()): Promise<Overthin
       (data.automatic !== undefined && typeof data.automatic !== "boolean")) {
     throw new Error("Unsupported Overthink defaults format: " + file);
   }
-  return { questions: checkQuestions(data.questions), automatic: data.automatic ?? true };
+  return { questions: checkQuestions(data.questions), automatic: data.automatic ?? false };
 }
 
 export async function readGlobalQuestions(dir = getAgentDir()): Promise<string[]> {
