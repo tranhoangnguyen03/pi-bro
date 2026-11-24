@@ -2,8 +2,8 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { BtwThread } from "./btw.ts";
 import type { GrillThread } from "./grill-engine.ts";
-import type { ModalResult } from "./explain-modal.ts";
-import type { SimplifyState } from "./simplify-ui.ts";
+import { parseBroMode } from "./prompt.ts";
+import type { SimplifyResult, SimplifyState } from "./simplify-ui.ts";
 import { isRecord } from "./util.ts";
 
 export const BTW_SESSION_ENTRY = "bro-btw-thread";
@@ -15,16 +15,9 @@ export const LAST_RESULT_SESSION_ENTRY = "bro-last-result";
  * A tree move rebuilds these signatures from its own branch, not the old one.
  */
 export function privateSessionEntrySnapshots(branch: readonly SessionEntry[]): Map<string, string> {
-  const types = new Set<string>([
-    BTW_SESSION_ENTRY, GRILL_SESSION_ENTRY, SIMPLIFY_SESSION_ENTRY, LAST_RESULT_SESSION_ENTRY,
-  ]);
-  const saved = new Map<string, string>();
-  for (const entry of branch) {
-    if (entry.type === "custom" && types.has(entry.customType) && isRecord(entry.data)) {
-      saved.set(entry.customType, JSON.stringify(entry.data));
-    }
-  }
-  return saved;
+  const snapshots = new Map<string, string>();
+  restorePrivateBroState(branch, snapshots);
+  return snapshots;
 }
 
 
@@ -32,8 +25,6 @@ export type PrivateBroSessionState = {
   btw?: BtwThread;
   grill?: GrillThread;
   simplify: SimplifyState;
-  lastResult?: ModalResult;
-  lastShowSteering?: string;
 };
 
 const textTurns = (value: unknown): boolean =>
@@ -53,18 +44,26 @@ function grillThread(value: unknown): GrillThread | undefined {
   return value as unknown as GrillThread;
 }
 
-function modalResult(value: unknown): ModalResult | undefined {
-  if (!isRecord(value) || typeof value.text !== "string") return undefined;
-  if (value.source !== undefined && (!isRecord(value.source) || typeof value.source.text !== "string")) return undefined;
-  return value as unknown as ModalResult;
+function simplifyResult(value: unknown, legacySteering?: string): SimplifyResult | undefined {
+  if (!isRecord(value) || typeof value.text !== "string" || !isRecord(value.source) || typeof value.source.text !== "string") return undefined;
+  const steering = legacySteering ?? (typeof value.showSteering === "string" ? value.showSteering : undefined);
+  const mode = steering === undefined ? parseBroMode(value.mode) : undefined;
+  return {
+    text: value.text,
+    source: { text: value.source.text, ...(typeof value.source.label === "string" ? { label: value.source.label } : {}) },
+    ...(typeof value.model === "string" ? { model: value.model } : {}),
+    ...(typeof value.preferences === "boolean" ? { preferences: value.preferences } : {}),
+    ...(mode ? { mode } : {}),
+    ...(steering !== undefined ? { showSteering: steering } : {}),
+  };
 }
 
 function simplifyState(value: unknown): SimplifyState {
   if (!isRecord(value)) return {};
-  const result = modalResult(value.result);
-  if (value.result !== undefined && !result?.source) return {};
+  const result = simplifyResult(value.result);
+  if (value.result !== undefined && !result) return {};
   return {
-    ...(result ? { result: result as SimplifyState["result"] } : {}),
+    ...(result ? { result } : {}),
     ...(value.view === "result" || value.view === "help" || value.view === "empty" ? { view: value.view } : {}),
     ...(typeof value.draft === "string" ? { draft: value.draft } : {}),
     ...(typeof value.error === "string" ? { error: value.error } : {}),
@@ -72,19 +71,38 @@ function simplifyState(value: unknown): SimplifyState {
 }
 
 /** Last matching entry on the active branch wins. A cleared state cannot resurrect. */
-export function restorePrivateBroState(branch: readonly SessionEntry[]): PrivateBroSessionState {
+export function restorePrivateBroState(branch: readonly SessionEntry[], snapshots?: Map<string, string>): PrivateBroSessionState {
   const restored: PrivateBroSessionState = { simplify: {} };
+  let hasSimplifySnapshot = false;
   for (const entry of branch) {
     if (entry.type !== "custom" || !isRecord(entry.data)) continue;
     const value = entry.data;
     switch (entry.customType) {
-      case BTW_SESSION_ENTRY: restored.btw = btwThread(value.thread); break;
-      case GRILL_SESSION_ENTRY: restored.grill = grillThread(value.thread); break;
-      case SIMPLIFY_SESSION_ENTRY: restored.simplify = simplifyState(value.state); break;
-      case LAST_RESULT_SESSION_ENTRY:
-        restored.lastResult = modalResult(value.result);
-        restored.lastShowSteering = typeof value.steering === "string" ? value.steering : undefined;
+      case BTW_SESSION_ENTRY:
+        restored.btw = btwThread(value.thread);
+        snapshots?.set(entry.customType, JSON.stringify(value));
         break;
+      case GRILL_SESSION_ENTRY:
+        restored.grill = grillThread(value.thread);
+        snapshots?.set(entry.customType, JSON.stringify(value));
+        break;
+      case SIMPLIFY_SESSION_ENTRY:
+        hasSimplifySnapshot = true;
+        restored.simplify = simplifyState(value.state);
+        snapshots?.set(entry.customType, JSON.stringify(value));
+        break;
+      case LAST_RESULT_SESSION_ENTRY: {
+        // Show and old `/bro open` retries wrote only this entry. An old Explain
+        // can also be a stale copy, so it must not override a cleared snapshot.
+        const steering = typeof value.steering === "string" ? value.steering : undefined;
+        if (steering === undefined && hasSimplifySnapshot && !restored.simplify.result) break;
+        const result = simplifyResult(value.result, steering);
+        if (result && JSON.stringify(result) !== JSON.stringify(restored.simplify.result)) {
+          restored.simplify = { result, view: "result", draft: restored.simplify.draft };
+          snapshots?.delete(SIMPLIFY_SESSION_ENTRY);
+        }
+        break;
+      }
     }
   }
   return restored;

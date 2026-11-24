@@ -4,37 +4,30 @@
 
 ## What Bro can explain
 
-| Source | Command | What Bro does |
-| --- | --- | --- |
-| Latest assistant reply | `/simplify` inside `/bro`, or `/bro text` | Explains the latest completed reply without inserting the result into Pi's conversation. Opening `/bro` itself shows the saved explanation, or help if none exists. |
-| Pasted text | `/bro text <text>` | Explains text supplied directly in the command. |
-| Local document | `/bro file <path>` | Extracts text from a local Markdown, text, PDF, or DOCX file. |
-| Public webpage | `/bro url <url>` | Fetches one public HTML page and extracts its main readable content. |
-| Recent session turns | `/bro show` | Draws the last turns' conversation text as shapes instead of prose (tool calls, tool results, reasoning, and images are omitted). |
-| Any of the above, auto-detected | `/bro <input>` | Routes a lone URL to the webpage reader, an existing local file with a supported extension to the document reader, and anything else to pasted text. |
+**Simplify** helps you understand one source in plain words or as a diagram. `/bro` and `/bro simplify` open the last result (or help) without calling a model.
 
-Pressing **R** simplifies the captured source again in the mode shown, and
-**M** re-simplifies it in the next mode. These commands capture a
-new source: `/bro text`, `/bro file`, `/bro url`, and `/bro show`. Giving `/bro` a URL, path, or
-text directly captures a new source the same way.
+| Source | Inside Simplify | Direct command (also headless) |
+| --- | --- | --- |
+| Latest completed assistant reply | `/simplify` | `/bro simplify latest` |
+| Pasted text | `/text <text>` | `/bro simplify text <text>` |
+| Local Markdown, text, PDF, or DOCX file | `/file <path>` | `/bro simplify file <path>` |
+| Public webpage | `/url <url>` | `/bro simplify url <url>` |
+| Recent user and assistant conversation text only | `/show [n-turns] [query]` | `/bro simplify show [n-turns] [query]` |
+
+A new result replaces the previous one. Headless runs keep the result in private session state rather than sending an assistant reply. RPC clients may still receive the custom session entry event. Use an existing saved session to reopen the result after exit. In a fresh session, Pi keeps the result only in memory until the first user or assistant message creates the session file.
+
+The old top-level shortcuts `/bro show`, `/bro text`, `/bro file`, `/bro url`, and `/bro open` now point to their replacements without running them. `/bro <input>` no longer guesses the source: choose an explicit command.
 
 ## Default command suggestions
 
-Typing `/bro ` displays ten task-level suggestions: `simplify`, `show`, `btw`, `guided-review`, `architecture`, `elevate`, `grill-me`, `remember-me`, `overthink`, and `config`. Every other documented command remains callable and discoverable by typing its prefix (e.g., `/bro doc`).
+Typing `/bro ` suggests `simplify`, `btw`, `guided-review`, `architecture`, `elevate`, `grill-me`, `remember-me`, `overthink`, and `config`. Type `/bro simplify ` for the source options, or a prefix such as `/bro doc` for other commands.
 
 ## Commands
 
 | Command | Description |
 | --- | --- |
-| `/bro` | Show the saved explanation, or help if none exists. No model call; run `/simplify` inside to explain the latest reply again. |
-| `/bro simplify` | Reopen the last Simplify screen within this Pi session, without a new model call. |
+| `/bro`, `/bro simplify` | Reopen the last private explanation or diagram on this session branch. No model call. |
 | `/bro copy` | Edit and preview the latest completed assistant reply as raw Markdown. Ctrl+D switches views; Ctrl+C copies Markdown; F1 opens Help. No backend call or saved draft. Native Pi `/copy` copies immediately. [Guide](../features/copy.md). |
-| `/bro text [text]` | Explain pasted text, or the latest completed assistant reply when text is omitted. |
-| `/bro <input>` | Explain it directly: a lone URL runs the webpage reader, an existing local file with a supported extension runs the document reader, and anything else is pasted text. A quoted path with spaces is routed too when the file exists. |
-| `/bro file <path>` | Explain a local `.md`, `.markdown`, `.txt`, `.pdf`, or `.docx` file. |
-| `/bro url <url>` | Explain one public, text-based webpage. |
-| `/bro open` | Legacy compatibility shortcut to the last result. No `/open` command inside Simplify. |
-| `/bro show [n-turns] [query]` | Draw recent session turns (default last 1) as shapes instead of prose, from user and assistant conversation text only — tool calls, tool results, reasoning, and images are omitted. An optional query steers what the shapes focus on, with or without a leading turn count. |
 | `/bro doctor` | Check Bro's settings, preferences, and each selected backend, with the effective backend/model/effort per feature. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro preferences` | View or edit what Bro knows about you and how you like answers; see [Preferences](settings.md#preferences). |
@@ -52,14 +45,6 @@ Typing `/bro ` displays ten task-level suggestions: `simplify`, `show`, `btw`, `
 | `/bro advisor-steer` | View, edit, save, or clear the one persistent steering brief the advisor always sees. |
 | `/bro help` | Open the built-in quick reference. |
 
-Giving `/bro` the input directly works the same way:
-
-```text
-/bro https://example.com/article
-/bro docs/report.pdf
-/bro any other text is explained as pasted text
-```
-
 ## Simplify modal (single-source explanation)
 
-Once inside Simplify, use `/simplify` for the latest completed reply; `/text <text>`, `/file <path>`, `/url <url>` for a new source; `/copy` to copy the current explanation; `/clear` to return to the empty screen; and `/help` for controls. **M** changes the one-off Brief/Balanced/Faithful mode and re-explains the captured source; **R** retries the same source. This modal is not a conversation and does not persist history across restarts. Legacy `/bro text|file|url` shortcuts keep working. The global menu consolidation is tracked separately.
+Use `/copy` to copy the current result, `/clear` to forget it, and `/help` for commands. With the composer empty, **R** reruns the captured source, **M** changes the one-off Brief/Balanced/Faithful mode on explanations, and **O** opens a browser diagram when available. **Esc** goes back from help or closes. Only the latest result is saved; this is not a chat. See [plain-language explanations](../features/explain.md) and [conversation diagrams](../features/show.md#bro-show).

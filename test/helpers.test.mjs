@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
+import { ComposerModal } from "../src/composer-modal.ts";
 import test from "node:test";
 import mammoth from "mammoth";
 import * as piTui from "@earendil-works/pi-tui";
@@ -467,7 +468,7 @@ await t.test("Explain and btw modals scroll on fullscreen wheel events (Pi 1.2+)
 	const text = Array.from({ length: 60 }, (_, index) => `line ${index}`).join("\n\n");
 	const explain = new explainModal.BroModal(tui, theme, () => {}, () => {}, () => {}, "retry");
 	explain.setResult(text, false);
-	const chat = new btw.BtwModal(tui, theme, () => {}, () => {}, () => {});
+	const chat = new ComposerModal(tui, theme, () => {}, () => {}, () => {});
 	chat.setText(text);
 	for (const modal of [explain, chat]) {
 		modal.render(80);
@@ -507,7 +508,7 @@ await t.test("btw's running hint fits a narrow 60x14 terminal", () => {
 	const { TuiMainScreen } = piTui;
 	const overlay = { width: "78%", minWidth: 48, maxHeight: "82%", anchor: "top-center", margin: { top: 1, left: 2, right: 2 } };
 	const layout = TuiMainScreen.prototype.resolveOverlayLayout.call(TuiMainScreen.prototype, overlay, 0, 60, 14);
-	const chat = new btw.BtwModal({ mode: "fullscreen", terminal: { rows: 14, columns: 60 }, requestRender() {} }, fakeTheme, () => {}, () => {}, () => {});
+	const chat = new ComposerModal({ mode: "fullscreen", terminal: { rows: 14, columns: 60 }, requestRender() {} }, fakeTheme, () => {}, () => {}, () => {});
 	chat.setRunning(true);
 	const lines = chat.render(layout.width);
 	const text = stripVTControlCharacters(lines.join("\n"));
@@ -524,7 +525,7 @@ await t.test("btw's running hint fits a narrow 60x14 terminal", () => {
 
 await t.test("btw follows the newest text until the reader scrolls up", () => {
 	const tui = { mode: "fullscreen", terminal: { rows: 20, columns: 80 }, requestRender() {} };
-	const chat = new btw.BtwModal(tui, fakeTheme, () => {}, () => {}, () => {});
+	const chat = new ComposerModal(tui, fakeTheme, () => {}, () => {}, () => {});
 	const view = () => stripVTControlCharacters(chat.render(80).join("\n"));
 	const lines = (count) => Array.from({ length: count }, (_, index) => `line ${index}`).join("\n\n");
 	chat.setText(lines(40));
@@ -1324,7 +1325,7 @@ await t.test("Document text extraction: formats, failure boundaries, containment
 
 		await assert.rejects(
 			extractDocumentText("   ", root),
-			/Use \/bro file <path>\./
+			/Use \/bro simplify file <path>\./
 		);
 
 		// Quoted paths and files outside the workspace.
@@ -2688,7 +2689,7 @@ await t.test("Real Pi lifecycle: bro_advisor is registered like any other tool a
 });
 
 // Explain modal M key: drive the real /bro command and modal against a fake agy that reports which
-// mode prompt it received. M switches this explanation only; R and /bro open keep the shown mode.
+// mode prompt it received. M switches this explanation only; R and reopening keep the shown mode.
 await t.test("Simplify modal keeps M/R and restoration without changing default settings", async () => {
   const commands=new Map();
   await registerBro({on(){},registerTool(){},registerCommand(name,def){commands.set(name,def);}});
@@ -2727,7 +2728,7 @@ await t.test("Simplify modal keeps M/R and restoration without changing default 
     assert.fail("No Simplify result after "+count+" attempts: "+screen().slice(-900));
   };
   try {
-    let closed=command.handler("text hello there",ctx);
+    let closed=command.handler("simplify text hello there",ctx);
     await settled(1,"balanced");
     assert.match(screen(),/balanced/);
     modal.handleInput("m");

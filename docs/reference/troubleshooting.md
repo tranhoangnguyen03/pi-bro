@@ -30,7 +30,7 @@ succeed.
 
 If an explanation fails, run `/bro doctor` first. If a webpage cannot be
 extracted, copy its content into a supported text file or save it as a PDF and
-use `/bro file`. If a PDF contains only scanned images, run OCR with another
+use `/bro simplify file`. If a PDF contains only scanned images, run OCR with another
 tool before giving it to Bro.
 
 - An unsupported model, effort, or missing backend fails with that backend's

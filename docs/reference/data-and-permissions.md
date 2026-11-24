@@ -69,8 +69,8 @@ When resolving backend, model, and reasoning effort:
 3. **Backend-specific normalization**: Agy selections are mapped against its installed catalog (suffixed variants, fixed-effort models); Pi selections are `<provider>/<id>` physical models resolved against your Pi registry.
 4. **Initial file creation only**: `PI_BRO_MODEL` has no effect once the settings file exists.
 
-When resolving turn count for `/bro show`:
-1. **Command argument**: an explicit count like `/bro show 3` or `/bro show 1 query` overrides for that run.
+When resolving turn count for `/show` inside Simplify:
+1. **Command argument**: an explicit count like `/show 3` or `/bro simplify show 1 query` overrides for that run.
 2. **Saved setting**: `showTurns` (defaults to 1).
 
 When shaping an answer, each part has one owner:
@@ -131,10 +131,10 @@ See [feature guide](../features/architecture.md).
 - **Private session continuity**: completed BTW and Grill Me turns, modes, drafts, the latest Simplify state and the last Show result are saved as Pi `custom` entries inside the current session file. They survive normal reload/restart and are never added to the main model or Advisor snapshot. A fork initially inherits earlier entries; later updates stay on its own branch. This is local disk storage, not a global memory store or an abrupt-crash guarantee. Backend-native sessions may persist independently.
   Standing Advisor priorities are stored in `~/.pi/agent/bro-advisor.md`, and
   the session steering brief uses another `custom` entry (`bro-advisor-steering`). Session entries remain readable to anyone with the session file; export/sharing may include them. The private boundary is model-context isolation, not encrypted storage or export redaction.
-- **File access**: `/bro file` reads regular files at the selected relative or
+- **File access**: `/bro simplify file` reads regular files at the selected relative or
   absolute path, including outside Pi's current workspace and through symlinks.
   Normal OS permissions apply. Bro's extractor does not modify the files.
-- **Web requests**: `/bro url` connects directly to the target website. The site
+- **Web requests**: `/bro simplify url` connects directly to the target website. The site
   sees your IP address and Bro's user agent. Bro sends no browser cookies,
   authorization, or referrer information, and it refuses local, private, and
   reserved network destinations, including redirects. Avoid private or signed

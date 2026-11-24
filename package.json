@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "version": "0.37.1",
+  "version": "0.38.0",
   "description": "A sidekick for you and your Pi agent: plain-language explanations, side questions, diagrams, PR review and second opinions, without cluttering the agent's context.",
   "type": "module",
   "license": "MIT",
@@ -78,6 +78,7 @@
     "src/config-navigation.ts",
     "src/ui-capabilities.ts",
     "src/modal-kit.ts",
+    "src/composer-modal.ts",
     "src/backend.ts",
     "src/cli-auth.ts",
     "src/prompt.ts",

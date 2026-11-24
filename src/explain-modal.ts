@@ -1,5 +1,4 @@
 import { rm, writeFile } from "node:fs/promises";
-import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { copyToClipboard, getMarkdownTheme, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import {
@@ -19,7 +18,6 @@ import {
 	MAX_PREFERENCES_CHARS,
 	STARTER_PREFERENCES,
 	buildDefaultPrompt,
-	nextBroMode,
 } from "./prompt.ts";
 import {
 	type BroSettings,
@@ -34,20 +32,20 @@ import {
 	selectionLabel,
 	settingsFile,
 } from "./settings.ts";
-import { openShowHtml, stripShowDiagramFence } from "./show.ts";
+import { openShowHtml } from "./show.ts";
 import type { BroSource } from "./sources.ts";
 import { BRO_OVERLAY, broOverlayArea, delegateMouse, formatNotice, modalHeight, openBroOverlay, renderFrame, runningHint, Scroller, startProgressClock, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
 import { hasBroCustomUi, type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
 import { errorMessage } from "./util.ts";
 import { latestCompletedAssistantText } from "./last-assistant.ts";
 
-const LOADING_TEXT = "Simplifying for my bro…";
+const LOADING_TEXT = "Working…";
 
 export type ModalKind = "loading" | "streaming" | "result" | "help" | "empty" | "error";
 // `mode` is the built-in explain mode that produced the text; absent for Show and Doctor.
 // `preferences` records whether bro-preferences.md shaped this result; like `mode`, it belongs to the result.
 export type BroResult = { source: BroSource; text: string; model?: string; mode?: BroMode; preferences?: boolean };
-export type ModalResult = { source?: BroSource; text: string; htmlPath?: string; model?: string; mode?: BroMode; preferences?: boolean };
+export type ModalResult = { text: string; htmlPath?: string; model?: string; preferences?: boolean };
 
 export function latestAssistant(ctx: ExtensionCommandContext): BroSource | undefined {
   const text = latestCompletedAssistantText(ctx.sessionManager.getBranch())?.trim();
@@ -372,23 +370,19 @@ Quick reference. Full user guide: https://github.com/tranhoangnguyen03/pi-bro/bl
 
 ## Pick by need
 
-- **Understand what already exists:** Simplify and Show; Architecture for this repository.
+- **Understand what already exists:** Simplify for plain words or diagrams; Architecture for this repository.
 - **Explore what could exist:** BTW for side questions; Grill Me for decisions.
 - **Get advice on existing work:** Guided Review; Overthink for automatic second looks; agent-facing Advisor.
 - **Guide the agent:** Elevate for assignments; Remember Me for approved context (about_user); Advisor Steering for priorities.
 
 These are needs, not modes. Copied text does not enter Pi until you paste and submit it.
 
-## Explain and show
+## Simplify: understand in words or diagrams
 
-- \`/bro\` — read the saved explanation, or help if none exists; /simplify inside runs again
-- \`/bro simplify\` — reopen the current Simplify screen without another model call
-- \`/bro text [text]\` — explain pasted text, or the latest reply when text is omitted
-- \`/bro file <path>\` — explain a local \`.md\`, \`.markdown\`, \`.txt\`, \`.pdf\`, or \`.docx\` file
-- \`/bro url <url>\` — explain one public webpage
-- \`/bro <input>\` — a lone URL, an existing supported file, or anything else as pasted text
-- Inside Simplify: \`/simplify\`, \`/text <text>\`, \`/file <path>\`, \`/url <url>\`, \`/copy\`, \`/clear\`, \`/help\`. **M** changes the mode and re-explains; **R** retries. One source at a time, no chat thread.\n- \`/bro open\` — legacy last-result view (retained for compatibility)
-- \`/bro show [n-turns] [query]\` — draw recent turns' conversation text as shapes; an optional query steers the focus
+- \`/bro\` or \`/bro simplify\` — reopen the saved result, or help if empty; no new model call.
+- Inside Simplify, \`/simplify\` explains the latest reply; \`/text <text>\`, \`/file <path>\` and \`/url <url>\` explain another source. \`/show [n-turns] [query]\` draws recent conversation text.
+- Use \`/bro simplify latest\` or \`/bro simplify text|file|url|show …\` to run directly, including without the viewer.
+- \`/copy\`, \`/clear\`, and \`/help\` apply to both forms. One source and one saved result, no chat thread.
 
 - \`/bro copy\` — edit and preview the last reply before copying raw Markdown.
 
@@ -473,7 +467,6 @@ export class BroModal implements Focusable {
 	private readonly markdown = new Markdown("", 0, 0, getMarkdownTheme());
 	private kind: ModalKind = "loading";
 	private rawText = "";
-	private sourceLabel = "";
 	private modelLabel = "";
 	private noticeText = "";
 	private noticeTone: NoticeTone = "info";
@@ -487,8 +480,6 @@ export class BroModal implements Focusable {
 	private retryable = false;
 	private disposed = false;
 	private htmlPath = "";
-	// Survives loading/streaming so the header names the mode being produced; empty disables M.
-	private modeLabel = "";
 	// Set only with a result, so the tag never claims preferences for work still in flight.
 	private preferencesUsed = false;
 
@@ -499,7 +490,6 @@ export class BroModal implements Focusable {
 		private readonly onRetry: () => void,
 		private readonly onDispose: () => void,
 		private readonly retryLabel: string,
-		private readonly onSwitchMode: () => void = () => {},
 	) {}
 
 	setLoading(text = LOADING_TEXT): void {
@@ -518,8 +508,8 @@ export class BroModal implements Focusable {
 		this.setNotice(text);
 	}
 
-	setResult(text: string, retryable: boolean, notice = "", sourceLabel = "", rawText = text, modelLabel = "", noticeTone: NoticeTone = "info"): void {
-		this.setContent("result", text, rawText, true, retryable, notice, sourceLabel, modelLabel, noticeTone);
+	setResult(text: string, retryable: boolean, notice = "", modelLabel = "", noticeTone: NoticeTone = "info"): void {
+		this.setContent("result", text, text, true, retryable, notice, modelLabel, noticeTone);
 	}
 
 	setNotice(text: string, tone: NoticeTone = "info"): void {
@@ -537,11 +527,6 @@ export class BroModal implements Focusable {
 
 	setHtmlPath(path: string): void {
 		this.htmlPath = path;
-		this.tui.requestRender();
-	}
-
-	setMode(mode: BroMode | undefined): void {
-		this.modeLabel = mode ?? "";
 		this.tui.requestRender();
 	}
 
@@ -565,7 +550,6 @@ export class BroModal implements Focusable {
 		copyable: boolean,
 		retryable: boolean,
 		notice = "",
-		sourceLabel = "",
 		modelLabel = "",
 		noticeTone: NoticeTone = "info",
 	): void {
@@ -577,33 +561,24 @@ export class BroModal implements Focusable {
 		this.retryable = retryable;
 		this.noticeText = notice;
 		this.noticeTone = noticeTone;
-		this.sourceLabel = stripVTControlCharacters(sourceLabel)
-			.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
-			.replace(/\s+/g, " ")
-			.trim();
 		this.modelLabel = modelLabel;
 		if (kind !== "streaming") this.scroller.toStart();
 		this.markdown.setText(text);
 		this.tui.requestRender();
 	}
 
-	private canSwitchMode(): boolean {
-		return Boolean(this.modeLabel) && (this.kind === "loading" || this.kind === "streaming" || this.kind === "result");
-	}
-
 	private controls(innerWidth: number): string {
-		const mode = this.canSwitchMode() ? " · M mode" : "";
 		if (this.kind === "loading" || this.kind === "streaming") {
 			// The elapsed seconds and Esc matter more than a long stage name.
 			// Keep one hint row so the body never jumps as that stage changes.
 			const scroll = this.kind === "streaming" ? " · ↑/↓ scroll" : "";
 			const phase = this.progressText || (this.kind === "loading" ? "Working…" : "Receiving output…");
 			return runningHint(phase, innerWidth, [
-				`${scroll}${mode} · Esc cancel`, `${mode} · Esc cancel`, " · Esc cancel",
+				`${scroll} · Esc cancel`, " · Esc cancel",
 			], 12);
 		}
 		if (this.kind === "result") {
-			return `↑/↓ scroll · C copy${this.htmlPath ? " · O open diagram" : ""}${mode}${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
+			return `↑/↓ scroll · C copy${this.htmlPath ? " · O open diagram" : ""}${this.retryable ? ` · R ${this.retryLabel}` : ""} · Esc close`;
 		}
 		if (this.kind === "help") return "↑/↓ scroll · C copy · Esc close";
 		if (this.kind === "error") return "R try again · Esc close";
@@ -617,8 +592,8 @@ export class BroModal implements Focusable {
 			header: () => {
 				const scroll = this.scroller.indicator();
 				return (
-					this.theme.fg("accent", this.theme.bold(`Bro${this.sourceLabel ? ` · ${this.sourceLabel}` : ""}`)) +
-					this.theme.fg("dim", `${this.modelLabel ? ` · ${this.modelLabel}` : ""}${this.modeLabel ? ` · ${this.modeLabel}` : ""}${this.preferencesUsed ? " · prefs" : ""}${scroll ? ` · ${scroll}` : ""}`)
+					this.theme.fg("accent", this.theme.bold("Bro")) +
+					this.theme.fg("dim", `${this.modelLabel ? ` · ${this.modelLabel}` : ""}${this.preferencesUsed ? " · prefs" : ""}${scroll ? ` · ${scroll}` : ""}`)
 				);
 			},
 			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
@@ -663,11 +638,6 @@ export class BroModal implements Focusable {
 			return;
 		}
 
-		if ((matchesKey(data, "m") || matchesKey(data, "shift+m")) && this.canSwitchMode()) {
-			this.onSwitchMode();
-			return;
-		}
-
 		if ((matchesKey(data, "o") || matchesKey(data, "shift+o")) && this.htmlPath && this.kind === "result") {
 			const opened = openShowHtml(this.htmlPath);
 			this.setNotice(
@@ -691,9 +661,7 @@ export interface BroModalOptions {
 	result?: ModalResult;
 	run?: (
 		signal: AbortSignal,
-		source?: BroSource,
 		onProgress?: (text: string) => void,
-		mode?: BroMode,
 	) => Promise<ModalResult>;
 	onResult?: (result: ModalResult) => void;
 	loadingText?: string;
@@ -717,8 +685,7 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 			let controller: AbortController | undefined;
 			let stopProgress: (() => void) | undefined;
 			let current = options.result;
-			let inFlightMode: BroMode | undefined;
-			let execute: (source?: BroSource, mode?: BroMode, notice?: string, noticeTone?: NoticeTone) => void = () => {};
+
 
 			const close = () => {
 				if (closed) return;
@@ -732,41 +699,27 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 				tui,
 				theme,
 				close,
-				() => execute(current?.source, current?.mode),
+				() => execute(),
 				() => {
 					closed = true;
 					stopProgress?.();
 					controller?.abort();
 				},
-				options.retryLabel ?? "simplify again",
-				// M advances from the mode in flight, so repeated presses cancel and skip ahead; the saved default is untouched.
-				() => {
-					const from = inFlightMode ?? current?.mode;
-					if (!from || !current?.source || closed) return;
-					const next = nextBroMode(from);
-					stopProgress?.();
-					controller?.abort();
-					controller = undefined;
-					execute(current.source, next, `Mode: ${next} (not saved)`);
-				},
+				options.retryLabel ?? "try again",
 			);
 
 			const present = (result: ModalResult, notice = "", noticeTone: NoticeTone = "info") => {
-				const display = result.htmlPath ? stripShowDiagramFence(result.text) : result.text;
-				modal.setResult(display, options.retryable ?? Boolean(options.run), notice, result.source?.label, result.text, result.model, noticeTone);
+				modal.setResult(result.text, options.retryable ?? Boolean(options.run), notice, result.model, noticeTone);
 				modal.setHtmlPath(result.htmlPath ?? "");
-				modal.setMode(result.mode);
 				modal.setPreferences(Boolean(result.preferences));
 			};
 
-			execute = (source?: BroSource, mode?: BroMode, notice = "", noticeTone: NoticeTone = "info") => {
+			const execute = () => {
 				if (!options.run || controller || closed) return;
 				const previous = current;
 				const nextController = new AbortController();
 				controller = nextController;
-				inFlightMode = mode;
 				modal.setLoading(options.loadingText);
-				modal.setMode(mode);
 				modal.setPreferences(false);
 				const phase = options.loadingText ?? "Working";
 				const stop = startProgressClock(nextController.signal, seconds => {
@@ -775,17 +728,17 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 				stopProgress = stop;
 
 				void options
-					.run(nextController.signal, source, (text) => {
+					.run(nextController.signal, (text) => {
 						if (closed || nextController.signal.aborted || controller !== nextController) return;
 						// This callback may be a workflow stage (Architecture), not
 						// a streaming answer. The body owns the stage; keep the hint neutral.
 						modal.setStreaming(text);
-					}, mode)
+					})
 					.then((result) => {
 						if (closed || nextController.signal.aborted) return;
 						current = result;
 						options.onResult?.(result);
-						present(result, notice, noticeTone);
+						present(result);
 					})
 					.catch((error) => {
 						if (closed || nextController.signal.aborted) return;
@@ -794,17 +747,13 @@ export async function showBroModal(ctx: ExtensionCommandContext, options: BroMod
 							current = previous;
 							present(previous, `Retry failed: ${message}`, "error");
 						} else {
-							modal.setMode(undefined);
 							modal.setError(message);
 						}
 					})
 					.finally(() => {
 						stop();
 						if (stopProgress === stop) stopProgress = undefined;
-						if (controller === nextController) {
-							controller = undefined;
-							inFlightMode = undefined;
-						}
+						if (controller === nextController) controller = undefined;
 					});
 			};
 

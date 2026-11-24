@@ -62,8 +62,8 @@ export async function checkDocs(root) {
  const pkg=JSON.parse(await readFile(join(root,'package.json'),'utf8'));
  for(const file of ['docs/README.md','docs/getting-started.md','docs/user-guide.md','docs/feature-map.md','docs/examples.md','docs/features','docs/reference'])if(!pkg.files?.includes(file))errs.push(`package.json: user docs missing from npm files list: ${file}`);
  const readme=await readFile(join(root,'README.md'),'utf8');
- if(!readme.includes('/bro text A request limit means'))errs.push('README.md: expected a fully runnable first-use example');
- if(readme.includes('/bro file docs/report.pdf'))errs.push('README.md: unmarked placeholder in first-use commands');
+ if(!readme.includes('/bro simplify text A request limit means'))errs.push('README.md: expected a fully runnable first-use example');
+ if(readme.includes('/bro simplify file docs/report.pdf'))errs.push('README.md: unmarked placeholder in first-use commands');
  const privacy=await readFile(join(root,'docs/reference/data-and-permissions.md'),'utf8');
  if(!privacy.includes('prompt instruction')&&!privacy.includes('prompt instructions'))errs.push('Access reference needs a warning that prompts are not enforced limits');
  return {checked:seen.length,errors:errs};

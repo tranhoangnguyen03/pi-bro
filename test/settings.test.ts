@@ -964,15 +964,15 @@ test("Pi custom model rejects a malformed ID in place instead of throwing out of
 });
 
 
-test("default /bro suggestions contain ten capability-level commands; legacy aliases remain discoverable", async () => {
+test("Simplify is the only top-level reading workflow; source completions are nested", async () => {
  let cmd: any;
  await bro.default({on(){},appendEntry() {}, registerTool() {},registerCommand(_name: string,def: any){cmd=def;}});
  assert.deepEqual(cmd.getArgumentCompletions("").map((x: any)=>x.value),[
-  "architecture","simplify","show","guided-review","btw","elevate","remember-me","grill-me","overthink","config"
+  "architecture","simplify","guided-review","btw","elevate","remember-me","grill-me","overthink","config"
  ]);
- const shown=cmd.getArgumentCompletions("").map((x: any)=>x.value);
- assert.equal(new Set(shown).size,10);
- for(const [prefix,target] of [["cop","copy"],["doc","doctor"],["pref","preferences"],["advisor","advisor"],["text","text"],["file","file"],["url","url"],["open","open"],["help","help"],["mode","mode"]]){
-  assert.ok(cmd.getArgumentCompletions(prefix).some((c:any)=>c.value===target),prefix);
- }
+ for (const retired of ["show", "text", "file", "url", "open"]) assert.equal(cmd.getArgumentCompletions(retired), null);
+ assert.deepEqual(cmd.getArgumentCompletions("simplify ").map((x: any) => x.value),
+  ["simplify latest", "simplify text", "simplify file", "simplify url", "simplify show"]);
+ assert.equal(cmd.getArgumentCompletions("simplify sh")[0].value, "simplify show");
+ assert.equal(cmd.getArgumentCompletions("doc")[0].value, "doctor");
 });

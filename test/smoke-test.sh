@@ -130,12 +130,12 @@ output=$(
 		printf '%s\n' '{"id":"bro-open-empty","type":"prompt","message":"/bro open"}'
 		printf '%s\n' '{"id":"bro-help","type":"prompt","message":"/bro help"}'
 		printf '%s\n' '{"id":"bro-doctor","type":"prompt","message":"/bro doctor"}'
-		printf '%s\n' '{"id":"bro-default","type":"prompt","message":"/bro text"}'
+		printf '%s\n' '{"id":"bro-default","type":"prompt","message":"/bro simplify latest"}'
 		printf '%s\n' '{"id":"bro-open-first","type":"prompt","message":"/bro open"}'
-		printf '{"id":"bro-file","type":"prompt","message":"/bro file %s"}\n' "$document_file"
+		printf '{"id":"bro-file","type":"prompt","message":"/bro simplify file %s"}\n' "$document_file"
 		printf '%s\n' '{"id":"bro-open-file","type":"prompt","message":"/bro open"}'
-		printf '%s\n' '{"id":"bro-url-missing","type":"prompt","message":"/bro url"}'
-		printf '%s\n' '{"id":"bro-open-extra","type":"prompt","message":"/bro open the door please"}'
+		printf '%s\n' '{"id":"bro-url-missing","type":"prompt","message":"/bro simplify url"}'
+		printf '%s\n' '{"id":"bro-typo","type":"prompt","message":"/bro doctr"}'
 		printf '%s\n' '{"id":"bro-mode-invalid","type":"prompt","message":"/bro mode unknown"}'
 		# Shared model/effort now come from /bro config; a config-written file must survive /bro mode.
 		node -e 'console.log(JSON.stringify({type:"smoke-write",path:process.argv[1],text:JSON.stringify({version:2,default:{backend:"agy",model:"gemini-test-two",effort:"high"},mode:"balanced",showTurns:1})}))' "$settings_file"
@@ -145,17 +145,17 @@ output=$(
 		printf '%s\n' '{"id":"bro-effort-removed","type":"prompt","message":"/bro effort"}'
 		printf '%s\n' '{"id":"bro-effort-removed-level","type":"prompt","message":"/bro EFFORT low"}'
 		node -e 'console.log(JSON.stringify({type:"smoke-copy",from:process.argv[1],to:process.argv[2]})); console.log(JSON.stringify({type:"smoke-write",path:process.argv[1],text:JSON.stringify({model:"gemini-test-one",effort:"low"})}))' "$settings_file" "$settings_snapshot"
-		printf '%s\n' '{"id":"bro-text","type":"prompt","message":"/bro text PASTED_TEXT_ONLY_CANARY"}'
-		printf '{"id":"bro-route-file","type":"prompt","message":"/bro %s"}\n' "$document_file"
+		printf '%s\n' '{"id":"bro-text","type":"prompt","message":"/bro simplify text PASTED_TEXT_ONLY_CANARY"}'
+		printf '{"id":"bro-route-file","type":"prompt","message":"/bro simplify file %s"}\n' "$document_file"
 		cat <<-EOF
-		{"id":"bro-route-quoted","type":"prompt","message":"/bro \"$spaced_file\""}
+		{"id":"bro-route-quoted","type":"prompt","message":"/bro simplify file \"$spaced_file\""}
 		EOF
-		printf '%s\n' '{"id":"bro-route-text","type":"prompt","message":"/bro ROUTED_WHOLE_RAW_CANARY trailing words"}'
-		printf '%s\n' '{"id":"bro-show","type":"prompt","message":"/bro show"}'
-		printf '%s\n' '{"id":"bro-show-count-and-query","type":"prompt","message":"/bro show 2 Trace The Login Flow"}'
-		printf '%s\n' '{"id":"bro-show-query-only","type":"prompt","message":"/bro show Explain The Auth Redirect"}'
-		printf '%s\n' '{"id":"bro-show-invalid","type":"prompt","message":"/bro show 0"}'
-		printf '%s\n' '{"id":"bro-open-second","type":"prompt","message":"/bro open"}'
+		printf '%s\n' '{"id":"bro-route-text","type":"prompt","message":"/bro simplify text ROUTED_WHOLE_RAW_CANARY trailing words"}'
+		printf '%s\n' '{"id":"bro-show","type":"prompt","message":"/bro simplify show"}'
+		printf '%s\n' '{"id":"bro-show-count-and-query","type":"prompt","message":"/bro simplify show 2 Trace The Login Flow"}'
+		printf '%s\n' '{"id":"bro-show-query-only","type":"prompt","message":"/bro simplify show Explain The Auth Redirect"}'
+		printf '%s\n' '{"id":"bro-show-invalid","type":"prompt","message":"/bro simplify show 0"}'
+		printf '%s\n' '{"id":"bro-show-retired","type":"prompt","message":"/bro show"}'
 	} | PATH="$test_dir:$PATH" PI_BRO_MODEL="" PI_CODING_AGENT_DIR="$config_dir" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_SHOW_PROMPTS="$show_prompts_file" BRO_USAGE_CANARY="$usage_canary" BRO_DOCUMENT_CANARY="$document_canary" "$pi_bin" --offline --mode rpc --session "$session_file" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts"
 )
 
@@ -165,20 +165,22 @@ if [ "$success_count" -ne 24 ]; then
 	exit 1
 fi
 
-if ! printf '%s\n' "$output" | grep -Fq 'Use /bro show [n-turns] [query].'; then
+if ! printf '%s\n' "$output" | grep -Fq 'Use /bro simplify show [n-turns] [query].'; then
 	printf 'Invalid show arguments did not produce an actionable warning:\n%s\n' "$output" >&2
 	exit 1
 fi
 
-if ! printf '%s\n' "$output" | grep -q 'Use /bro url <url>.'; then
+if ! printf '%s\n' "$output" | grep -Fq 'Use /bro simplify url <url>.'; then
 	printf 'Missing URL input did not produce an actionable warning:\n%s\n' "$output" >&2
 	exit 1
 fi
 
-if ! printf '%s\n' "$output" | grep -q 'Use /bro open.'; then
-	printf 'Extra open arguments did not produce an actionable warning:\n%s\n' "$output" >&2
-	exit 1
-fi
+for notice in '/bro open moved. Use /bro simplify.' '/bro show moved. Use /bro simplify show' 'Unknown Bro command.'; do
+	if ! printf '%s\n' "$output" | grep -Fq "$notice"; then
+		printf 'Missing migration or typo warning: %s\n%s\n' "$notice" "$output" >&2
+		exit 1
+	fi
+done
 
 for removed in model effort; do
 	if ! printf '%s\n' "$output" | grep -Fq "/bro $removed was removed. Use /bro config"; then
@@ -288,8 +290,8 @@ missing_output=$(
 		printf '%s\n' '{"id":"missing-doctor","type":"prompt","message":"/bro doctor"}'
 		printf '%s\n' '{"id":"missing-model","type":"prompt","message":"/bro model gemini-3.7-flash"}'
 		printf '%s\n' '{"id":"missing-effort","type":"prompt","message":"/bro effort low"}'
-		printf '%s\n' '{"id":"missing-route-url","type":"prompt","message":"/bro https://user:secret@example.com/doc"}'
-		printf '%s\n' '{"id":"missing-latest","type":"prompt","message":"/bro text"}'
+		printf '%s\n' '{"id":"missing-route-url","type":"prompt","message":"/bro simplify url https://user:secret@example.com/doc"}'
+		printf '%s\n' '{"id":"missing-latest","type":"prompt","message":"/bro simplify latest"}'
 		printf '%s\n' '{"id":"missing-help","type":"prompt","message":"/bro help"}'
 	} | PATH="$test_dir:$PATH" BRO_AGY_FAILURE=1 PI_CODING_AGENT_DIR="$missing_config" "$pi_bin" --offline --mode rpc --session "$missing_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts"
 )
@@ -330,7 +332,7 @@ broken_output=$(
 		printf '%s\n' '{"id":"broken-settings-doctor","type":"prompt","message":"/bro doctor"}'
 		node -e 'console.log(JSON.stringify({type:"smoke-write",path:process.argv[1],text:JSON.stringify({model:"gemini-3.7-flash",effort:"low"})})); console.log(JSON.stringify({type:"smoke-write",path:process.argv[2],text:"x".repeat(4001)}))' "$broken_settings" "$broken_preferences"
 		printf '%s\n' '{"id":"broken-preferences-doctor","type":"prompt","message":"/bro doctor"}'
-		printf '%s\n' '{"id":"broken-preferences-latest","type":"prompt","message":"/bro text"}'
+		printf '%s\n' '{"id":"broken-preferences-latest","type":"prompt","message":"/bro simplify latest"}'
 	} | PATH="$test_dir:$PATH" PI_CODING_AGENT_DIR="$broken_config" BRO_CANARY_PREFIX="$canary_prefix" BRO_CALLS="$calls_file" BRO_ARGS="$args_file" BRO_USAGE_CALLS="$usage_calls_file" BRO_MODEL_CALLS="$model_calls_file" BRO_VERSION_CALLS="$version_calls_file" BRO_USAGE_CANARY="$usage_canary" "$pi_bin" --offline --mode rpc --session "$broken_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts" 2>&1
 )
 
@@ -395,8 +397,8 @@ touch "$override_args_file"
 
 override_output=$(
 	{
-		printf '%s\n' '{"id":"override-explain","type":"prompt","message":"/bro text"}'
-		printf '%s\n' '{"id":"override-show","type":"prompt","message":"/bro show"}'
+		printf '%s\n' '{"id":"override-explain","type":"prompt","message":"/bro simplify latest"}'
+		printf '%s\n' '{"id":"override-show","type":"prompt","message":"/bro simplify show"}'
 	} | PATH="$test_dir/override-bin:$PATH" PI_CODING_AGENT_DIR="$override_config" OVERRIDE_ARGS="$override_args_file" "$pi_bin" --offline --mode rpc --session "$override_session" --no-extensions --no-skills --no-prompt-templates --no-context-files -e "$repo_dir/src/bro.ts"
 )
 

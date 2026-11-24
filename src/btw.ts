@@ -1,6 +1,5 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Input, Markdown, matchesKey, wrapTextWithAnsi, type Focusable } from "@earendil-works/pi-tui";
+import { copyToClipboard } from "@earendil-works/pi-coding-agent";
 import { execute as executeBackend, textProgressThrottle, type BackendProgress, type BackendSelection } from "./backend.ts";
 import { buildBtwPrompt } from "./prompt.ts";
 import {
@@ -13,8 +12,8 @@ import {
 	selectionLabel,
 } from "./settings.ts";
 import { captureShowTranscript } from "./show.ts";
-import { BRO_OVERLAY, broOverlayArea, formatNotice, modalHeight, openBroOverlay, renderFrame, runningHint, Scroller, startProgressClock, type Area, type NoticeTone, type Theme, type TuiLike } from "./modal-kit.ts";
-import { type BroMouseEvent, type BroMouseResult } from "./ui-capabilities.ts";
+import { openBroOverlay, startProgressClock } from "./modal-kit.ts";
+import { ComposerModal } from "./composer-modal.ts";
 import { errorMessage } from "./util.ts";
 
 export const BTW_CONTEXT_TURNS = 8;
@@ -171,198 +170,6 @@ export async function runBtwTurn(
 	}
 }
 
-export class BtwModal implements Focusable {
-	private _focused = false;
-	private readonly markdown = new Markdown("", 0, 0, getMarkdownTheme());
-	private readonly input = new Input();
-	private noticeText = "";
-	private noticeTone: NoticeTone = "info";
-	private rawArea: Area | undefined;
-	// Follows the newest text until the reader scrolls up; scrolling back to the end follows again.
-	private readonly scroller = new Scroller(
-		() => {
-			this.noticeText = "";
-			this.tui.requestRender();
-		},
-		{ followEnd: true },
-	);
-	private running = false;
-	private progressText = "";
-	private full = false;
-	private model = "";
-	private customMode = "";
-	private disposed = false;
-	onInput?: () => void;
-	onKey?: (data: string) => boolean;
-	private suggestions = "";
-
-	setSuggestions(text: string): void {
-		this.suggestions = text;
-		this.tui.requestRender();
-	}
-
-	get focused(): boolean {
-		return this._focused;
-	}
-
-	set focused(value: boolean) {
-		this._focused = value;
-		this.input.focused = value;
-	}
-
-	constructor(
-		private readonly tui: TuiLike,
-		private readonly theme: Theme,
-		private readonly onClose: () => void,
-		private readonly onSubmit: (value: string) => void,
-		private readonly onDispose: () => void,
-		private readonly appearance: { title?: string; commands?: string; inputLabel?: string; idleHint?: string } = {},
-	) {
-		this.input.onSubmit = (value) => {
-			if (!this.running) this.onSubmit(value);
-		};
-	}
-
-	// Keeps the reader's place; the scroller clamps when the text shrinks (e.g. /clear).
-	setText(text: string): void {
-		this.markdown.setText(text);
-		this.tui.requestRender();
-	}
-
-	/** Start at the top of a static or single-document view. */
-	scrollToStart(): void {
-		this.scroller.toStart();
-		this.tui.requestRender();
-	}
-
-	/** Show the newest text and keep following it while a reply streams. */
-	scrollToEnd(): void {
-		this.scroller.toEnd();
-		this.tui.requestRender();
-	}
-
-	get notice(): string {
-		return this.noticeText;
-	}
-
-	set notice(notice: string) {
-		this.setNotice(notice);
-	}
-
-	setNotice(notice: string, tone: NoticeTone = "info"): void {
-		if (this.disposed) return;
-		this.noticeText = notice;
-		this.noticeTone = tone;
-		this.tui.requestRender();
-	}
-
-	setRunning(running: boolean): void {
-		this.running = running;
-		if (!running) this.progressText = "";
-		this.tui.requestRender();
-	}
-
-	/** Ephemeral in-flight status; never enters the thread or clipboard. */
-	setProgress(text: string): void {
-		if (this.disposed || !this.running) return;
-		this.progressText = text;
-		this.tui.requestRender();
-	}
-
-	setModel(model: string): void {
-		this.model = model;
-		this.tui.requestRender();
-	}
-
-	setFull(full: boolean): void {
-		this.full = full;
-		this.tui.requestRender();
-	}
-
-	/** Reuse the BTW modal for independent interview flows without sharing BTW state. */
-	setCustomMode(label: string): void {
-		this.customMode = label;
-		this.tui.requestRender();
-	}
-
-	clearComposer(): void {
-		this.input.setValue("");
-		this.tui.requestRender();
-	}
-
-	getComposerText(): string {
-		return this.input.getValue();
-	}
-
-	setComposerText(text: string): void {
-		this.input.setValue(text);
-		(this.input as unknown as { cursor: number }).cursor = text.length;
-		this.tui.requestRender();
-	}
-
-	invalidate(): void {
-		this.markdown.invalidate();
-		this.input.invalidate();
-	}
-
-	handleMouse(event: BroMouseEvent): BroMouseResult {
-		return this.scroller.handleMouse(event);
-	}
-
-	handleInput(data: string): void {
-		if (this.onKey?.(data)) return;
-		if (matchesKey(data, "escape")) {
-			this.onClose();
-			return;
-		}
-		if (this.scroller.handleKey(data, this.rawArea)) return;
-		this.input.handleInput(data);
-		this.onInput?.();
-		this.tui.requestRender();
-	}
-
-	render(width: number): string[] {
-		const inner = Math.max(1, width - 2);
-		const height = modalHeight(this.tui, BRO_OVERLAY, 34);
-		this.rawArea = broOverlayArea(this.tui, width, height);
-		return renderFrame(this.theme, width, height, {
-			header: () => {
-				const scroll = this.scroller.indicator();
-				const model = this.model ? this.theme.fg("dim", ` · ${this.model}`) : "";
-				const mode = this.customMode
-					? this.theme.fg("dim", this.customMode)
-					: this.theme.fg("dim", " · ") + (this.full ? this.theme.fg("accent", this.theme.bold(btwModeLabel(true))) : this.theme.fg("dim", btwModeLabel(false)));
-				const title = this.theme.fg("accent", this.theme.bold(this.appearance.title ?? "Bro · btw"));
-				// Keep Grill's access warning ahead of text the frame may truncate.
-				const header = this.customMode ? `${mode} · ${title}${model}` : title + model + mode;
-				return header + this.theme.fg("dim", scroll ? ` · ${scroll}` : "");
-			},
-			body: (rows, innerWidth) => this.scroller.view(this.markdown.render(innerWidth), rows),
-			// The frame drops lines from the top when space runs out, so the composer goes last.
-			footer: [
-				...(this.appearance.commands === "" ? [] : wrapTextWithAnsi(this.appearance.commands ?? "Commands: /mode · /copy · /copy-all · /clear · /retry · /help", inner)),
-				...(this.suggestions ? wrapTextWithAnsi(this.theme.fg("accent", this.suggestions), inner) : []),
-				this.theme.fg("accent", this.theme.bold(this.appearance.inputLabel ?? "Your message to Bro")),
-				this.input.render(inner)[0] ?? "",
-			],
-			notice: this.noticeText ? formatNotice(this.theme, this.noticeText, this.noticeTone) : undefined,
-			// A tool label may be long. Preserve the elapsed seconds and Esc
-			// on one line; shorten only the stage so transcript height stays put.
-			hints: this.running
-				? runningHint(this.progressText || "Bro is thinking…", inner, [
-					" · Esc close (stops reply)", " · Esc close",
-				])
-				: (this.appearance.idleHint ?? "Enter send · Esc close"),
-		});
-	}
-
-	dispose(): void {
-		if (this.disposed) return;
-		this.disposed = true;
-		this.onDispose();
-	}
-}
-
 export async function openBtwModal(
 	ctx: ExtensionCommandContext,
 	options: { thread: BtwThread; initialQuestion?: string; onChange?: () => void },
@@ -418,7 +225,7 @@ export async function openBtwModal(
 				done(undefined);
 			};
 
-			const modal = new BtwModal(tui, theme, close, submit, () => {
+			const modal = new ComposerModal(tui, theme, close, submit, () => {
 				if (closed) return; // Close already saved and cleaned this thread.
 				closed = true;
 				saveDraft();
@@ -426,6 +233,10 @@ export async function openBtwModal(
 				controller?.abort();
 				discardUnfinished();
 				options.onChange?.();
+			}, {
+				title: "Bro · btw",
+				commands: "Commands: /mode · /copy · /copy-all · /clear · /retry · /help",
+				inputLabel: "Your message to Bro",
 			});
 			modal.onInput = () => {
 				composerTouched = true;
@@ -571,7 +382,7 @@ export async function openBtwModal(
 
 			const toggleMode = () => {
 				toggleBtwMode(thread);
-				modal.setFull(thread.full);
+				modal.setTrailingMode(btwModeLabel(thread.full), thread.full);
 				modal.setNotice(`Mode: ${btwModeLabel(thread.full)}`, "info");
 				options.onChange?.();
 			};
@@ -653,7 +464,7 @@ export async function openBtwModal(
 				void runTurn(action.text);
 			}
 
-			modal.setFull(thread.full);
+			modal.setTrailingMode(btwModeLabel(thread.full), thread.full);
 			modal.setModel(btwHeaderLabel(thread));
 			modal.setText(transcript());
 			modal.scrollToEnd();

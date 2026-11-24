@@ -1,7 +1,8 @@
 import { matchesKey } from "@earendil-works/pi-tui";
 import { copyToClipboard, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { execute as executeBackend } from "./backend.ts";
-import { BtwModal, BTW_CONTEXT_MAX, BTW_CONTEXT_TURNS, formatBtwTranscript } from "./btw.ts";
+import { ComposerModal } from "./composer-modal.ts";
+import { BTW_CONTEXT_MAX, BTW_CONTEXT_TURNS, formatBtwTranscript } from "./btw.ts";
 import {
   buildGrillPrompt, grillExecution, parseGrillCommand, grillCommandSuggestions,
   type GrillThread, type GrillTurn,
@@ -60,7 +61,7 @@ export async function openGrillModal(
         controller?.abort();
         done(undefined);
       };
-      const modal = new BtwModal(tui, theme, close, submit, () => {
+      const modal = new ComposerModal(tui, theme, close, submit, () => {
         closed = true;
         saveDraft();
         stopProgress?.();

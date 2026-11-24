@@ -28,7 +28,7 @@ test('site scan reports missing pages and anchors without a network call',async(
   await write('src/bro.ts','const COMMANDS = [{ value: "btw" }];');
   await write('docs/reference/commands.md','# Command reference\n/bro btw\n');
   await write('docs/reference/data-and-permissions.md','# Access\nA prompt instruction is not enforced.\n');
-  await write('README.md','# Start\n/bro text A request limit means\n[broken](docs/missing.md)\n[bad anchor](docs/user-guide.md#not-there)\n');
+  await write('README.md','# Start\n/bro simplify text A request limit means\n[broken](docs/missing.md)\n[bad anchor](docs/user-guide.md#not-there)\n');
   const r=await checkDocs(root);
   assert.equal(r.errors.length,3);
   assert.ok(r.errors.some(error=>error.startsWith('docs/features/new/guide.md:')));

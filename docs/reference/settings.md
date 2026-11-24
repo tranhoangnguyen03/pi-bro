@@ -87,7 +87,7 @@ Bro reads the file again before each request, so manual edits apply next time. I
   Explicit Pi efforts are clamped to the model's supported reasoning levels; the
   picker's own step 1 chooses the backend and step 2 the model.
 - `mode` is `brief`, `balanced` (the default), or `faithful`. `showTurns` is
-  the default number of turns `/bro show` draws (default 1); `/bro show
+  the default number of turns `/show` draws inside Simplify (default 1); `/bro simplify show
   <n-turns>` overrides it for one run.
 - `PI_BRO_MODEL` explicitly selects Agy and its model when Bro creates a missing
   settings file, for example `PI_BRO_MODEL=gemini-3.7-flash-low pi`.
@@ -168,7 +168,7 @@ for the versioned real-CLI/local-server evidence.
 ## Preferences
 
 Tell Bro about yourself and how you like answers. Bro adds what you write to
-every explain, `/bro show`, `/bro btw`, `/bro elevate`, and Guided Review prompt as a labelled section,
+every Explain, Show, `/bro btw`, `/bro elevate`, and Guided Review prompt as a labelled section,
 alongside its own instructions. It never replaces them: modes, **M**, and the
 source rules keep working. The advisor never receives your preferences; use
 `/bro advisor-steer` for it.
@@ -201,7 +201,7 @@ that is set):
   means no preferences, and Bro's prompts are then exactly the built-in ones.
 - **What preferences can change**: wording, tone, technical depth, length in
   BTW, and the answer language. If you name a language, code, commands, paths,
-  names, and numbers still stay exactly as written. In `/bro show` and `/bro overthink`,
+  names, and numbers still stay exactly as written. In Show and `/bro overthink`,
   preferences only change wording/tone and language. Guided Review also receives preferences for explanation/answer wording; they do not override its evidence or review rules. A per-run choice (the mode,
   **M**, a Show steering query, or what a BTW/review question asks for) wins over a
   standing preference.

@@ -1,7 +1,8 @@
 /** Private, user-controlled workflow for approved personal memories. No durable unfinished drafts. */
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { execute as executeBackend } from "./backend.ts";
-import { BtwModal, formatBtwTranscript } from "./btw.ts";
+import { ComposerModal } from "./composer-modal.ts";
+import { formatBtwTranscript } from "./btw.ts";
 import { openBroOverlay, startProgressClock } from "./modal-kit.ts";
 import { captureShowTranscript } from "./show.ts";
 import { readPreferences, readSettings, selectionForCapability, selectionLabel } from "./settings.ts";
@@ -56,7 +57,7 @@ export async function openRememberModal(ctx: ExtensionCommandContext, initial = 
     let selectedBackend = openingSelection.backend ?? "agy";
     let selectedModel = selectionLabel(openingSelection);
     const close = () => { if (closed) return; closed = true; stopProgress?.(); controller?.abort(); done(undefined); };
-    const modal = new BtwModal(tui, theme, close, submit, () => { closed = true; stopProgress?.(); controller?.abort(); }, {
+    const modal = new ComposerModal(tui, theme, close, submit, () => { closed = true; stopProgress?.(); controller?.abort(); }, {
       title:"Bro · remember-me", commands:"", inputLabel:"Your memory or correction",
       idleHint:"Enter discuss · /save approve · /context show · /help",
     });
