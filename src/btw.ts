@@ -127,9 +127,8 @@ export function parseBtwComposerCommand(value: string): BtwComposerAction {
 
 // Thin presentation-boundary wrapper around the shared backend: coalesces raw text progress to the
 // existing 75ms cadence and translates the backend's tagged outcome back into this function's
-// existing throw-on-failure / { text, conversationId } contract. A conversationId is only ever
-// returned on success (see backend.ts's continuation handling), preserving current behavior on
-// failed turns.
+// existing throw-on-failure / { text, conversationId } contract. Adapters only return a new
+// continuation on success.
 // An expired continuation is reported as `continuationExpired` so the caller can forget the dead id;
 // otherwise every later turn would resend it and the thread would stay stuck.
 export async function runBtwTurn(

@@ -225,10 +225,6 @@ function advisorActivityPreview(label: string): string {
 
 export type AdvisorActivityCallback = (label: string, timestamp: number) => void;
 
-// Thin wrapper around the shared backend: advisor's stdin/stream-json transport, activity parsing,
-// and process lifecycle now live in backend.ts (see docs/plans/2026-09-19-bro-advisor-design.md,
-// "Transport" for why stdin rather than --print). This function keeps its exact existing
-// signature/throw contract -- it is called directly by tests and by runAdvisor below.
 export class TerminalConsultError extends Error {
 	readonly status: "failure" | "cancelled" | "timeout";
 	constructor(status: "failure" | "cancelled" | "timeout", message: string) {
@@ -237,6 +233,7 @@ export class TerminalConsultError extends Error {
 	}
 }
 
+// Adapters own the transport and activity parsing; the consultation translates terminal outcomes into errors.
 export async function runAdvisorConsultation(
 	prompt: string,
 	selection: BackendSelection,
