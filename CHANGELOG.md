@@ -2,6 +2,12 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.38.1] - 2026-11-24
+
+### Maintenance
+
+- Split Bro's six backends into separate adapters while keeping commands, settings, and execution behavior unchanged.
+
 ## [0.38.0] - 2026-11-24
 
 ### Highlights

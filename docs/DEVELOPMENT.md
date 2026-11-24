@@ -35,16 +35,14 @@ Production code lives in `src/` and is published as TypeScript source (no build 
 - **`config-ui.ts`** — the `/bro config` modal, settings items, the two-step
   backend→model pickers (with Agy families and the live Pi catalog), and async save queue.
 - **`util.ts`** — shared leaf utility helpers (`isRecord`, `errorMessage`, `withDoctor`, etc.).
-- **`backend.ts`** — the shared execution layer. `execute()` runs one request
-  on Agy, Claude Code, Grok, Codex, Muse, or the in-process Pi SDK backend: argv/stdin
-  construction per backend and feature, private temp prompt files, streaming parse, native
-  continuation IDs, deadlines, cancellation, and process-group cleanup. The Pi backend
-  (`executePi`) instead rehydrates the host `ModelRuntime` and drives `createAgentSession`
-  in-process with an isolated resource loader and per-feature tool allowlists. Feature behavior
-  (retries, UI, settings) stays out of it.
+- **`backend.ts`** — the execution entry point for features and diagnostics. It validates
+  requests, selects the adapter and deadline, and cancels and awaits active runs on shutdown.
+- **`backends/`** — one adapter each for Agy, Claude Code, Grok, Codex, Muse and Pi. Each owns
+  its invocation, progress protocol and continuation. `contract.ts` holds their shared request
+  and outcome types; `cli-process.ts` owns CLI lifecycle, stdout framing and process-group cleanup.
+  Feature behavior (retries, UI, settings) stays outside this layer.
 - **`prompt.ts`** — pure prompt builders: explain modes, show, BTW (reader guidance, access mode, and reseeded history), and the
-  advisor. Prompts are backend-neutral; backend differences belong in
-  `backend.ts`, not in prompt text.
+  advisor. Prompts are backend-neutral; backend differences belong in the adapters, not in prompt text.
 - **`ui-capabilities.ts`** — environment UI capability probes (interactive TUI, virtual viewport, Desktop panels) and terminal mouse-reporting helpers.
 - **`copy.ts`** — model-free last-assistant Markdown scratch editor. Preview and clipboard use the sole Pi Editor draft: original reply if unchanged, `Editor.getExpandedText()` if edited. Pi Editor normalizes tabs to spaces and CRLF to LF; a visible note discloses this when relevant. **`last-assistant.ts`** is the one untrimmed session-reply extractor used by Copy and Simplify.
 - **`modal-kit.ts`** — shared overlay building blocks: the `Theme`/`TuiLike` types, the `BRO_OVERLAY` preset and `modalHeight`, `renderFrame`, `Scroller`, `delegateMouse`, the regular-mode mouse lease and `openBroOverlay`. See [Modals](#modals).
@@ -52,7 +50,7 @@ Production code lives in `src/` and is published as TypeScript source (no build 
 
 ## Pi backend (in-process SDK)
 
-`src/backend.ts`'s `executePi` runs a real `AgentSession` inside this process instead of
+`executePi` in `src/backends/pi.ts` runs a real `AgentSession` inside this process instead of
 spawning a CLI. It is deliberately isolated from the host session:
 
 - **Host-effective model bridge.** The host extension context exposes its `ModelRegistry`,
@@ -103,8 +101,8 @@ spawning a CLI. It is deliberately isolated from the host session:
 The reusable [launcher contract](reference/settings.md#launcher-contract-for-cli-authentication)
 is the authority for profile selectors, intent values, child-environment filtering
 and ownership. Any launcher of the Pi-compatible extension can supply it; it is
-not a PiG-specific API. `src/cli-auth.ts` resolves this policy, and `backend.ts`
-shares its execution checks with Doctor. Keep account selection in the launcher
+not a PiG-specific API. `src/cli-auth.ts` owns this policy and the preflight shared
+by the CLI adapters and Doctor. Keep account selection in the launcher
 and login/refresh in the official CLI; do not duplicate this policy in features
 or shell-specific branches.
 
