@@ -31,13 +31,13 @@ Typing `/bro ` suggests `simplify`, `btw`, `guided-review`, `architecture`, `ele
 | `/bro doctor` | Check Bro's settings, preferences, and each selected backend, with the effective backend/model/effort per feature. |
 | `/bro mode [brief\|balanced\|faithful]` | View or choose the explanation mode. |
 | `/bro preferences` | View or edit what Bro knows about you and how you like answers; see [Preferences](settings.md#preferences). |
-| `/bro config` | Open Global (defaults, preferences and Doctor) or Features (per-feature overrides, BTW inheritance, Overthink automatic checks/default questions and Advisor steering). |
+| `/bro config` | Open Global (defaults, preferences and Doctor) or Features (per-feature overrides, BTW inheritance, Overthink automatic checks and Advisor steering). |
 | `/bro architecture [focus]` | Read the current project and create or refresh `docs/architecture/` with Markdown, an editable graph and offline HTML. Inherits BTW backend settings. [Guide](../features/architecture.md). |
 | `/bro guided-review <PR number or URL>` | Automatically explain and assess a captured PR in local Pi, with source evidence and optional private questions. Opening the same PR restores its saved review. |
 | `/bro guided-review` | List saved reviews; `resume` is an alias. |
 | `/bro guided-review delete [PR number or URL]` | Choose and confirm deletion of a saved review and its captured source. Without a target, opens the saved-review picker. |
 | `/bro remember-me [thought]` | Start a private memory-writing conversation, browse and expand memories, and approve saves explicitly. [Guide](../features/remember-me.md). |
-| `/bro overthink` | View the latest private second-look notes, without a model call. Ctrl+R retry, Ctrl+E edit session questions, U usage details, ? help, Ctrl+C copy. [Guide](../features/overthink.md). |
+| `/bro overthink` | View the latest private second look and evidence, without a model call. Ctrl+R recheck, U usage details, ? help, Ctrl+C copy. [Guide](../features/overthink.md). |
 | `/bro grill-me [topic]` | Private one-question-at-a-time decision interview. Supply a topic to start fresh; omit it to resume. `/consolidate` drafts a brief; `/copy` copies the latest reply or brief; Pi's editor stays untouched. `/help` lists modal controls. [Guide](../features/grill-me.md). |
 | `/bro elevate [request]` | Improve an assignment before execution. Discover up to five gaps, choose useful findings, and copy the revised request. Pi's editor is never changed. **Ctrl+Shift+E** can use your unsent draft. See [Elevate](../features/elevate.md). |
 | `/bro btw [question]` | Open a side conversation in a modal, seeded with recent main-session context. Starts conversation-only; `/mode` toggles full workspace access; `/copy` and `/copy-all` copy the latest answer or full thread. |

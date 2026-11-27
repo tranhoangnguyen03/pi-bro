@@ -55,7 +55,6 @@
     "src/grill-engine.ts",
     "src/overthink.ts",
     "src/overthink-state.ts",
-    "src/overthink-questions-ui.ts",
     "src/copy.ts",
     "src/last-assistant.ts",
     "src/remember-store.ts",

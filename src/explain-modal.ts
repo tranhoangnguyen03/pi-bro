@@ -409,7 +409,7 @@ These are needs, not modes. Copied text does not enter Pi until you paste and su
 
 ## Overthink
 
-- \`/bro overthink\` — view private second-look notes without a model call. Ctrl+R checks now; Ctrl+E edits session questions; Ctrl+C copies. Enable automatic checks in \`/bro config\` → Features → Overthink. See docs/features/overthink.md.
+- \`/bro overthink\` — view the latest private second look and evidence without a model call. Ctrl+R checks now; U shows usage; Ctrl+C copies. Enable automatic checks in \`/bro config\` → Features → Overthink. See docs/features/overthink.md.
 
 ## Side conversation
 
