@@ -2,6 +2,18 @@
 
 All notable changes to pi-bro are documented here.
 
+## [0.39.0] - 2026-11-28
+
+### Highlights
+
+- Overthink now delivers one actionable private second look (or silence) per normally settled turn, sharing the exact finding and next move between the above-input preview and `/bro overthink`.
+- Full `/bro overthink` view shows Situation, `[#n]`-resolved Evidence (explicitly tagging compacted/branch summaries and tool results), and Why it matters, while keeping the projected conversation prefix untouched for provider pairing and prompt-cache reuse.
+- Keeps five distinct turn states (**Not checked**, **Checking**, **Checked — nothing material to flag**, **Check failed**, **Finding**) and raises the Overthink `maxTokens` budget to `8192` so reasoning models do not truncate before replying.
+
+### Breaking
+
+- Removed editable Overthink question lists (`Ctrl+E` and `/bro config` → Default questions) and forced four-question answers. Legacy global and per-branch empty question lists stay opted out without rewriting saved files or notes until explicitly re-enabled (global toggle in `/bro config`; press `A` in `/bro overthink` to allow an opted-out branch). Historical notes remain readable as legacy assessments.
+
 ## [0.38.1] - 2026-11-24
 
 ### Maintenance
