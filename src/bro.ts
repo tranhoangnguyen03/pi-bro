@@ -74,7 +74,7 @@ const COMMANDS = [
 	{ value: "elevate", label: "elevate", description: "Have an assignment for Pi? Get an improved request to copy and send" },
 	{ value: "remember-me", label: "remember-me", description: "Want Pi to remember your preferences? Save approved memories for about_user" },
 	{ value: "grill-me", label: "grill-me", description: "Facing a decision? Get focused challenges and an optional decision brief" },
-	{ value: "overthink", label: "overthink", description: "Want a quiet second look after big work? Get private notes from the active model" },
+	{ value: "overthink", label: "overthink", description: "Want a quiet second look? One actionable check from the active model" },
 	{ value: "config", label: "config", description: "Global defaults, diagnostics and feature settings" },
 	{ value: "advisor", label: "advisor", description: "Check whether the executor's advisor tool is available right now" },
 	{ value: "advisor-steer", label: "advisor-steer", description: "Want to shape future advice? Save priorities for the advisor" },

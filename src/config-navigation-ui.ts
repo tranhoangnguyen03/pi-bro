@@ -16,7 +16,6 @@ const rowsFor=(screen:ConfigNavScreen, automatic:boolean):readonly MenuItem[]=>{
   if(screen==="global")return CONFIG_GLOBAL;
   if(screen==="features")return CONFIG_FEATURES;
   if(screen==="overthink")return [
-    {value:"overthink-defaults",label:"Default questions — edit starting set"},
     {value:"overthink-toggle",label:"Automatic checks — "+(automatic?"On":"Off")+" (Enter to toggle)"},
   ];
   if(screen==="advisor")return [
@@ -65,7 +64,6 @@ export function createConfigNavigationModal(
         if(value==="explain"||value==="show"||value==="btw"||value==="review")return finish({kind:"settings",page:value});
       }
       if(state.screen==="overthink"){
-        if(value==="overthink-defaults")return finish({kind:"overthink-defaults"});
         if(value==="overthink-toggle")return finish({kind:"overthink-toggle"});
       }
       if(state.screen==="advisor"){

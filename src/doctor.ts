@@ -23,7 +23,6 @@ import { createConfigNavigationModal } from "./config-navigation-ui.ts";
 import { type ConfigNavAction, type ConfigNavState } from "./config-navigation.ts";
 import { showBroModal, showPreferencesModal, showAdvisorSteerModal } from "./explain-modal.ts";
 import { openBroOverlay } from "./modal-kit.ts";
-import { openOverthinkDefaults } from "./overthink.ts";
 import { readAutomaticChecks, writeAutomaticChecks } from "./overthink-state.ts";
 import {
 	type AgyEffort,
@@ -571,11 +570,6 @@ export async function showBroConfigModal(ctx: ExtensionCommandContext, pi: Exten
 				await writeAutomaticChecks(next);
 				ctx.ui.notify("Overthink automatic checks: " + (next ? "On" : "Off"), "info");
 			} catch (error) { ctx.ui.notify("Overthink automatic checks: " + errorMessage(error), "error"); }
-			continue;
-		}
-		if (selected.kind === "overthink-defaults") {
-			try { await openOverthinkDefaults(ctx); }
-			catch (error) { ctx.ui.notify("Overthink defaults: " + errorMessage(error), "error"); }
 			continue;
 		}
 		if (selected.kind === "doctor") {

@@ -1,6 +1,6 @@
 {
   "name": "pi-bro",
-  "version": "0.38.1",
+  "version": "0.39.0",
   "description": "A sidekick for you and your Pi agent: plain-language explanations, side questions, diagrams, PR review and second opinions, without cluttering the agent's context.",
   "type": "module",
   "license": "MIT",
@@ -55,7 +55,6 @@
     "src/grill-engine.ts",
     "src/overthink.ts",
     "src/overthink-state.ts",
-    "src/overthink-questions-ui.ts",
     "src/copy.ts",
     "src/last-assistant.ts",
     "src/remember-store.ts",

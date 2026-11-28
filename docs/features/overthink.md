@@ -1,66 +1,68 @@
 # Overthink — private second look
 
-Overthink gives Pi's work a small, skeptical second pass. It checks the direction, the evidence, the risks and the next move, without making a new agent or interrupting the original conversation. It is inspired by [pi-heads-up](https://github.com/Pringled/pi-extensions/tree/main/packages/pi-heads-up).
+Overthink gives Pi's latest settled turn one private, skeptical second look. It asks one question: **Is there something the reply didn't make clear that should change what you do next?** It checks both the work and how the agent handled your direction, without spawning another agent or changing Pi's conversation. It is inspired by [pi-heads-up](https://github.com/Pringled/pi-extensions/tree/main/packages/pi-heads-up).
 
 ## Normal use
 
-Automatic checks are **off by default**. To enable them, go to `/bro config` → Features → Overthink. With automatic checks on, after a **fully settled substantial task** (currently at least three tool results across the run), Overthink sends one extra private assessment to the **same active Pi model, at the same thinking level**. A short note appears above the input only if there is something material to flag. If the reply already covered the issue, or there is nothing important to add, Overthink stays quiet. A question-only turn is not enough to trigger a check.
+Automatic checks are **off by default**. To enable them, go to `/bro config` → Features → Overthink. While the pilot is active and automatic checks are on, after a **normally settled user turn** (including zero-tool decisions), Overthink makes one private background call to the **same active Pi model, at the same thinking level**. If there is one consequential thing that should change your next move, a short preview appears above the input:
 
-Run `/bro overthink` to **view** the latest assessment. Opening the modal makes **no model request**. The notes never enter Pi's user/assistant conversation and do not direct the agent to perform work.
+```text
+◇ Overthink · Stalling
+  Pi stopped the local prototype over public traffic, but its listener
+  binds only to localhost. Build the local version as agreed.
+  /bro overthink for evidence
+```
 
-## Four factory questions
+If nothing material merits attention, Overthink stays quiet. The preview clears as soon as you start a new turn or switch branches.
 
-A new session starts with four questions:
+Run `/bro overthink` to **view** the evidence behind that same finding. Opening the modal makes **no model request**. Notes never enter Pi's user/assistant conversation and do not direct the agent to perform work.
 
-1. **Direction:** Are we solving the right problem and moving toward the intended outcome?
-2. **Evidence:** What important assumptions or conclusions might be wrong or insufficiently verified?
-3. **Risks:** What material risks, unintended changes, or needless complexity have we introduced?
-4. **Next move:** What correction, decision, or next step would most improve the outcome?
+## What it checks
 
-Bro still permits up to 32 custom questions and does **one same-model call for the entire list**. When nothing material is missed, the model should answer `NONE` and Overthink stays quiet. Otherwise it must return a brief 2–3-sentence summary followed by **one concise answer for each saved question**, in order, written in plain, everyday words for a tired reader. Saved [preferences](../reference/settings.md#preferences) (`bro-preferences.md`) can adjust tone or answer language on top, without overriding the JSON format, sentence limits, plain-language brevity or review rules. A question without a material concern can say so; it need not invent criticism.
+Overthink looks for one concrete, evidence-backed gap across the work and the working relationship, then optionally tags it with at most one plain label:
 
-**Existing saved global and per-session question lists do not change automatically.** To adopt the four new factory questions, reset the global defaults (Ctrl+D twice, Ctrl+S), then reset the session list (Ctrl+D twice, Ctrl+S). User-edited lists remain intact, even when they contain the former seven questions.
+- **Sucking up** — endorsed your preference against known facts or dropped a supported objection without addressing the evidence.
+- **Half-done** — agreed work is demonstrably unfinished yet presented as done or handed back early despite an available next step.
+- **Overclaimed** — a material claim goes beyond or contradicts what was actually verified.
+- **Overstepped** — an action actually crossed an explicit permission limit.
+- **Stalling** — stopped authorized work over a concern the evidence shows does not apply or has a concrete authorized way forward.
+- **Bloat** — proposed or added avoidable work, components, or decisions when a simpler path delivers the goal.
+
+A wrong-goal finding can appear without a label. Silence after a completed check is not certification.
 
 ## Viewer
 
-The modal shows a compact check date/model/freshness line, followed by **Summary** and numbered question–answer sections. The original question wording is visible. For the four factory questions, the sections are labeled Direction, Evidence, Risks and Next move. Longer results scroll; short results no longer expand into a mostly empty frame. Earlier plain-text notes stay viewable without being misrepresented as answers to the new questions.
+The full view shows the exact same finding and next move as the preview, plus **Situation**, **Evidence** (citing numbered `[#n]` items from the reviewed context, marking compacted or branch summaries as summaries), and **Why it matters**. It keeps five current-turn states distinct: **Not checked**, **Checking**, **Checked — nothing material to flag**, **Check failed**, and **Finding**. Earlier saved notes stay viewable as **OUTDATED**, and legacy four-question or plain-text notes stay readable as historical assessments without being reinterpreted as new findings.
 
 In the modal:
 
-- **Ctrl+R** — force a fresh assessment (also works for smaller tasks). A check uses the **current** session context.
-- **Ctrl+E** — edit the questions for **this Pi session**.
+- **Ctrl+R** — recheck the current turn now (works even when automatic checks are off).
+- **A** — allow automatic checks on this branch (shown only on branches with a legacy empty-question-list opt-out).
 - **?** — show or hide help.
-- **U** — show or hide full token/cache/estimated-cost usage details (hidden by default).
-- **Ctrl+C** — copy the latest findings.
+- **U** — show or hide provider-reported token/cache/estimated-cost details (hidden by default).
+- **Ctrl+C** — copy the displayed finding as Markdown.
 - **Esc** — close or leave Help.
 - **↑/↓** — scroll.
 
-If the last assessment found nothing, the modal says so. The note records the model-relevant session entry it assessed. When a later task (even a trivial turn), compaction, context edit, or branch move changes that position, the viewer explicitly marks the old note **OUTDATED**. Older notes without position metadata are marked **source position not recorded**. Editing questions also marks an existing note as using earlier questions.
+## Legacy opt-outs and settings
 
-## Question editor
+Automatic checks are toggled in `/bro config → Features → Overthink`. Editable question lists and forced four-question reports are removed from the new flow. Existing saved files and notes are left untouched:
 
-The same ordered, editable list is used in both places:
-
-- **Global defaults:** `/bro config → Features → Overthink → Default questions`.
-- **Automatic checks:** `/bro config → Features → Overthink → Automatic checks` toggles the global on/off switch. It starts **Off** unless you previously saved it as On. Turning it off does not delete questions or notes; the viewer and manual **Ctrl+R** still work.
-- **Session questions:** `/bro overthink`, then **Ctrl+E**.
-
-Use **↑/↓** to choose an entry; **Enter** to edit; **Ctrl+N** to add; **Ctrl+X** to delete; **Ctrl+↑/↓** to reorder; **Ctrl+S** to save; **Esc** to cancel. Saving an empty list disables checks. Unsaved changes are protected by a second-Esc warning.
-
-**Ctrl+D** twice resets the editor draft. In the global editor it restores Bro's factory questions; in the session editor it restores the **current global defaults**. Press Ctrl+S to save that reset. A new session inherits the current global defaults once and can then be edited independently. Existing sessions do not change when the global defaults are updated.
+- A legacy empty global question list in `bro-overthink-defaults.json` keeps automatic checks off until you explicitly toggle **Automatic checks** on in `/bro config`.
+- A legacy empty session question list on a branch keeps automatic checks off on that branch even after global automatic checks are turned on; press **A** in `/bro overthink` to allow automatic checks on that branch (this has no effect while global automatic checks are off).
+- Manual **Ctrl+R** checks work either way.
 
 ## Model, cache and privacy
 
-Overthink **never** uses the BTW or Bro backend/model setting. It calls Pi's current `modelRegistry.streamSimple` using `buildSessionProjection()` plus a single appended private review instruction. It uses the active physical session model and reasoning level, makes **one call for all questions**, **never executes tools**, and does not add the assessment to the main model context. The request may still contain Pi's tool descriptions as part of the original context; the prompt tells the model to respond in text and not call tools. An unexpected tool-use response is treated as a failed check, not executed. The call sends the session context (including tool evidence exposed by Pi's projection) to that model's provider, under the provider's data policy.
+Overthink **never** uses the BTW or Bro backend/model setting. It calls Pi's current `modelRegistry.streamSimple` using the untouched `buildSessionProjection()` prefix plus one appended private review prompt containing a numbered `[#n]` Source index. Keeping the conversation prefix untouched preserves provider reasoning/tool-call pairing and supports prompt-cache reuse. It uses the active physical session model and reasoning level, **never executes tools**, and does not add results to the main model context. An unexpected `toolUse` response is rejected without executing the tool and recorded as **Check failed**. Saved [preferences](../reference/settings.md#preferences) (`bro-preferences.md`) can adjust tone or answer language without overriding `NONE`, JSON keys, label names, or review rules.
 
-This largely preserves the request prefix and **can** reuse provider prompt-cache input. The benefit varies by provider, model, elapsed time, tool/context changes, other extensions' context hooks, and prompt-cache policy. It does not replicate every live Pi context modification. In Pi 1.3 and 1.5, `context_with_system` can observe a prepared context just before a provider call, while `before_provider_request` can observe a provider-specific payload; neither provides a portable, complete, settled-session request that can simply be appended and replayed through `streamSimple`. A recorded pre-call context also lacks the final agent response that Overthink needs to review. Bro therefore keeps the explicit projection path until a real provider-side comparison shows a safe improvement. **A cached prefix is not free:** high thinking effort can add substantial reasoning tokens on top of the visible-output limit, and both output and reasoning can cost money. Press **U** in the viewer to show *provider-reported* input, cache-read, cache-write, output and reasoning tokens when available; the details are hidden during normal reading. It labels USD cost separately as **estimated cost** from Pi's model price table, not a provider-billed amount; subscription or OAuth users may pay differently. A reported cache-read value of **0** could mean no hit **or unsupported caching**; it is not proof that caching works. Some providers report no usage fields. Check actual billed cost before treating Overthink as cheap.
+Prompt-cache reuse varies by provider, model, elapsed time, and context changes; measure it with **U** in the viewer rather than assuming a hit. **A cached prefix is not free:** high thinking effort can add reasoning tokens on top of visible output. Press **U** to show *provider-reported* input, cache-read, cache-write, output, reasoning tokens, and Pi-table **estimated cost** (not a provider-billed amount). A reported cache-read of **0** may mean either a miss or unsupported caching.
 
-New structured assessments include the exact question snapshot used for that check, so later edits do not relabel earlier answers. Saved notes made by older versions remain plain text. Invalid or incomplete structured model outputs are rejected rather than shown under the wrong question.\n\nOverthink stores editable global defaults in `getAgentDir()/bro-overthink-defaults.json` and session questions plus the **latest** private check in Pi session `custom` entries (`bro-overthink`). Those entries are outside LLM prompts. Session forks inherit their branch's last state; later edits are independent. The viewer resolves only the **latest** note. Pi stores session custom entries by appending, so **each completed check adds another entry to the session file**, even though Bro does not provide a history browser or archive. This is a deliberate reuse of Pi's branch-aware persistence, not a claim that only one physical record exists. Keep this storage growth in mind for long sessions. It does not write to your project files.
+Overthink stores the global automatic opt-in in `getAgentDir()/bro-overthink-defaults.json` and private checks, failures, and branch opt-out overrides in Pi session `custom` entries (`bro-overthink`). Those entries stay outside LLM prompts. Each completed check or failure appends another session custom entry; keep that storage growth in mind for long sessions.
 
 ## Limits and verification
 
 - The second look is self-criticism by the **same** model; it is not an independent external review. Use `bro_advisor` when a genuinely separate view matters.
-- An automatic check can fail without an on-screen error; it must not disturb the main run. Force retry in the modal to see the error.
-- Automatic work is triggered at Pi's `agent_settled` lifecycle event (supported from Pi 1.3), not `agent_end`. The earlier event collects tool-use evidence; only a normal final settlement, without queued messages, may start the check. A new agent turn, model change, question edit or session navigation cancels or invalidates stale checks. A returned note is not proof that every listed concern is true.
-- Running Heads-up and Overthink together can cause **two extra calls** after a substantive turn. Disable one if that cost is not wanted.
-- Host events and cache accounting vary. See [manual qualification](https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/TESTING.md) before claiming live TUI, PiG or cache-cost behavior.
+- Automatic checks run at Pi's `agent_settled` lifecycle event (supported from Pi 1.3), not `agent_end`. Only a normal final settlement with no queued messages may start a check. A new turn, model change, compaction, or branch move cancels or invalidates stale checks.
+- Running `pi-heads-up` and Overthink together causes **two extra calls** on overlapping turns. Disable one when evaluating attention cost or billing.
+- Host events, provider compatibility with numbered review copies, and cache accounting vary. See [manual qualification](https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/TESTING.md) and the [pilot evaluation plan](https://github.com/tranhoangnguyen03/pi-bro/blob/main/docs/plans/2026-11-25-overthink-replacement-eval.md).

@@ -71,21 +71,15 @@ test("BTW and Review editing pages visibly disclose selected backend permissions
   assert.match(reviewScreen,/Captured|Guide|Review/);
 });
 
-test("Features > Overthink opens global question editor, not a model picker", () => {
-  const state = { screen: "root" }, m = mount(state);
+test("Features > Overthink toggles automatic checks directly, with no model picker or question editor", () => {
+  const state = { screen: "root" }, m = mount(state, false);
   m.component.handleInput(down); m.component.handleInput(enter);
   for (let i = 0; i < 8; i++) m.component.handleInput(down);
   m.component.handleInput(enter);
   assert.equal(state.screen,"overthink");
-  assert.match(m.component.render(100).join("\n"),/Default questions/);
+  const view = m.component.render(100).join("\n");
+  assert.match(view,/Automatic checks.*Off/);
+  assert.doesNotMatch(view,/Default questions/);
   m.component.handleInput(enter);
-  assert.deepEqual(m.result(), { kind: "overthink-defaults" });
-});
-
-test("Overthink config toggle is a separate action with no model picker",()=>{
-  const state={screen:"overthink"},m=mount(state,false);
-  assert.match(m.component.render(100).join("\n"),/Automatic checks.*Off/);
-  m.component.handleInput(down);
-  m.component.handleInput(enter);
-  assert.deepEqual(m.result(),{kind:"overthink-toggle"});
+  assert.deepEqual(m.result(), { kind: "overthink-toggle" });
 });
